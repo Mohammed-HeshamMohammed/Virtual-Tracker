@@ -9,11 +9,19 @@ import { Toggle } from "@/shared/ui/toggle";
 import { getMemberOnboarding, sendMemberOnboardingReminder, type MemberOnboardingRow } from "@/features/members/services/member-onboarding"
 import { useAuth } from "@/shared/providers/app"
 import { AppVersionsTab } from "@/features/members/components/modals/app-versions-tab"
+import { isOwnerRoleName } from "@/features/auth"
+import { OwnerMessageComposer } from "@/features/messages/components/owner-message-composer"
 
 const ONBOARDING_ROWS_PER_PAGE = 5
 
 export function OnboardingModal({ onClose }: { onClose: () => void }) {
-  const { user } = useAuth()
+  const { user, memberRole } = useAuth()
+  // Owner only - a Super Admin runs the organization, but a message *from the
+  // Owner* has to actually be from the Owner (see isOwnerRole on the backend,
+  // which is what really enforces this).
+  const canMessage = isOwnerRoleName(memberRole ?? "")
+  const [selected, setSelected] = useComponentState<Set<string>>(new Set())
+  const [composing, setComposing] = useComponentState(false)
   const [showOnboarded, setShowOnboarded] = useComponentState(true)
   const [rows, setRows] = useComponentState<MemberOnboardingRow[]>([])
   const [isLoading, setIsLoading] = useComponentState(true)
@@ -56,6 +64,26 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
         : rows.filter((m) => !m.createdAccount || !m.downloadedApp || !m.trackedTime),
     [rows, showOnboarded],
   )
+
+  // Only rows that are a real member can be messaged: an invite nobody has
+  // accepted yet has no member to deliver to.
+  const messageable = useMemo(() => visible.filter((m) => m.memberId), [visible])
+  const selectedRecipients = useMemo(
+    () =>
+      messageable
+        .filter((m) => selected.has(m.id))
+        .map((m) => ({ memberId: m.memberId as string, email: m.email })),
+    [messageable, selected],
+  )
+  const allShownSelected = messageable.length > 0 && messageable.every((m) => selected.has(m.id))
+
+  const toggleRow = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
 
   const totalPages = Math.max(1, Math.ceil(visible.length / ONBOARDING_ROWS_PER_PAGE))
   const safePage = Math.min(page, totalPages - 1)
@@ -148,9 +176,31 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
 
         {activeTab === "onboarding" ? (
           <>
-        <div className="flex items-center gap-3 px-8 pb-4">
+        <div className="flex flex-wrap items-center gap-3 px-8 pb-4">
           <Toggle checked={showOnboarded} onChange={() => setShowOnboarded((v) => !v)} />
           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Show onboarded members</span>
+          {canMessage ? (
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setSelected(allShownSelected ? new Set() : new Set(messageable.map((m) => m.id)))
+                }
+                disabled={!messageable.length}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-600 disabled:opacity-40 dark:border-slate-700 dark:text-slate-300"
+              >
+                {allShownSelected ? "Clear selection" : "Select all shown"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setComposing(true)}
+                disabled={!selectedRecipients.length}
+                className="rounded-lg bg-blue-600 px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-40 dark:bg-emerald-600"
+              >
+                Message tracker{selectedRecipients.length > 1 ? ` (${selectedRecipients.length})` : ""}
+              </button>
+            </div>
+          ) : null}
         </div>
 
         <div className="px-8 pb-2">
@@ -167,6 +217,7 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
                 <table className="w-full min-w-[720px]">
                   <thead>
                     <tr className="border-b border-slate-100 dark:border-slate-800">
+                      {canMessage ? <th className="w-8 py-2.5" aria-label="Select" /> : null}
                       {["Member email", "Created account", "Downloaded app", "Tracked time", "Send reminder"].map((h, i) => (
                         <th
                           key={h}
@@ -185,6 +236,19 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
                       const isSending = sendingReminderForId === m.id
                       return (
                         <tr key={m.id} className="transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                          {canMessage ? (
+                            <td className="py-3.5">
+                              <input
+                                type="checkbox"
+                                checked={selected.has(m.id)}
+                                disabled={!m.memberId}
+                                onChange={() => toggleRow(m.id)}
+                                aria-label={`Select ${m.email}`}
+                                title={m.memberId ? undefined : "This invite has not been accepted yet"}
+                                className="h-3.5 w-3.5 accent-blue-600 disabled:opacity-30 dark:accent-emerald-500"
+                              />
+                            </td>
+                          ) : null}
                           <td className="py-3.5 text-sm text-slate-700 dark:text-slate-200">{m.email}</td>
                           {([m.createdAccount, m.downloadedApp, m.trackedTime] as boolean[]).map((done, i) => (
                             <td key={`${m.id}-step-${i}`} className="py-3.5 text-center">
@@ -219,7 +283,7 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
                     })}
                     {!visible.length ? (
                       <tr>
-                        <td colSpan={5} className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">
+                        <td colSpan={canMessage ? 6 : 5} className="py-12 text-center text-sm text-slate-500 dark:text-slate-400">
                           No onboarding rows found.
                         </td>
                       </tr>
@@ -282,6 +346,13 @@ export function OnboardingModal({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </motion.div>
+      {composing ? (
+        <OwnerMessageComposer
+          recipients={selectedRecipients}
+          onClose={() => setComposing(false)}
+          onSent={() => setSelected(new Set())}
+        />
+      ) : null}
     </motion.div>
   )
 }

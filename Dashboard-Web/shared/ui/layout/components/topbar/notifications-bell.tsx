@@ -54,17 +54,36 @@ const KNOWN_PAGE_IDS = new Set<string>(
  * by that name. Anything that resolves to a real page opens it; anything else
  * (an old link, or one to something the app has no page for) opens nothing.
  */
-export function notificationPageId(link: string | null | undefined): string | null {
+export function notificationTarget(
+  link: string | null | undefined,
+): { pageId: string; params?: Record<string, string> } | null {
   const raw = (link ?? "").trim()
   if (!raw || raw === "/") return null
   const fromQuery = /[?&]page=([^&#]+)/.exec(raw)
   const candidate = fromQuery ? decodeURIComponent(fromQuery[1]) : raw.split(/[?#]/)[0]
-  const pageId = candidate.replace(/^\/+|\/+$/g, "").replace(/\/+/g, "-")
-  return pageId && KNOWN_PAGE_IDS.has(pageId) ? pageId : null
+  const pageId = candidate.split(/[?#]/)[0].replace(/^\/+|\/+$/g, "").replace(/\/+/g, "-")
+  if (!pageId || !KNOWN_PAGE_IDS.has(pageId)) return null
+
+  // The query used to be discarded with the rest of the link, which is why a
+  // notification about one task could only ever open the Tasks page. `page`
+  // itself is not a param - it names the page.
+  const params: Record<string, string> = {}
+  const queryStart = raw.indexOf("?")
+  if (queryStart >= 0) {
+    for (const [key, value] of new URLSearchParams(raw.slice(queryStart + 1))) {
+      if (key !== "page" && value) params[key] = value
+    }
+  }
+  return { pageId, params: Object.keys(params).length ? params : undefined }
+}
+
+/** Kept for callers that only need the page. */
+export function notificationPageId(link: string | null | undefined): string | null {
+  return notificationTarget(link)?.pageId ?? null
 }
 
 type NotificationsBellProps = {
-  onNavigate?: (pageId: string) => void
+  onNavigate?: (pageId: string, params?: Record<string, string>) => void
 }
 
 type ListResponse = { success: boolean; data: NotificationItem[]; unreadCount?: number }
@@ -533,7 +552,7 @@ export function NotificationsBellView({
   onNavigate,
 }: {
   controller: NotificationsController
-  onNavigate?: (pageId: string) => void
+  onNavigate?: (pageId: string, params?: Record<string, string>) => void
 }) {
   const { feed, busy, error } = controller
   const [open, setOpen] = useState(false)
@@ -569,9 +588,9 @@ export function NotificationsBellView({
 
   function openItem(item: NotificationItem) {
     if (!item.read) controller.markRead([item.id])
-    const pageId = notificationPageId(item.link)
-    if (pageId && onNavigate) {
-      onNavigate(pageId)
+    const target = notificationTarget(item.link)
+    if (target && onNavigate) {
+      onNavigate(target.pageId, target.params)
       closePanel()
     }
   }
@@ -653,7 +672,8 @@ export function NotificationsBellView({
                 </button>
               ) : null}
             </div>
-            <div role="group" aria-label="Show" className="mt-2.5 inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-[#151b2d]">
+            <div className="mt-2.5 flex items-center justify-between gap-2">
+            <div role="group" aria-label="Show" className="inline-flex rounded-lg bg-slate-100 p-0.5 dark:bg-[#151b2d]">
               {(["all", "unread"] as const).map((id) => (
                 <button
                   key={id}
@@ -673,6 +693,24 @@ export function NotificationsBellView({
                   ) : null}
                 </button>
               ))}
+            </div>
+            {/* The panel only holds the newest few; the page is the history
+                and the conversations. */}
+            {onNavigate ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onNavigate("notifications")
+                  closePanel()
+                }}
+                className={cn(
+                  "inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold transition-colors hover:bg-slate-100 dark:hover:bg-white/5",
+                  ACCENT_TEXT,
+                )}
+              >
+                See all
+              </button>
+            ) : null}
             </div>
           </div>
 

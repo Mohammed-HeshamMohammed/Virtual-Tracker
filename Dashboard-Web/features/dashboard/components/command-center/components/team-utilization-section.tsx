@@ -1,12 +1,13 @@
 "use client"
 
 import { motion } from "framer-motion"
+import type { NavigateHandler } from "@/app/routes/types"
 import type { ProjectData } from "@/features/dashboard/components/command-center/constants"
 import { SectionCard } from "@/features/dashboard/components/command-center/components/section-card"
 
 interface TeamUtilizationSectionProps {
   project: ProjectData
-  onNavigate?: (id: string, state?: Record<string, unknown>) => void
+  onNavigate?: NavigateHandler
 }
 
 export function TeamUtilizationSection({ project, onNavigate }: TeamUtilizationSectionProps) {

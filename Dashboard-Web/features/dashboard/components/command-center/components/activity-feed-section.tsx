@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import type { NavigateHandler } from "@/app/routes/types"
 import Image from "next/image"
 import { Monitor } from "lucide-react"
 import { fetchActivityScreenshotImage } from "@/features/activity/services/activity-api"
@@ -50,7 +51,7 @@ function ScreenshotCard({ item }: { item: ActivityFeedItem }) {
 
 interface ActivityFeedSectionProps {
   feed: ActivityFeedItem[]
-  onNavigate?: (id: string, state?: Record<string, unknown>) => void
+  onNavigate?: NavigateHandler
 }
 
 export function ActivityFeedSection({ feed, onNavigate }: ActivityFeedSectionProps) {

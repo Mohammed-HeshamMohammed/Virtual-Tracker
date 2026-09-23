@@ -46,6 +46,7 @@ const PAGE_CHUNK: Record<string, AppChunkId> = {
   "settings-billing-plans": "settings",
 
   profile: "profile",
+  notifications: "profile",
 }
 
 export function resolveChunkId(pageId: string): AppChunkId {

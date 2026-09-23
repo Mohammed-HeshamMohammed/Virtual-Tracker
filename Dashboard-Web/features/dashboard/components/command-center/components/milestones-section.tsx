@@ -1,13 +1,14 @@
 "use client"
 
 import { motion } from "framer-motion"
+import type { NavigateHandler } from "@/app/routes/types"
 import { ExternalLink } from "lucide-react"
 import type { ProjectData } from "@/features/dashboard/components/command-center/constants"
 import { SectionCard } from "@/features/dashboard/components/command-center/components/section-card"
 
 interface MilestonesSectionProps {
   project: ProjectData
-  onNavigate?: (id: string, state?: Record<string, unknown>) => void
+  onNavigate?: NavigateHandler
 }
 
 export function MilestonesSection({ project, onNavigate }: MilestonesSectionProps) {
