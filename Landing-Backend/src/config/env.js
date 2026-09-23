@@ -75,6 +75,16 @@ export function buildEnv(source = process.env) {
       internalServiceSecret: readString(source, "INTERNAL_SERVICE_SECRET"),
     }),
 
+    agent: Object.freeze({
+      // Agents below this are served no update: their own copy performs the
+      // update and, before this version, it exited the process before the
+      // installer ran - so a refused elevation left the agent dead with
+      // nothing to restart it. Dashboard-Backend defaults to the same value
+      // (AGENT_MIN_SELF_UPDATE_VERSION) to flag those machines as needing a
+      // manual reinstall; change them together.
+      minSelfUpdateVersion: readString(source, "AGENT_MIN_SELF_UPDATE_VERSION", "1.0.27"),
+    }),
+
     github: Object.freeze({
       pat: readString(source, "GITHUB_PAT"),
       repoOwner: readString(source, "GITHUB_REPO_OWNER", "Mohammed-HeshamMohammed"),
