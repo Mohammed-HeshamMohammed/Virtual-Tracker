@@ -757,6 +757,13 @@ impl AgentController {
             .map_err(|error| error.to_string())
     }
 
+    pub fn reply_to_message_thread(&self, thread_id: &str, body: &str) -> Result<(), String> {
+        self.api
+            .lock()
+            .reply_to_message_thread(thread_id, body)
+            .map_err(|error| error.to_string())
+    }
+
     pub fn mark_all_agent_notifications_read(&self) -> Result<(), String> {
         self.api
             .lock()

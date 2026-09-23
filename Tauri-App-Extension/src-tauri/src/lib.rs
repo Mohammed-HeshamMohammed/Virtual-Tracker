@@ -264,6 +264,16 @@ async fn get_agent_notifications(
 }
 
 #[tauri::command]
+async fn reply_to_message_thread(
+    state: tauri::State<'_, AppState>,
+    thread_id: String,
+    body: String,
+) -> Result<(), String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.reply_to_message_thread(&thread_id, &body)).await
+}
+
+#[tauri::command]
 async fn mark_agent_notification_read(
     state: tauri::State<'_, AppState>,
     notification_id: String,
@@ -859,6 +869,7 @@ pub fn run() {
             report_agent_open,
             get_agent_notifications,
             mark_agent_notification_read,
+            reply_to_message_thread,
             mark_all_agent_notifications_read,
             set_tray_status,
             get_profile,

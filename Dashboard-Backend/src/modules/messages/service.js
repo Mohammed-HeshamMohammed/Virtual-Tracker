@@ -78,9 +78,9 @@ async function signal(client, { recipientId, threadId, subject, body, toMember }
   // Tracker inbox: only the member has one.
   if (toMember) {
     await client.query(
-      `INSERT INTO agent_notifications (recipient_id, type, title, message, created_by, tenant_id)
-       VALUES ($1, 'owner_message', $2, $3, $4, $5)`,
-      [recipientId, subject, body, null, tenant()],
+      `INSERT INTO agent_notifications (recipient_id, type, title, message, thread_id, created_by, tenant_id)
+       VALUES ($1, 'owner_message', $2, $3, $4, $5, $6)`,
+      [recipientId, subject, body, threadId, null, tenant()],
     );
   }
 }

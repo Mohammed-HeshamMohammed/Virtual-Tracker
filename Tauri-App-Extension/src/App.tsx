@@ -433,11 +433,36 @@ function MainApp() {
 
   const signedIn = Boolean(profile?.signedIn);
 
+  // Ids already announced to Windows, so the 5s poll re-reading the same
+  // unread message does not toast it again.
+  const announcedNotificationsRef = useRef<Set<string>>(new Set());
+
   const refreshAgentNotifications = useCallback(async () => {
     const data = await invoke<AgentNotificationList>("get_agent_notifications");
-    setAgentNotifications(data.notifications ?? []);
+    const incoming = data.notifications ?? [];
+    setAgentNotifications(incoming);
     setAgentNotificationUnreadCount(data.unreadCount ?? 0);
+
+    // A message from the Owner is worth a Windows notification: the tracker
+    // usually sits in the tray, where an in-app badge is never seen.
+    const announced = announcedNotificationsRef.current;
+    const firstRun = announced.size === 0;
+    for (const item of incoming) {
+      if (item.read || announced.has(item.id)) continue;
+      announced.add(item.id);
+      // On the very first poll after launch everything unread is "new", and
+      // toasting a backlog would be noise - seed the set instead.
+      if (!firstRun) void notify(item.title, item.message);
+    }
   }, []);
+
+  const replyToMessage = useCallback(
+    async (threadId: string, body: string) => {
+      await invoke("reply_to_message_thread", { threadId, body });
+      await refreshAgentNotifications();
+    },
+    [refreshAgentNotifications],
+  );
 
   const markAgentNotificationRead = useCallback(async (notificationId: string) => {
     try {
@@ -2163,6 +2188,7 @@ function MainApp() {
         unreadCount={agentNotificationUnreadCount}
         onMarkNotificationRead={(id) => void markAgentNotificationRead(id)}
         onMarkAllNotificationsRead={() => void markAllAgentNotificationsRead()}
+        onReplyToMessage={replyToMessage}
         onNotificationUpdate={(notification) => {
           if (!notification.read) void markAgentNotificationRead(notification.id);
           void checkForUpdate(true);

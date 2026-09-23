@@ -394,6 +394,57 @@ body {
   cursor: pointer;
 }
 
+/* Replying to an Owner message without leaving the tracker (Part A3). */
+.notification-reply {
+  margin-top: 6px;
+}
+
+.notification-reply textarea {
+  width: 100%;
+  resize: none;
+  border: 1px solid var(--outline-variant);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: var(--surface);
+  color: var(--on-surface);
+  font: inherit;
+  font-size: 11px;
+}
+
+.notification-reply-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 5px;
+}
+
+.notification-reply-actions button {
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 9px;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notification-reply-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.notification-reply-actions button.ghost {
+  border: 1px solid var(--outline-variant);
+  background: transparent;
+  color: var(--on-surface-variant);
+}
+
+.notification-reply-error {
+  margin-top: 4px;
+  color: rgb(var(--c-bad));
+  font-size: 10px;
+}
+
 .notification-empty {
   margin: 0;
   padding: 28px 16px;

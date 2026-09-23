@@ -56,6 +56,7 @@ export function TitleBar({
   onMarkNotificationRead,
   onMarkAllNotificationsRead,
   onNotificationUpdate,
+  onReplyToMessage,
 }: {
   title?: string;
   showBrand?: boolean;
@@ -69,8 +70,14 @@ export function TitleBar({
   onMarkNotificationRead?: (id: string) => void;
   onMarkAllNotificationsRead?: () => void;
   onNotificationUpdate?: (notification: AgentNotification) => void;
+  /** Replying to an Owner message from inside the tracker (Part A3). */
+  onReplyToMessage?: (threadId: string, body: string) => Promise<void>;
 }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState("");
+  const [replyBusy, setReplyBusy] = useState(false);
+  const [replyError, setReplyError] = useState("");
   const notificationRootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -159,6 +166,58 @@ export function TitleBar({
                         <button type="button" className="notification-update-btn" onClick={(event) => { event.stopPropagation(); onNotificationUpdate?.(notification); }}>
                           Update now
                         </button>
+                      ) : null}
+                      {notification.threadId && onReplyToMessage ? (
+                        replyingTo === notification.threadId ? (
+                          <div className="notification-reply" onClick={(event) => event.stopPropagation()}>
+                            <textarea
+                              value={replyText}
+                              rows={2}
+                              maxLength={2000}
+                              autoFocus
+                              placeholder="Write a reply…"
+                              onChange={(event) => setReplyText(event.target.value)}
+                            />
+                            {replyError ? <p className="notification-reply-error">{replyError}</p> : null}
+                            <div className="notification-reply-actions">
+                              <button
+                                type="button"
+                                disabled={replyBusy || !replyText.trim()}
+                                onClick={async () => {
+                                  setReplyBusy(true);
+                                  setReplyError("");
+                                  try {
+                                    await onReplyToMessage(notification.threadId!, replyText.trim());
+                                    setReplyText("");
+                                    setReplyingTo(null);
+                                  } catch (error) {
+                                    setReplyError(error instanceof Error ? error.message : "Could not send the reply.");
+                                  } finally {
+                                    setReplyBusy(false);
+                                  }
+                                }}
+                              >
+                                {replyBusy ? "Sending…" : "Send"}
+                              </button>
+                              <button type="button" className="ghost" onClick={() => { setReplyingTo(null); setReplyText(""); setReplyError(""); }}>
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className="notification-update-btn"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setReplyingTo(notification.threadId!);
+                              setReplyText("");
+                              setReplyError("");
+                            }}
+                          >
+                            Reply
+                          </button>
+                        )
                       ) : null}
                     </article>
                   )) : <p className="notification-empty">No tracker notifications</p>}

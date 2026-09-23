@@ -729,6 +729,9 @@ const MEMBER_DATA_DDL = [
    ON agent_notifications (recipient_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_agent_notifications_recipient_unread
    ON agent_notifications (recipient_id, created_at DESC) WHERE read_at IS NULL`,
+  // Links a tracker notification back to the conversation it belongs to, so
+  // the tracker can offer a reply rather than just showing the text.
+  "ALTER TABLE agent_notifications ADD COLUMN IF NOT EXISTS thread_id UUID",
   // Owner<->member conversations (PLAN-notifications-and-owner-messaging.md
   // Part A). Deliberately NOT stored in agent_notifications: that table is one
   // alert with one read flag per row, which is the wrong shape for a thread

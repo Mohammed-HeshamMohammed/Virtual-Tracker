@@ -35,6 +35,34 @@ impl ApiClient {
         Err(ApiError::Rejected(rejected_message(&body, "Tracker version report was rejected.")))
     }
 
+    /// Replies to an Owner message from the tracker. The backend checks that
+    /// this member is actually in the conversation; the tracker only carries
+    /// the thread id it was handed.
+    pub fn reply_to_message_thread(&mut self, thread_id: &str, body: &str) -> Result<(), ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let response = self
+            .client
+            .post(format!(
+                "{}/api/messages/threads/{}/reply",
+                self.api_url,
+                urlencoding::encode(thread_id)
+            ))
+            .header("Authorization", auth)
+            .json(&serde_json::json!({ "body": body }))
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        let status = response.status();
+        if status.is_success() {
+            return Ok(());
+        }
+        if status.is_server_error() {
+            return Err(ApiError::Network);
+        }
+        let body = response.json::<Value>().unwrap_or(Value::Null);
+        Err(ApiError::Rejected(rejected_message(&body, "The reply was not accepted.")))
+    }
+
     pub fn fetch_agent_notifications(&mut self) -> Result<AgentNotificationList, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let response = self

@@ -353,6 +353,8 @@ export type AgentNotification = {
   title: string;
   message: string;
   targetVersion: string | null;
+  /** Set on an Owner message: what a reply is posted against. */
+  threadId?: string | null;
   read: boolean;
   createdAt: string | null;
 };

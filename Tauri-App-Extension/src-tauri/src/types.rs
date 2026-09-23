@@ -783,6 +783,10 @@ pub struct AgentNotification {
     pub message: String,
     #[serde(default)]
     pub target_version: Option<String>,
+    /// Set on an Owner message: the conversation this belongs to, which is
+    /// what a reply is posted against.
+    #[serde(default)]
+    pub thread_id: Option<String>,
     #[serde(default)]
     pub read: bool,
     #[serde(default)]
