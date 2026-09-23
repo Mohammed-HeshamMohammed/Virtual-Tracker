@@ -7,6 +7,7 @@ import {
   deleteNotification,
   isNotificationId,
   listNotificationsForMember,
+  listNotificationsPage,
   markAllNotificationsAsRead,
   markNotificationAsRead,
   markNotificationsAsRead,
@@ -48,6 +49,19 @@ export async function routeNotifications(req, res, url, origin) {
         countUnreadNotifications(null, memberId),
       ]);
       sendJson(res, origin, 200, { success: true, data, unreadCount });
+      return true;
+    }
+
+    // The Notifications page: paged and filterable, unlike the bell's list.
+    if (url.pathname === "/api/notifications/page" && req.method === "GET") {
+      const result = await listNotificationsPage(null, memberId, {
+        limit: url.searchParams.get("limit"),
+        offset: url.searchParams.get("offset"),
+        unreadOnly: url.searchParams.get("unread") === "true",
+        type: (url.searchParams.get("type") || "").trim(),
+      });
+      const unreadCount = await countUnreadNotifications(null, memberId);
+      sendJson(res, origin, 200, { success: true, ...result, unreadCount });
       return true;
     }
 

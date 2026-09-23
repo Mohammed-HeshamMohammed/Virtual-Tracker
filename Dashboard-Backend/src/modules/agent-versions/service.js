@@ -161,7 +161,7 @@ export async function sendAgentInstallEmail(row, targetVersion) {
 export async function listAgentNotifications(memberId, limit = 20) {
   const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 50);
   const rows = await query(
-    `SELECT id, type, title, message, target_version, read_at, created_at
+    `SELECT id, type, title, message, target_version, thread_id, read_at, created_at
      FROM agent_notifications WHERE recipient_id = $1
      ORDER BY created_at DESC LIMIT $2`,
     [memberId, safeLimit],
@@ -177,6 +177,8 @@ export async function listAgentNotifications(memberId, limit = 20) {
       title: row.title,
       message: row.message,
       targetVersion: row.target_version || null,
+      // Present on an Owner message: what the tracker replies to.
+      threadId: row.thread_id ? String(row.thread_id) : null,
       read: Boolean(row.read_at),
       createdAt: toIso(row.created_at),
     })),

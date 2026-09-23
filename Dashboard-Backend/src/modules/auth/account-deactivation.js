@@ -78,7 +78,7 @@ async function notifyAdminsOfDeactivationRequest(db, requestDoc, requesterMember
         type: "account_deactivation_request",
         title: "Account deactivation request",
         message: `${memberLabel} (${roleLabel}) requested account deactivation.`,
-        link: "people-members",
+        link: requestDoc.memberId ? `people-members?member=${requestDoc.memberId}` : "people-members",
       }).catch(() => null),
     ),
   );

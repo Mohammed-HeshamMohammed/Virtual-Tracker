@@ -105,6 +105,10 @@ export const TENANT_SCOPED_TABLES = [
   "agent_devices",
   "agent_link_sessions",
   "agent_notifications",
+  // Owner<->member conversations. Scoped for the obvious reason: a thread
+  // must never be readable from another organization.
+  "message_threads",
+  "thread_messages",
 
   // Money
   "invoices",

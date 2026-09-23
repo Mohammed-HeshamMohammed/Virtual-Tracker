@@ -729,6 +729,38 @@ const MEMBER_DATA_DDL = [
    ON agent_notifications (recipient_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_agent_notifications_recipient_unread
    ON agent_notifications (recipient_id, created_at DESC) WHERE read_at IS NULL`,
+  // Links a tracker notification back to the conversation it belongs to, so
+  // the tracker can offer a reply rather than just showing the text.
+  "ALTER TABLE agent_notifications ADD COLUMN IF NOT EXISTS thread_id UUID",
+  // Owner<->member conversations (PLAN-notifications-and-owner-messaging.md
+  // Part A). Deliberately NOT stored in agent_notifications: that table is one
+  // alert with one read flag per row, which is the wrong shape for a thread
+  // with replies. Notifications stay the *signal*; these hold the conversation.
+  `CREATE TABLE IF NOT EXISTS message_threads (
+  id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id       UUID         NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  opened_by       UUID         REFERENCES members(id) ON DELETE SET NULL,
+  subject         VARCHAR(160) NOT NULL,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  last_message_at TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  closed_at       TIMESTAMPTZ
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_message_threads_member
+   ON message_threads (member_id, last_message_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_message_threads_opened_by
+   ON message_threads (opened_by, last_message_at DESC)`,
+  `CREATE TABLE IF NOT EXISTS thread_messages (
+  id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id   UUID        NOT NULL REFERENCES message_threads(id) ON DELETE CASCADE,
+  sender_id   UUID        REFERENCES members(id) ON DELETE SET NULL,
+  body        TEXT        NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  read_at     TIMESTAMPTZ
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_thread_messages_thread
+   ON thread_messages (thread_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_thread_messages_unread
+   ON thread_messages (thread_id) WHERE read_at IS NULL`,
   `CREATE TABLE IF NOT EXISTS member_tree_cache (
   member_id    UUID        PRIMARY KEY,
   ancestors    JSONB       NOT NULL DEFAULT '[]'::jsonb,

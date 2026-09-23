@@ -9,6 +9,7 @@ import { sendJson } from "../http/response.js";
 import { routeMemberBans } from "../modules/members/routes/member-bans.routes.js";
 import { routeMemberRemoveFromTree } from "../modules/members/routes/member-remove-from-tree.routes.js";
 import { routeMemberInvites } from "../modules/members/routes/member-invites.routes.js";
+import { routeMessages } from "../modules/messages/routes.js";
 import { routeMemberMigration } from "../modules/members/routes/member-migration.routes.js";
 import { routeMemberRelationships } from "../modules/member-relationships/routes.js";
 import { routeCustomerAccounts } from "../modules/customer-accounts/routes.js";
@@ -195,6 +196,7 @@ export async function handleRequest(req, res) {
 
     if (await routeMemberBans(req, res, url, origin)) return;
     if (await routeMemberRemoveFromTree(req, res, url, origin)) return;
+    if (await routeMessages(req, res, url, origin)) return;
     if (await routeMemberInvites(req, res, url, origin)) return;
     if (await routeMemberMigration(req, res, url, origin)) return;
     if (await routeMemberOnboarding(req, res, url, origin)) return;

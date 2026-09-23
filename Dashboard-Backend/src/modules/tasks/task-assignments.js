@@ -155,7 +155,16 @@ async function dispatchAssignmentStatusNotification(
 ) {
   const taskTitle = task.title || "Task";
   const projectId = task.project_id ?? task.projectId ?? null;
-  const link = projectId ? `pm-tasks?project=${projectId}` : "pm-tasks";
+  // The task id as well as the project: a notification about one task should
+  // open THAT task, not just the project's board (B2). The query used to be
+  // discarded by the bell's link handling, which is why only the page mattered.
+  const taskId = task.id ?? task.task_id ?? null;
+  const link = [
+    "pm-tasks?",
+    projectId ? `project=${projectId}` : "",
+    projectId && taskId ? "&" : "",
+    taskId ? `task=${taskId}` : "",
+  ].join("").replace(/\?$/, "");
 
   if (nextStatus === "in_progress" && previousStatus !== "in_progress") {
     const parents = await getDirectParentIds(db, assigneeId);
