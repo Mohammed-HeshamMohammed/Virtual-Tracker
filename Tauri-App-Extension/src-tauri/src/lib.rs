@@ -31,7 +31,7 @@ use crate::constants::APP_VERSION;
 use crate::prefs::UserPreferences;
 use crate::types::{
     ActionResult, AgentTask, ConnectionState, LinkStatus, ProfileInfo, ReconnectResult, SessionInfo,
-    SignInResult,
+    SignInResult, UpdateInstallReadiness,
 };
 
 struct AppState {
@@ -201,6 +201,52 @@ fn set_tray_status(_label: String, _tracking: bool, _paused: bool, _session_open
 #[tauri::command]
 fn get_version() -> String {
     APP_VERSION.to_string()
+}
+
+/// Whether applying an update would need an administrator prompt.
+///
+/// `install()` spawns the installer and then exits this process immediately -
+/// the app is gone before the installer has done anything. If the installer
+/// then cannot write where the app lives (a per-machine install under Program
+/// Files, run by a standard user), the update fails with the agent already
+/// dead and nothing to restart it. That is the "the update just closed it and
+/// nothing worked after" report.
+///
+/// Rather than guess at group membership or elevation tokens, this asks the
+/// only question that actually decides it: can this user write to the
+/// directory the app is installed in? If yes, the installer runs silently and
+/// an unattended update is safe. If no, the update must wait for a person who
+/// can answer a UAC prompt, so the app never exits unattended into a failure.
+#[tauri::command]
+fn update_install_readiness() -> UpdateInstallReadiness {
+    let install_dir = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.to_path_buf()));
+
+    let Some(dir) = install_dir else {
+        // Cannot tell where we live: assume the cautious answer.
+        return UpdateInstallReadiness {
+            writable: false,
+            install_dir: String::new(),
+        };
+    };
+
+    // A create/delete probe, not a permissions calculation: ACLs, group
+    // policy and virtualisation all feed into the real answer, and only an
+    // actual write reflects all of them.
+    let probe = dir.join(format!(".vt-update-probe-{}", std::process::id()));
+    let writable = match std::fs::File::create(&probe) {
+        Ok(_) => {
+            let _ = std::fs::remove_file(&probe);
+            true
+        }
+        Err(_) => false,
+    };
+
+    UpdateInstallReadiness {
+        writable,
+        install_dir: dir.to_string_lossy().to_string(),
+    }
 }
 
 #[tauri::command]
@@ -809,6 +855,7 @@ pub fn run() {
             minimize_current,
             close_window,
             get_version,
+            update_install_readiness,
             report_agent_open,
             get_agent_notifications,
             mark_agent_notification_read,
@@ -1077,4 +1124,23 @@ pub fn run() {
                 exit_controller.stop();
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    /// The probe must answer for the directory the app actually runs from, and
+    /// must answer *something* rather than panicking - an update decision that
+    /// throws is an update that never happens.
+    #[test]
+    fn update_install_readiness_reports_the_real_install_directory() {
+        let readiness = super::update_install_readiness();
+        assert!(
+            !readiness.install_dir.is_empty(),
+            "the install directory must be reported so a blocked update can name it"
+        );
+        // The test binary's own directory is writable, so this is the
+        // "installs silently" answer. The blocked branch is exercised by the
+        // create() failure path, which cannot be forced portably here.
+        assert!(readiness.writable);
+    }
 }

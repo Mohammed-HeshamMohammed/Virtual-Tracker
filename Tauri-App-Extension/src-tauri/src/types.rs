@@ -85,6 +85,18 @@ pub struct LinkStatus {
     pub status: String,
 }
 
+/// Answer to "can an update install here without an administrator?" - see
+/// update_install_readiness in lib.rs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInstallReadiness {
+    /// The install directory is writable by this user, so the installer can
+    /// run unattended.
+    pub writable: bool,
+    /// Shown to the user when it is not, so they can tell their admin where.
+    pub install_dir: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SignInResult {
     pub success: bool,

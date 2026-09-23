@@ -86,6 +86,10 @@ import { EMPTY_IMAGE_CACHE, putImage, type ImageCache } from "./utils/image-cach
  *  re-renders the chart for no change. */
 const EMPTY_APP_BREAKDOWN: ProjectAppBreakdown = { apps: [], totalSeconds: 0, appCount: 0, shownSeconds: 0 };
 
+/** Long enough to read the banner and press "Not now"; short enough that
+ *  an unattended machine still updates promptly. */
+const RESTART_COUNTDOWN_SECONDS = 10;
+
 const RECAP_MIN_SECONDS = 5 * 60;
 
 const OFFLINE_NOTICE_DELAY_MS = 30_000;
@@ -154,7 +158,13 @@ function MainApp() {
   const [version, setVersion] = useState("0.4.0");
   const [updateNotice, setUpdateNotice] = useState<{
     version: string;
-    state: "downloading" | "ready" | "error";
+    // "countdown" is the indicator that replaces the app simply vanishing;
+    // "blocked" is an update that would need an administrator (C2a).
+    state: "downloading" | "ready" | "countdown" | "blocked" | "error";
+    /** 0-100 while downloading, when the server sends a content length. */
+    progress?: number;
+    secondsLeft?: number;
+    installDir?: string;
   } | null>(null);
   const [agentNotifications, setAgentNotifications] = useState<AgentNotification[]>([]);
   const [agentNotificationUnreadCount, setAgentNotificationUnreadCount] = useState(0);
@@ -310,10 +320,20 @@ function MainApp() {
   // the callback was created.
   const isSafeToApplyUpdate = useCallback(() => !sessionOpenRef.current, []);
 
-  const applyStagedUpdate = useCallback(async () => {
+  // Set when the user chooses "Not now", so the effect below does not
+  // immediately start the countdown again.
+  const updateDeferredRef = useRef(false);
+
+  /**
+   * The actual install. install() hands the installer over and then exits this
+   * process, so nothing after it is guaranteed to run - relaunch() is there for
+   * the platforms where install() does return.
+   */
+  const installStagedUpdate = useCallback(async () => {
     const staged = pendingUpdateRef.current;
-    if (!staged || !isSafeToApplyUpdate()) return;
+    if (!staged) return;
     try {
+      setUpdateNotice({ version: staged.version, state: "countdown", secondsLeft: 0 });
       await staged.install();
       pendingUpdateRef.current = null;
       await relaunch();
@@ -322,11 +342,45 @@ function MainApp() {
       setUpdateNotice({ version: staged.version, state: "error" });
       toast.error("The update could not be installed. You can retry without interrupting tracking.");
     }
+  }, []);
+
+  /**
+   * Decides whether an update may be applied unattended, and never installs
+   * straight away.
+   *
+   * This used to call install() the moment tracking stopped. install() exits
+   * the process immediately, so if the installer then could not write where
+   * the app lives (a per-machine install, standard user - no rights to
+   * elevate) the agent was already gone and nothing brought it back: the
+   * "update closed it and nothing worked after" reports.
+   *
+   * Now an update that cannot install silently waits for a person who can
+   * answer the elevation prompt, and one that can still announces itself with
+   * a countdown the user can stop.
+   */
+  const applyStagedUpdate = useCallback(async () => {
+    const staged = pendingUpdateRef.current;
+    if (!staged || !isSafeToApplyUpdate() || updateDeferredRef.current) return;
+
+    const readiness = await invoke<{ writable: boolean; installDir: string }>("update_install_readiness").catch(
+      () => null,
+    );
+    if (readiness && !readiness.writable) {
+      setUpdateNotice({
+        version: staged.version,
+        state: "blocked",
+        installDir: readiness.installDir,
+      });
+      return;
+    }
+
+    setUpdateNotice({ version: staged.version, state: "countdown", secondsLeft: RESTART_COUNTDOWN_SECONDS });
   }, [isSafeToApplyUpdate]);
 
   const checkForUpdate = useCallback(
     async (manual = false) => {
       setCheckingUpdate(true);
+      if (manual) updateDeferredRef.current = false;
       try {
         const update = pendingUpdateRef.current ?? (await check());
         if (!update) {
@@ -334,13 +388,29 @@ function MainApp() {
           if (manual) toast.message("You're up to date");
           return;
         }
-        setUpdateNotice({ version: update.version, state: "downloading" });
+        setUpdateNotice({ version: update.version, state: "downloading", progress: 0 });
         // Safe whatever the session state is: this only writes a verified
         // installer to disk. ponytail: staged in memory, so a restart before a
         // safe point just re-downloads ~4 MB - persisting it is H.2.4's job,
         // not U1's.
         if (pendingUpdateRef.current !== update) {
-          await update.download();
+          // The progress the updater already reports and the app used to throw
+          // away, so a download is visible instead of a frozen "Downloading…".
+          let total = 0;
+          let received = 0;
+          await update.download((event) => {
+            if (event.event === "Started") {
+              total = event.data.contentLength ?? 0;
+              received = 0;
+            } else if (event.event === "Progress") {
+              received += event.data.chunkLength ?? 0;
+            }
+            setUpdateNotice({
+              version: update.version,
+              state: "downloading",
+              progress: total > 0 ? Math.min(100, Math.round((received / total) * 100)) : undefined,
+            });
+          });
           pendingUpdateRef.current = update;
         }
         setUpdateNotice({ version: update.version, state: "ready" });
@@ -439,6 +509,44 @@ function MainApp() {
     sessionOpenRef.current = sessionOpen;
     if (!sessionOpen) void applyStagedUpdate();
   }, [sessionOpen, applyStagedUpdate]);
+
+  // Ticks the "restarting in Ns" countdown and installs at zero. A plain
+  // interval rather than a single timeout so the number on screen is the real
+  // remaining time, and so "Not now" (which clears the state) stops it.
+  useEffect(() => {
+    if (updateNotice?.state !== "countdown") return;
+    const remaining = updateNotice.secondsLeft ?? 0;
+    if (remaining <= 0) return;
+    const timer = window.setTimeout(() => {
+      setUpdateNotice((current) => {
+        if (current?.state !== "countdown") return current;
+        const next = (current.secondsLeft ?? 0) - 1;
+        if (next <= 0) {
+          void installStagedUpdate();
+          return { ...current, secondsLeft: 0 };
+        }
+        return { ...current, secondsLeft: next };
+      });
+    }, 1000);
+    return () => window.clearTimeout(timer);
+  }, [updateNotice, installStagedUpdate]);
+
+  // Confirms the round trip actually completed: the app went away to install
+  // and came back on a new version. Without this the only evidence an update
+  // happened is the version in the title bar.
+  useEffect(() => {
+    if (!version || version === "0.4.0") return;
+    try {
+      const key = "vt:last-running-version";
+      const previous = window.localStorage.getItem(key);
+      if (previous && previous !== version) {
+        toast.success(`Updated to v${version}`);
+      }
+      window.localStorage.setItem(key, version);
+    } catch {
+      // Private mode or blocked storage - the confirmation is a nicety.
+    }
+  }, [version, toast]);
 
   // refreshGuarded's own in-flight flag only stops its periodic 5s timer from
   // overlapping itself - it does nothing for the many other call sites below
@@ -2064,24 +2172,71 @@ function MainApp() {
       {updateNotice ? (
         <div className={`tracker-update-banner state-${updateNotice.state}`} role="status">
           <div>
-            <strong>Tracker v{updateNotice.version} is available</strong>
+            <strong>
+              {updateNotice.state === "countdown"
+                ? `Updating to v${updateNotice.version}`
+                : `Tracker v${updateNotice.version} is available`}
+            </strong>
             <span>
               {updateNotice.state === "downloading"
-                ? "Downloading the signed update…"
-                : updateNotice.state === "error"
-                  ? "Installation failed. Your tracker is still usable."
-                  : sessionOpen
-                    ? "Ready — installs when tracking stops."
-                    : "Ready to install and restart."}
+                ? updateNotice.progress !== undefined
+                  ? `Downloading the signed update… ${updateNotice.progress}%`
+                  : "Downloading the signed update…"
+                : updateNotice.state === "countdown"
+                  ? updateNotice.secondsLeft && updateNotice.secondsLeft > 0
+                    ? `The tracker will close and reopen in ${updateNotice.secondsLeft}s.`
+                    : "Installing — the tracker will reopen on its own."
+                  : updateNotice.state === "blocked"
+                    ? "Ready, but installing needs an administrator. Start it when someone can approve the Windows prompt."
+                    : updateNotice.state === "error"
+                      ? "Installation failed. Your tracker is still usable."
+                      : sessionOpen
+                        ? "Ready — installs when tracking stops."
+                        : "Ready to install and restart."}
             </span>
+            {updateNotice.state === "downloading" && updateNotice.progress !== undefined ? (
+              <progress className="tracker-update-progress" max={100} value={updateNotice.progress} />
+            ) : null}
+            {updateNotice.state === "blocked" && updateNotice.installDir ? (
+              <span className="tracker-update-path">Installed at {updateNotice.installDir}</span>
+            ) : null}
           </div>
-          <button
-            type="button"
-            disabled={checkingUpdate || updateNotice.state === "downloading" || sessionOpen}
-            onClick={() => void checkForUpdate(true)}
-          >
-            {updateNotice.state === "error" ? "Retry" : sessionOpen ? "Waiting for timer" : "Update now"}
-          </button>
+          <div className="tracker-update-actions">
+            {updateNotice.state === "countdown" && (updateNotice.secondsLeft ?? 0) > 0 ? (
+              <>
+                <button type="button" onClick={() => void installStagedUpdate()}>
+                  Restart now
+                </button>
+                <button
+                  type="button"
+                  className="ghost"
+                  onClick={() => {
+                    updateDeferredRef.current = true;
+                    setUpdateNotice({ version: updateNotice.version, state: "ready" });
+                  }}
+                >
+                  Not now
+                </button>
+              </>
+            ) : updateNotice.state === "blocked" ? (
+              <button type="button" onClick={() => void installStagedUpdate()}>
+                Install now
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={
+                  checkingUpdate ||
+                  updateNotice.state === "downloading" ||
+                  updateNotice.state === "countdown" ||
+                  sessionOpen
+                }
+                onClick={() => void checkForUpdate(true)}
+              >
+                {updateNotice.state === "error" ? "Retry" : sessionOpen ? "Waiting for timer" : "Update now"}
+              </button>
+            )}
+          </div>
         </div>
       ) : null}
 

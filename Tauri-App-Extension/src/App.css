@@ -457,6 +457,61 @@ body {
   cursor: default;
 }
 
+/* Countdown offers two choices ("Restart now" / "Not now"), so the actions
+   became a group rather than a single button. */
+.tracker-update-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.tracker-update-banner button.ghost {
+  border: 1px solid var(--outline-variant);
+  background: transparent;
+  color: var(--on-surface-variant);
+}
+
+/* An update mid-countdown is about to take the window away - say so louder
+   than an ordinary "available" notice. */
+.tracker-update-banner.state-countdown {
+  border-color: color-mix(in srgb, var(--primary) 60%, var(--outline-variant));
+  background: color-mix(in srgb, var(--primary) 16%, var(--surface));
+}
+
+.tracker-update-banner.state-blocked {
+  border-color: rgb(var(--c-warn, 234 179 8) / 0.5);
+  background: rgb(var(--c-warn, 234 179 8) / 0.1);
+}
+
+.tracker-update-progress {
+  width: 100%;
+  height: 4px;
+  margin-top: 5px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
+  appearance: none;
+}
+
+.tracker-update-progress::-webkit-progress-bar {
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.tracker-update-progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--primary);
+  transition: width 0.2s ease;
+}
+
+.tracker-update-banner .tracker-update-path {
+  margin-top: 3px;
+  font-size: 9px;
+  opacity: 0.8;
+  word-break: break-all;
+}
+
 .spin {
   animation: spin 0.8s linear infinite;
 }
