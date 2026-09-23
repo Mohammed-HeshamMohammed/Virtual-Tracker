@@ -38,6 +38,17 @@ export function isOwnerOrSuperAdminRole(roleName) {
   return key === "owner" || key === "superadmin";
 }
 
+/**
+ * Owner and nothing else - deliberately narrower than every other gate here,
+ * including isOwnerOrSuperAdminRole. Owner-to-member messaging
+ * (PLAN-notifications-and-owner-messaging.md Part A) is the only caller: a
+ * Super Admin may run the organization, but "a message from the Owner" has to
+ * actually be from the Owner or the recipient cannot trust it.
+ */
+export function isOwnerRole(roleName) {
+  return normalizeRoleKey(roleName) === "owner";
+}
+
 export function isDeactivationApprovalRole(roleName) {
   return isAdminLevelRole(roleName);
 }

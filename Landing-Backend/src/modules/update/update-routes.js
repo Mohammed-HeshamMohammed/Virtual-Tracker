@@ -8,6 +8,51 @@ const UPDATE_PATH_RE = /^\/api\/agent\/update\/([^/]+)\/([^/]+)\/([^/]+)$/;
 let cachedManifest = null;
 const MANIFEST_CACHE_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * The first agent version whose updater can be trusted to survive an update
+ * (PLAN-notifications-and-owner-messaging.md Part C3).
+ *
+ * Up to and including 1.0.26 the agent installed updates unattended: it handed
+ * over to the Windows installer and exited immediately, so when the installer
+ * then needed an administrator it could not have (a per-machine install, a
+ * standard user), the update failed with the agent already gone and nothing to
+ * restart it.
+ *
+ * A fix in the agent cannot help those installs, because the update is carried
+ * out by the copy already on the machine - the OLD, broken one. So they are not
+ * offered an update at all: a 204 leaves them running, which is strictly better
+ * than a silent death, and the dashboard's Agent Versions view is where those
+ * machines get picked up for a manual reinstall.
+ *
+ * Agents at or above this version apply updates safely and are served normally.
+ */
+const MIN_SELF_UPDATABLE_VERSION = "1.0.27";
+
+/** Numeric semver compare. Returns <0, 0, >0. Unparseable sorts lowest, so an
+ *  unreadable version is treated as old rather than assumed safe. */
+export function compareVersions(a, b) {
+  const parse = (v) =>
+    String(v ?? "")
+      .trim()
+      .replace(/^v/i, "")
+      .split(/[.+-]/)
+      .slice(0, 3)
+      .map((part) => Number.parseInt(part, 10));
+  const left = parse(a);
+  const right = parse(b);
+  for (let i = 0; i < 3; i += 1) {
+    const l = Number.isFinite(left[i]) ? left[i] : -1;
+    const r = Number.isFinite(right[i]) ? right[i] : -1;
+    if (l !== r) return l - r;
+  }
+  return 0;
+}
+
+/** Whether this agent may be handed an update at all. */
+export function canSelfUpdate(currentVersion) {
+  return compareVersions(currentVersion, MIN_SELF_UPDATABLE_VERSION) >= 0;
+}
+
 function assetFileName(downloadUrl) {
   const path = new URL(downloadUrl).pathname;
   return decodeURIComponent(path.slice(path.lastIndexOf("/") + 1));
@@ -77,7 +122,22 @@ export async function routeUpdateFeed(req, res, url, origin) {
       return true;
     }
 
-    const [, target, arch] = match;
+    const [, target, arch, currentVersion] = match;
+
+    // C3: an agent too old to update itself safely is left alone. 204 is the
+    // updater's own "no update available", so this needs no agent-side change
+    // and reaches every already-installed copy.
+    if (!canSelfUpdate(currentVersion)) {
+      applyCors(res, origin);
+      res.writeHead(204, {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        ...corsHeaders(origin),
+        ...getSecurityHeaders(req),
+      });
+      res.end();
+      return true;
+    }
+
     const platform = manifest.platforms?.[`${target}-${arch}`];
 
     if (!platform) {
