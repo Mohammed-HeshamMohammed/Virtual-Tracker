@@ -147,7 +147,7 @@ export async function evaluateAndNotifyClientBudget(db, clientId, options = {}) 
       type: NOTIFY_TYPE,
       title,
       message,
-      link: "pm-clients",
+      link: `pm-clients?client=${clientId}`,
     });
   }
 

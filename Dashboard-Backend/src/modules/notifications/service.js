@@ -64,6 +64,44 @@ export async function listNotificationsForMember(_db, memberId, limit = 30) {
   return rows.map(normalizeRow);
 }
 
+/**
+ * The paged, filterable read behind the Notifications page
+ * (PLAN-notifications-and-owner-messaging.md B3). The bell's own list is
+ * deliberately left alone - it wants the newest few and nothing else.
+ */
+export async function listNotificationsPage(_db, memberId, { limit = 25, offset = 0, unreadOnly = false, type = "" } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 25, 1), 100);
+  const safeOffset = Math.max(Number(offset) || 0, 0);
+  const filters = ["recipient_id = $1"];
+  const params = [memberId];
+  if (unreadOnly) filters.push("read = false");
+  if (type) {
+    params.push(type);
+    filters.push(`type = $${params.length}`);
+  }
+  const where = filters.join(" AND ");
+
+  const rows = await query(
+    `SELECT id, recipient_id, type, title, message, link, read, created_at
+       FROM notifications WHERE ${where}
+      ORDER BY created_at DESC
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    [...params, safeLimit, safeOffset],
+  );
+  const totals = await query(`SELECT count(*)::int AS total FROM notifications WHERE ${where}`, params);
+  // The distinct types this person actually has, so the filter offers only
+  // options that can return something.
+  const types = await query(
+    `SELECT DISTINCT type FROM notifications WHERE recipient_id = $1 ORDER BY type`,
+    [memberId],
+  );
+  return {
+    notifications: rows.map(normalizeRow),
+    total: Number(totals[0]?.total ?? 0),
+    types: types.map((r) => String(r.type)).filter(Boolean),
+  };
+}
+
 /** Every unread notification, not just the page the list returned - a burst
  *  of alerts can leave far more than 30 unread. */
 export async function countUnreadNotifications(_db, memberId) {

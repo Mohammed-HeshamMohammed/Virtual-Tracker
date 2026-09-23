@@ -10,14 +10,15 @@ import { RoutePlaceholder } from "@/app/routes/placeholder"
 import { resolveChunkId } from "@/app/routes/resolve-chunk"
 import { PageTransitionShell } from "@/app/routes/page-transition-shell"
 import { resolvePageTransitionKey } from "@/app/routes/people-member-pages"
-import type { NavigateHandler } from "@/app/routes/types"
+import type { NavigateHandler, NavigateParams } from "@/app/routes/types"
 
 type PageContentProps = {
   activeItem: string
   onNavigate: NavigateHandler
+  pageParams?: NavigateParams
 }
 
-function renderPageBody(activeItem: string, onNavigate: NavigateHandler) {
+function renderPageBody(activeItem: string, onNavigate: NavigateHandler, pageParams?: NavigateParams) {
   if (isComingSoonPage(activeItem)) {
     return <RoutePlaceholder title={getPageLabel(activeItem)} />
   }
@@ -35,7 +36,7 @@ function renderPageBody(activeItem: string, onNavigate: NavigateHandler) {
 
   return (
     <Suspense fallback={<ChunkRouteFallback pageId={activeItem} />}>
-      <Chunk pageId={activeItem} onNavigate={onNavigate} />
+      <Chunk pageId={activeItem} onNavigate={onNavigate} pageParams={pageParams} />
     </Suspense>
   )
 }

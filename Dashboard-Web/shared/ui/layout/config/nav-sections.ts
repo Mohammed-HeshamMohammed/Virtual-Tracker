@@ -34,6 +34,10 @@ export const NAV_SECTIONS: NavSection[] = [
     pages: [
       { label: "Command Center", id: "command-center" },
       { label: "General",        id: "general", hideFromDropdown: true },
+      // Reached from the bell's "See all", and the target of every
+      // notification that links to a conversation - so it has to be a real
+      // page id here, or notificationTarget refuses to open it.
+      { label: "Notifications",  id: "notifications", hideFromDropdown: true },
     ],
   },
   {

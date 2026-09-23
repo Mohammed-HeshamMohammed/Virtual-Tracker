@@ -28,8 +28,13 @@ export function DashboardShell() {
 
   useBackendConnectionMonitor(isLoggedIn && sessionReady)
 
+  // Which item a navigation named (a task id, a member id, a thread id), kept
+  // next to the page id so a notification can open the thing it is about.
+  const [pageParams, setPageParams] = useState<Record<string, string> | undefined>(undefined)
+
   const setActiveItem = useCallback(
-    (id: string) => {
+    (id: string, params?: Record<string, string>) => {
+      setPageParams(params)
       setActiveItemRaw(coerceNavItemForRole(id, memberRole))
     },
     [memberRole, setActiveItemRaw],
@@ -122,7 +127,7 @@ export function DashboardShell() {
               )}
             >
               <WidgetErrorBoundary label="This page" isDark={isDark} onRetry={() => window.location.reload()}>
-                <PageContent activeItem={activeItem} onNavigate={setActiveItem} />
+                <PageContent activeItem={activeItem} onNavigate={setActiveItem} pageParams={pageParams} />
               </WidgetErrorBoundary>
             </div>
           </main>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import type { NavigateHandler } from "@/app/routes/types"
 import { motion, AnimatePresence } from "framer-motion"
 import { AlertCircle, Loader2, RefreshCw } from "lucide-react"
 import type { ProjectData } from "@/features/dashboard/components/command-center/constants"
@@ -17,7 +18,7 @@ import { useTheme } from "@/shared/providers/app"
 import { DashboardStatusShell } from "@/shared/ui/errors/dashboard-status-shell"
 import { DashboardStatusContent } from "@/shared/ui/errors/dashboard-status-content"
 
-export function CommandCenter({ onNavigate }: { onNavigate?: (id: string, state?: Record<string, unknown>) => void }) {
+export function CommandCenter({ onNavigate }: { onNavigate?: NavigateHandler }) {
   const { isDark } = useTheme()
   const { projects, globalActivityFeed, loading, error, refreshing, retry } = useCommandCenterData()
   const [selectedProject, setSelectedProject] = useState<ProjectData | null>(null)
