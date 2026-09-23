@@ -5,7 +5,7 @@ notification tables) and one honesty problem: right now the app does things
 silently that people need to *see* — a message they never notice, a click that
 goes nowhere, an update that looks like a crash.
 
-Status: **plan only, nothing built.**
+Status: **implemented** (commits e25894eb, 6876d22f, fe3728cd, a65444de), except C2b, which was deliberately not done - see "Decisions made during the build".
 
 ---
 
@@ -315,9 +315,23 @@ update, no matter what we ship — their installed copy is what performs it. So:
 - Messages go to tracker, web bell, and a Windows notification.
 - No email for these — the onboarding reminder already covers email.
 
+## Decisions made during the build
+
+- **C2a only; C2b (per-user install) deliberately not done.** C2a already
+  removes the harm: the agent never exits into an install that cannot succeed.
+  C2b buys silent updates on locked-down machines, but it costs one elevated
+  install to migrate out of Program Files, it cannot be tested anywhere in this
+  repo, and a half-migrated machine ends up running two copies - the exact
+  failure the rename hook exists to prevent. It also weakens the product: a
+  per-user install in AppData is far easier for a monitored employee to remove
+  than one in Program Files that needs an administrator. That is a product
+  decision, not a cleanup, so it stays unbuilt and on the table.
+- **C3 gating is live**: agents below 1.0.27 are served no update. They keep
+  running; they need a manual reinstall to rejoin the update stream.
+
 ## Still open
 
-- **Which update fix**, C2a alone or C2a + C2b. Recommendation: both, C2b last.
-- **Gating old versions** (C3) — withholding auto-update from pre-fix versions
-  means those people stop receiving updates until someone reinstalls them. That
-  is a deliberate trade and needs your call.
+- **C2b**, if per-machine installs on locked-down machines turn out to be
+  common enough that "update ready, needs an administrator" is a real blocker.
+- **Old installs** stay on their current version until someone reinstalls
+  them. The Agent Versions view is where they show up.
