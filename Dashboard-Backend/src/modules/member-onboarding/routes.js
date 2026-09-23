@@ -14,6 +14,8 @@ import {
 } from "../../lib/postgres/member-data-postgres.service.js";
 import { getMemberByIdPg, listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 import { query } from "../../lib/postgres/client.js";
+import { currentTenantId } from "../../lib/postgres/audit-actor.js";
+import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
 import { sendOnboardingReminderEmail } from "../auth/onboarding-reminder-email.js";
 import { normalizeRoleKey } from "../../http/role-key.js";
 
@@ -95,7 +97,10 @@ export async function routeMemberOnboarding(req, res, url, origin) {
       const [onboardingRows, membersRows, invitesRows, trackedRows] = await Promise.all([
         listMemberOnboardingRowsPg(),
         listMembersPg({ limit: 2000 }),
-        query("SELECT * FROM invites ORDER BY sent_at DESC LIMIT 2000", []),
+        // Tenant-scoped - see ensure-tenancy-rls.js; RLS is off by default.
+        query("SELECT * FROM invites WHERE tenant_id = $1 ORDER BY sent_at DESC LIMIT 2000", [
+          currentTenantId() ?? MAIN_TENANT_ID,
+        ]),
         query("SELECT DISTINCT member_id FROM activity_sessions WHERE active_seconds > 0", []),
       ]);
 
@@ -318,7 +323,10 @@ export async function routeMemberOnboarding(req, res, url, origin) {
     try {
       const [membersRows, invitesRows] = await Promise.all([
         listMembersPg({ limit: 400 }),
-        query("SELECT * FROM invites WHERE status IN ('pending_signup', 'pending') LIMIT 400", []),
+        query(
+          "SELECT * FROM invites WHERE status IN ('pending_signup', 'pending') AND tenant_id = $1 LIMIT 400",
+          [currentTenantId() ?? MAIN_TENANT_ID],
+        ),
       ]);
 
       const writes = [];

@@ -1,4 +1,6 @@
 import { isPostgresConfigured, query } from "../../../lib/postgres/client.js";
+import { currentTenantId } from "../../../lib/postgres/audit-actor.js";
+import { MAIN_TENANT_ID } from "../../../lib/postgres/ensure-tenancy-schema.js";
 import { computeTimesheetSummary } from "../../timesheets/timesheet-summary.js";
 import { isPostgresLookupReady } from "../../../lib/postgres/lookup-availability.js";
 import { isPostgresMemberDataReady } from "../../../lib/postgres/member-data-availability.js";
@@ -352,7 +354,11 @@ export async function listPostgresRows(entityKey, url) {
     return rows.map(normalizePgRow);
   }
   if (entityKey === "invites") {
-    const rows = await query("SELECT * FROM invites ORDER BY sent_at DESC NULLS LAST LIMIT 200");
+    // Tenant-scoped - see ensure-tenancy-rls.js; RLS is off by default.
+    const rows = await query(
+      "SELECT * FROM invites WHERE tenant_id = $1 ORDER BY sent_at DESC NULLS LAST LIMIT 200",
+      [currentTenantId() ?? MAIN_TENANT_ID],
+    );
     return rows.map(normalizePgRow);
   }
   if (entityKey === "time-entries") {

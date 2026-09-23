@@ -4,6 +4,7 @@ import { getViewerProjectIds, toAllowedProjectSet } from "../../http/project-acc
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { normalizeDoc } from "../schema/services/schema-crud.service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
+import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
 import { fetchMemberDocsByIds } from "../members/services/member-list-fetch.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
@@ -101,7 +102,13 @@ export async function getBootstrapWarmPayload(db, viewer) {
 
   let invites = null;
   if (management) {
-    const inviteRows = await pgQuery("SELECT * FROM invites LIMIT $1", [LIST_LIMIT]);
+    // Tenant-scoped: RLS is off by default (ensure-tenancy-rls.js), so
+    // without this predicate this warm cache handed a customer account's
+    // managers the main organization's invites.
+    const inviteRows = await pgQuery("SELECT * FROM invites WHERE tenant_id = $2 LIMIT $1", [
+      LIST_LIMIT,
+      viewer?.tenantId || MAIN_TENANT_ID,
+    ]);
     invites = inviteRows.map((row) => normalizeDoc(row));
     if (visibleIds !== null && typeof viewer.uid === "string" && viewer.uid) {
       invites = invites.filter((row) => row.created_by_uid === viewer.uid);
