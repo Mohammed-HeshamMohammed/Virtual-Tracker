@@ -31,6 +31,23 @@ export function supportsAgentInbox(version, latestVersion) {
   return Boolean(normalizedVersion && compareAgentVersions(normalizedVersion, inboxMinVersion) >= 0);
 }
 
+/**
+ * Whether this agent can still update itself.
+ *
+ * Agents below the threshold are served no update at all (see
+ * Landing-Backend's update feed): the copy on the machine is what performs an
+ * update, and those copies exit the process before the installer has run, so
+ * a failed elevation leaves nothing behind to restart. They are frozen until
+ * someone reinstalls them, which is worth showing rather than letting an
+ * admin wonder why those machines never move.
+ */
+export function needsManualReinstall(version) {
+  const normalizedVersion = normalizeAgentVersion(version);
+  if (!normalizedVersion) return false; // unknown - nothing useful to claim
+  const floor = normalizeAgentVersion(getEnv().agent.minSelfUpdateVersion);
+  return Boolean(floor && compareAgentVersions(normalizedVersion, floor) < 0);
+}
+
 export async function reportAgentOpen(memberId, version, platform) {
   const normalizedVersion = normalizeAgentVersion(version);
   const normalizedPlatform = normalizeAgentPlatform(platform);
@@ -71,6 +88,8 @@ export async function listAgentVersionMembers(latestVersion, visibleMemberIds = 
       agentLastOpenedAt: toIso(row.agent_last_opened_at),
       status,
       supportsAgentInbox: supportsAgentInbox(version, latestVersion),
+      // Frozen: this agent will never be offered an update again.
+      needsManualReinstall: needsManualReinstall(row.agent_version),
       canReceiveEmail: Boolean(memberEmail(row)),
     };
   });

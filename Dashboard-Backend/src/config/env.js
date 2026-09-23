@@ -178,6 +178,12 @@ export function buildEnv(source = process.env) {
 
     agent: Object.freeze({
       inboxMinVersion: readString(source, "AGENT_INBOX_MIN_VERSION", "1.0.24"),
+      // Below this, an agent cannot install an update without risking being
+      // left dead (it exits before the installer runs, and cannot elevate).
+      // Landing-Backend refuses to serve those agents an update at all, so
+      // they sit on their version until someone reinstalls them by hand.
+      // Both services default to the same value; change them together.
+      minSelfUpdateVersion: readString(source, "AGENT_MIN_SELF_UPDATE_VERSION", "1.0.27"),
     }),
   });
 }

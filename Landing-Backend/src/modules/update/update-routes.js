@@ -26,7 +26,15 @@ const MANIFEST_CACHE_TTL_MS = 5 * 60 * 1000;
  *
  * Agents at or above this version apply updates safely and are served normally.
  */
-const MIN_SELF_UPDATABLE_VERSION = "1.0.27";
+const DEFAULT_MIN_SELF_UPDATABLE_VERSION = "1.0.27";
+
+function minSelfUpdatableVersion() {
+  try {
+    return getEnv().agent?.minSelfUpdateVersion || DEFAULT_MIN_SELF_UPDATABLE_VERSION;
+  } catch {
+    return DEFAULT_MIN_SELF_UPDATABLE_VERSION;
+  }
+}
 
 /** Numeric semver compare. Returns <0, 0, >0. Unparseable sorts lowest, so an
  *  unreadable version is treated as old rather than assumed safe. */
@@ -50,7 +58,7 @@ export function compareVersions(a, b) {
 
 /** Whether this agent may be handed an update at all. */
 export function canSelfUpdate(currentVersion) {
-  return compareVersions(currentVersion, MIN_SELF_UPDATABLE_VERSION) >= 0;
+  return compareVersions(currentVersion, minSelfUpdatableVersion()) >= 0;
 }
 
 function assetFileName(downloadUrl) {
