@@ -31,8 +31,30 @@ export async function getTenantGrant(tenantId) {
 const TTL_MS = 15 * 1000;
 const cache = new Map();
 
+/**
+ * `now() < period_end`, done in JS.
+ *
+ * period_end arrives in whatever shape node-postgres produces for a
+ * timestamptz, and that includes the NUMBER Infinity for 'infinity' - which
+ * is exactly what the main organization is seeded with, so that this gate is
+ * a no-op for ordinary members without special-casing type = 'main'.
+ * `new Date(Infinity)` is an Invalid Date, its getTime() is NaN, and every
+ * comparison against NaN is false: the main tenant read as EXPIRED and the
+ * auth-middleware gate turned that into 403 SUBSCRIPTION_EXPIRED on every
+ * authenticated request, for every user and the desktop agent alike. Hence
+ * the explicit infinities, ahead of any Date construction.
+ *
+ * Anything else unreadable (which pg should never produce for a NOT NULL
+ * timestamptz) is treated as NOT active: this gate hands out access, so an
+ * unparseable value must not be read as permission.
+ */
 function isActive(row) {
-  return row.lifecycle === "live" && Date.now() < new Date(row.period_end).getTime();
+  if (row.lifecycle !== "live") return false;
+  const end = row.period_end;
+  if (end === Infinity) return true;
+  if (end === -Infinity) return false;
+  const endMs = end instanceof Date ? end.getTime() : new Date(end).getTime();
+  return Number.isFinite(endMs) && Date.now() < endMs;
 }
 
 export async function resolveTenantGrantCached(tenantId) {
