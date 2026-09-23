@@ -82,6 +82,43 @@ test("customer-accounts tenant grant cache", async (t) => {
     assert.equal(grant, null);
   });
 
+  // The main organization is seeded with period_end = 'infinity' precisely so
+  // the grant gate is a no-op for every ordinary member without special-casing
+  // type = 'main'. node-postgres parses a timestamptz 'infinity' into the
+  // NUMBER Infinity (not a Date, not a string), and new Date(Infinity) is an
+  // Invalid Date whose getTime() is NaN - and every comparison with NaN is
+  // false. So the main tenant read as EXPIRED, and the auth-middleware gate
+  // plus session-bootstrap turned that into 403 SUBSCRIPTION_EXPIRED on every
+  // authenticated request, for every user and the desktop agent alike.
+  await t.test("the main tenant's 'infinity' period_end is active, not expired", async () => {
+    currentRow = { id: "main", lifecycle: "live", period_end: Infinity, seat_limit: 2147483647 };
+    const grant = await resolveTenantGrantCached("main");
+    assert.equal(grant.active, true, "a never-expiring tenant must never read as expired");
+  });
+
+  await t.test("a '-infinity' period_end is expired", async () => {
+    currentRow = { id: "t1", lifecycle: "live", period_end: -Infinity, seat_limit: 5 };
+    const grant = await resolveTenantGrantCached("t1");
+    assert.equal(grant.active, false);
+  });
+
+  // pg hands back a Date for an ordinary timestamptz, not the ISO string the
+  // tests above happen to use - so pin both shapes.
+  await t.test("a Date period_end is compared correctly", async () => {
+    currentRow = { id: "t1", lifecycle: "live", period_end: new Date(Date.now() + 60_000), seat_limit: 5 };
+    assert.equal((await resolveTenantGrantCached("t1")).active, true);
+    clearTenantGrantCache();
+    currentRow = { id: "t1", lifecycle: "live", period_end: new Date(Date.now() - 60_000), seat_limit: 5 };
+    assert.equal((await resolveTenantGrantCached("t1")).active, false);
+  });
+
+  // Not a real shape from pg, but if period_end were ever unreadable the gate
+  // must not hand out access it cannot justify.
+  await t.test("an unreadable period_end is not active", async () => {
+    currentRow = { id: "t1", lifecycle: "live", period_end: "not-a-date", seat_limit: 5 };
+    assert.equal((await resolveTenantGrantCached("t1")).active, false);
+  });
+
   await t.test("caches are independent per tenant", async () => {
     currentRow = { id: "t1", lifecycle: "live", period_end: new Date(Date.now() + 60_000).toISOString(), seat_limit: 5 };
     await resolveTenantGrantCached("t1");
