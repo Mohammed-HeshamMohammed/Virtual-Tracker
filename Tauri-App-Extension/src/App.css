@@ -3307,7 +3307,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 18px;
+  /* 28px top/bottom rather than 18px: the card has no set height - it is a
+     flex column sized by its content - so 10px on each end is what makes
+     every modal (log time, new task, stop note, time off) 20px taller. */
+  padding: 28px 18px;
   border: 1px solid var(--outline-variant);
   border-radius: 14px;
   background: var(--surface-high);
