@@ -204,10 +204,20 @@ fn init_logging() {
     let _ = std::fs::create_dir_all(&data_dir);
     let log_path = data_dir.join("agent.log");
 
-    // Cap growth — this is a rolling diagnostic log, not an audit trail.
+    // Cap growth - this is a rolling diagnostic log, not an audit trail. The
+    // oversized file is kept as agent.log.1 rather than deleted: it reaches
+    // the cap by something going repeatedly wrong, so discarding it outright
+    // threw away the evidence at precisely the moment it became interesting.
+    //
+    // Only checked at startup, which is enough while the cap is the only
+    // concern: a long-running agent is bounded by how much it can say, and
+    // what it was saying 5 MB of is the thing worth fixing instead.
     if let Ok(meta) = std::fs::metadata(&log_path) {
         if meta.len() > 5 * 1024 * 1024 {
-            let _ = std::fs::remove_file(&log_path);
+            let previous = log_path.with_extension("log.1");
+            if std::fs::rename(&log_path, &previous).is_err() {
+                let _ = std::fs::remove_file(&log_path);
+            }
         }
     }
 
