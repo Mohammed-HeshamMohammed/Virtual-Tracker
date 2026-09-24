@@ -10,6 +10,7 @@ mod session;
 mod work;
 
 use std::fmt;
+use serde_json::Value;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::blocking::Client;
@@ -378,6 +379,52 @@ impl ApiClient {
         Err(ApiError::Rejected(message))
     }
 
+    /// Authorized GET returning the parsed body.
+    ///
+    /// Every read in this client repeated the same eight lines: take the token, build the
+    pub(crate) fn get_json(&mut self, path: &str) -> Result<Value, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let res = self
+            .client
+            .get(format!("{}{}", self.api_url, path))
+            .header("Authorization", auth)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        if !res.status().is_success() {
+            return Err(ApiError::Network);
+        }
+        res.json().map_err(|_| ApiError::Network)
+    }
+
+    /// Authorized POST that only cares whether it worked. On refusal the server's own
+    /// message is surfaced, falling back to `fallback` when it sent none.
+    pub(crate) fn post_ok(&mut self, path: &str, body: &Value, fallback: &str) -> Result<(), ApiError> {
+        match self.post_json(path, body) {
+            Ok(_) => Ok(()),
+            Err(ApiError::Network) => Err(ApiError::Rejected(fallback.to_string())),
+            Err(other) => Err(other),
+        }
+    }
+
+    /// Authorized POST. `Ok(body)` on success, the server's own message on refusal.
+    pub(crate) fn post_json(&mut self, path: &str, body: &Value) -> Result<Value, ApiError> {
+        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
+        let res = self
+            .client
+            .post(format!("{}{}", self.api_url, path))
+            .header("Authorization", auth)
+            .header("Content-Type", "application/json")
+            .json(body)
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
+            .send()
+            .map_err(|_| ApiError::Network)?;
+        if !res.status().is_success() {
+            return Err(status_error(res));
+        }
+        Ok(res.json().unwrap_or_else(|_| serde_json::json!({})))
+    }
+
     pub fn health_ok(&self) -> bool {
         let url = format!("{}/health", self.api_url);
         self.client
@@ -386,6 +433,22 @@ impl ApiClient {
             .send()
             .map(|r| r.status().is_success())
             .unwrap_or(false)
+    }
+}
+
+/// A 5xx is worth retrying, a 4xx is not - and a 4xx usually carries a message meant
+/// for the person, so it is surfaced rather than flattened into "network error".
+fn status_error(res: reqwest::blocking::Response) -> ApiError {
+    if res.status().is_server_error() {
+        return ApiError::Network;
+    }
+    if res.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return ApiError::Unauthorized;
+    }
+    let payload: Value = res.json().unwrap_or_else(|_| serde_json::json!({}));
+    match payload.get("error").and_then(|v| v.as_str()) {
+        Some(message) if !message.is_empty() => ApiError::Rejected(message.to_string()),
+        _ => ApiError::Network,
     }
 }
 

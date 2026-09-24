@@ -56,19 +56,7 @@ fn session_action_payload(
 impl ApiClient {
     /// `Ok(None)` = reachable, genuinely no active session.
     pub fn fetch_session(&mut self) -> Result<Option<Value>, ApiError> {
-        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!("{}/api/activity/session", self.api_url);
-        let res = self
-            .client
-            .get(url)
-            .header("Authorization", auth)
-            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
-            .send()
-            .map_err(|_| ApiError::Network)?;
-        if !res.status().is_success() {
-            return Err(ApiError::Network);
-        }
-        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let body = self.get_json("/api/activity/session")?;
         Ok(body.get("data").cloned())
     }
 

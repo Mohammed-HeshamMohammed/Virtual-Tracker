@@ -31,19 +31,7 @@ impl ApiClient {
         &mut self,
     ) -> Result<std::collections::HashMap<String, (bool, Option<f64>)>, ApiError> {
         let mut map = std::collections::HashMap::new();
-        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!("{}/api/project-budgets", self.api_url);
-        let res = self
-            .client
-            .get(url)
-            .header("Authorization", auth)
-            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
-            .send()
-            .map_err(|_| ApiError::Network)?;
-        if !res.status().is_success() {
-            return Err(ApiError::Network);
-        }
-        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let body = self.get_json("/api/project-budgets")?;
         let list = body
             .get("data")
             .and_then(|v| v.as_array())
@@ -585,8 +573,6 @@ impl ApiClient {
         } else {
             member_id.to_string()
         };
-        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!("{}/api/time-entries", self.api_url);
         let mut body = json!({
             "member_id": resolved_member,
             "project_id": project_id,
@@ -601,7 +587,7 @@ impl ApiClient {
         if let Some(tid) = task_id.filter(|t| !t.trim().is_empty()) {
             body["task_id"] = json!(tid);
         }
-        self.post_expecting_ok(&auth, url, &body, "Could not save the time entry")
+        self.post_ok("/api/time-entries", &body, "Could not save the time entry")
     }
 
     /// The viewer's own recent screenshots (ids + timestamps), optionally narrowed to one
@@ -716,10 +702,8 @@ impl ApiClient {
 
     /// Submits the viewer's own timesheet for a period.
     pub fn submit_timesheet(&mut self, period_start: &str, period_end: &str) -> Result<(), ApiError> {
-        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!("{}/api/timesheets/submit", self.api_url);
         let body = json!({ "periodStart": period_start, "periodEnd": period_end });
-        self.post_expecting_ok(&auth, url, &body, "Could not submit the timesheet")
+        self.post_ok("/api/timesheets/submit", &body, "Could not submit the timesheet")
     }
 
     /// Files a time-off request for the viewer against one of their policies.
@@ -730,47 +714,15 @@ impl ApiClient {
         end_date: &str,
         note: &str,
     ) -> Result<(), ApiError> {
-        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!("{}/api/time-off/requests", self.api_url);
         let body = json!({
             "policyId": policy_id,
             "startDate": start_date,
             "endDate": end_date,
             "note": note,
         });
-        self.post_expecting_ok(&auth, url, &body, "Could not submit the request")
+        self.post_ok("/api/time-off/requests", &body, "Could not submit the request")
     }
 
-    /// One POST + "did it work, and if not what did the server say" - the three write calls
-    /// above differ only in URL and body, and each needs the server's own message surfaced
-    fn post_expecting_ok(
-        &self,
-        auth: &str,
-        url: String,
-        body: &Value,
-        fallback: &str,
-    ) -> Result<(), ApiError> {
-        let res = self
-            .client
-            .post(url)
-            .header("Authorization", auth)
-            .header("Content-Type", "application/json")
-            .json(body)
-            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
-            .send()
-            .map_err(|_| ApiError::Network)?;
-        if res.status().is_success() {
-            return Ok(());
-        }
-        let payload: Value = res.json().unwrap_or_else(|_| json!({}));
-        Err(ApiError::Rejected(
-            payload
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or(fallback)
-                .to_string(),
-        ))
-    }
 
     /// The open task's own detail - description, priority, due date and subtask checklist -
     /// so "what am I actually meant to be doing" is answerable without opening the web app.
@@ -834,19 +786,7 @@ impl ApiClient {
 
     /// The viewer's own People-page member record, for the profile view.
     pub fn fetch_member_profile(&mut self) -> Result<crate::types::MemberProfile, ApiError> {
-        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!("{}/api/members/current", self.api_url);
-        let res = self
-            .client
-            .get(url)
-            .header("Authorization", auth)
-            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
-            .send()
-            .map_err(|_| ApiError::Network)?;
-        if !res.status().is_success() {
-            return Err(ApiError::Network);
-        }
-        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let body = self.get_json("/api/members/current")?;
         let data = body.get("data").ok_or(ApiError::Network)?;
         let str_field = |key: &str| {
             data.get(key)

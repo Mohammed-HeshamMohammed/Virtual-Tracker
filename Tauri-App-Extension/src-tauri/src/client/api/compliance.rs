@@ -39,19 +39,7 @@ impl ApiClient {
     /// The current disclosure notice, composed server-side from the live monitoring_policy
     /// row.
     pub fn fetch_monitoring_notice(&mut self) -> Result<Option<MonitoringNoticeView>, ApiError> {
-        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!("{}/api/compliance/notice", self.api_url);
-        let res = self
-            .client
-            .get(url)
-            .header("Authorization", auth)
-            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
-            .send()
-            .map_err(|_| ApiError::Network)?;
-        if !res.status().is_success() {
-            return Err(ApiError::Network);
-        }
-        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let body = self.get_json("/api/compliance/notice")?;
         let Some(data) = body.get("data") else {
             return Ok(None);
         };
