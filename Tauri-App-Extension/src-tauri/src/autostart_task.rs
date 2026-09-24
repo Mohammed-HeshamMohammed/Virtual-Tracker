@@ -19,9 +19,20 @@
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-/// Task Scheduler path. The folder prefix keeps it out of the root listing,
-/// where it would sit among Windows' own tasks.
-pub const TASK_NAME: &str = "\\My Virtual Tracker\\Start at login";
+/// Task Scheduler folder. The prefix keeps these out of the root listing,
+/// where they would sit among Windows' own tasks.
+pub const TASK_FOLDER: &str = "\\My Virtual Tracker";
+
+/// One task per user, because the Run key this replaces was per-user (HKCU)
+/// and a shared machine has to keep working. Registration needs `/F`, so a
+/// single fixed name would mean the second person to sign in silently
+/// overwrote the first person's task with one triggered by their own logon -
+/// turning autostart off for user one with nothing to show for it.
+pub fn task_name(user_id: &str) -> String {
+    // Backslash separates Task Scheduler folders, so a DOMAIN\user name has to
+    // lose it or the task lands in a folder named after the domain instead.
+    format!("{TASK_FOLDER}\\Start at login ({})", user_id.replace('\\', "-"))
+}
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -127,7 +138,8 @@ fn run_schtasks(args: &[&str]) -> Result<(), String> {
 #[cfg(windows)]
 pub fn enable() -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| format!("cannot locate the tracker: {e}"))?;
-    let xml = task_xml(&exe.to_string_lossy(), &current_user_id()?);
+    let user = current_user_id()?;
+    let xml = task_xml(&exe.to_string_lossy(), &user);
 
     // UTF-16LE with a BOM: schtasks /XML rejects UTF-8 outright, and the
     // declaration above says UTF-16 regardless of what the bytes are.
@@ -140,7 +152,8 @@ pub fn enable() -> Result<(), String> {
     let path = dir.join(format!("vt-autostart-{}.xml", std::process::id()));
     std::fs::write(&path, &bytes).map_err(|e| format!("cannot stage the task definition: {e}"))?;
 
-    let result = run_schtasks(&["/Create", "/TN", TASK_NAME, "/XML", &path.to_string_lossy(), "/F"]);
+    let result =
+        run_schtasks(&["/Create", "/TN", &task_name(&user), "/XML", &path.to_string_lossy(), "/F"]);
     let _ = std::fs::remove_file(&path);
     remember(result.is_ok());
     result
@@ -148,7 +161,8 @@ pub fn enable() -> Result<(), String> {
 
 #[cfg(windows)]
 pub fn disable() -> Result<(), String> {
-    match run_schtasks(&["/Delete", "/TN", TASK_NAME, "/F"]) {
+    let user = current_user_id()?;
+    match run_schtasks(&["/Delete", "/TN", &task_name(&user), "/F"]) {
         Ok(()) => {
             remember(false);
             Ok(())
@@ -191,7 +205,9 @@ pub fn is_enabled() -> bool {
         REGISTERED => true,
         ABSENT => false,
         _ => {
-            let found = run_schtasks(&["/Query", "/TN", TASK_NAME]).is_ok();
+            let found = current_user_id()
+                .map(|user| run_schtasks(&["/Query", "/TN", &task_name(&user)]).is_ok())
+                .unwrap_or(false);
             remember(found);
             found
         }
@@ -273,6 +289,23 @@ mod tests {
 
     #[test]
     fn the_task_lives_in_its_own_folder() {
-        assert!(TASK_NAME.starts_with("\\My Virtual Tracker\\"));
+        assert!(task_name("user").starts_with("\\My Virtual Tracker\\"));
+    }
+
+    #[test]
+    fn two_users_on_one_machine_get_two_tasks() {
+        // Registration passes /F, so a shared name would mean the second
+        // person to sign in overwrote the first person's task and quietly
+        // turned their autostart off.
+        assert_ne!(task_name(r"PC\alice"), task_name(r"PC\bob"));
+    }
+
+    #[test]
+    fn a_domain_qualified_name_does_not_nest_the_task_under_the_domain() {
+        // Backslash is the folder separator: left in, DOMAIN\user would put
+        // the task in a folder named after the domain instead of ours.
+        let name = task_name(r"DOMAIN\user");
+        assert_eq!(name.matches('\\').count(), 2, "only our own two folder separators");
+        assert!(name.contains("DOMAIN-user"));
     }
 }
