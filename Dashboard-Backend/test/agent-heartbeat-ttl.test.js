@@ -57,16 +57,30 @@ function fakeRedis() {
 mock.module("../src/lib/redis/client.js", {
   namedExports: {
     getRedisClient: () => (redisState.configured ? fakeRedis() : null),
+    // closeAbandonedSession now tells the member their timer was stopped, which
+    // reaches the change bus, which subscribes.
+    getRedisSubscriberClient: () => null,
+    isRedisConfigured: () => redisState.configured,
   },
 });
 mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
   namedExports: { updatePgSession: async () => {} },
+});
+const notices = [];
+mock.module("../src/modules/activity/record-notices.js", {
+  namedExports: {
+    recordNotice: async (input) => {
+      notices.push(input);
+      return { id: "n1" };
+    },
+  },
 });
 
 const {
   HEARTBEAT_GAP_WARN_MS,
   HEARTBEAT_TTL_SEC,
   __resetHeartbeatRedisSupportForTests,
+  closeAbandonedSession,
   getAgentPresence,
   heartbeatGapMs,
   isReportableHeartbeatGap,
@@ -217,4 +231,13 @@ test("on Redis without SET ... GET it falls back to one transaction, and remembe
 test("a Redis failure is swallowed and measures nothing", async () => {
   redisState.failing = true;
   assert.deepEqual(await touchAgentHeartbeat("member-1"), { gapMs: null });
+});
+
+test("closing an abandoned session tells the member it happened", async () => {
+  notices.length = 0;
+  await closeAbandonedSession({ id: "s1", member_id: "m1", active_seconds: 1800 });
+  assert.equal(notices.length, 1);
+  assert.equal(notices[0].memberId, "m1");
+  assert.equal(notices[0].kind, "session_reaped");
+  assert.equal(notices[0].secondsAffected, 1800);
 });

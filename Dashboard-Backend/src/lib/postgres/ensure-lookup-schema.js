@@ -710,6 +710,24 @@ const MEMBER_DATA_DDL = [
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `CREATE INDEX IF NOT EXISTS idx_notif_recipient_created ON notifications (recipient_id, created_at DESC)`,
+  // Anything that changed a member's own record of their work without them
+  // doing it: dropped offline batches, a reaped session, a day whose totals
+  // do not reconcile. One row per member per kind per day, with the affected
+  // seconds accumulated, so a flapping agent produces one notice rather than
+  // fifty.
+  `CREATE TABLE IF NOT EXISTS record_notices (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id        UUID NOT NULL,
+  kind             VARCHAR(30) NOT NULL CHECK (kind IN ('work_dropped', 'session_reaped', 'totals_mismatch')),
+  day              DATE NOT NULL,
+  seconds_affected INT NOT NULL DEFAULT 0 CHECK (seconds_affected >= 0),
+  occurrences      INT NOT NULL DEFAULT 1 CHECK (occurrences > 0),
+  detail           VARCHAR(300) NOT NULL DEFAULT '',
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (member_id, kind, day)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_record_notices_day ON record_notices (day DESC, kind)`,
   `CREATE INDEX IF NOT EXISTS idx_notif_recipient_unread ON notifications (recipient_id, read) WHERE read = false`,
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_version VARCHAR(32)",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_platform VARCHAR(32)",

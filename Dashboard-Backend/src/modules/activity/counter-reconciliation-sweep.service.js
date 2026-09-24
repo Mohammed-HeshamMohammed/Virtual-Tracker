@@ -1,5 +1,6 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { recordSecurityEvent } from "../../core/metrics.js";
+import { recordNotice } from "./record-notices.js";
 import {
   findDriftedMembers,
   DAILY_DRIFT_THRESHOLD_SECONDS,
@@ -43,6 +44,19 @@ async function reconcileYesterdaysSessions() {
       event: "daily_counter_drift",
       detail: `member=${memberId} day=${day} activity_sessions=${a}s daily_rollup=${b}s diff=${diffSeconds}s`,
     });
+    // A security event is for whoever reads the metrics; the day that does not
+    // add up belongs to the person whose hours it is. Only a rollup that fell
+    // short is worth telling them about - the other direction is not time
+    // they are owed.
+    if (a > b) {
+      await recordNotice({
+        memberId,
+        kind: "totals_mismatch",
+        secondsAffected: diffSeconds,
+        detail: `sessions ${a}s vs rollup ${b}s`,
+        day,
+      }).catch((err) => logSafeWarn("[counter reconciliation] could not record the drift notice", err));
+    }
   }
 }
 

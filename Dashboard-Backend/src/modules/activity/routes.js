@@ -17,6 +17,7 @@ import { getMemberByIdPg, updateMemberPg } from "../../lib/postgres/members-post
 import { getSingleByMemberId } from "../../lib/postgres/member-data-store.js";
 import { recordScreenshotAccess } from "../compliance/data-retention.js";
 import { getActivityScoringSettings, setActivityScoringSettings } from "./scoring-settings.js";
+import { recordNotice, listRecordNotices, getDataHealth } from "./record-notices.js";
 import {
   getEffectiveCaptureSettings,
   setMemberCaptureSettings,
@@ -2235,6 +2236,60 @@ export async function routeActivity(req, res, url, origin) {
     } catch (e) {
       logSafeError("[activity/scoring-settings GET]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load scoring settings." });
+    }
+    return true;
+  }
+
+  // The tracker's own way of saying something happened to the member's record.
+  // Only the kinds an agent can legitimately witness are accepted, and always
+  // for the caller - never for someone else.
+  // Management only: it names members and how much of their record is in
+  // question, which is not a member's business for anyone but themselves.
+  if ((pn === "/api/activity/data-health" || pn === "/api/activity/record-notices") && req.method === "GET") {
+    const viewer = getAuthContext(req);
+    if (!viewer) {
+      sendJson(res, origin, 401, { success: false, error: "Authentication is required." });
+      return true;
+    }
+    if (!isManagementRole(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: "Management access is required." });
+      return true;
+    }
+    try {
+      const days = Number(url.searchParams.get("days")) || 7;
+      const data =
+        pn === "/api/activity/data-health"
+          ? await getDataHealth({ days })
+          : await listRecordNotices({ days, memberId: url.searchParams.get("member_id") || null });
+      sendJson(res, origin, 200, { success: true, data });
+    } catch (e) {
+      logSafeError("[activity/data-health]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load data health." });
+    }
+    return true;
+  }
+
+  if (pn === "/api/activity/record-notice" && req.method === "POST") {
+    const viewer = getAuthContext(req);
+    if (!viewer) {
+      sendJson(res, origin, 401, { success: false, error: "Authentication is required." });
+      return true;
+    }
+    try {
+      const body = await readJsonBody(req);
+      if (body.kind !== "work_dropped") {
+        sendJson(res, origin, 400, { success: false, error: "Unsupported notice kind." });
+        return true;
+      }
+      const row = await recordNotice({
+        memberId: viewer.memberId,
+        kind: "work_dropped",
+        detail: String(body.detail ?? "").slice(0, 300),
+      });
+      sendJson(res, origin, 200, { success: true, data: { recorded: Boolean(row) } });
+    } catch (e) {
+      logSafeError("[activity/record-notice]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to record the notice." });
     }
     return true;
   }
