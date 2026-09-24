@@ -11,6 +11,7 @@ import {
 } from "./verification-code.service.js";
 import { issueUnlockToken, verifyUnlockToken } from "./unlock-token.js";
 import { sendUnlockCodeEmail } from "./unlock-email.js";
+import { getTenancyIsolationReport } from "../../lib/postgres/verify-tenancy-isolation.js";
 import {
   CustomerAccountError,
   createCustomerTenant,
@@ -126,6 +127,29 @@ export async function routeCustomerAccounts(req, res, url, origin) {
     } catch (e) {
       logSafeError("[customer-accounts/list]", e);
       sendJson(res, origin, 500, { success: false, error: "Could not load customer accounts." });
+    }
+    return true;
+  }
+
+  // Owner-only rather than on /api/readiness: "this database does not isolate
+  // tenants" is precisely the sentence not to publish to an unauthenticated
+  // caller. The Owner is also the only person who can act on it.
+  if (pn === "/api/customer-accounts/isolation" && req.method === "GET") {
+    try {
+      const report = await getTenancyIsolationReport({ refresh: url.searchParams.get("refresh") === "1" });
+      sendJson(res, origin, 200, {
+        success: true,
+        data: {
+          status: report.status,
+          critical: report.critical === true,
+          summary: report.summary,
+          reasons: report.reasons,
+          customerTenants: report.customerTenants,
+        },
+      });
+    } catch (e) {
+      logSafeError("[customer-accounts/isolation]", e);
+      sendJson(res, origin, 500, { success: false, error: "Could not check tenant isolation." });
     }
     return true;
   }

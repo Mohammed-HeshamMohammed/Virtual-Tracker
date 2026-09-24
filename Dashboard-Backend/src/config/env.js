@@ -149,6 +149,12 @@ export function buildEnv(source = process.env) {
       // See ensure-tenancy-rls.js's own doc comment: a one-way deploy, off
       // by default, turned on only after a staging soak.
       tenancyRlsEnabled: readBool(source, "POSTGRES_TENANCY_RLS_ENABLED", false),
+      // The escape hatch for the guard in tenant.service.js, which otherwise
+      // refuses to create a customer tenant while the database is not
+      // enforcing isolation. It exists so that an operator who has accepted
+      // that risk has a documented switch to flip instead of deleting the
+      // check - and so the acceptance is greppable afterwards.
+      allowUnisolatedCustomerTenants: readBool(source, "ALLOW_UNISOLATED_CUSTOMER_TENANTS", false),
     }),
 
     features: Object.freeze({

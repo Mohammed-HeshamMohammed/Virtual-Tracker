@@ -25,6 +25,7 @@ import { scheduleOrganizationMaintenance } from "./src/bootstrap/entity-bootstra
 import { ensurePostgresLookupSchema } from "./src/lib/postgres/ensure-lookup-schema.js";
 import { ensureTenancySchema, runHighVolumeTenancyMigrations } from "./src/lib/postgres/ensure-tenancy-schema.js";
 import { ensureTenancyRls } from "./src/lib/postgres/ensure-tenancy-rls.js";
+import { getTenancyIsolationReport } from "./src/lib/postgres/verify-tenancy-isolation.js";
 import { backfillMemberAvatarUrls } from "./src/modules/auth/avatar-backfill.js";
 import { backfillMemberDisplayNames } from "./src/modules/members/services/member-name-backfill.js";
 import { cleanupCallingProjectTasks } from "./src/modules/projects/calling-project-task-cleanup.js";
@@ -120,6 +121,16 @@ export async function startServer(port = getEnv().server.port) {
     const rlsResult = await ensureTenancyRls();
     if (rlsResult.ok === false) {
       logError(new Error(rlsResult.error ?? "Postgres tenancy RLS ensure failed"), "postgres-tenancy-rls");
+    }
+    // Checks what the database is actually doing rather than what the two
+    // migrations above reported, because a policy that exists and a policy
+    // that applies are different things - see verify-tenancy-isolation.js.
+    const isolation = await getTenancyIsolationReport({ refresh: true });
+    if (isolation.critical) {
+      logError(new Error(isolation.summary), "tenant-isolation");
+      for (const reason of isolation.reasons) logError(new Error(reason), "tenant-isolation");
+    } else {
+      console.log(`[tenancy] isolation ${isolation.status}: ${isolation.summary}`);
     }
     backfillMemberAvatarUrls(db).catch((err) => logError(err, "avatar-backfill"));
     backfillMemberDisplayNames().catch((err) => logError(err, "member-name-backfill"));

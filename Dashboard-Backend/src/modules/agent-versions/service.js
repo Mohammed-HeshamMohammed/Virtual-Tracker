@@ -48,26 +48,35 @@ export function needsManualReinstall(version) {
   return Boolean(floor && compareAgentVersions(normalizedVersion, floor) < 0);
 }
 
-export async function reportAgentOpen(memberId, version, platform) {
+export async function reportAgentOpen(memberId, version, platform, updateBlocked, installDir) {
   const normalizedVersion = normalizeAgentVersion(version);
   const normalizedPlatform = normalizeAgentPlatform(platform);
   if (!normalizedVersion) return { error: "Tracker version must use major.minor.patch format." };
   if (!normalizedPlatform) return { error: "Tracker platform must be windows, macos, or linux." };
+  // Tri-state on purpose: an agent too old to send the field must read as
+  // "not known" rather than "fine", or every pre-1.0.28 agent would look
+  // healthy for a reason no one had checked.
+  const blocked = typeof updateBlocked === "boolean" ? updateBlocked : null;
+  const dir = typeof installDir === "string" && installDir.trim() ? installDir.trim().slice(0, 512) : null;
   const rows = await query(
     `UPDATE members
-     SET agent_version = $2, agent_platform = $3, agent_last_opened_at = now(), updated_at = now()
+     SET agent_version = $2, agent_platform = $3, agent_last_opened_at = now(),
+         agent_update_blocked = $4,
+         agent_install_dir = COALESCE($5, agent_install_dir),
+         updated_at = now()
      WHERE id = $1
      RETURNING id`,
-    [memberId, normalizedVersion, normalizedPlatform],
+    [memberId, normalizedVersion, normalizedPlatform, blocked, dir],
   );
-  return rows.length ? { version: normalizedVersion, platform: normalizedPlatform } : null;
+  return rows.length ? { version: normalizedVersion, platform: normalizedPlatform, updateBlocked: blocked } : null;
 }
 
 export async function listAgentVersionMembers(latestVersion, visibleMemberIds = null) {
   const scoped = Array.isArray(visibleMemberIds);
   const rows = await query(
     `SELECT m.id, m.display_name, m.first_name, m.last_name, m.work_email, m.personal_email,
-            m.agent_version, m.agent_platform, m.agent_last_opened_at
+            m.agent_version, m.agent_platform, m.agent_last_opened_at,
+            m.agent_update_blocked, m.agent_install_dir
      FROM members m
      LEFT JOIN roles r ON r.id = m.role_id
      WHERE m.status != 'banned' AND lower(COALESCE(r.name, '')) != 'owner'
@@ -90,6 +99,11 @@ export async function listAgentVersionMembers(latestVersion, visibleMemberIds = 
       supportsAgentInbox: supportsAgentInbox(version, latestVersion),
       // Frozen: this agent will never be offered an update again.
       needsManualReinstall: needsManualReinstall(row.agent_version),
+      // Stuck for the other reason: current enough to be offered updates, but
+      // unable to install one because its install directory is not writable
+      // by the user running it. null means the agent predates the report.
+      updateBlocked: typeof row.agent_update_blocked === "boolean" ? row.agent_update_blocked : null,
+      agentInstallDir: row.agent_install_dir || null,
       canReceiveEmail: Boolean(memberEmail(row)),
     };
   });
