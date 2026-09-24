@@ -1260,6 +1260,87 @@ export async function routeActivity(req, res, url, origin) {
   // unbroken stretch of tracked work it belongs to - because a wrong reading
   // is almost never wrong for exactly one screenshot. Idle gaps bound it; see
   // screenshot-run.js for why a gap is a reliable idle signal.
+  // Screenshot removal requests. The POST is deliberately NOT management-
+  // gated: the whole point is that people who cannot delete their own
+  // captures can still object to one. The service checks the screenshot is
+  // theirs.
+  const removalRequestMatch = /^\/api\/activity\/screenshot\/([^/]+)\/removal-request$/.exec(pn);
+  if (removalRequestMatch && req.method === "POST") {
+    const viewer = getAuthContext(req);
+    if (!viewer?.memberId) {
+      sendJson(res, origin, 401, { success: false, error: "Authorization is required" });
+      return true;
+    }
+    let body = {};
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      sendJson(res, origin, 400, { success: false, error: "Invalid JSON body" });
+      return true;
+    }
+    try {
+      const { requestRemoval } = await import("./screenshot-removal.service.js");
+      const result = await requestRemoval(viewer.memberId, removalRequestMatch[1], body.reason);
+      sendJson(res, origin, 201, { success: true, data: result });
+    } catch (e) {
+      const status = typeof e?.status === "number" ? e.status : 500;
+      if (status === 500) logSafeError("[screenshot-removal/request]", e);
+      sendJson(res, origin, status, {
+        success: false,
+        error: status === 500 ? "Could not send that request." : e.message,
+      });
+    }
+    return true;
+  }
+
+  if (pn === "/api/activity/screenshot-removal-requests" && req.method === "GET") {
+    const viewer = getAuthContext(req);
+    if (!isManagementRole(viewer?.roleName ?? "")) {
+      sendJson(res, origin, 403, { success: false, error: "Insufficient permissions." });
+      return true;
+    }
+    try {
+      const { listPendingRequests } = await import("./screenshot-removal.service.js");
+      sendJson(res, origin, 200, { success: true, data: await listPendingRequests({}) });
+    } catch (e) {
+      logSafeError("[screenshot-removal/list]", e);
+      sendJson(res, origin, 500, { success: false, error: "Could not load removal requests." });
+    }
+    return true;
+  }
+
+  const removalResolveMatch = /^\/api\/activity\/screenshot-removal-requests\/([^/]+)\/resolve$/.exec(pn);
+  if (removalResolveMatch && req.method === "POST") {
+    const viewer = getAuthContext(req);
+    if (!isManagementRole(viewer?.roleName ?? "")) {
+      sendJson(res, origin, 403, { success: false, error: "Insufficient permissions." });
+      return true;
+    }
+    let body = {};
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      sendJson(res, origin, 400, { success: false, error: "Invalid JSON body" });
+      return true;
+    }
+    try {
+      const { resolveRequest } = await import("./screenshot-removal.service.js");
+      const result = await resolveRequest(removalResolveMatch[1], viewer.memberId, {
+        approve: body.approve === true,
+        note: body.note,
+      });
+      sendJson(res, origin, 200, { success: true, data: result });
+    } catch (e) {
+      const status = typeof e?.status === "number" ? e.status : 500;
+      if (status === 500) logSafeError("[screenshot-removal/resolve]", e);
+      sendJson(res, origin, status, {
+        success: false,
+        error: status === 500 ? "Could not resolve that request." : e.message,
+      });
+    }
+    return true;
+  }
+
   if (pn.startsWith("/api/activity/screenshot/") && pn.endsWith("/activity") && req.method === "PATCH") {
     const idToken = readIdToken(req, url);
     const screenshotId = pn.slice("/api/activity/screenshot/".length).split("/")[0];

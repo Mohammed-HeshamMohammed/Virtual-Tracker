@@ -729,6 +729,33 @@ const MEMBER_DATA_DDL = [
    ON agent_notifications (recipient_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_agent_notifications_recipient_unread
    ON agent_notifications (recipient_id, created_at DESC) WHERE read_at IS NULL`,
+  // A member asking for one of their own screenshots to be taken down.
+  // People who can SEE their captures mostly cannot delete them - clients,
+  // employees, interns, team leads - so without this the only way to object
+  // to a screenshot that caught something private is to find a manager and
+  // ask out of band.
+  `CREATE TABLE IF NOT EXISTS screenshot_removal_requests (
+  id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  -- SET NULL, not CASCADE: approving a request DELETES the screenshot, and
+  -- cascading would take the record of who approved it along with the image.
+  -- The audit has to outlive what it authorised.
+  screenshot_id UUID         REFERENCES activity_screenshots(id) ON DELETE SET NULL,
+  member_id     UUID         NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  reason        TEXT         NOT NULL DEFAULT '',
+  status        VARCHAR(20)  NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending', 'approved', 'declined')),
+  created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  reviewed_by   UUID         REFERENCES members(id) ON DELETE SET NULL,
+  reviewed_at   TIMESTAMPTZ,
+  review_note   TEXT         NOT NULL DEFAULT ''
+)`,
+  // One open request per screenshot per person: asking twice is the same ask,
+  // and a resolved one should not block a later objection if the screenshot
+  // somehow survives.
+  `CREATE UNIQUE INDEX IF NOT EXISTS uq_screenshot_removal_pending
+   ON screenshot_removal_requests (screenshot_id, member_id) WHERE status = 'pending'`,
+  `CREATE INDEX IF NOT EXISTS idx_screenshot_removal_status
+   ON screenshot_removal_requests (status, created_at DESC)`,
   // Links a tracker notification back to the conversation it belongs to, so
   // the tracker can offer a reply rather than just showing the text.
   "ALTER TABLE agent_notifications ADD COLUMN IF NOT EXISTS thread_id UUID",

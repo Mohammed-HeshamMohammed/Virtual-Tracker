@@ -107,6 +107,7 @@ export const TENANT_SCOPED_TABLES = [
   "agent_notifications",
   // Owner<->member conversations. Scoped for the obvious reason: a thread
   // must never be readable from another organization.
+  "screenshot_removal_requests",
   "message_threads",
   "thread_messages",
 
