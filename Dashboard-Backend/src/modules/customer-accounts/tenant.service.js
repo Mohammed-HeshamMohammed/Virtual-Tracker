@@ -28,6 +28,11 @@ import { deleteFromGCS } from "../../lib/gcs/upload.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { recordCustomerAccountAudit } from "./audit.service.js";
 import { invalidateTenantGrantCache } from "./tenant-grant-cache.js";
+import { getEnv } from "../../config/env.js";
+import {
+  getTenancyIsolationReport,
+  ISOLATION_ENFORCED,
+} from "../../lib/postgres/verify-tenancy-isolation.js";
 import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
 import { usedSeatsSql } from "./seat-usage.service.js";
 import {
@@ -123,8 +128,38 @@ function assertValidSeatLimit(seatLimit) {
   return n;
 }
 
+/**
+ * The moment the tenancy gap stops being theoretical. While the main tenant
+ * is the only one, unenforced isolation leaks nothing - there is no second
+ * organization to leak to. Creating a customer tenant is the single action
+ * that turns that same configuration into live cross-tenant exposure, so it
+ * is the single action worth refusing.
+ *
+ * Refusing here rather than at boot is deliberate: taking the whole server
+ * down over a risk that is currently inert would be worse than the risk.
+ */
+export async function assertIsolationReadyForNewTenant() {
+  if (getEnv().postgres.allowUnisolatedCustomerTenants) {
+    logSafeWarn(
+      "[customer-accounts] creating a customer tenant with database isolation unverified; " +
+        "ALLOW_UNISOLATED_CUSTOMER_TENANTS is set.",
+    );
+    return;
+  }
+  const report = await getTenancyIsolationReport();
+  if (report.status === ISOLATION_ENFORCED) return;
+
+  throw new CustomerAccountError(
+    409,
+    "This database is not enforcing tenant isolation, so a second organization's data would be " +
+      `reachable from the first. ${report.reasons.join(" ")}`,
+    "TENANT_ISOLATION_NOT_ENFORCED",
+  );
+}
+
 /** Phase 4: create a customer tenant + its root invite. */
 export async function createCustomerTenant({ email, periodEnd, seatLimit, grantedRole, actorId, appOrigin }) {
+  await assertIsolationReadyForNewTenant();
   assertValidGrantedRole(grantedRole);
   const validPeriodEnd = assertPeriodEndInFuture(periodEnd);
   const validSeatLimit = assertValidSeatLimit(seatLimit);
