@@ -11,6 +11,7 @@ import { SelectField } from "@/shared/ui/forms/select-field"
 import type { ProjectMemberLimitEntry } from "@/features/projects/api/project-details-api"
 import { derivedBasedOn, derivedLimitType, isHoursLimit } from "@/features/projects/utils/member-limit-rules"
 import { currencySymbol, formatMoney, useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
+import { CapturePolicyFields } from "@/features/members/components/capture-policy-fields"
 
 export { derivedBasedOn, derivedLimitType, isHoursLimit }
 
@@ -217,6 +218,13 @@ export function MemberLimitsEditor({
                         placeholder="Select date"
                       />
                     </FormField>
+                  </div>
+
+                  <div className={cn("mt-4 border-t pt-4", theme.isDark ? "border-[#2e3447]" : "border-slate-200")}>
+                    <p className={cn("mb-3 text-xs", theme.hint)}>
+                      What the tracker captures for this member, everywhere — not only on this project.
+                    </p>
+                    <CapturePolicyFields memberId={memberId} />
                   </div>
 
                   {memberIds.length > 1 ? (
