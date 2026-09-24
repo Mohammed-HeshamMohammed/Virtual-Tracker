@@ -50,3 +50,27 @@
   Pop $R9
   Pop $R8
 !macroend
+
+; The agent registers a per-user logon task (see src/autostart_task.rs) because
+; a Run entry cannot start a requireAdministrator binary. Tauri's uninstaller
+; knows about the Run value it wrote itself and nothing about these, so without
+; this the tasks outlive the uninstall and Task Scheduler goes on trying to
+; launch a deleted executable at every logon - once per user who ever enabled
+; the setting.
+;
+; The wildcard covers every user's task in one call, which matters because the
+; uninstaller runs as whoever launched it and cannot enumerate the others.
+; nsExec::Exec rather than ExecWait so no console window flashes during a
+; silent uninstall, and the result is discarded: a machine with no tasks
+; registered is the desired end state, not a failure worth reporting.
+!macro NSIS_HOOK_PREUNINSTALL
+  Push $R9
+  DetailPrint "Removing the start-at-login task"
+  nsExec::Exec 'schtasks.exe /Delete /TN "\My Virtual Tracker\*" /F'
+  Pop $R9
+  ; /Delete does not remove the folder, so it is asked for separately; it
+  ; fails harmlessly when the folder was never created.
+  nsExec::Exec 'schtasks.exe /Delete /TN "\My Virtual Tracker" /F'
+  Pop $R9
+  Pop $R9
+!macroend
