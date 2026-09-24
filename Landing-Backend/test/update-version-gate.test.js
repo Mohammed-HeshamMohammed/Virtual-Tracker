@@ -6,7 +6,7 @@
 // exists to stop; too high and healthy agents silently stop receiving updates.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canSelfUpdate, compareVersions } from "../src/modules/update/update-routes.js";
+import { canSelfUpdate, compareVersions, hasNewerVersion } from "../src/modules/update/update-routes.js";
 
 test("versions compare numerically, not as text", () => {
   // The bug a string compare would produce: "1.0.9" > "1.0.10".
@@ -34,4 +34,28 @@ test("an unreadable version is treated as too old, not assumed safe", () => {
   for (const bad of ["", "unknown", "abc", null, undefined]) {
     assert.equal(canSelfUpdate(bad), false, `${String(bad)} must not be served an update`);
   }
+});
+
+// The feed used to answer 200 with the agent's own version, so every agent
+// fetched a manifest describing the build it was already running. The updater
+// compares versions itself and ignored it, so nothing broke - it just sent a
+// payload and a signature on every check, from every agent, to say nothing.
+test("an agent already on the newest version is offered nothing", () => {
+  assert.equal(hasNewerVersion("1.0.28", "1.0.28"), false);
+});
+
+test("an older agent is still offered the update", () => {
+  assert.equal(hasNewerVersion("1.0.27", "1.0.28"), true);
+  assert.equal(hasNewerVersion("1.0.9", "1.0.28"), true, "numeric compare, not lexical");
+});
+
+test("an agent ahead of the feed is offered nothing rather than downgraded", () => {
+  // A rolled-back release would otherwise hand a newer agent an older build.
+  assert.equal(hasNewerVersion("1.1.0", "1.0.28"), false);
+});
+
+test("an unreadable current version is treated as old, so it still gets the update", () => {
+  // Matches compareVersions' own rule: unparseable sorts lowest. An agent
+  // that cannot state its version is the one most worth updating.
+  assert.equal(hasNewerVersion("garbage", "1.0.28"), true);
 });
