@@ -28,13 +28,11 @@ use tauri_plugin_deep_link::DeepLinkExt;
 use crate::agent::controller::AgentController;
 use crate::config::Settings;
 use crate::constants::APP_VERSION;
-use crate::prefs::UserPreferences;
-use crate::types::{
-    ActionResult, AgentTask, ConnectionState, LinkStatus, ProfileInfo, ReconnectResult, SessionInfo,
-    SignInResult, UpdateInstallReadiness,
-};
 
-struct AppState {
+
+pub mod commands;
+
+pub struct AppState {
     controller: Arc<AgentController>,
 }
 
@@ -46,7 +44,7 @@ struct AppState {
 /// `None` until the tray is actually built in .setup() below, and always
 /// `None` on Linux (no tray icon at all there - see the Cargo.toml comment).
 #[cfg(not(target_os = "linux"))]
-struct TrayStatusItems {
+pub struct TrayStatusItems {
     status: MenuItem<tauri::Wry>,
     pause: MenuItem<tauri::Wry>,
     resume: MenuItem<tauri::Wry>,
@@ -54,7 +52,7 @@ struct TrayStatusItems {
 }
 
 #[cfg(not(target_os = "linux"))]
-type TrayStatusState = std::sync::Mutex<Option<TrayStatusItems>>;
+pub type TrayStatusState = std::sync::Mutex<Option<TrayStatusItems>>;
 
 // Commands that touch the network are declared `#[tauri::command(async)]`.
 // A plain `#[tauri::command]` on a non-async fn runs on the main thread, so a
@@ -73,7 +71,7 @@ type TrayStatusState = std::sync::Mutex<Option<TrayStatusItems>>;
 // touches the network. `run_blocking` is what actually fixes it: it hands the
 // blocking body to `spawn_blocking`, tokio's dedicated pool where blocking is
 // the expected case.
-async fn run_blocking<T, F>(f: F) -> T
+pub(crate) async fn run_blocking<T, F>(f: F) -> T
 where
     T: Send + 'static,
     F: FnOnce() -> T + Send + 'static,
@@ -83,517 +81,56 @@ where
         .expect("blocking command task panicked")
 }
 
-/// `hint` is an optional `key=value` query pair forwarded to the browser link
-/// page - `"provider=google"`/`"provider=apple"` for social sign-in,
-/// `"mode=signup"`/`"mode=forgot-password"` for account creation and
-/// password reset. All three still link this device, unlike the old
-/// plain-`open_web_app` buttons they replace.
-// Tauri requires an async command taking a reference input (`State`) to
-// return `Result` - these never actually fail at the Rust level (failure is
-// already a field inside the returned value), so every `Err` arm below is
-// unreachable in practice; `Ok(...)` is just satisfying that constraint.
-#[tauri::command]
-async fn sign_in(state: tauri::State<'_, AppState>, hint: Option<String>) -> Result<SignInResult, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.open_sign_in(hint.as_deref())).await)
-}
 
-/// In-app email/password sign-in, no browser round-trip. The password is
-/// passed straight through to the sign-in call and is never persisted.
-#[tauri::command]
-async fn sign_in_with_password(
-    state: tauri::State<'_, AppState>,
-    email: String,
-    password: String,
-) -> Result<SignInResult, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.sign_in_with_password(&email, &password)).await)
-}
 
-/// In-app account creation, no browser round-trip.
-#[tauri::command]
-async fn sign_up(
-    state: tauri::State<'_, AppState>,
-    email: String,
-    password: String,
-    first_name: String,
-    last_name: String,
-    phone: String,
-) -> Result<SignInResult, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.sign_up(&email, &password, &first_name, &last_name, &phone)).await)
-}
 
-/// In-app "forgot password" request, no browser round-trip.
-#[tauri::command]
-async fn send_password_reset(
-    state: tauri::State<'_, AppState>,
-    email: String,
-) -> Result<SignInResult, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.request_password_reset(&email)).await)
-}
 
-/// Distinct from sign_in/"Re-link account": ends the session and clears
-/// tokens, but does not start a new browser link flow afterward.
-#[tauri::command]
-async fn sign_out(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.sign_out()).await)
-}
 
-#[tauri::command]
-fn open_web_app(state: tauri::State<'_, AppState>) {
-    state.controller.open_web_app();
-}
 
-#[tauri::command]
-fn minimize_current(window: tauri::WebviewWindow) -> Result<(), String> {
-    window.minimize().map_err(|e| e.to_string())
-}
 
-/// With "Keep running in tray" on (the default), the titlebar close button
-/// only hides the window - tracking keeps running and the tray's Quit item is
-/// the real exit. With it off, closing quits, same as before.
-/// Stays synchronous: window operations must run on the main thread.
-#[tauri::command]
-fn close_window(
-    app: AppHandle,
-    window: tauri::WebviewWindow,
-    state: tauri::State<'_, AppState>,
-) -> Result<(), String> {
-    if state.controller.close_to_tray() {
-        window.hide().map_err(|e| e.to_string())?;
-        return Ok(());
-    }
-    state.controller.stop();
-    app.exit(0);
-    Ok(())
-}
 
-/// Pushed from the frontend's own existing 5s session poll (App.tsx's
-/// refresh()) rather than driven by a second poller here - see
-/// TrayStatusItems's own doc comment for why. A no-op before the tray
-/// finishes building (brief startup window) or on Linux (no tray at all).
-/// Stays synchronous: MenuItem::set_text/set_enabled are main-thread UI
-/// calls, not network I/O - nothing here needs run_blocking.
-#[tauri::command]
-#[cfg(not(target_os = "linux"))]
-fn set_tray_status(
-    state: tauri::State<'_, TrayStatusState>,
-    label: String,
-    tracking: bool,
-    paused: bool,
-    session_open: bool,
-) {
-    let guard = state.lock().unwrap();
-    let Some(items) = guard.as_ref() else { return };
-    let _ = items.status.set_text(&label);
-    let _ = items.pause.set_enabled(tracking);
-    let _ = items.resume.set_enabled(paused);
-    let _ = items.stop.set_enabled(session_open);
-}
 
-#[tauri::command]
-#[cfg(target_os = "linux")]
-fn set_tray_status(_label: String, _tracking: bool, _paused: bool, _session_open: bool) {}
 
-#[tauri::command]
-fn get_version() -> String {
-    APP_VERSION.to_string()
-}
 
-/// Whether applying an update would need an administrator prompt.
-///
-/// `install()` spawns the installer and then exits this process immediately -
-/// the app is gone before the installer has done anything. If the installer
-/// then cannot write where the app lives (a per-machine install under Program
-/// Files, run by a standard user), the update fails with the agent already
-/// dead and nothing to restart it. That is the "the update just closed it and
-/// nothing worked after" report.
-///
-/// Rather than guess at group membership or elevation tokens, this asks the
-/// only question that actually decides it: can this user write to the
-/// directory the app is installed in? If yes, the installer runs silently and
-/// an unattended update is safe. If no, the update must wait for a person who
-/// can answer a UAC prompt, so the app never exits unattended into a failure.
-#[tauri::command]
-fn update_install_readiness() -> UpdateInstallReadiness {
-    let install_dir = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.to_path_buf()));
 
-    let Some(dir) = install_dir else {
-        // Cannot tell where we live: assume the cautious answer.
-        return UpdateInstallReadiness {
-            writable: false,
-            install_dir: String::new(),
-        };
-    };
 
-    // A create/delete probe, not a permissions calculation: ACLs, group
-    // policy and virtualisation all feed into the real answer, and only an
-    // actual write reflects all of them.
-    let probe = dir.join(format!(".vt-update-probe-{}", std::process::id()));
-    let writable = match std::fs::File::create(&probe) {
-        Ok(_) => {
-            let _ = std::fs::remove_file(&probe);
-            true
-        }
-        Err(_) => false,
-    };
 
-    UpdateInstallReadiness {
-        writable,
-        install_dir: dir.to_string_lossy().to_string(),
-    }
-}
 
-#[tauri::command]
-async fn report_agent_open(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.report_agent_open()).await
-}
 
-#[tauri::command]
-async fn get_agent_notifications(
-    state: tauri::State<'_, AppState>,
-) -> Result<crate::types::AgentNotificationList, String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.get_agent_notifications()).await
-}
 
-#[tauri::command]
-async fn reply_to_message_thread(
-    state: tauri::State<'_, AppState>,
-    thread_id: String,
-    body: String,
-) -> Result<(), String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.reply_to_message_thread(&thread_id, &body)).await
-}
 
-#[tauri::command]
-async fn mark_agent_notification_read(
-    state: tauri::State<'_, AppState>,
-    notification_id: String,
-) -> Result<(), String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.mark_agent_notification_read(&notification_id)).await
-}
 
-#[tauri::command]
-async fn mark_all_agent_notifications_read(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.mark_all_agent_notifications_read()).await
-}
 
-#[tauri::command]
-fn get_profile(state: tauri::State<'_, AppState>) -> ProfileInfo {
-    state.controller.get_profile()
-}
 
-#[tauri::command]
-async fn get_link_status(state: tauri::State<'_, AppState>) -> Result<LinkStatus, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_link_status()).await)
-}
 
-#[tauri::command]
-fn get_app_settings(state: tauri::State<'_, AppState>) -> crate::prefs::AppSettingsView {
-    state.controller.get_app_settings()
-}
 
-/// The layout the window is using, so the frontend can arrange itself to
-/// match the size the window was given.
-#[tauri::command]
-fn get_window_layout(
-    app: AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> window_layout::WindowLayout {
-    let prefs = state.controller.get_app_settings().preferences;
-    match app.get_webview_window("main") {
-        Some(window) => window_layout::current(&window, &prefs.layout, prefs.show_insights),
-        None => window_layout::resolve(&prefs.layout, prefs.show_insights, None),
-    }
-}
 
-#[tauri::command]
-async fn open_log_file(state: tauri::State<'_, AppState>) -> Result<(), String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.open_log_file()).await
-}
 
-#[tauri::command]
-fn save_preferences(
-    app: AppHandle,
-    state: tauri::State<'_, AppState>,
-    preferences: UserPreferences,
-) -> Result<crate::prefs::AppSettingsView, String> {
-    let previous = state.controller.get_app_settings().preferences;
-    state.controller.save_preferences(preferences.clone())?;
-    // Only the two settings that decide the window's size move it - saving
-    // anything else must not resize it or snap it back to the centre.
-    if previous.layout != preferences.layout || previous.show_insights != preferences.show_insights {
-        if let Some(window) = app.get_webview_window("main") {
-            window_layout::apply(&window, &preferences.layout, preferences.show_insights, true);
-        }
-    }
-    // Autostart registration is best-effort here, same as every other caller
-    // of apply_autostart (see lines below) - a registry/OS failure must not
-    // report the whole save as failed when the preference itself was already
-    // written to disk successfully.
-    if let Err(err) = apply_autostart(&app, preferences.launch_at_login) {
-        log::warn!("Could not update autostart registration: {err}");
-    }
-    Ok(state.controller.get_app_settings())
-}
 
-#[tauri::command]
-async fn list_projects(state: tauri::State<'_, AppState>) -> Result<Vec<crate::types::ProjectInfo>, String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.list_projects()).await
-}
 
-#[tauri::command]
-async fn list_tasks(
-    state: tauri::State<'_, AppState>,
-    project_id: Option<String>,
-) -> Result<Vec<AgentTask>, String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.list_tasks(project_id.as_deref())).await
-}
 
-#[tauri::command]
-async fn create_task(
-    state: tauri::State<'_, AppState>,
-    project_id: String,
-    title: String,
-    estimate_hours: Option<f64>,
-    description: Option<String>,
-    priority: Option<String>,
-    due_date: Option<String>,
-) -> Result<crate::types::CreateTaskResult, String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || {
-        controller.create_task(
-            &project_id,
-            &title,
-            estimate_hours,
-            description.as_deref(),
-            priority.as_deref(),
-            due_date.as_deref(),
-        )
-    })
-    .await
-}
 
-#[tauri::command]
-async fn get_session(state: tauri::State<'_, AppState>) -> Result<SessionInfo, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_session()).await)
-}
 
-#[tauri::command]
-async fn get_task_time_tracking(
-    state: tauri::State<'_, AppState>,
-    task_id: String,
-) -> Result<Option<crate::types::TaskTimeTracking>, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_task_time_tracking(&task_id)).await)
-}
 
-#[tauri::command]
-async fn get_member_limits(
-    state: tauri::State<'_, AppState>,
-    project_id: Option<String>,
-) -> Result<Option<crate::types::MemberLimits>, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_member_limits(project_id.as_deref())).await)
-}
 
-#[tauri::command]
-async fn get_agent_workspace(
-    state: tauri::State<'_, AppState>,
-) -> Result<Option<crate::types::AgentWorkspace>, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_agent_workspace()).await)
-}
 
-#[tauri::command]
-async fn create_time_entry(
-    state: tauri::State<'_, AppState>,
-    member_id: String,
-    project_id: String,
-    task_id: Option<String>,
-    date: String,
-    duration_seconds: i64,
-    description: String,
-) -> Result<(), String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || {
-        controller.create_time_entry(
-            &member_id,
-            &project_id,
-            task_id.as_deref(),
-            &date,
-            duration_seconds,
-            &description,
-        )
-    })
-    .await
-}
 
-#[tauri::command]
-async fn submit_timesheet(
-    state: tauri::State<'_, AppState>,
-    period_start: String,
-    period_end: String,
-) -> Result<(), String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.submit_timesheet(&period_start, &period_end)).await
-}
 
-#[tauri::command]
-async fn request_time_off(
-    state: tauri::State<'_, AppState>,
-    policy_id: String,
-    start_date: String,
-    end_date: String,
-    note: String,
-) -> Result<(), String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.request_time_off(&policy_id, &start_date, &end_date, &note)).await
-}
 
-#[tauri::command]
-async fn get_my_screenshots(
-    state: tauri::State<'_, AppState>,
-    limit: Option<u32>,
-    project_id: Option<String>,
-) -> Result<Vec<crate::types::ScreenshotRef>, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_my_screenshots(limit.unwrap_or(12), project_id.as_deref())).await)
-}
 
-#[tauri::command]
-async fn get_project_app_breakdown(
-    state: tauri::State<'_, AppState>,
-    project_id: String,
-) -> Result<crate::types::ProjectAppBreakdown, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_project_app_breakdown(&project_id)).await)
-}
 
-#[tauri::command]
-async fn get_screenshot_image(
-    state: tauri::State<'_, AppState>,
-    screenshot_id: String,
-) -> Result<String, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_screenshot_image(&screenshot_id)).await)
-}
 
-#[tauri::command]
-async fn get_task_detail(
-    state: tauri::State<'_, AppState>,
-    task_id: String,
-) -> Result<Option<crate::types::TaskDetail>, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_task_detail(&task_id)).await)
-}
 
-#[tauri::command]
-async fn get_project_budget_status(
-    state: tauri::State<'_, AppState>,
-    project_id: String,
-) -> Result<Option<crate::types::ProjectBudgetStatus>, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_project_budget_status(&project_id)).await)
-}
 
-#[tauri::command]
-async fn get_dashboard_summary(
-    state: tauri::State<'_, AppState>,
-) -> Result<Option<crate::types::DashboardSummary>, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_dashboard_summary()).await)
-}
 
-#[tauri::command]
-async fn get_member_profile(state: tauri::State<'_, AppState>) -> Result<Option<crate::types::MemberProfile>, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_member_profile()).await)
-}
 
-#[tauri::command]
-async fn set_member_timezone(state: tauri::State<'_, AppState>, timezone: String) -> Result<(), String> {
-    let controller = Arc::clone(&state.controller);
-    run_blocking(move || controller.set_member_timezone(&timezone)).await
-}
 
-#[tauri::command]
-async fn start_task_session(state: tauri::State<'_, AppState>, task_id: String) -> Result<ActionResult, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.start_task_session(&task_id)).await)
-}
 
-#[tauri::command]
-async fn get_monitoring_notice(state: tauri::State<'_, AppState>) -> Result<Option<crate::types::MonitoringNoticeView>, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_monitoring_notice()).await)
-}
 
-#[tauri::command]
-async fn acknowledge_monitoring_notice(state: tauri::State<'_, AppState>, notice_version: String) -> Result<bool, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.acknowledge_monitoring_notice(&notice_version)).await)
-}
 
-#[tauri::command]
-async fn get_connection_state(state: tauri::State<'_, AppState>) -> Result<ConnectionState, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.get_connection_state()).await)
-}
 
-#[tauri::command]
-async fn reconnect(state: tauri::State<'_, AppState>) -> Result<ReconnectResult, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.reconnect()).await)
-}
 
-#[tauri::command]
-async fn start_project_session(state: tauri::State<'_, AppState>, project_id: String) -> Result<ActionResult, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.start_project_session(&project_id)).await)
-}
 
-#[tauri::command]
-async fn stop_session(
-    state: tauri::State<'_, AppState>,
-    stop_note: Option<String>,
-) -> Result<ActionResult, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.stop_session(stop_note.as_deref())).await)
-}
-
-#[tauri::command]
-async fn pause_session(state: tauri::State<'_, AppState>) -> Result<ActionResult, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.pause_session()).await)
-}
-
-#[tauri::command]
-async fn resume_session(state: tauri::State<'_, AppState>) -> Result<ActionResult, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.resume_session()).await)
-}
-
-#[tauri::command]
-async fn is_session_paused(state: tauri::State<'_, AppState>) -> Result<bool, String> {
-    let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.is_session_paused()).await)
-}
 
 /// What the app was called before it became My Virtual Tracker. The autostart
 /// plugin names its start-at-login entry after the product name, so the old
@@ -623,7 +160,7 @@ fn remove_legacy_autostart(app: &AppHandle) {
     }
 }
 
-fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
+pub(crate) fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
     let autostart = app.autolaunch();
     let currently = autostart.is_enabled().unwrap_or(false);
@@ -856,56 +393,56 @@ pub fn run() {
             controller: Arc::clone(&controller),
         })
         .invoke_handler(tauri::generate_handler![
-            sign_in,
-            sign_in_with_password,
-            sign_up,
-            send_password_reset,
-            sign_out,
-            open_web_app,
-            minimize_current,
-            close_window,
-            get_version,
-            update_install_readiness,
-            report_agent_open,
-            get_agent_notifications,
-            mark_agent_notification_read,
-            reply_to_message_thread,
-            mark_all_agent_notifications_read,
-            set_tray_status,
-            get_profile,
-            get_link_status,
-            get_app_settings,
-            get_window_layout,
-            open_log_file,
-            save_preferences,
-            list_projects,
-            list_tasks,
-            create_task,
-            get_session,
-            get_task_time_tracking,
-            get_member_limits,
-            get_agent_workspace,
-            create_time_entry,
-            submit_timesheet,
-            request_time_off,
-            get_my_screenshots,
-            get_project_app_breakdown,
-            get_screenshot_image,
-            get_task_detail,
-            get_project_budget_status,
-            get_member_profile,
-            set_member_timezone,
-            get_dashboard_summary,
-            start_task_session,
-            get_monitoring_notice,
-            acknowledge_monitoring_notice,
-            start_project_session,
-            get_connection_state,
-            reconnect,
-            stop_session,
-            pause_session,
-            resume_session,
-            is_session_paused,
+            commands::auth::sign_in,
+            commands::auth::sign_in_with_password,
+            commands::auth::sign_up,
+            commands::auth::send_password_reset,
+            commands::auth::sign_out,
+            commands::shell::open_web_app,
+            commands::shell::minimize_current,
+            commands::shell::close_window,
+            commands::app_info::get_version,
+            commands::app_info::update_install_readiness,
+            commands::app_info::report_agent_open,
+            commands::inbox::get_agent_notifications,
+            commands::inbox::mark_agent_notification_read,
+            commands::inbox::reply_to_message_thread,
+            commands::inbox::mark_all_agent_notifications_read,
+            commands::shell::set_tray_status,
+            commands::app_info::get_profile,
+            commands::app_info::get_link_status,
+            commands::app_info::get_app_settings,
+            commands::shell::get_window_layout,
+            commands::shell::open_log_file,
+            commands::app_info::save_preferences,
+            commands::work::list_projects,
+            commands::work::list_tasks,
+            commands::work::create_task,
+            commands::work::get_session,
+            commands::work::get_task_time_tracking,
+            commands::work::get_member_limits,
+            commands::work::get_agent_workspace,
+            commands::work::create_time_entry,
+            commands::work::submit_timesheet,
+            commands::work::request_time_off,
+            commands::insights::get_my_screenshots,
+            commands::insights::get_project_app_breakdown,
+            commands::insights::get_screenshot_image,
+            commands::work::get_task_detail,
+            commands::work::get_project_budget_status,
+            commands::app_info::get_member_profile,
+            commands::app_info::set_member_timezone,
+            commands::insights::get_dashboard_summary,
+            commands::work::start_task_session,
+            commands::insights::get_monitoring_notice,
+            commands::insights::acknowledge_monitoring_notice,
+            commands::work::start_project_session,
+            commands::app_info::get_connection_state,
+            commands::app_info::reconnect,
+            commands::work::stop_session,
+            commands::work::pause_session,
+            commands::work::resume_session,
+            commands::work::is_session_paused,
         ])
         .setup(move |app| {
             // Registration is separate from the handler wired into the
@@ -1137,21 +674,3 @@ pub fn run() {
         });
 }
 
-#[cfg(test)]
-mod tests {
-    /// The probe must answer for the directory the app actually runs from, and
-    /// must answer *something* rather than panicking - an update decision that
-    /// throws is an update that never happens.
-    #[test]
-    fn update_install_readiness_reports_the_real_install_directory() {
-        let readiness = super::update_install_readiness();
-        assert!(
-            !readiness.install_dir.is_empty(),
-            "the install directory must be reported so a blocked update can name it"
-        );
-        // The test binary's own directory is writable, so this is the
-        // "installs silently" answer. The blocked branch is exercised by the
-        // create() failure path, which cannot be forced portably here.
-        assert!(readiness.writable);
-    }
-}
