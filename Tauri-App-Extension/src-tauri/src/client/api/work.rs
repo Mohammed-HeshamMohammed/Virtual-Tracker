@@ -354,23 +354,8 @@ impl ApiClient {
         &mut self,
         task_id: &str,
     ) -> Result<crate::types::TaskTimeTracking, ApiError> {
-        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!(
-            "{}/api/tasks/{}/time-tracking",
-            self.api_url,
-            urlencoding::encode(task_id)
-        );
-        let res = self
-            .client
-            .get(url)
-            .header("Authorization", auth)
-            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
-            .send()
-            .map_err(|_| ApiError::Network)?;
-        if !res.status().is_success() {
-            return Err(ApiError::Network);
-        }
-        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let body = self.get_json(&format!("/api/tasks/{}/time-tracking",
+            urlencoding::encode(task_id)))?;
         let data = body.get("data").ok_or(ApiError::Network)?;
         let allowance = data.get("timerAllowance");
         Ok(crate::types::TaskTimeTracking {
@@ -416,23 +401,8 @@ impl ApiClient {
         &mut self,
         project_id: &str,
     ) -> Result<Option<crate::types::ProjectBudgetStatus>, ApiError> {
-        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!(
-            "{}/api/projects/{}/budget-status",
-            self.api_url,
-            urlencoding::encode(project_id)
-        );
-        let res = self
-            .client
-            .get(url)
-            .header("Authorization", auth)
-            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
-            .send()
-            .map_err(|_| ApiError::Network)?;
-        if !res.status().is_success() {
-            return Err(ApiError::Network);
-        }
-        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let body = self.get_json(&format!("/api/projects/{}/budget-status",
+            urlencoding::encode(project_id)))?;
         let data = body.get("data");
         let Some(data) = data.filter(|d| !d.is_null()) else {
             return Ok(None);
@@ -676,23 +646,8 @@ impl ApiClient {
 
     /// One screenshot as a `data:` URL.
     pub fn fetch_screenshot_image(&mut self, screenshot_id: &str) -> Result<String, ApiError> {
-        let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let url = format!(
-            "{}/api/activity/screenshot/{}",
-            self.api_url,
-            urlencoding::encode(screenshot_id)
-        );
-        let res = self
-            .client
-            .get(url)
-            .header("Authorization", auth)
-            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
-            .send()
-            .map_err(|_| ApiError::Network)?;
-        if !res.status().is_success() {
-            return Err(ApiError::Network);
-        }
-        let body: Value = res.json().map_err(|_| ApiError::Network)?;
+        let body = self.get_json(&format!("/api/activity/screenshot/{}",
+            urlencoding::encode(screenshot_id)))?;
         Ok(body
             .pointer("/data/imageData")
             .and_then(|v| v.as_str())
