@@ -269,9 +269,14 @@ impl EventBuilder {
         // to something else between capture and here can't blur against a
         // page no longer on screen.
         let url = self.recent_url(window);
+        // The title is passed as well as the process and URL: a packaged
+        // Store app reports ApplicationFrameHost rather than its own
+        // executable, and recent_url declines whenever the reading is stale,
+        // so those two signals alone let obvious messaging windows through.
         let blur = crate::capture::sensitive_apps::is_messaging_target(
             &window.process_name,
             url.as_deref(),
+            Some(window.title.as_str()),
         );
         let image_data = self.screen.capture_jpeg_data_url(blur)?;
         Some(ActivityEvent::Screenshot {
