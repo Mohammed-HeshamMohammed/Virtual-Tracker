@@ -1,7 +1,10 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { ChevronLeft, ChevronRight, Download, FolderKanban, RefreshCw, Search } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, FolderKanban, RefreshCw, Search, ShieldAlert } from "lucide-react"
+import { useAuth } from "@/shared/providers/app"
+import { canManageActivityData } from "@/features/auth"
+import { useRemovalRequestCount } from "@/features/activity/hooks/use-removal-request-count"
 import { cn } from "@/shared/utils/utils"
 import { ActivityMemberSelect } from "@/features/activity/components/activity-member-select"
 import {
@@ -42,6 +45,8 @@ interface ActivityControlBarProps {
   scopeLoading?: boolean
   memberLabel?: string | null
   pageFilters?: ReactNode
+  /** Opens the Removal Requests page from the queue badge. */
+  onNavigate?: (pageId: string) => void
 }
 
 export function ActivityControlBar({
@@ -73,7 +78,17 @@ export function ActivityControlBar({
   scopeLoading,
   memberLabel,
   pageFilters,
+  onNavigate,
 }: ActivityControlBarProps) {
+  const { memberRole } = useAuth()
+  // Only reviewers, and only on the pages someone actually works from - the
+  // requests page shows its own count, and a badge there would just repeat it.
+  const canReview = canManageActivityData(memberRole)
+  const showsQueue =
+    canReview &&
+    (pageId === "activity-screenshots" || pageId === "activity-apps" || pageId === "activity-urls")
+  const { count: pendingRemovals } = useRemovalRequestCount(showsQueue)
+
   return (
     <div className="overflow-visible rounded-xl border border-slate-200/70 dark:border-[#3d4a3d]/40 bg-slate-100/70 dark:bg-[#151b2d] p-2.5 sm:p-3 transition-colors">
       <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
@@ -154,6 +169,19 @@ export function ActivityControlBar({
             <ActivityToolbarIconButton onClick={onExport} title="Export" ariaLabel="Export data" tooltipPlacement="top">
               <Download className="h-4 w-4" />
             </ActivityToolbarIconButton>
+          ) : null}
+
+          {showsQueue && pendingRemovals > 0 ? (
+            <button
+              type="button"
+              onClick={() => onNavigate?.("activity-removal-requests")}
+              title={`${pendingRemovals} screenshot removal ${pendingRemovals === 1 ? "request" : "requests"} waiting`}
+              aria-label={`${pendingRemovals} removal requests waiting for review`}
+              className="flex h-8 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/70"
+            >
+              <ShieldAlert className="h-4 w-4" />
+              {pendingRemovals}
+            </button>
           ) : null}
 
           <ActivityToolbarIconButton onClick={onRefresh} title="Refresh" ariaLabel="Refresh data" tooltipPlacement="top">

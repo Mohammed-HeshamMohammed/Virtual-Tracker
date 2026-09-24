@@ -89,7 +89,7 @@ function ActivityPageFilters() {
   return null
 }
 
-function ActivityShellStickyBar() {
+function ActivityShellStickyBar({ onNavigate }: { onNavigate?: (pageId: string) => void }) {
   const { memberRole } = useAuth()
   const canExport = canExportActivity(memberRole)
   const {
@@ -159,6 +159,7 @@ function ActivityShellStickyBar() {
   return (
     <div className="sticky top-0 z-30 -mx-1 shrink-0 overflow-visible bg-[#ffffff]/95 dark:bg-[#101417]/95 px-1 pb-3 pt-0 backdrop-blur-md supports-backdrop-filter:bg-[#ffffff]/80 dark:supports-backdrop-filter:bg-[#101417]/80">
       <ActivityControlBar
+        onNavigate={onNavigate}
         pageId={pageId}
         selectedDay={day.selectedDay}
         selectedDayLabel={day.selectedDayLabel}
@@ -223,9 +224,13 @@ function ActivitySummarySlot() {
 export function ActivityShell({
   pageId,
   children,
+  onNavigate,
 }: {
   pageId: ActivitySubPage
   children: ReactNode
+  /** Passed through to the control bar so its removal-queue badge can open
+   *  the Removal Requests page. */
+  onNavigate?: (pageId: string) => void
 }) {
   const normalizedPage: ActivitySubPage =
     pageId === "activity-apps" || pageId === "activity-urls" ? pageId : "activity-screenshots"
@@ -233,7 +238,7 @@ export function ActivityShell({
   return (
     <ActivityShellProvider pageId={normalizedPage}>
       <div className="-mt-2 flex h-full min-h-0 w-full flex-col">
-        <ActivityShellStickyBar />
+        <ActivityShellStickyBar onNavigate={onNavigate} />
         <ActivityShellBody pageId={normalizedPage}>{children}</ActivityShellBody>
       </div>
     </ActivityShellProvider>

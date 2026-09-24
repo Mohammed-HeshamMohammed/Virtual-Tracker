@@ -268,22 +268,37 @@ export async function requestScreenshotRemoval(
   return json.data as RemovalRequestResult
 }
 
+export type RemovalRequestStatus = "pending" | "approved" | "declined"
+
 export type PendingRemovalRequest = {
   id: string
-  screenshotId: string
+  /** null once approved: the screenshot is gone, the record of it is not. */
+  screenshotId: string | null
   memberId: string
   memberName: string
   reason: string
+  status: RemovalRequestStatus
   requestedAt: string
+  reviewedAt: string | null
+  reviewedBy: string | null
+  reviewNote: string
   capturedAt: string | null
   pageTitle: string
 }
 
-export async function listScreenshotRemovalRequests(): Promise<PendingRemovalRequest[]> {
-  const res = await apiFetch(apiPath("/api/activity/screenshot-removal-requests"))
+/** `status` is "pending" for the queue, "resolved" for decided, "all" for both. */
+export async function listScreenshotRemovalRequests(
+  status: "pending" | "resolved" | "all" = "pending",
+): Promise<{ requests: PendingRemovalRequest[]; pendingCount: number }> {
+  const res = await apiFetch(
+    apiPath(`/api/activity/screenshot-removal-requests?status=${encodeURIComponent(status)}`),
+  )
   const json = await res.json().catch(() => null)
   if (!res.ok || !json?.success) throw new Error(json?.error || "Failed to load removal requests")
-  return (json.data ?? []) as PendingRemovalRequest[]
+  return {
+    requests: (json.data ?? []) as PendingRemovalRequest[],
+    pendingCount: typeof json.pendingCount === "number" ? json.pendingCount : 0,
+  }
 }
 
 /** Approving deletes the screenshot; declining leaves it and records why. */

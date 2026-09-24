@@ -70,32 +70,65 @@ export async function listOwnRequests(memberId, screenshotIds = []) {
   return rows.map((r) => ({ screenshotId: String(r.screenshot_id), status: r.status }));
 }
 
-/** The queue a manager works through. */
-export async function listPendingRequests({ limit = 100 } = {}) {
+/**
+ * What a reviewer sees. `status` is "pending" for the queue, "resolved" for
+ * what has already been decided, or "all" for the page that shows both.
+ *
+ * Resolved rows are kept and shown deliberately: a decision to delete
+ * someone's screenshot, or to refuse to, should be answerable afterwards.
+ */
+export async function listRequests({ status = "pending", limit = 100 } = {}) {
+  const filters = ["r.tenant_id = $1"];
+  const params = [tenant()];
+
+  if (status === "pending") {
+    // A request whose screenshot is already gone (deleted directly) has
+    // nothing left to act on, so it is not queued.
+    filters.push("r.status = 'pending'", "r.screenshot_id IS NOT NULL");
+  } else if (status === "resolved") {
+    filters.push("r.status <> 'pending'");
+  }
+
+  params.push(Math.min(Math.max(Number(limit) || 100, 1), 500));
   const rows = await query(
-    `SELECT r.id, r.screenshot_id, r.member_id, r.reason, r.created_at,
+    `SELECT r.id, r.screenshot_id, r.member_id, r.reason, r.created_at, r.status,
+            r.reviewed_at, r.review_note,
             s.captured_at, s.page_title,
-            m.first_name, m.last_name, m.work_email
+            m.first_name, m.last_name, m.work_email,
+            rev.first_name AS rev_first, rev.last_name AS rev_last
        FROM screenshot_removal_requests r
        JOIN members m ON m.id = r.member_id
+       LEFT JOIN members rev ON rev.id = r.reviewed_by
        LEFT JOIN activity_screenshots s ON s.id = r.screenshot_id
-      -- A request whose screenshot is already gone (deleted by a manager
-      -- directly) has nothing left to act on, so it is not queued.
-      WHERE r.status = 'pending' AND r.tenant_id = $1 AND r.screenshot_id IS NOT NULL
-      ORDER BY r.created_at
-      LIMIT $2`,
-    [tenant(), Math.min(Math.max(Number(limit) || 100, 1), 500)],
+      WHERE ${filters.join(" AND ")}
+      ORDER BY r.status = 'pending' DESC, r.created_at DESC
+      LIMIT $${params.length}`,
+    params,
   );
   return rows.map((r) => ({
     id: String(r.id),
-    screenshotId: String(r.screenshot_id),
+    screenshotId: r.screenshot_id ? String(r.screenshot_id) : null,
     memberId: String(r.member_id),
     memberName: `${r.first_name ?? ""} ${r.last_name ?? ""}`.trim() || r.work_email || "Member",
     reason: r.reason ?? "",
+    status: r.status,
     requestedAt: r.created_at,
+    reviewedAt: r.reviewed_at ?? null,
+    reviewedBy: `${r.rev_first ?? ""} ${r.rev_last ?? ""}`.trim() || null,
+    reviewNote: r.review_note ?? "",
     capturedAt: r.captured_at ?? null,
     pageTitle: r.page_title ?? "",
   }));
+}
+
+/** Just the number, for the badge in the activity control bar. */
+export async function countPendingRequests() {
+  const rows = await query(
+    `SELECT count(*)::int AS pending FROM screenshot_removal_requests
+      WHERE status = 'pending' AND screenshot_id IS NOT NULL AND tenant_id = $1`,
+    [tenant()],
+  );
+  return Number(rows[0]?.pending ?? 0);
 }
 
 /**

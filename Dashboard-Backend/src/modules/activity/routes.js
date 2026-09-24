@@ -1300,8 +1300,10 @@ export async function routeActivity(req, res, url, origin) {
       return true;
     }
     try {
-      const { listPendingRequests } = await import("./screenshot-removal.service.js");
-      sendJson(res, origin, 200, { success: true, data: await listPendingRequests({}) });
+      const { listRequests, countPendingRequests } = await import("./screenshot-removal.service.js");
+      const status = (url.searchParams.get("status") || "pending").trim();
+      const [data, pending] = await Promise.all([listRequests({ status }), countPendingRequests()]);
+      sendJson(res, origin, 200, { success: true, data, pendingCount: pending });
     } catch (e) {
       logSafeError("[screenshot-removal/list]", e);
       sendJson(res, origin, 500, { success: false, error: "Could not load removal requests." });

@@ -14,7 +14,6 @@ import {
 } from "@/features/activity/services/activity-api"
 import { ScreenshotActivityEditor } from "@/features/activity/components/screenshot-activity-editor"
 import { ScreenshotRemovalRequest } from "@/features/activity/components/screenshot-removal-request"
-import { ScreenshotRemovalQueue } from "@/features/activity/components/screenshot-removal-queue"
 import { ActivityEmptyState } from "@/features/activity/components/activity-empty-state"
 import {
   ActivityDayEmptyState,
@@ -602,8 +601,6 @@ export function ActivityScreenshots() {
           {error}
         </div>
       ) : null}
-
-      {canManage ? <ScreenshotRemovalQueue onResolved={() => void reload()} /> : null}
 
       {showCaptureBanner ? (
         <div className="rounded-lg border border-blue-200 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-950/60 px-4 py-3 text-sm text-blue-900 dark:text-blue-200">
