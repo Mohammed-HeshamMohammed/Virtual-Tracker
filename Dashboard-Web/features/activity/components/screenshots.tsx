@@ -13,6 +13,7 @@ import {
   updateScreenshotActivityLevel,
 } from "@/features/activity/services/activity-api"
 import { ScreenshotActivityEditor } from "@/features/activity/components/screenshot-activity-editor"
+import { ScreenshotRemovalRequest } from "@/features/activity/components/screenshot-removal-request"
 import { ActivityEmptyState } from "@/features/activity/components/activity-empty-state"
 import {
   ActivityDayEmptyState,
@@ -399,7 +400,7 @@ const insightCards = [
 ]
 
 export function ActivityScreenshots() {
-  const { memberRole } = useAuth()
+  const { memberRole, memberId: viewerMemberId } = useAuth()
   const { isDark } = useTheme()
   const canManage = canManageActivityData(memberRole)
   const {
@@ -546,6 +547,13 @@ export function ActivityScreenshots() {
 
   const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
     usePaginatedTable(displayScreenshots, SCREENSHOTS_PER_PAGE)
+
+  // Only your own capture can be objected to. Without a memberId on the row
+  // we cannot prove it is yours, so the option is not offered - the backend
+  // refuses it either way.
+  const isOwnScreenshot = Boolean(
+    selectedScreenshot?.memberId && viewerMemberId && selectedScreenshot.memberId === viewerMemberId,
+  )
 
   const selectedIndex = selectedScreenshot
     ? displayScreenshots.findIndex((s) => s.id === selectedScreenshot.id)
@@ -870,6 +878,12 @@ export function ActivityScreenshots() {
                     <span className="text-sm text-slate-600 dark:text-slate-300">{selectedScreenshot.project}</span>
                   </div>
                 </div>
+                {!canManage && isOwnScreenshot ? (
+                  // Someone who can see their own captures but not delete them
+                  // has no other way to object to one that caught something
+                  // private - short of finding a manager and asking out of band.
+                  <ScreenshotRemovalRequest screenshotId={selectedScreenshot.id} />
+                ) : null}
                 {canManage ? (
                   <div className="flex items-center gap-2">
                     <button

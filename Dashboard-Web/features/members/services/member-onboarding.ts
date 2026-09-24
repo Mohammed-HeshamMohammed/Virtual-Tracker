@@ -29,6 +29,11 @@ export interface AgentVersionMember {
   /** This tracker is too old to update itself: it is served no updates at
    *  all and stays on this version until someone reinstalls it by hand. */
   needsManualReinstall?: boolean
+  /** Current enough to be offered updates, but unable to install one: it
+   *  cannot write to its own install directory. null means the tracker
+   *  predates the report and has not been asked. */
+  updateBlocked?: boolean | null
+  agentInstallDir?: string | null
 }
 
 export interface AgentVersionGroup {

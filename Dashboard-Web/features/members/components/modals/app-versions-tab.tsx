@@ -151,7 +151,7 @@ export function AppVersionsTab() {
               : "border-slate-200 hover:bg-slate-50 dark:border-slate-700 dark:hover:bg-slate-800",
           )}>
             <span className="block text-sm font-semibold text-slate-800 dark:text-slate-100">{groupLabel(group)}</span>
-            <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{group.memberCount} member{group.memberCount === 1 ? "" : "s"}{group.status === "latest" ? " · Latest" : group.status === "outdated" ? " · Outdated" : ""}{group.members.some((m) => m.needsManualReinstall) ? " · Needs reinstall" : ""}</span>
+            <span className="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">{group.memberCount} member{group.memberCount === 1 ? "" : "s"}{group.status === "latest" ? " · Latest" : group.status === "outdated" ? " · Outdated" : ""}{group.members.some((m) => m.needsManualReinstall) ? " · Needs reinstall" : group.members.some((m) => m.updateBlocked === true) ? " · Cannot install" : ""}</span>
           </button>
         ))}
       </div>
@@ -202,6 +202,17 @@ export function AppVersionsTab() {
                             className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
                           >
                             Needs reinstall
+                          </span>
+                        ) : null}
+                        {/* Shown only alongside a current version: an agent that already
+                            needs a reinstall is stuck for the older, louder reason, and two
+                            badges would just compete. */}
+                        {!member.needsManualReinstall && member.updateBlocked === true ? (
+                          <span
+                            title={`This tracker downloads updates but cannot install them: ${member.agentInstallDir || "its install folder"} is not writable by the person running it. It needs an administrator, or a reinstall for that user.`}
+                            className="mt-1 inline-block rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
+                          >
+                            Cannot install updates
                           </span>
                         ) : null}
                       </td>

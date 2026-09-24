@@ -60,6 +60,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Apps",        id: "activity-apps"        },
       { label: "URLs",        id: "activity-urls"        },
       { label: "Tools",       id: "activity-tools"       },
+      { label: "Removal Requests", id: "activity-removal-requests" },
     ],
   },
   {

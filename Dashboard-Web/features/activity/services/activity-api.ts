@@ -238,6 +238,87 @@ export async function deleteActivityScreenshot(screenshotId: string): Promise<vo
   }
 }
 
+/**
+ * Asking for one of your own screenshots to be taken down.
+ *
+ * Deliberately available to people who cannot delete: clients, employees,
+ * interns and team leads can see their own captures but not remove them, so
+ * without this the only way to object to one that caught something private is
+ * to find a manager out of band.
+ */
+export type RemovalRequestResult = { created: boolean; alreadyPending: boolean }
+
+export async function requestScreenshotRemoval(
+  screenshotId: string,
+  reason: string,
+): Promise<RemovalRequestResult> {
+  if (!screenshotId) throw new Error("Screenshot id is required")
+  const res = await apiFetch(
+    apiPath(`/api/activity/screenshot/${encodeURIComponent(screenshotId)}/removal-request`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    },
+  )
+  const json = await res.json().catch(() => null)
+  if (!res.ok || !json?.success) {
+    throw new Error(json?.error || "Failed to send the removal request")
+  }
+  return json.data as RemovalRequestResult
+}
+
+export type RemovalRequestStatus = "pending" | "approved" | "declined"
+
+export type PendingRemovalRequest = {
+  id: string
+  /** null once approved: the screenshot is gone, the record of it is not. */
+  screenshotId: string | null
+  memberId: string
+  memberName: string
+  reason: string
+  status: RemovalRequestStatus
+  requestedAt: string
+  reviewedAt: string | null
+  reviewedBy: string | null
+  reviewNote: string
+  capturedAt: string | null
+  pageTitle: string
+}
+
+/** `status` is "pending" for the queue, "resolved" for decided, "all" for both. */
+export async function listScreenshotRemovalRequests(
+  status: "pending" | "resolved" | "all" = "pending",
+): Promise<{ requests: PendingRemovalRequest[]; pendingCount: number }> {
+  const res = await apiFetch(
+    apiPath(`/api/activity/screenshot-removal-requests?status=${encodeURIComponent(status)}`),
+  )
+  const json = await res.json().catch(() => null)
+  if (!res.ok || !json?.success) throw new Error(json?.error || "Failed to load removal requests")
+  return {
+    requests: (json.data ?? []) as PendingRemovalRequest[],
+    pendingCount: typeof json.pendingCount === "number" ? json.pendingCount : 0,
+  }
+}
+
+/** Approving deletes the screenshot; declining leaves it and records why. */
+export async function resolveScreenshotRemovalRequest(
+  requestId: string,
+  approve: boolean,
+  note = "",
+): Promise<void> {
+  const res = await apiFetch(
+    apiPath(`/api/activity/screenshot-removal-requests/${encodeURIComponent(requestId)}/resolve`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approve, note }),
+    },
+  )
+  const json = await res.json().catch(() => null)
+  if (!res.ok || !json?.success) throw new Error(json?.error || "Failed to resolve the request")
+}
+
 const FEED_TIMEOUT_MS = 90_000
 
 type FeedCacheEntry = { at: number; value: ActivityFeedResult<unknown> }
