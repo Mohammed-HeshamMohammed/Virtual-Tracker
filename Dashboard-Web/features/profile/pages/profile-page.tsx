@@ -12,13 +12,8 @@ import { validateEmailField, validatePersonName, validatePhoneField } from "@/sh
 import { SidebarSection } from "@/features/profile/components/sidebar-section"
 import { AccountForm } from "@/features/profile/components/account-form"
 import { ChangePasswordDialog } from "@/features/profile/components/change-password-dialog"
-import { TIME_ZONES } from "@/features/settings/components/shared/constants"
+import { TIME_ZONES, ianaIdFromTimeZoneLabel } from "@/features/settings/components/shared/constants"
 import type { PhoneVerifyControlHandle } from "@/shared/ui/phone-verify-control"
-
-function ianaIdFromTimeZoneLabel(label: string): string {
-  const idx = label.indexOf(") ")
-  return idx === -1 ? label : label.slice(idx + 2)
-}
 
 function detectBrowserTimezone(): string {
   if (typeof window === "undefined") return ""

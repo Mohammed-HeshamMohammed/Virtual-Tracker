@@ -24,6 +24,9 @@ import {
   derivedLimitType,
 } from "@/features/projects/components/modals/member-limits-editor"
 import { projectTypeDef } from "@/features/projects/config/project-types"
+import { TIME_ZONES, ianaIdFromTimeZoneLabel } from "@/features/settings/components/shared/constants"
+import { isManagementRole } from "@/features/auth"
+import { useAuth } from "@/shared/providers/auth/auth-context"
 import { SubProjectsPicker, type SubProjectOption } from "@/features/projects/components/modals/sub-projects-picker"
 import { getProjectMembers, getProjects } from "@/features/projects/api/project-api"
 import { formatHoursLabel } from "@/features/projects/components/project-table-cells"
@@ -87,6 +90,7 @@ interface AddProjectFormState {
   disableIdleTime: boolean
   idleTimeMinutes: string
   endDate: string
+  timezone: string
   clientIds: string[]
   teams: string[]
   managers: string[]
@@ -200,6 +204,7 @@ function createDefaultAddForm(): AddProjectFormState {
     disableIdleTime: false,
     idleTimeMinutes: String(DEFAULT_IDLE_TIME_SECONDS / 60),
     endDate: "",
+    timezone: "",
     clientIds: [],
     teams: [],
     managers: [],
@@ -344,6 +349,7 @@ function formStateToPayload(
     // Never under a minute; the budget limit is checked on save and in tracking.
     idleTimeSeconds: idleTimeMinutesToSeconds(addForm.idleTimeMinutes),
     endDate: addForm.endDate,
+    timezone: addForm.timezone,
     clientIds: addForm.clientIds,
     teamIds: addForm.teams,
     managerIds,
@@ -400,6 +406,9 @@ export function ProjectModal({
 }: ProjectModalProps) {
   const formTheme = useClientFormTheme()
   const segmented = useSegmentedClasses()
+  const { memberRole } = useAuth()
+  // Manager, Enterprise Manager and above - the same bar the server enforces.
+  const canSetTimezone = isManagementRole(memberRole)
   const isEditMode = projectId !== null
 
   const [addForm, setAddForm] = useComponentState<AddProjectFormState>(createDefaultAddForm)
@@ -674,6 +683,7 @@ export function ProjectModal({
           disableIdleTime: payload.disableIdleTime,
           idleTimeMinutes: String((payload.idleTimeSeconds || DEFAULT_IDLE_TIME_SECONDS) / 60),
           endDate: payload.endDate || "",
+          timezone: payload.timezone || "",
           clientIds: payload.clientIds,
           teams: payload.teamIds,
           managers: payload.managerIds,
@@ -1198,6 +1208,35 @@ export function ProjectModal({
                     onChange={(date) => setAddForm((p) => ({ ...p, endDate: date }))}
                     placeholder="Select date"
                   />
+                </FormField>
+                <FormField
+                  label="Time zone"
+                  hint={
+                    canSetTimezone
+                      ? "Which calendar this project's days are counted in. Leave blank to use each member's own zone."
+                      : "Set by a manager. This project's days are counted in this calendar."
+                  }
+                >
+                  <select
+                    value={addForm.timezone}
+                    disabled={readOnly || !canSetTimezone}
+                    onChange={(e) => setAddForm((p) => ({ ...p, timezone: e.target.value }))}
+                    className={formTheme.control}
+                  >
+                    <option value="">Each member's own time zone</option>
+                    {addForm.timezone &&
+                      !TIME_ZONES.some((label) => ianaIdFromTimeZoneLabel(label) === addForm.timezone) && (
+                        <option value={addForm.timezone}>{addForm.timezone}</option>
+                      )}
+                    {TIME_ZONES.map((label) => {
+                      const id = ianaIdFromTimeZoneLabel(label)
+                      return (
+                        <option key={id} value={id}>
+                          {label}
+                        </option>
+                      )
+                    })}
+                  </select>
                 </FormField>
                 <FormField label="Budget start date" hint="When the budget's own tracking period begins">
                   <DatePickerField

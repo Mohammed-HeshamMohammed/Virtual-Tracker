@@ -616,6 +616,11 @@ export const TIME_ZONES: string[] = (() => {
     .map((entry) => `${gmtOffsetLabel(entry.offset)} ${entry.id}`)
 })()
 
+export function ianaIdFromTimeZoneLabel(label: string): string {
+  const idx = label.indexOf(") ")
+  return idx === -1 ? label : label.slice(idx + 2)
+}
+
 export const ROLE_TYPES = [
   { k: "admin",   l: "Admin",     info: "Full access to all features and settings" },
   { k: "manager", l: "Manager",   info: "Can manage team members and projects" },

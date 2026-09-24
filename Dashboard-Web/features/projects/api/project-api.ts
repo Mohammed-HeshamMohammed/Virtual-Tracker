@@ -24,6 +24,7 @@ function toProject(input: Record<string, unknown>): Project {
     disableIdleTime: Boolean(input.disable_idle_time ?? input.disableIdleTime),
     idleTimeSeconds: Number(input.idle_time_seconds ?? input.idleTimeSeconds ?? 450),
     endDate: String(input.end_date ?? input.endDate ?? ""),
+    timezone: String(input.timezone ?? ""),
     managersNotes: String(input.managers_notes ?? input.managersNotes ?? ""),
     usersNotes: String(input.users_notes ?? input.usersNotes ?? ""),
     viewersNotes: String(input.viewers_notes ?? input.viewersNotes ?? ""),
@@ -55,6 +56,8 @@ function toProjectPayload(
   if (input.disableIdleTime !== undefined) out.disable_idle_time = input.disableIdleTime
   if (input.idleTimeSeconds !== undefined) out.idle_time_seconds = input.idleTimeSeconds
   if (input.endDate !== undefined) out.end_date = input.endDate || undefined
+  // null clears it back to the member's own zone; undefined leaves it alone.
+  if (input.timezone !== undefined) out.timezone = input.timezone || null
   if (input.clientId !== undefined) out.client_id = input.clientId || null
   if (input.managersNotes !== undefined) out.managers_notes = input.managersNotes
   if (input.usersNotes !== undefined) out.users_notes = input.usersNotes
@@ -97,6 +100,7 @@ export interface Project {
   disableIdleTime: boolean
   idleTimeSeconds?: number
   endDate: string
+  timezone: string
   managersNotes: string
   usersNotes: string
   viewersNotes: string
@@ -133,6 +137,8 @@ export interface CreateProjectInput {
   disableIdleTime?: boolean
   idleTimeSeconds?: number
   endDate?: string
+  /** null clears it back to each member's own zone. */
+  timezone?: string | null
   clientId?: string
   managersNotes?: string
   usersNotes?: string
@@ -152,6 +158,8 @@ export interface UpdateProjectInput {
   clientCanManage?: boolean
   clientCanTrack?: boolean
   subProjectIds?: string[]
+  /** null clears it back to each member's own zone. */
+  timezone?: string | null
   disableIdleTime?: boolean
   idleTimeSeconds?: number
   endDate?: string
