@@ -117,12 +117,6 @@ fn test_idle_override() -> Option<u64> {
 
 /// Seconds since the last input the OS itself recorded for this session, or
 /// `None` where there is no such query (non-Windows, or the call failed).
-///
-/// `GetLastInputInfo` reports a tick count, which wraps roughly every 49.7
-/// days of uptime. `GetTickCount64` does not, so the subtraction is done in
-/// 64-bit and the 32-bit reading is widened against it - otherwise a machine
-/// up longer than that would report a nonsense idle time exactly once per wrap
-/// and stop a session for no reason.
 #[cfg(windows)]
 fn system_idle_seconds() -> Option<u64> {
     #[cfg(test)]
@@ -203,7 +197,7 @@ impl ActivityMeter {
         }
     }
 
-    /// ID-5: reinstall the input hooks if Windows has removed them behind our
+    /// reinstall the input hooks if Windows has removed them behind our
     /// back.
     ///
     /// Idle time no longer depends on the hooks (see `idle_seconds`), so a
@@ -212,10 +206,6 @@ impl ActivityMeter {
     /// query cannot provide. A member typing normally would score at the floor
     /// and look disengaged. Tearing the thread down and starting it again
     /// re-runs `SetWindowsHookExW`.
-    ///
-    /// Cheap enough to call on a schedule: the check is two atomic loads and
-    /// one `GetLastInputInfo`, and it does nothing at all unless the two
-    /// disagree.
     pub fn restart_hooks_if_dead(self: &Arc<Self>) -> bool {
         if !Self::HOOKS_SUPPORTED || !self.hooks_look_dead() {
             return false;
@@ -256,11 +246,6 @@ impl ActivityMeter {
     /// `METER_FOR_HOOK`/`hook_thread_id`, so the old thread's cleanup could
     /// stomp on the new thread's state and leave input hooks permanently
     /// dead with nothing logged.
-    ///
-    /// `std::thread::JoinHandle` has no built-in timed join, so this joins
-    /// on a small watcher thread instead and gives up (without blocking
-    /// forever) if the hook thread doesn't exit in time - the watcher thread
-    /// itself is then simply leaked to finish the join on its own.
     fn join_hook_thread(&self) {
         let Some(handle) = self.hook_thread_handle.lock().take() else {
             return;
@@ -405,33 +390,11 @@ impl ActivityMeter {
 
     /// Seconds since the last real mouse/keyboard input.
     ///
-    /// ID-5: this used to read only `last_input_ms`, which is fed exclusively
-    /// by the two `WH_*_LL` hooks installed in `run_listeners`. Those hooks can
-    /// stop delivering without any error and without notifying this process:
-    ///
-    ///  - Windows **silently removes** a low-level hook whose callback misses
-    ///    `LowLevelHooksTimeout` (`HKCU\Control Panel\Desktop`, 300ms by
-    ///    default). Nothing is returned, nothing is logged, the hook is simply
-    ///    gone. A machine under load - exactly the machines people report lag
-    ///    on - is where this happens.
-    ///  - UIPI stops low-level hooks seeing input aimed at a
-    ///    higher-integrity-level process, so anyone working in an elevated app
-    ///    reads as idle for as long as they stay there.
-    ///  - Anything that stalls the hook thread's message pump stops delivery
-    ///    for as long as the stall lasts.
-    ///
-    /// Any one of those froze `last_input_ms`, so idle time grew without bound
-    /// and `tick_idle_escalation` stopped the session and rewound the clock
-    /// while the member was actively typing. That is the "unexpected pausing"
-    /// in the field reports.
-    ///
     /// `GetLastInputInfo` is the authority instead. It is a kernel-level query
     /// answered from the session's own input record: it needs no hook, cannot
     /// be silently removed, and never stalls. The hooks stay - the activity
     /// *score* genuinely needs per-event counts, which this cannot give - but
     /// they no longer decide whether someone is present.
-    ///
-    /// The smaller of the two wins, so either source seeing input is enough.
     pub fn idle_seconds(&self) -> u64 {
         let from_hooks = {
             let last = self.last_input_ms.load(Ordering::Relaxed);
@@ -927,7 +890,7 @@ mod tests {
         assert_eq!(signal.injected_event_count, 1);
     }
 
-    // ID-5: idle used to read only the hook-fed timestamp, so a hook Windows
+    // idle used to read only the hook-fed timestamp, so a hook Windows
     // silently removed froze it and the session stopped and rewound while the
     // member was typing. These pin the OS-level cross-check that replaced it.
     // No assumption that anyone is at the machine - this runs on CI too. What

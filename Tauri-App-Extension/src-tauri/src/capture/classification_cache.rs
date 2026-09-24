@@ -1,10 +1,5 @@
 //! Disk-backed cache of the server's app display-name mappings.
 //!
-//! The mapping used to live only in memory, so restarting the agent while
-//! offline showed raw executable names - `chrome.exe`, `msedge.exe` - until it
-//! could next reach the server. Persisting it means a cold start with no
-//! network still shows real names.
-//!
 //! **This cache has no authority.** Categories are resolved server-side at
 //! read time and the agent never sends a category (there is a test in
 //! types.rs enforcing that). So a member who edits or deletes this file

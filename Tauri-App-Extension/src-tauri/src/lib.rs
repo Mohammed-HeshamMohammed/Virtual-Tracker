@@ -1120,7 +1120,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(move |_app_handle, event| {
-            // PS-3: flushes the same way an explicit quit/tray-quit already
+            // flushes the same way an explicit quit/tray-quit already
             // does (controller.stop() -> flush_and_stop_tracker), but on
             // tauri::RunEvent::Exit specifically - which Tauri's event loop
             // emits both for an explicit app.exit() *and* an OS-initiated

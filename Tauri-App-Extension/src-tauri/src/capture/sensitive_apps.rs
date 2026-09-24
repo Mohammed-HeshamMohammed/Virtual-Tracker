@@ -1,37 +1,17 @@
 //! Personal messaging apps and sites the agent blurs a screenshot for, rather
 //! than skip capturing entirely.
 //!
-//! A screenshot of Telegram, WhatsApp or Messenger - desktop app or the
-//! browser version - is a photo of someone's private conversation, which
-//! nothing about "was the member using a messaging app during work hours"
-//! requires being able to read. Excluding the app from capture altogether
-//! (capture/events.rs's org-configured `excluded_apps`) drops the app-log
-//! entry too, so it wouldn't even show up as time spent; blurring keeps that
-//! record and the fact that a screenshot exists, while making the pixels
-//! themselves unreadable.
-//!
-//! This list is fixed in the agent rather than org-configurable, unlike
-//! `excluded_apps` - it is a baseline privacy default, not a setting.
-//!
-//! # Three signals, because any one of them alone misses a lot
-//!
-//! Process name and URL together still let obvious cases through, which is
-//! why the window title is consulted as well:
-//!
 //! * **The URL is often absent.** `EventBuilder::recent_url` deliberately
-//!   returns `None` unless the focused window is still a browser *and* the
-//!   reading is fresh, because a stale URL would mislabel the capture. When
-//!   it declines, a browser sitting on web.whatsapp.com offers nothing but
-//!   `chrome.exe` to match on - and that is not a messaging app.
+//! returns `None` unless the focused window is still a browser *and* the
+//! reading is fresh, because a stale URL would mislabel the capture. When
+//! it declines, a browser sitting on web.whatsapp.com offers nothing but
+//! `chrome.exe` to match on - and that is not a messaging app.
 //! * **Store/UWP apps do not report their own process.** On Windows the
-//!   foreground window of a packaged app belongs to `ApplicationFrameHost.exe`,
-//!   so the Microsoft Store build of WhatsApp never matched by executable.
+//! foreground window of a packaged app belongs to `ApplicationFrameHost.exe`,
+//! so the Microsoft Store build of WhatsApp never matched by executable.
 //! * **In-site DMs are not their own host.** Facebook, Instagram, X and
-//!   LinkedIn conversations live under the ordinary site host, so a host-only
-//!   rule cannot see them; those need the path.
-//!
-//! The title is the signal that survives all three, because it is read from
-//! the window itself and is present whatever the process or URL says.
+//! LinkedIn conversations live under the ordinary site host, so a host-only
+//! rule cannot see them; those need the path.
 
 /// Executable names (Windows) or bundle-derived process names (macOS),
 /// lowercased; the caller trims any `.exe` before comparing.
@@ -84,13 +64,6 @@ const MESSAGING_URL_PATHS: &[(&str, &str)] = &[
 
 /// Words that identify a messaging app when they appear as a whole word in a
 /// window title.
-///
-/// Every entry here is a brand with no ordinary English meaning, which is the
-/// bar for being on this list: matching the title is the only way to catch a
-/// packaged app or a browser whose URL reading declined, but it is also the
-/// loosest signal, and a word like "signal", "teams", "line" or "messages"
-/// would fire on perfectly innocent documents. Those live in
-/// `TITLE_PHRASES` instead, where the surrounding words disambiguate them.
 const TITLE_WORDS: &[&str] = &[
     "whatsapp",
     "telegram",
@@ -164,15 +137,6 @@ fn title_matches(title: &str) -> bool {
 /// The lowercased host of a URL, with scheme, userinfo, port, path, query and
 /// fragment all stripped - e.g. `https://user@web.whatsapp.com:443/a/b?x#y`
 /// becomes `web.whatsapp.com`.
-///
-/// A plain `url.contains(marker)` used to blur screenshots that had nothing
-/// to do with the marked service - "messenger.com" as a substring also
-/// matches an unrelated domain like "trendmessenger.com", and matches inside
-/// a path or query string on any site at all (a shared link, a redirect
-/// target, an ad-tracking parameter). Comparing only the host, and requiring
-/// it to equal the marker or end with it on a label boundary (".marker"),
-/// keeps every case the marker list was actually written for while dropping
-/// those false positives.
 fn url_host(url: &str) -> Option<String> {
     let after_scheme = url.split("://").nth(1).unwrap_or(url);
     let authority_end = after_scheme.find(['/', '?', '#']).unwrap_or(after_scheme.len());

@@ -69,9 +69,6 @@ pub struct EventBuilder {
 
 /// Credits each observed URL from when it appeared until the next one did
 /// (the last runs to `now`), then trims the total back to one tick's worth.
-///
-/// Split out from `observed_urls_for` purely so the arithmetic is testable
-/// without a live browser driving the COM subscription.
 fn attribute_dwell(
     observations: &[crate::capture::uia_url::UrlObservation],
     now: Instant,
@@ -320,13 +317,6 @@ impl EventBuilder {
 
     /// Every URL the member actually visited this tick, not just whichever
     /// one they happened to be on at the sample instant.
-    ///
-    /// The address-bar subscription (capture/uia_url.rs) reports navigations
-    /// as they happen, so a member who moved through four records in a dialer
-    /// in fifteen seconds gets four rows with their real dwell instead of one.
-    /// When there were no events - nothing navigated, or the subscription
-    /// isn't available - this falls back to a single polled read, which is the
-    /// old behaviour exactly.
     pub fn url_slices(&self, window: &ForegroundWindow) -> Vec<ActivityEvent> {
         let observed = self.observed_urls_for(window);
         if !observed.is_empty() {

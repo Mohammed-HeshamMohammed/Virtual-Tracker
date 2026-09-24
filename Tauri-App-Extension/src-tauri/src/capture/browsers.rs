@@ -1,18 +1,4 @@
 //! One table of everything the agent knows about browsers.
-//!
-//! This used to be spread across four places that had each drifted to a
-//! different, incomplete list: `BROWSER_EXES` and `browser_hint_from_exe` in
-//! window.rs, `$browserPaneNames` in get-browser-url.ps1, the omnibox ids in
-//! uia_url.rs, and `isBrowserAppName` on the backend. Adding a browser meant
-//! remembering all four, so in practice a browser was "supported" by whichever
-//! subset someone had thought to update.
-//!
-//! Everything browser-shaped now resolves from `BROWSERS`: foreground
-//! detection, the display name, the UI Automation pane name, which omnibox
-//! selectors to try, and where the history database lives.
-//!
-//! Most of the table is read only by the Windows URL capture (uia_url.rs,
-//! history.rs), so on other platforms much of it goes unused.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::path::PathBuf;

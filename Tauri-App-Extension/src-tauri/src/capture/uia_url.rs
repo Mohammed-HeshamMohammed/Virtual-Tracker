@@ -1,26 +1,4 @@
 //! In-process UI Automation reader for the focused browser's address bar.
-//!
-//! Replaces spawning `get-browser-url.ps1` on every app-slice tick. Two things
-//! made that expensive enough to hurt heavy pages (call-centre dialers and the
-//! like, whose accessibility trees are enormous):
-//!
-//!   1. A fresh `powershell.exe` per tick - process start, `Add-Type`, JIT.
-//!   2. A fresh *search* per tick. Locating the omnibox means a
-//!      `FindFirst(TreeScope_Descendants)`, and on Chromium a search that has
-//!      to enumerate forces the renderer to realise its whole a11y tree.
-//!
-//! The fix for (2) is that the omnibox element is stable for the lifetime of a
-//! browser window - only its *value* changes as you navigate. So search once
-//! per window, cache the element, and every later read is a single
-//! `CurrentValue()` call: one cheap cross-process hop, no tree walk at all.
-//!
-//! All UIA work happens on one long-lived worker thread that owns the COM
-//! apartment and the cache, so nothing has to be marshalled between threads.
-//! Callers get a plain `Option<String>` back over a channel with their own
-//! timeout, exactly like the old subprocess path.
-//!
-//! Windows-only in practice: every caller is behind `#[cfg(windows)]`. The
-//! module still compiles everywhere so its tests run on the Linux CI box.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -518,8 +496,6 @@ mod tests {
     /// End-to-end against a real browser. Ignored by default: needs a desktop
     /// session and an installed Chrome, so it can't run on the Linux CI box.
     /// Run by hand on Windows after touching the UIA code:
-    ///
-    ///   cargo test --lib -- --ignored --nocapture reads_a_live_browser
     #[cfg(windows)]
     #[test]
     #[ignore = "needs a real desktop session and Chrome installed"]

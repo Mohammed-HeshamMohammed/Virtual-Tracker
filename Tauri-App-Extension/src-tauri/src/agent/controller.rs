@@ -609,10 +609,6 @@ impl AgentController {
 
     /// Whether the agent can actually talk to the backend right now, as
     /// opposed to merely holding a token. Checked on the UI's existing poll.
-    ///
-    /// The debounce matters: a single failed check is a blip, not a broken
-    /// session, and flipping the whole window on one bad request reads as the
-    /// app being broken.
     pub fn get_connection_state(&self) -> ConnectionState {
         let (has_token, has_device) = {
             let api = self.api.lock();
@@ -953,7 +949,7 @@ impl AgentController {
         Ok(())
     }
 
-    /// CF-2: tracking cannot start before the current disclosure notice has
+    /// tracking cannot start before the current disclosure notice has
     /// been acknowledged. Fails CLOSED on a network problem or a malformed
     /// response - the entire point of a consent gate is that "couldn't
     /// check" must never be silently read as "consented". `Ok(None)` from
@@ -989,14 +985,14 @@ impl AgentController {
         }
     }
 
-    /// CF-2: the current disclosure notice for the UI to show. `None` on any
+    /// the current disclosure notice for the UI to show. `None` on any
     /// failure (network, not signed in) - the UI treats that the same as
     /// "nothing to show yet", not as "already acknowledged".
     pub fn get_monitoring_notice(&self) -> Option<crate::types::MonitoringNoticeView> {
         self.api.lock().fetch_monitoring_notice().ok().flatten()
     }
 
-    /// CF-2: records that the notice was shown AND accepted - the two-step
+    /// records that the notice was shown AND accepted - the two-step
     /// disclosure-then-consent model from CF-0.2, collapsed into one command
     /// because the UI only calls this once the user has actually clicked
     /// through the notice (there's no "shown but not yet acted on" state in

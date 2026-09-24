@@ -29,14 +29,6 @@ impl ApiClient {
     /// network/parse failure - an empty map reads downstream as "no project
     /// has a budget limit," which would fail-open a budget gate on a
     /// transient blip instead of surfacing the problem.
-    ///
-    /// Value is (limit_reached, spent_percent). spent_percent is computed for
-    /// every row with a real target, not only ones with stop_timers_when_reached
-    /// on - it used to be thrown away for every project that hadn't opted into
-    /// stopping timers, which was every project the sidebar showed 0% progress
-    /// for despite real budget spend: the task-completion percentage
-    /// (recentProjects) reads 0% until a task is marked done, and nothing else
-    /// filled in for a project tracked by budget instead of a task checklist.
     pub fn fetch_project_budgets_map(
         &mut self,
     ) -> Result<std::collections::HashMap<String, (bool, Option<f64>)>, ApiError> {
@@ -267,23 +259,6 @@ impl ApiClient {
     /// self-assigns it so it actually shows up in "Your tasks"
     /// (fetch_assigned_tasks is assigned_to-filtered) without a trip to the
     /// web dashboard first.
-    ///
-    /// Self-assign goes through POST /api/tasks/:id/assignments, not the
-    /// flat POST /api/task-assignments this used to call. The flat one is
-    /// gated by requireManagementRole - org-wide Manager tier or above, with
-    /// no exception for the task's own creator - so a per-project manager
-    /// (project_role = "manager" in project_members, which is exactly who
-    /// can_create_tasks already let create this task) whose org-wide role
-    /// sits below Manager would create the task and then be silently
-    /// refused assigning it to themselves, with no way to tell why from the
-    /// agent. The per-task endpoint's canSyncTaskAssignments explicitly
-    /// allows the task's own creator in addition to management, which is
-    /// exactly who is calling this method.
-    ///
-    /// This can still fail on its own (e.g. the member is already at their
-    /// daily/weekly work-hour limit) - that failure doesn't unwind the task,
-    /// which already exists and is real; self_assigned just tells the caller
-    /// whether to say so.
     pub fn create_task(
         &mut self,
         project_id: &str,
@@ -634,9 +609,6 @@ impl ApiClient {
     /// the workspace `canLogManualTime` capability the UI reads - the server
     /// separately enforces that entries for *other* members need a
     /// management role (assertTimeEntryWriteAuthorized).
-    ///
-    /// start_time/end_time are sent as explicit nulls, not omitted and not
-    /// "": they are nullable TIME columns, and Postgres rejects '' for TIME.
     pub fn create_time_entry(
         &mut self,
         member_id: &str,

@@ -356,14 +356,6 @@ impl ApiClient {
     }
 
     /// Change the signed-in member's own timezone (`members.timezone`).
-    ///
-    /// Deliberately the *same* endpoint and column the web profile page
-    /// writes, rather than an agent-local override: which calendar a member's
-    /// day boundaries resolve in has to have exactly one answer, and a second
-    /// per-install copy would need a precedence rule the moment the two
-    /// disagreed. Validated server-side against
-    /// `Intl.supportedValuesOf("timeZone")`, so an unknown id is rejected
-    /// there rather than silently stored.
     pub fn update_member_timezone(&mut self, timezone: &str) -> Result<(), String> {
         let auth = self.authorized().ok_or("Sign in to change your timezone.")?;
         let url = format!("{}/api/auth/profile", self.api_url);

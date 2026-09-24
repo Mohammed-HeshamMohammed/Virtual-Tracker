@@ -1,20 +1,10 @@
 //! PLAN-livesyncandagenttimer.md P10 - subscribes the agent to the same
 //! presence-WebSocket change bus Dashboard-Web reuses as its live-sync
-//! transport (§3/§4). Best-effort only: frames carry no data (§4.1), this
+//! transport (§3/§4). Best-effort only: frames carry no data, this
 //! thread only exists to shrink the 5s SESSION_POLL_SEC gap to sub-second for
 //! `changedEvent("task-assignments")`/`changedEvent("tasks")` (case 45, T4/T5).
 //! The poll stays as-is and is what keeps working when this connection is
 //! down - never remove it in favor of this.
-//!
-//! Runs on its own OS thread using a *blocking* stream (matching this app's
-//! existing all-blocking-call architecture - see `run_blocking` in lib.rs for
-//! why nothing here uses the tokio runtime tauri carries). A manually-built
-//! `TcpStream` with a read timeout is used instead of `tungstenite::connect`
-//! so the same thread can both read incoming frames and send the periodic
-//! application-level `{"type":"ping"}` presence-gateway.js requires (it only
-//! resets its 120s heartbeat watch on that message, not on WS-protocol control
-//! frames) - see `Dashboard-Web/features/auth/services/presence-ws.ts` for the
-//! client this mirrors.
 use std::io::ErrorKind;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;

@@ -1,32 +1,22 @@
 //! Which layout the main window uses, and the size that goes with it.
 //!
-//! The original window was a fixed 1100x750. That is taller than a lot of
-//! screens have room for: a 1366x768 laptop leaves ~728px once the taskbar is
-//! taken off, a 1080p laptop at 150% scaling ~680px, and a 1366x768 panel at
-//! 125% only ~566px - and those last ones are narrow as well as short.
-//! Squashing that layout to fit would shrink the sidebar and the main pane,
-//! so each screen class gets its own arrangement instead, with every element
-//! kept at its normal size:
-//!
 //! - **Standard** 1320x660 - wider and noticeably shorter than the window
-//!   used to be, so it fits a laptop screen without running off the bottom.
-//!   This is the default now. On a screen with the room, and with the apps &
-//!   screenshots card switched on (`show_insights` in prefs.rs, off by
-//!   default), the week's top apps and the screenshots get a column of their
-//!   own on the right; with it off, or without the room for the column, the
-//!   window is that much narrower instead of showing the column half-hidden.
+//! used to be, so it fits a laptop screen without running off the bottom.
+//! This is the default now. On a screen with the room, and with the apps &
+//! screenshots card switched on (`show_insights` in prefs.rs, off by
+//! default), the week's top apps and the screenshots get a column of their
+//! own on the right; with it off, or without the room for the column, the
+//! window is that much narrower instead of showing the column half-hidden.
 //! - **Wide** 1420x820 - for a big monitor. Same column as Standard, just
-//!   more room in it. Never picked by Auto on its own.
+//! more room in it. Never picked by Auto on its own.
 //! - **Extended** 1100x750 - the original window, fixed size, no column ever
-//!   (it doesn't shrink, so a hidden column would just be dead space) - for
-//!   anyone who wants the classic layout and has a monitor for it. Never
-//!   picked by Auto on its own, same as Wide.
+//! (it doesn't shrink, so a hidden column would just be dead space) - for
+//! anyone who wants the classic layout and has a monitor for it. Never
+//! picked by Auto on its own, same as Wide.
 //! - **Focus** 1100x600 - screens too small even for Standard. No apps &
-//!   screenshots column; the tasks get a narrow column of their own on the
-//!   right instead, so the sidebar only holds the projects, and the main
-//!   pane shows the top apps without the screenshots.
-//!
-//! The CSS side is `.layout-*` and `.no-side-column` in App.css.
+//! screenshots column; the tasks get a narrow column of their own on the
+//! right instead, so the sidebar only holds the projects, and the main
+//! pane shows the top apps without the screenshots.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -148,9 +138,6 @@ fn auto_kind(work_area: Option<(f64, f64)>) -> LayoutKind {
 /// Picks the layout and size for the stored layout preference, the apps &
 /// screenshots setting, and the screen's work area in logical pixels (`None`
 /// when no monitor could be read).
-///
-/// An explicit layout is always honoured. "auto", and anything unrecognised,
-/// looks at the screen.
 pub fn resolve(
     preference: &str,
     show_insights: bool,

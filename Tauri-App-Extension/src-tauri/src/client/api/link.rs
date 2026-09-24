@@ -83,10 +83,6 @@ impl ApiClient {
     }
 
     /// Returns (HTTP status, tokens). Status 0 means a network error.
-    ///
-    /// Also captures the long-lived device credential the backend hands back
-    /// here, so this machine can re-authenticate on its own later instead of
-    /// needing another browser link.
     pub fn poll_link_exchange(
         &mut self,
         link_token: &str,

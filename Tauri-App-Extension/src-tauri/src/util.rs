@@ -98,14 +98,6 @@ pub fn is_allowed_link_hint(hint: &str) -> bool {
 }
 
 /// Where to send the browser for a given (already-validated) sign-in hint.
-///
-/// `provider=google` skips our own web login page entirely and opens
-/// Auth-Backend's `/api/auth/google/start`, which 302s straight to Google's
-/// account chooser - a genuine one-hop instead of a visible flash of our own
-/// site before Firebase's client SDK (running on that page) redirects away.
-/// Every other hint (`provider=apple`, `mode=signup`, `mode=forgot-password`,
-/// or none) still targets the web login page, which reads the hint itself to
-/// jump to the right pane/provider.
 pub fn build_link_sign_in_url(
     web_url: &str,
     auth_url: &str,

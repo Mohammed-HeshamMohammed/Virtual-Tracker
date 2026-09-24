@@ -6,10 +6,6 @@ use super::{ApiClient, ApiError};
 use crate::constants::HTTP_TIMEOUT_SEC;
 
 /// The machine's IANA timezone name, or `None` if the OS won't tell us.
-///
-/// `None` is a normal outcome, not an error: the backend simply keeps
-/// whatever it already had (or its UTC default), which is exactly the
-/// behaviour that shipped before this was reported at all.
 fn local_timezone() -> Option<String> {
     iana_time_zone::get_timezone()
         .ok()

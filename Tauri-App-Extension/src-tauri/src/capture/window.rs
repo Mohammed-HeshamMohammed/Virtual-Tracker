@@ -105,11 +105,6 @@ pub const UNIDENTIFIED: &str = "Unknown";
 /// Start menu, the search flyout, the lock screen, the touch keyboard, the
 /// notification centre, and the frame host that draws packaged apps' title
 /// bars when its real occupant could not be resolved.
-///
-/// These reach `GetForegroundWindow` whenever someone opens the Start menu or
-/// clicks the search box, and were logged as apps called "Searchhost",
-/// "Shellexperiencehost" and "Applicationframehost", each with real seconds
-/// against it. Opening the Start menu is not using an application.
 const SHELL_SURFACES: &[&str] = &[
     "applicationframehost.exe",
     "lockapp.exe",
@@ -125,16 +120,6 @@ const SHELL_SURFACES: &[&str] = &[
 
 impl ForegroundWindow {
     /// Whether we actually know what the member was looking at.
-    ///
-    /// `GetForegroundWindow` returns something at all times - including when
-    /// there is nothing meaningful in front: the desktop between alt-tabs, a
-    /// UAC prompt or other elevated window this process may not open, the
-    /// lock screen, a window that closed mid-read. Every one of those left
-    /// `process_name` as the "Unknown" sentinel, and the tracker recorded it
-    /// as an app by that literal name. It then accumulated real dwell seconds
-    /// and turned up in Top Apps as "Unknown", which reads like a mysterious
-    /// program the member was using rather than what it is: a gap in what the
-    /// agent could see.
     ///
     /// A slice we cannot attribute is not tracked time. Callers skip it.
     pub fn is_identified(&self) -> bool {
@@ -285,13 +270,6 @@ unsafe extern "system" fn core_window_probe(
 }
 
 /// The process actually behind a packaged app's window.
-///
-/// Calculator, Spotify, WhatsApp, Snipping Tool, Photos and Settings are all
-/// packaged apps: Windows draws them inside `ApplicationFrameHost.exe`, and
-/// `GetWindowThreadProcessId` on the foreground window returns the *host*.
-/// Every one of them was therefore logged as one app called
-/// "Applicationframehost" instead of by its own name. The real app owns a
-/// CoreWindow child of that frame, so ask the children.
 #[cfg(windows)]
 unsafe fn packaged_app_pid(host: windows::Win32::Foundation::HWND, host_pid: u32) -> Option<u32> {
     use windows::Win32::Foundation::LPARAM;

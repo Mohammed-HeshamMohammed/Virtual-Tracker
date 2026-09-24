@@ -1,14 +1,4 @@
 //! Windows DPAPI (CryptUnprotectData) - **read-only, migration-only**.
-//!
-//! MAC-1/F1: token storage moved to the OS credential store (Windows
-//! Credential Manager / macOS Keychain / *nix Secret Service) via the
-//! `keyring` crate - see `auth::tokens`. This file's only remaining job is
-//! decrypting a pre-existing DPAPI-encrypted token file on first launch
-//! after that migration, so an install that predates it doesn't get silently
-//! signed out. `protect()` is gone entirely: nothing writes DPAPI anymore.
-//!
-//! Safe to delete this file in a future release once no install still has a
-//! pre-migration file on disk to read.
 
 #[cfg(windows)]
 pub fn unprotect(data: &[u8]) -> Option<Vec<u8>> {

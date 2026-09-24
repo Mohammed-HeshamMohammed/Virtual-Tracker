@@ -230,7 +230,7 @@ pub struct SessionInfo {
     pub active_seconds: u64,
     #[serde(default)]
     pub idle_seconds: u64,
-    /// TC-5: the server truncated active_seconds against the task's daily
+    /// the server truncated active_seconds against the task's daily
     /// cap on this sync - the timer is over its allowance and should be
     /// stopped, not left running with a number that's no longer advancing.
     #[serde(default)]
@@ -241,7 +241,7 @@ pub struct SessionInfo {
     pub budget_capped: bool,
 }
 
-/// CF-2: the disclosure notice as shown to the UI, composed server-side from
+/// the disclosure notice as shown to the UI, composed server-side from
 /// the live monitoring_policy row - the agent never hardcodes or composes
 /// this text itself. `requires_acknowledgement` is what gates tracking start.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -292,7 +292,7 @@ pub struct TaskTimeTracking {
     #[serde(default)]
     pub limit_reached: bool,
     pub allowance_message: Option<String>,
-    /// ID-3: the owning project's idle-time settings, fetched fresh on every
+    /// the owning project's idle-time settings, fetched fresh on every
     /// task/session transition instead of a hardcoded/org-wide constant - see
     /// PLAN-agent-crash-safe-progress.md. `disable_idle_time = true` means no
     /// active/idle split and no idle escalation for this project at all.
@@ -563,10 +563,6 @@ pub struct ProjectAppTime {
 }
 
 /// The week's top apps together with what they were drawn from.
-///
-/// The endpoint returns only a handful of apps. Without the totals the panel
-/// could not say what it was showing a handful *of*, so its times visibly
-/// failed to add up to the tracked week shown beside them and read as a bug.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectAppBreakdown {

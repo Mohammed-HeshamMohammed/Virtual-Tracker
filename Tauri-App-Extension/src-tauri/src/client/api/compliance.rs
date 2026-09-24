@@ -45,7 +45,7 @@ impl ApiClient {
             .unwrap_or_default())
     }
 
-    /// CF-2: the current disclosure notice, composed server-side from the
+    /// the current disclosure notice, composed server-side from the
     /// live monitoring_policy row. `Ok(None)` = reachable but nothing to show
     /// (e.g. not signed in yet). `Err(_)` = could not reach the backend at
     /// all - callers must NOT treat this as "no acknowledgement needed" or a
