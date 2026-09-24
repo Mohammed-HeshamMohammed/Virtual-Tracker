@@ -21,12 +21,16 @@ pub struct EventQueue {
     /// Number of batches (lines) currently on disk, tracked in memory so `enqueue()`
     /// doesn't have to re-read the entire backlog file on every single call just to decide
     queued_count: AtomicUsize,
+    /// Batches discarded because the backlog hit the cap, since the last read.
+    /// A dropped batch is tracked work that will never reach the server, so it
+    /// is counted rather than only logged.
+    dropped_count: AtomicUsize,
 }
 
 impl EventQueue {
     pub fn new(path: PathBuf) -> Self {
         let queued_count = AtomicUsize::new(count_lines(&path));
-        Self { path, queued_count }
+        Self { path, queued_count, dropped_count: AtomicUsize::new(0) }
     }
 
     /// Buffer a batch that failed to upload, for retry once the connection returns.
@@ -99,8 +103,21 @@ impl EventQueue {
         }
         let drop_count = lines.len() - MAX_QUEUED_BATCHES + 1;
         log::warn!("Offline queue full, dropping {drop_count} oldest batch(es)");
+        self.dropped_count.fetch_add(drop_count, Ordering::Relaxed);
         let kept: Vec<String> = lines.into_iter().skip(drop_count).collect();
         self.rewrite(&kept);
+    }
+
+    /// Reads and clears the count, so a caller that reports it upstream cannot
+    /// report the same drops twice.
+    pub fn take_dropped(&self) -> usize {
+        self.dropped_count.swap(0, Ordering::Relaxed)
+    }
+
+    /// Puts a count back after a failed report, so a network blip cannot
+    /// silently swallow the very fact this exists to surface.
+    pub fn restore_dropped(&self, count: usize) {
+        self.dropped_count.fetch_add(count, Ordering::Relaxed);
     }
 
     fn rewrite(&self, lines: &[String]) {
@@ -185,6 +202,45 @@ mod tests {
         let reopened = EventQueue::new(path.clone());
         assert_eq!(reopened.queued_count(), 1);
 
+        let _ = fs::remove_file(&path);
+    }
+
+    /// A dropped batch is tracked work that never reaches the server, so the
+    /// count has to survive until it is reported and must not be reported twice.
+    #[test]
+    fn dropped_batches_are_counted_and_read_exactly_once() {
+        let path = temp_queue_path("dropped-once");
+        let _ = fs::remove_file(&path);
+        let queue = EventQueue::new(path.clone());
+        assert_eq!(queue.take_dropped(), 0);
+
+        let lines: Vec<String> = (0..MAX_QUEUED_BATCHES + 3)
+            .map(|i| {
+                serde_json::to_string(&QueuedBatch {
+                    session_id: format!("session-{i}"),
+                    events: sample_events(),
+                })
+                .unwrap()
+            })
+            .collect();
+        queue.rewrite(&lines);
+        queue.trim_if_needed();
+
+        let dropped = queue.take_dropped();
+        assert!(dropped > 0, "trimming past the cap must count what it discarded");
+        assert_eq!(queue.take_dropped(), 0, "a second read must not report the same drops again");
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_failed_report_can_put_the_count_back() {
+        let path = temp_queue_path("dropped-restore");
+        let _ = fs::remove_file(&path);
+        let queue = EventQueue::new(path.clone());
+
+        queue.restore_dropped(4);
+        assert_eq!(queue.take_dropped(), 4);
+        assert_eq!(queue.take_dropped(), 0);
         let _ = fs::remove_file(&path);
     }
 

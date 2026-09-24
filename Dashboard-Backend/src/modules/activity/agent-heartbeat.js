@@ -1,6 +1,7 @@
 import { getRedisClient } from "../../lib/redis/client.js";
 import { updatePgSession } from "../../lib/postgres/activity-events-postgres.service.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
+import { recordNotice } from "./record-notices.js";
 import { recordSecurityEvent } from "../../core/metrics.js";
 
 /**
@@ -207,4 +208,11 @@ export async function closeAbandonedSession(session) {
     event: "abandoned_session_closed",
     detail: `session=${session.id} member=${session.member_id ?? "unknown"}`,
   });
+  // The reason was already stored; nothing told the person whose timer it was.
+  await recordNotice({
+    memberId: session.member_id,
+    kind: "session_reaped",
+    secondsAffected: Number(session.active_seconds) || 0,
+    detail: `session ${session.id}`,
+  }).catch((err) => logSafeWarn("[agent-heartbeat] could not record the reap notice", err));
 }

@@ -87,6 +87,13 @@ impl ApiClient {
 }
 
 impl ApiClient {
+    /// Tells the server that unsent activity was discarded, so the member is
+    /// told rather than only a local log line being written.
+    pub fn report_dropped_batches(&mut self, batches: usize) -> Result<(), ApiError> {
+        let body = serde_json::json!({ "kind": "work_dropped", "detail": format!("{batches} batch(es)") });
+        self.post_ok("/api/activity/record-notice", &body, "Could not report discarded activity.")
+    }
+
     /// `minutes = None` ends the break. This is the audit record; the tracker
     /// has already stopped capturing locally.
     pub fn set_private_break(&mut self, minutes: Option<u32>, reason: &str) -> Result<i64, ApiError> {

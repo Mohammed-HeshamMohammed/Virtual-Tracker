@@ -342,6 +342,14 @@ impl ActivityTracker {
         *next_flush_at = Instant::now() + Duration::from_secs(QUEUE_FLUSH_INTERVAL_SEC);
         self.queue
             .flush(|session_id, events| self.api.lock().post_events(session_id, events));
+
+        // Reported after the flush so the connection is as good as it will get.
+        // take_dropped clears the count, and a failed report puts it back rather
+        // than losing the fact that work was discarded.
+        let dropped = self.queue.take_dropped();
+        if dropped > 0 && self.api.lock().report_dropped_batches(dropped).is_err() {
+            self.queue.restore_dropped(dropped);
+        }
     }
 
     /// MAC-3/CQ-4: pulls the latest server-delivered app display-name map (CLS-1) into the
