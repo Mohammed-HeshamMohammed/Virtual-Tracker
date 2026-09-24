@@ -142,23 +142,60 @@ pub fn enable() -> Result<(), String> {
 
     let result = run_schtasks(&["/Create", "/TN", TASK_NAME, "/XML", &path.to_string_lossy(), "/F"]);
     let _ = std::fs::remove_file(&path);
+    remember(result.is_ok());
     result
 }
 
 #[cfg(windows)]
 pub fn disable() -> Result<(), String> {
     match run_schtasks(&["/Delete", "/TN", TASK_NAME, "/F"]) {
-        Ok(()) => Ok(()),
+        Ok(()) => {
+            remember(false);
+            Ok(())
+        }
         // Deleting a task that was never registered is the desired end state,
         // not a failure - turning the setting off twice must not report an error.
-        Err(e) if e.contains("cannot find") || e.contains("does not exist") => Ok(()),
+        Err(e) if e.contains("cannot find") || e.contains("does not exist") => {
+            remember(false);
+            Ok(())
+        }
         Err(e) => Err(e),
     }
 }
 
+/// Cached because every read costs a `schtasks.exe` process - cheap once,
+/// wasteful three times over during startup, which is when the frontend asks.
+/// Registration is the only thing that changes the answer, and it goes
+/// through enable/disable below, so the cache cannot go stale behind us.
+#[cfg(windows)]
+static TASK_REGISTERED: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(UNKNOWN);
+
+#[cfg(windows)]
+const UNKNOWN: u8 = 0;
+#[cfg(windows)]
+const REGISTERED: u8 = 1;
+#[cfg(windows)]
+const ABSENT: u8 = 2;
+
+#[cfg(windows)]
+fn remember(registered: bool) {
+    TASK_REGISTERED.store(
+        if registered { REGISTERED } else { ABSENT },
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
 #[cfg(windows)]
 pub fn is_enabled() -> bool {
-    run_schtasks(&["/Query", "/TN", TASK_NAME]).is_ok()
+    match TASK_REGISTERED.load(std::sync::atomic::Ordering::Relaxed) {
+        REGISTERED => true,
+        ABSENT => false,
+        _ => {
+            let found = run_schtasks(&["/Query", "/TN", TASK_NAME]).is_ok();
+            remember(found);
+            found
+        }
+    }
 }
 
 #[cfg(not(windows))]

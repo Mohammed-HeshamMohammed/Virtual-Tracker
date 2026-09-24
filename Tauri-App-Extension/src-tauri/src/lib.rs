@@ -487,7 +487,18 @@ pub fn run() {
             }));
 
             remove_legacy_autostart(app.handle());
-            let _ = apply_autostart(app.handle(), launch_at_login);
+            // Off the setup path: registering the scheduled task spawns
+            // schtasks.exe, and setup() runs before the window is shown, so
+            // doing it inline would hold the whole launch behind a subprocess
+            // that has nothing to do with starting up.
+            {
+                let autostart_handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    if let Err(err) = apply_autostart(&autostart_handle, launch_at_login) {
+                        log::warn!("[autostart] could not apply the start-at-login setting: {err}");
+                    }
+                });
+            }
 
             controller.start();
             controller.maybe_auto_sign_in();
