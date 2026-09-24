@@ -61,6 +61,16 @@ export function canSelfUpdate(currentVersion) {
   return compareVersions(currentVersion, minSelfUpdatableVersion()) >= 0;
 }
 
+/** Whether there is actually something newer to offer. Without this the feed
+ *  answered 200 with the agent's own version, and every agent downloaded a
+ *  manifest describing the build it was already running - harmless, because
+ *  the updater compares versions itself and ignores it, but a payload and a
+ *  signature sent on every check to say nothing. 204 is what the updater
+ *  means by "no update available". */
+export function hasNewerVersion(currentVersion, manifestVersion) {
+  return compareVersions(manifestVersion, currentVersion) > 0;
+}
+
 function assetFileName(downloadUrl) {
   const path = new URL(downloadUrl).pathname;
   return decodeURIComponent(path.slice(path.lastIndexOf("/") + 1));
@@ -136,6 +146,17 @@ export async function routeUpdateFeed(req, res, url, origin) {
     // updater's own "no update available", so this needs no agent-side change
     // and reaches every already-installed copy.
     if (!canSelfUpdate(currentVersion)) {
+      applyCors(res, origin);
+      res.writeHead(204, {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        ...corsHeaders(origin),
+        ...getSecurityHeaders(req),
+      });
+      res.end();
+      return true;
+    }
+
+    if (!hasNewerVersion(currentVersion, manifest.version)) {
       applyCors(res, origin);
       res.writeHead(204, {
         "Cache-Control": "no-cache, no-store, must-revalidate",
