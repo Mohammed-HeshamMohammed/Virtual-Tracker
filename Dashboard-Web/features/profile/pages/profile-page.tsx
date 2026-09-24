@@ -13,6 +13,7 @@ import { SidebarSection } from "@/features/profile/components/sidebar-section"
 import { AccountForm } from "@/features/profile/components/account-form"
 import { ChangePasswordDialog } from "@/features/profile/components/change-password-dialog"
 import { TIME_ZONES, ianaIdFromTimeZoneLabel } from "@/features/settings/components/shared/constants"
+import { IntegrityFlagsPanel } from "@/features/activity/components/integrity-flags-panel"
 import type { PhoneVerifyControlHandle } from "@/shared/ui/phone-verify-control"
 
 function detectBrowserTimezone(): string {
@@ -354,6 +355,11 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
               Close
             </button>
           </div>
+        </div>
+
+        {/* Renders nothing unless this member actually has flags. */}
+        <div className="mt-4">
+          <IntegrityFlagsPanel isDark={isDark} />
         </div>
       </div>
 

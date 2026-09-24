@@ -46,6 +46,23 @@ export async function getSessionIntegritySummary(sessionId) {
   };
 }
 
+/** The label and penalty travel with the flag, so the wording a member is
+ *  shown and the wording the score is explained with stay the same one. */
+function toFlagView(f) {
+  return {
+    id: f.id,
+    sessionId: f.session_id,
+    flagType: f.flag_type,
+    label: FLAG_LABELS[f.flag_type] ?? f.flag_type,
+    penalty: FLAG_PENALTIES[f.flag_type] ?? 0,
+    detail: f.detail,
+    detectedAt: f.detected_at,
+    contested: f.contested,
+    contestedAt: f.contested_at,
+    contestedNote: f.contested_note,
+  };
+}
+
 export async function getMemberIntegrityFlags(targetMemberId, actor) {
   if (targetMemberId !== actor?.memberId && !isManagementRole(actor?.roleName)) {
     const err = new Error("Not allowed to view this member's integrity flags.");
@@ -53,16 +70,7 @@ export async function getMemberIntegrityFlags(targetMemberId, actor) {
     throw err;
   }
   const rows = await listIntegrityFlagsForMemberPg(targetMemberId);
-  return rows.map((f) => ({
-    id: f.id,
-    sessionId: f.session_id,
-    flagType: f.flag_type,
-    detail: f.detail,
-    detectedAt: f.detected_at,
-    contested: f.contested,
-    contestedAt: f.contested_at,
-    contestedNote: f.contested_note,
-  }));
+  return rows.map(toFlagView);
 }
 
 export async function contestIntegrityFlag(flagId, note, actor) {
@@ -78,16 +86,5 @@ export async function contestIntegrityFlag(flagId, note, actor) {
     throw err;
   }
   const updated = await contestIntegrityFlagPg(flagId, String(note ?? "").slice(0, 2000));
-  return updated
-    ? {
-        id: updated.id,
-        sessionId: updated.session_id,
-        flagType: updated.flag_type,
-        detail: updated.detail,
-        detectedAt: updated.detected_at,
-        contested: updated.contested,
-        contestedAt: updated.contested_at,
-        contestedNote: updated.contested_note,
-      }
-    : null;
+  return updated ? toFlagView(updated) : null;
 }
