@@ -65,6 +65,7 @@ import { PROJECT_TYPES, projectTypeDef, projectTypeForcesHours } from "./project
 import { listSubProjectIdsPg, setSubProjectsPg } from "./management-rollup.service.js";
 import { validateIdleTimeSeconds } from "./idle-time.js";
 import { resolveIdleTimeLimit } from "./idle-time-limit.service.js";
+import { resolveProjectTimezoneInput, canSetProjectTimezone } from "./project-timezone.js";
 
 function validateProjectDomainBody(entityKey, body, isUpdate) {
   const entity = schemaByKey.get(entityKey);
@@ -389,6 +390,8 @@ export async function routeProjects(req, res, url, db, origin) {
           clientCanManage: Boolean(project.client_can_manage ?? project.clientCanManage ?? false),
           clientCanTrack: Boolean(project.client_can_track ?? project.clientCanTrack ?? false),
           endDate: toIso(project.end_date || project.endDate).slice(0, 10),
+          timezone: project.timezone || null,
+          canSetTimezone: canSetProjectTimezone(getAuthContext(req)?.roleName),
           subProjectIds: projectTypeDef(project.type).hasSubProjects
             ? await listSubProjectIdsPg(projectId)
             : [],
@@ -736,6 +739,7 @@ export async function routeProjects(req, res, url, db, origin) {
         requireStopNote: body.require_stop_note ?? body.requireStopNote,
         clientCanManage: (body.client_can_manage ?? body.clientCanManage) === true,
         clientCanTrack: (body.client_can_track ?? body.clientCanTrack) === true,
+        timezone: resolveProjectTimezoneInput(body.timezone, viewer.roleName) ?? null,
         createdBy: body.created_by ?? body.createdBy ?? viewer.memberId,
       });
       const subProjectIds = body.sub_project_ids ?? body.subProjectIds;
@@ -744,8 +748,12 @@ export async function routeProjects(req, res, url, db, origin) {
       }
       sendJson(res, origin, 200, { success: true, data: project });
     } catch (e) {
-      logSafeError("[projects POST]", e);
-      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Failed to create project" });
+      if (e?.code !== "FORBIDDEN") logSafeError("[projects POST]", e);
+      sendJson(res, origin, e?.code === "FORBIDDEN" ? 403 : 400, {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to create project",
+        code: e?.code,
+      });
     }
     return true;
   }
@@ -823,6 +831,7 @@ export async function routeProjects(req, res, url, db, origin) {
           requireStopNote: body.require_stop_note ?? body.requireStopNote,
           clientCanManage: body.client_can_manage ?? body.clientCanManage,
           clientCanTrack: body.client_can_track ?? body.clientCanTrack,
+          timezone: resolveProjectTimezoneInput(body.timezone, viewer.roleName),
           updatedBy: body.updated_by ?? body.updatedBy ?? viewer.memberId,
         };
         for (const key of Object.keys(patch)) {
@@ -863,9 +872,13 @@ export async function routeProjects(req, res, url, db, origin) {
         }
         sendJson(res, origin, 200, { success: true, data: project });
       } catch (e) {
-        logSafeError("[projects/:id PATCH]", e);
+        if (e?.code !== "FORBIDDEN") logSafeError("[projects/:id PATCH]", e);
         if (sendPgConstraintError(res, origin, e, req)) return true;
-        sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Failed to update project" });
+        sendJson(res, origin, e?.code === "FORBIDDEN" ? 403 : 400, {
+          success: false,
+          error: e instanceof Error ? e.message : "Failed to update project",
+          code: e?.code,
+        });
       }
       return true;
     }

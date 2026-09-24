@@ -18,6 +18,7 @@ export const projectSchemas = [
       viewers_notes: "text",
       type: "string",
       end_date: "date",
+      timezone: "string",
       require_task_to_track: "boolean",
       restrict_task_creation: "boolean",
       require_stop_note: "boolean",
