@@ -558,7 +558,13 @@ fn tick_progress_reports_idle_once_the_threshold_is_crossed() {
     let tracker = test_tracker(base_url);
     let mut state = TickState::new();
     state.task_id = "task-1".to_string();
-    state.idle_threshold_sec_for_project = 1; // cleared by the sleep below
+    state.idle_threshold_sec_for_project = 1;
+
+    // Pin the OS idle clock instead of relying on this machine genuinely being
+    // idle. Reading the real clock made this fail roughly one run in three -
+    // anything touching the keyboard or mouse during the suite reset it.
+    #[cfg(windows)]
+    let _idle = SimulatedOsIdle::seconds(5);
 
     thread::sleep(Duration::from_millis(1_100));
     let credited_idle = tracker.tick_progress(&mut state);
