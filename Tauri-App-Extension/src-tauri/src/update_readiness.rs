@@ -23,7 +23,11 @@ pub fn probe() -> UpdateInstallReadiness {
     // one could delete the other's file and make a writable directory look
     // read-only.
     let probe = dir.join(format!(".vt-update-probe-{}", std::process::id()));
-    let writable = match std::fs::File::create(&probe) {
+    // create_new, not create: this runs elevated, and following a symlink
+    // left at a predictable path would turn a read-only probe into a write
+    // somewhere else. An existing file also means the answer is unknown
+    // rather than yes, which is the cautious reading either way.
+    let writable = match std::fs::File::create_new(&probe) {
         Ok(_) => {
             let _ = std::fs::remove_file(&probe);
             true
