@@ -24,6 +24,18 @@ pub const APP_LOG_INTERVAL_SEC: u64 = 15;
 /// credited to the previous site. Beyond this the server falls back to its own
 /// inference, which is strictly better than a confident wrong answer.
 pub const URL_CACHE_MAX_AGE_SEC: u64 = APP_LOG_INTERVAL_SEC * 2;
+
+/// How stale a cached URL may be and still veto a screenshot's clarity.
+///
+/// Wider than URL_CACHE_MAX_AGE_SEC on purpose, because labelling and
+/// blurring want opposite things from an uncertain reading. Labelling must
+/// not claim a site it cannot prove, so it discards a stale URL. Blurring is
+/// asked "might this be a private conversation?", and the honest answer while
+/// the last known page was WhatsApp and nothing since has said otherwise is
+/// yes. Being wrong here costs a lightly blurred screenshot; being wrong the
+/// other way publishes someone's messages.
+pub const URL_BLUR_GRACE_SEC: u64 = APP_LOG_INTERVAL_SEC * 8;
+
 /// How often the tracker flushes its accumulated active/idle seconds back to
 /// the backend session so "hours worked" reflects reality within this window
 /// instead of only updating on start/stop.

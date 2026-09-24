@@ -15,7 +15,7 @@ use crate::capture::classification_cache;
 use crate::capture::window::{read_browser_url, ForegroundWindow};
 use crate::constants::{
     APP_LOG_INTERVAL_SEC, MAX_APP_NAME_LEN, MAX_PAGE_TITLE_LEN, MAX_URL_LEN,
-    SCREENSHOT_MAX_DELAY_SEC, SCREENSHOT_MIN_DELAY_SEC, URL_CACHE_MAX_AGE_SEC,
+    SCREENSHOT_MAX_DELAY_SEC, SCREENSHOT_MIN_DELAY_SEC, URL_BLUR_GRACE_SEC, URL_CACHE_MAX_AGE_SEC,
     URL_CAPTURE_BACKOFF_SEC, URL_CAPTURE_MAX_FAILURES, URL_CAPTURE_TICK_BUDGET_SEC,
 };
 use crate::types::ActivityEvent;
@@ -266,13 +266,15 @@ impl EventBuilder {
         // to something else between capture and here can't blur against a
         // page no longer on screen.
         let url = self.recent_url(window);
-        // The title is passed as well as the process and URL: a packaged
-        // Store app reports ApplicationFrameHost rather than its own
-        // executable, and recent_url declines whenever the reading is stale,
-        // so those two signals alone let obvious messaging windows through.
+        // Blur asks a different question from labelling, so it gets a
+        // different URL. `url` above is only set when the reading is fresh
+        // enough to name the site confidently; `url_for_blur` also accepts an
+        // older one, because a stale WhatsApp reading is still a reason to
+        // blur. The title is passed too, since a packaged Store app reports
+        // ApplicationFrameHost rather than its own executable.
         let blur = crate::capture::sensitive_apps::is_messaging_target(
             &window.process_name,
-            url.as_deref(),
+            self.url_for_blur(window).as_deref(),
             Some(window.title.as_str()),
         );
         let image_data = self.screen.capture_jpeg_data_url(blur)?;
@@ -298,6 +300,21 @@ impl EventBuilder {
         let guard = self.last_url.lock();
         let (url, captured_at) = guard.as_ref()?;
         if captured_at.elapsed() > Duration::from_secs(URL_CACHE_MAX_AGE_SEC) {
+            return None;
+        }
+        Some(url.clone())
+    }
+
+    /// The last known URL for this window, kept for longer than `recent_url`
+    /// would allow, for the blur decision only - never for what the event
+    /// reports. See URL_BLUR_GRACE_SEC.
+    fn url_for_blur(&self, window: &ForegroundWindow) -> Option<String> {
+        if !window.is_browser {
+            return None;
+        }
+        let guard = self.last_url.lock();
+        let (url, captured_at) = guard.as_ref()?;
+        if captured_at.elapsed() > Duration::from_secs(URL_BLUR_GRACE_SEC) {
             return None;
         }
         Some(url.clone())
@@ -712,6 +729,43 @@ mod tests {
         let stale = Instant::now() - Duration::from_secs(URL_CACHE_MAX_AGE_SEC + 1);
         *builder.last_url.lock() = Some(("https://github.com/x".to_string(), stale));
         assert_eq!(builder.recent_url(&browser_window()), None);
+    }
+
+    #[test]
+    fn a_stale_url_still_decides_the_blur_even_though_it_cannot_label() {
+        // The asymmetry this pair exists to pin: labelling must not claim a
+        // site it cannot prove, but blurring is asked "might this be private?"
+        // and a stale WhatsApp reading is still a yes. Dropping it here is how
+        // a browser left sitting on a conversation got captured in the clear.
+        let builder = builder();
+        let stale = Instant::now() - Duration::from_secs(URL_CACHE_MAX_AGE_SEC + 1);
+        *builder.last_url.lock() = Some(("https://web.whatsapp.com/".to_string(), stale));
+        let win = browser_window();
+
+        assert_eq!(builder.recent_url(&win), None, "too old to name the site");
+        assert_eq!(
+            builder.url_for_blur(&win),
+            Some("https://web.whatsapp.com/".to_string()),
+            "still recent enough to justify blurring",
+        );
+    }
+
+    #[test]
+    fn past_the_grace_window_even_the_blur_reading_is_dropped() {
+        // The generosity has a limit: an hour-old reading says nothing about
+        // what is on screen now.
+        let builder = builder();
+        let ancient = Instant::now() - Duration::from_secs(URL_BLUR_GRACE_SEC + 1);
+        *builder.last_url.lock() = Some(("https://web.whatsapp.com/".to_string(), ancient));
+        assert_eq!(builder.url_for_blur(&browser_window()), None);
+    }
+
+    #[test]
+    fn the_blur_reading_does_not_follow_focus_out_of_the_browser() {
+        let builder = builder();
+        *builder.last_url.lock() = Some(("https://web.whatsapp.com/".to_string(), Instant::now()));
+        let editor = window("code.exe", "VS Code");
+        assert_eq!(builder.url_for_blur(&editor), None);
     }
 
     #[test]
