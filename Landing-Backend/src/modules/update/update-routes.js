@@ -61,6 +61,33 @@ export function canSelfUpdate(currentVersion) {
   return compareVersions(currentVersion, minSelfUpdatableVersion()) >= 0;
 }
 
+/**
+ * Picks the manifest entry for this agent, preferring the installer format
+ * the download page actually hands out.
+ *
+ * A Windows manifest carries three keys: `windows-x86_64`, and the explicit
+ * `-nsis` and `-msi` variants. Which format the bare key aliases is the
+ * bundler's choice, and it currently points at the MSI - while
+ * /api/download serves the NSIS `.exe`. So every Windows member installed
+ * one format and auto-updated into the other.
+ *
+ * That is not merely untidy. The two register separately - NSIS under its
+ * product name, MSI under a GUID - so the machine ends up with two entries
+ * in Apps & Features and two startup entries, and the MSI carries none of
+ * installer-hooks.nsh: not the legacy-install cleanup, not the logon-task
+ * removal on uninstall.
+ *
+ * Falls back to the bare key so a platform that publishes only one artifact
+ * (macOS, Linux) is unaffected.
+ */
+export function selectPlatformEntry(platforms, target, arch) {
+  const base = `${target}-${arch}`;
+  if (target === "windows") {
+    return platforms?.[`${base}-nsis`] ?? platforms?.[base] ?? null;
+  }
+  return platforms?.[base] ?? null;
+}
+
 /** Whether there is actually something newer to offer. Without this the feed
  *  answered 200 with the agent's own version, and every agent downloaded a
  *  manifest describing the build it was already running - harmless, because
@@ -167,7 +194,7 @@ export async function routeUpdateFeed(req, res, url, origin) {
       return true;
     }
 
-    const platform = manifest.platforms?.[`${target}-${arch}`];
+    const platform = selectPlatformEntry(manifest.platforms, target, arch);
 
     if (!platform) {
       applyCors(res, origin);

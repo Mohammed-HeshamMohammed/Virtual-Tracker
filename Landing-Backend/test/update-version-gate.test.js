@@ -6,7 +6,7 @@
 // exists to stop; too high and healthy agents silently stop receiving updates.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canSelfUpdate, compareVersions, hasNewerVersion } from "../src/modules/update/update-routes.js";
+import { canSelfUpdate, compareVersions, hasNewerVersion, selectPlatformEntry } from "../src/modules/update/update-routes.js";
 
 test("versions compare numerically, not as text", () => {
   // The bug a string compare would produce: "1.0.9" > "1.0.10".
@@ -58,4 +58,38 @@ test("an unreadable current version is treated as old, so it still gets the upda
   // Matches compareVersions' own rule: unparseable sorts lowest. An agent
   // that cannot state its version is the one most worth updating.
   assert.equal(hasNewerVersion("garbage", "1.0.28"), true);
+});
+
+// The download page serves the NSIS .exe; the manifest's bare windows key
+// aliases the .msi. So every Windows member installed one installer format
+// and auto-updated into the other - which register separately (NSIS under
+// the product name, MSI under a GUID), leaving two Apps & Features entries,
+// two startup entries, and an update that carries none of the NSIS
+// installer hooks.
+const WINDOWS_MANIFEST = {
+  "windows-x86_64": { url: "https://x/app.msi", signature: "msi-sig" },
+  "windows-x86_64-msi": { url: "https://x/app.msi", signature: "msi-sig" },
+  "windows-x86_64-nsis": { url: "https://x/app.exe", signature: "nsis-sig" },
+};
+
+test("a Windows agent is offered the NSIS installer, matching what it downloaded", () => {
+  const entry = selectPlatformEntry(WINDOWS_MANIFEST, "windows", "x86_64");
+  assert.equal(entry.url, "https://x/app.exe");
+  assert.equal(entry.signature, "nsis-sig", "the signature must belong to the artifact being served");
+});
+
+test("a manifest with only the bare Windows key still resolves", () => {
+  // Older releases, and any bundler change that stops emitting the variants.
+  const entry = selectPlatformEntry({ "windows-x86_64": { url: "https://x/app.exe" } }, "windows", "x86_64");
+  assert.equal(entry.url, "https://x/app.exe");
+});
+
+test("other platforms are untouched by the Windows preference", () => {
+  const platforms = { "darwin-aarch64": { url: "https://x/app.tar.gz" } };
+  assert.equal(selectPlatformEntry(platforms, "darwin", "aarch64").url, "https://x/app.tar.gz");
+  assert.equal(selectPlatformEntry(platforms, "linux", "x86_64"), null);
+});
+
+test("an absent platform map does not throw", () => {
+  assert.equal(selectPlatformEntry(undefined, "windows", "x86_64"), null);
 });
