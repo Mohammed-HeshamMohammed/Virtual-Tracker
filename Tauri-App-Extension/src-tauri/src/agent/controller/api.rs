@@ -11,9 +11,15 @@ impl AgentController {
             "linux" => "linux",
             other => return Err(format!("Unsupported tracker platform: {other}")),
         };
+        let readiness = crate::update_readiness::probe();
         self.api
             .lock()
-            .report_agent_open(crate::constants::APP_VERSION, platform)
+            .report_agent_open(
+                crate::constants::APP_VERSION,
+                platform,
+                !readiness.writable,
+                &readiness.install_dir,
+            )
             .map_err(|error| error.to_string())
     }
 

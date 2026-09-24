@@ -52,7 +52,7 @@ impl ActivityTracker {
         let tracking = if session_task_id.is_empty() {
             None
         } else {
-            self.api.lock().fetch_task_time_tracking(&session_task_id).ok()
+            self.api.lock().fetch_task_time_tracking(session_task_id).ok()
         };
         // Task-less (calling project) sessions have no per-task totals to re-baseline
         // from, so the session's own accumulated seconds are the cumulative figure -
@@ -511,8 +511,8 @@ impl ActivityTracker {
             state.idle_baseline + state.idle_elapsed,
         );
         if now >= state.next_sync_at {
-            let task_id = (!state.task_id.is_empty()).then(|| state.task_id.as_str());
-            let project_id = (!state.last_project_id.is_empty()).then(|| state.last_project_id.as_str());
+            let task_id = (!state.task_id.is_empty()).then_some(state.task_id.as_str());
+            let project_id = (!state.last_project_id.is_empty()).then_some(state.last_project_id.as_str());
             let _ = self.api.lock().post_session_action(
                 "sync",
                 task_id,
@@ -542,8 +542,8 @@ impl ActivityTracker {
         if active_total == 0 && idle_total == 0 {
             return false;
         }
-        let task_id = has_task.then(|| state.task_id.as_str());
-        let project_id = has_project.then(|| state.last_project_id.as_str());
+        let task_id = has_task.then_some(state.task_id.as_str());
+        let project_id = has_project.then_some(state.last_project_id.as_str());
         match self
             .api
             .lock()

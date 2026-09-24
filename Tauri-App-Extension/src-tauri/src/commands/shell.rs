@@ -6,6 +6,9 @@ use crate::run_blocking;
 use crate::AppState;
 use tauri::Manager;
 use tauri::AppHandle;
+// The type itself only exists off Linux, where the tray carries menu items;
+// the Linux set_tray_status below is a no-op that never names it.
+#[cfg(not(target_os = "linux"))]
 use crate::TrayStatusState;
 use crate::window_layout;
 

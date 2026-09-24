@@ -714,6 +714,14 @@ const MEMBER_DATA_DDL = [
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_version VARCHAR(32)",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_platform VARCHAR(32)",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_last_opened_at TIMESTAMPTZ",
+  // Whether the agent could write to its own install directory when it last
+  // opened. A perMachine install lands in Program Files, which a standard
+  // user cannot write to - and monitored employees are standard users by
+  // design - so such an agent downloads every update and can install none of
+  // them. It keeps reporting a healthy current version while silently never
+  // moving, which is precisely why this is recorded rather than inferred.
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_update_blocked BOOLEAN",
+  "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_install_dir TEXT",
   `CREATE TABLE IF NOT EXISTS agent_notifications (
   id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   recipient_id    UUID         NOT NULL REFERENCES members(id) ON DELETE CASCADE,

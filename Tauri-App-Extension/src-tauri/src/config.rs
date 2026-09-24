@@ -105,36 +105,6 @@ fn pick_auth_url(configured: &str, debug_build: bool) -> String {
     configured.to_string()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{pick_auth_url, PROD_AUTH_URL};
-
-    #[test]
-    fn no_override_uses_production_auth_backend() {
-        assert_eq!(pick_auth_url("", false), PROD_AUTH_URL);
-        assert_eq!(pick_auth_url("   ", true), PROD_AUTH_URL);
-    }
-
-    #[test]
-    fn dev_builds_may_point_at_a_local_auth_backend() {
-        assert_eq!(
-            pick_auth_url("http://127.0.0.1:5712/", true),
-            "http://127.0.0.1:5712"
-        );
-    }
-
-    #[test]
-    fn release_builds_refuse_a_plaintext_override() {
-        // Credentials and tokens go to this host - a shipped build must not be talked into
-        // sending them over HTTP by an environment variable.
-        assert_eq!(pick_auth_url("http://evil.example", false), PROD_AUTH_URL);
-        assert_eq!(
-            pick_auth_url("https://staging-auth.example", false),
-            "https://staging-auth.example"
-        );
-    }
-}
-
 pub fn app_data_dir(project_root: &Path) -> PathBuf {
     if cfg!(debug_assertions) {
         return project_root.to_path_buf();
@@ -209,5 +179,35 @@ fn load_env_files() {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{pick_auth_url, PROD_AUTH_URL};
+
+    #[test]
+    fn no_override_uses_production_auth_backend() {
+        assert_eq!(pick_auth_url("", false), PROD_AUTH_URL);
+        assert_eq!(pick_auth_url("   ", true), PROD_AUTH_URL);
+    }
+
+    #[test]
+    fn dev_builds_may_point_at_a_local_auth_backend() {
+        assert_eq!(
+            pick_auth_url("http://127.0.0.1:5712/", true),
+            "http://127.0.0.1:5712"
+        );
+    }
+
+    #[test]
+    fn release_builds_refuse_a_plaintext_override() {
+        // Credentials and tokens go to this host - a shipped build must not be talked into
+        // sending them over HTTP by an environment variable.
+        assert_eq!(pick_auth_url("http://evil.example", false), PROD_AUTH_URL);
+        assert_eq!(
+            pick_auth_url("https://staging-auth.example", false),
+            "https://staging-auth.example"
+        );
     }
 }

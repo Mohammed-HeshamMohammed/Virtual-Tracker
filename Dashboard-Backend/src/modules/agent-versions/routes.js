@@ -70,12 +70,18 @@ export async function routeAgentVersions(req, res, url, origin) {
     if (!viewer) return true;
     try {
       const body = await readObject(req);
-      rejectUnknownFields(body, ["version", "platform"]);
+      rejectUnknownFields(body, ["version", "platform", "updateBlocked", "installDir"]);
       if (!normalizeAgentVersion(body.version) || !normalizeAgentPlatform(body.platform)) {
         sendJson(res, origin, 400, { success: false, error: "Valid version and platform are required." });
         return true;
       }
-      const result = await reportAgentOpen(viewer.memberId, body.version, body.platform);
+      const result = await reportAgentOpen(
+        viewer.memberId,
+        body.version,
+        body.platform,
+        body.updateBlocked,
+        body.installDir,
+      );
       if (!result) {
         sendJson(res, origin, 404, { success: false, error: "Member not found." });
       } else if (result.error) {

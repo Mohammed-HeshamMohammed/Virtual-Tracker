@@ -85,7 +85,7 @@ fn process_matches(process_name: &str) -> bool {
     // first left "TELEGRAM.EXE" untouched and never matched.
     let lowered = process_name.trim().to_lowercase();
     let exe = lowered.trim_end_matches(".exe");
-    !exe.is_empty() && MESSAGING_EXES.iter().any(|candidate| *candidate == exe)
+    !exe.is_empty() && MESSAGING_EXES.contains(&exe)
 }
 
 fn url_matches(url: &str) -> bool {

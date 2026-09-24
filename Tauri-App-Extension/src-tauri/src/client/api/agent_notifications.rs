@@ -14,13 +14,27 @@ fn rejected_message(body: &Value, fallback: &str) -> String {
 }
 
 impl ApiClient {
-    pub fn report_agent_open(&mut self, version: &str, platform: &str) -> Result<(), ApiError> {
+    /// `update_blocked` is what turns a silently frozen agent into a visible
+    /// one: an agent whose install directory it cannot write to will report a
+    /// current version forever while never installing anything.
+    pub fn report_agent_open(
+        &mut self,
+        version: &str,
+        platform: &str,
+        update_blocked: bool,
+        install_dir: &str,
+    ) -> Result<(), ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let response = self
             .client
             .post(format!("{}/api/agent/open", self.api_url))
             .header("Authorization", auth)
-            .json(&serde_json::json!({ "version": version, "platform": platform }))
+            .json(&serde_json::json!({
+                "version": version,
+                "platform": platform,
+                "updateBlocked": update_blocked,
+                "installDir": install_dir,
+            }))
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
             .send()
             .map_err(|_| ApiError::Network)?;

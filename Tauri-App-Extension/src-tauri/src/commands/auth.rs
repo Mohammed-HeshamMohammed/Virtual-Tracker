@@ -55,5 +55,6 @@ pub async fn send_password_reset(
 #[tauri::command]
 pub async fn sign_out(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let controller = Arc::clone(&state.controller);
-    Ok(run_blocking(move || controller.sign_out()).await)
+    let _: () = run_blocking(move || controller.sign_out()).await;
+    Ok(())
 }

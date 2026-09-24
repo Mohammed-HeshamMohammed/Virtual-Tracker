@@ -210,7 +210,7 @@ mod project_budget_percent_tests {
         let mut api = authed_client(url);
         let map = api.fetch_project_budgets_map().expect("ok");
         let (exhausted, spent_percent) = map.get("p1").copied().expect("p1 present");
-        assert_eq!(exhausted, false, "never exhausted when the project opted out of stopping timers");
+        assert!(!exhausted, "never exhausted when the project opted out of stopping timers");
         assert_eq!(spent_percent, Some(30.0), "30/100 spent, not thrown away");
     }
 
@@ -243,7 +243,7 @@ mod project_budget_percent_tests {
         let mut api = authed_client(url);
         let map = api.fetch_project_budgets_map().expect("ok");
         let (exhausted, spent_percent) = map.get("p1").copied().expect("p1 present");
-        assert_eq!(exhausted, true, "95% >= the 90% stop threshold");
+        assert!(exhausted, "95% >= the 90% stop threshold");
         assert_eq!(spent_percent, Some(95.0));
     }
 }

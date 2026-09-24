@@ -21,33 +21,7 @@ pub fn get_version() -> String {
 /// Whether applying an update would need an administrator prompt.
 #[tauri::command]
 pub fn update_install_readiness() -> UpdateInstallReadiness {
-    let install_dir = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(|dir| dir.to_path_buf()));
-
-    let Some(dir) = install_dir else {
-        // Cannot tell where we live: assume the cautious answer.
-        return UpdateInstallReadiness {
-            writable: false,
-            install_dir: String::new(),
-        };
-    };
-
-    // A create/delete probe, not a permissions calculation: ACLs, group policy and
-    // virtualisation all feed into the real answer, and only an actual write reflects all
-    let probe = dir.join(format!(".vt-update-probe-{}", std::process::id()));
-    let writable = match std::fs::File::create(&probe) {
-        Ok(_) => {
-            let _ = std::fs::remove_file(&probe);
-            true
-        }
-        Err(_) => false,
-    };
-
-    UpdateInstallReadiness {
-        writable,
-        install_dir: dir.to_string_lossy().to_string(),
-    }
+    crate::update_readiness::probe()
 }
 
 #[tauri::command]
@@ -68,8 +42,25 @@ pub async fn get_link_status(state: tauri::State<'_, AppState>) -> Result<LinkSt
 }
 
 #[tauri::command]
-pub fn get_app_settings(state: tauri::State<'_, AppState>) -> crate::prefs::AppSettingsView {
-    state.controller.get_app_settings()
+pub fn get_app_settings(app: AppHandle, state: tauri::State<'_, AppState>) -> crate::prefs::AppSettingsView {
+    let mut view = state.controller.get_app_settings();
+    // The stored preference records what the member asked for; this reports
+    // what is actually registered. They diverge whenever registration was
+    // refused, and showing the request back as though it had succeeded is how
+    // "Start at login" looked switched on for machines it had never started.
+    //
+    // Either mechanism counts: apply_autostart falls back to the Run key when
+    // the scheduled task cannot be registered, and checking only the task
+    // would report those machines as off while they do start.
+    #[cfg(windows)]
+    {
+        use tauri_plugin_autostart::ManagerExt;
+        view.preferences.launch_at_login =
+            crate::autostart_task::is_enabled() || app.autolaunch().is_enabled().unwrap_or(false);
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+    view
 }
 
 #[tauri::command]

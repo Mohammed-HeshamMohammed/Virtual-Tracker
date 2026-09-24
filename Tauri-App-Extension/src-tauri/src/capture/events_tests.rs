@@ -292,7 +292,7 @@ fn screenshot_delay_defaults_to_the_compile_time_bounds() {
     let builder = builder();
     for _ in 0..20 {
         let delay = builder.random_screenshot_delay_sec();
-        assert!(delay >= SCREENSHOT_MIN_DELAY_SEC && delay <= SCREENSHOT_MAX_DELAY_SEC);
+        assert!((SCREENSHOT_MIN_DELAY_SEC..=SCREENSHOT_MAX_DELAY_SEC).contains(&delay));
     }
 }
 
@@ -312,6 +312,6 @@ fn apply_screenshot_cadence_refuses_an_inverted_range() {
     builder.apply_screenshot_cadence(200, 100); // min > max - must be rejected
     // Falls back to the untouched compile-time defaults, not a broken state.
     let delay = builder.random_screenshot_delay_sec();
-    assert!(delay >= SCREENSHOT_MIN_DELAY_SEC && delay <= SCREENSHOT_MAX_DELAY_SEC);
+    assert!((SCREENSHOT_MIN_DELAY_SEC..=SCREENSHOT_MAX_DELAY_SEC).contains(&delay));
 }
 
