@@ -1,5 +1,4 @@
-//! The tracker's own notification inbox, including replying to a
-//! message from the Owner.
+//! The tracker's own notification inbox, including replying to a message from the Owner.
 
 use std::sync::Arc;
 

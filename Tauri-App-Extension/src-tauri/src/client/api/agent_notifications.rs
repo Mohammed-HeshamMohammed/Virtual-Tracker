@@ -35,9 +35,7 @@ impl ApiClient {
         Err(ApiError::Rejected(rejected_message(&body, "Tracker version report was rejected.")))
     }
 
-    /// Replies to an Owner message from the tracker. The backend checks that
-    /// this member is actually in the conversation; the tracker only carries
-    /// the thread id it was handed.
+    /// Replies to an Owner message from the tracker.
     pub fn reply_to_message_thread(&mut self, thread_id: &str, body: &str) -> Result<(), ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let response = self

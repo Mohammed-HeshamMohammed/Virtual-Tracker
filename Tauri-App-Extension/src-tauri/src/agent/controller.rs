@@ -32,26 +32,16 @@ pub struct AgentController {
     auth_server: AuthServer,
     status: Arc<Mutex<String>>,
     status_listeners: Arc<Mutex<Vec<StatusCallback>>>,
-    /// Separate from `status_listeners` on purpose: status text is routine
-    /// (shown in the UI's status line, refetched on every change) and would
-    /// be noisy to toast on every update. A warning is the rarer case of
-    /// something the user should actually notice, like a broken OS
-    /// credential store - so it gets its own channel to a toast instead of
-    /// being folded into the routine status stream.
+    /// Separate from `status_listeners` on purpose: status text is routine (shown in the
+    /// UI's status line, refetched on every change) and would be noisy to toast on every
     warning_listeners: Arc<Mutex<Vec<StatusCallback>>>,
     live_sync_listeners: Arc<Mutex<Vec<LiveSyncCallback>>>,
     activity: Arc<ActivityMeter>,
-    /// Consecutive failed connection checks. One blip must not throw a
-    /// full-screen recovery view at the user, so the UI only switches after
-    /// this passes CONNECTION_FAILURE_GRACE.
+    /// Consecutive failed connection checks.
     connection_failures: Arc<AtomicU32>,
 }
 
 impl AgentController {
-    /// `Err` when the HTTP client itself couldn't be built (broken local
-    /// TLS/cert store) - this runs before any window exists, so the caller is
-    /// responsible for surfacing the failure instead of this panicking, which
-    /// used to crash the app with nothing visible in a release build.
     pub fn new(settings: Settings) -> Result<Arc<Self>, String> {
         let store = TokenStore::new(settings.store_path.clone());
         let api = Arc::new(Mutex::new(ApiClient::new(
@@ -106,10 +96,8 @@ impl AgentController {
         }
     }
 
-    /// PLAN-livesyncandagenttimer.md P10 - `listener` receives the raw JSON
-    /// text of every "changed"/"scope-changed" frame the presence WebSocket
-    /// delivers. Filtering by resource is the listener's job (see live_sync.rs
-    /// module doc) - this stays a dumb passthrough, same as add_status_listener.
+    /// PLAN-livesyncandagenttimer.md P10 - `listener` receives the raw JSON text of every
+    /// "changed"/"scope-changed" frame the presence WebSocket delivers.
     pub fn add_live_sync_listener(&self, listener: LiveSyncCallback) {
         self.live_sync_listeners.lock().push(listener);
     }
@@ -138,13 +126,8 @@ impl AgentController {
         self.auth_server.stop();
     }
 
-    /// Closes the open session server-side with the tracker's real accumulated
-    /// active/idle seconds (not 0s) before tearing it down — shared by a clean
-    /// quit, sign-out, and re-link, so none of them silently leave the session
-    /// "active" forever or drop the time already worked.
-    /// The server-side reason code for a local shutdown reason. These used to be
-    /// written only to the local log, so "the agent stopped my timer" could
-    /// never be told apart from any other stop.
+    /// Closes the open session server-side with the tracker's real accumulated active/idle
+    /// seconds (not 0s) before tearing it down — shared by a clean quit, sign-out, and
     fn stop_reason_for(reason: &str) -> &'static str {
         match reason {
             "quit" => "agent_quit",
@@ -181,10 +164,6 @@ impl AgentController {
         self.link_flow.pending_link_token().is_some()
     }
 
-    /// Plain `&self` (not `self: &Arc<Self>`) on purpose - it used to require
-    /// an `Arc<Self>` for no reason the body actually needed, which is why a
-    /// byte-for-byte duplicate (`on_status_changed_local`) existed just to be
-    /// callable from methods that only had `&self`. Collapsed to one.
     fn on_status_changed(&self, text: String) {
         *self.status.lock() = text.clone();
         for listener in self.status_listeners.lock().iter() {
@@ -204,27 +183,17 @@ impl AgentController {
         }
     }
 
-    /// Re-locks `self.api` per call rather than holding one lock scope across
-    /// all of `refresh_token_if_needed`/`ensure_device_registered`/
-    /// `register_agent` - each a blocking HTTP call. `ActivityTracker::tick()`
-    /// needs this same lock every SESSION_POLL_SEC, so holding it across all
-    /// three used to stall the tracker thread for their combined worst-case
-    /// timeout on every sign-in/relink. Ordering and behavior are unchanged,
-    /// only the lock scope is narrower.
     fn apply_tokens(self: &Arc<Self>, id_token: String, refresh_token: String) {
         self.api.lock().set_tokens(&id_token, &refresh_token);
 
-        // Claim a device credential if we don't already hold one. This is
-        // what covers the browser's loopback handoff (which never hits
-        // link/exchange) and agents linked before this existed - they pick
-        // one up on their next launch instead of staying stranded.
+        // Claim a device credential if we don't already hold one.
         if !self.api.lock().has_device_credential() {
             self.api.lock().refresh_token_if_needed();
             self.api.lock().ensure_device_registered();
         }
 
-        // Captured during link exchange or the calls above; read it back off
-        // the client rather than threading it through every callback.
+        // Captured during link exchange or the calls above; read it back off the client
+        // rather than threading it through every callback.
         let (device_id, agent_secret) = {
             let api = self.api.lock();
             (
@@ -248,9 +217,8 @@ impl AgentController {
         let store_path = self.settings.store_path.clone();
         let warn_controller = Arc::clone(self);
         self.api.lock().on_tokens_refreshed = Some(Box::new(move |id, refresh| {
-            // Preserve the device credential across token rotations - a
-            // plain overwrite here would silently drop it and take in-app
-            // recovery with it.
+            // Preserve the device credential across token rotations - a plain overwrite
+            // here would silently drop it and take in-app recovery with it.
             let persisted = TokenStore::new(store_path.clone()).save(&StoredCredentials {
                 id_token: id,
                 refresh_token: refresh,
@@ -291,10 +259,8 @@ impl AgentController {
         *self.tracker.lock() = Some(tracker);
     }
 
-    /// `hint` is an extra `key=value` query pair forwarded to the browser URL
-    /// (see `AgentLinkFlow::start`) - e.g. `"provider=google"` for a social
-    /// button, `"mode=signup"`/`"mode=forgot-password"` for account creation
-    /// and password reset. `None` is today's plain "Link account" behavior.
+    /// `hint` is an extra `key=value` query pair forwarded to the browser URL (see
+    /// `AgentLinkFlow::start`) - e.g.
     pub fn open_sign_in(self: &Arc<Self>, hint: Option<&str>) -> SignInResult {
         if let Some(pending_token) = self.link_flow.pending_link_token() {
             self.resume_link_poll();
@@ -323,9 +289,8 @@ impl AgentController {
         {
             let mut api = self.api.lock();
             api.set_tokens("", "");
-            // Drop the device credential too - after an explicit sign-out or
-            // re-link, this machine must not be able to quietly mint itself a
-            // new session.
+            // Drop the device credential too - after an explicit sign-out or re-link, this
+            // machine must not be able to quietly mint itself a new session.
             api.set_device_credential("", "");
         }
         self.connection_failures.store(0, Ordering::SeqCst);
@@ -335,14 +300,6 @@ impl AgentController {
         let on_tokens: OnTokens = Arc::new(move |id, refresh| {
             controller.apply_tokens(id, refresh);
         });
-        // on_warning, not on_status_changed: this fires from the poll thread
-        // after open_sign_in has already returned success:true (a link
-        // timeout, 15 minutes later), so a SignInResult return value can't
-        // carry it - vt-warning/toast is the only channel left that a user
-        // actually sees. vt-status exists and does carry event.detail, but
-        // the frontend's own vt-status listener discards it and only uses
-        // the event to trigger a refresh - status_changed here would be
-        // exactly as silent as it was before this fix.
         let controller_err = Arc::clone(self);
         let on_error: OnError = Arc::new(move |msg| {
             controller_err.on_warning(msg);
@@ -365,26 +322,15 @@ impl AgentController {
         }
     }
 
-    /// Email + password sign-in, entirely in-app. Same three steps the browser
-    /// takes, in the same order, so the two cannot disagree about who may use
-    /// this account:
-    ///   1. which providers this email actually has (Auth-Backend),
-    ///   2. Identity Toolkit password sign-in,
-    ///   3. `/api/auth/session-bootstrap`, which owns the member record and
-    ///      every reason to refuse (disabled, banned, unverified, must change
-    ///      password).
-    ///
-    /// The password is borrowed for the duration of step 2 and never stored.
+    /// Email + password sign-in, entirely in-app.
     pub fn sign_in_with_password(self: &Arc<Self>, email: &str, password: &str) -> SignInResult {
         let email = email.trim();
         if email.is_empty() || password.is_empty() {
             return SignInResult::failed("Enter your email and password.");
         }
 
-        // A Google/Apple-only account can never succeed here, and Firebase
-        // would answer with a generic credential failure. Say the useful thing
-        // instead. A lookup failure is not fatal - fall through and let the
-        // sign-in itself decide.
+        // A Google/Apple-only account can never succeed here, and Firebase would answer
+        // with a generic credential failure.
         if let Some(methods) = self.api.lock().sign_in_methods(email) {
             if !methods.is_empty() && !methods.iter().any(|m| m == "password") {
                 return SignInResult::failed(
@@ -399,26 +345,23 @@ impl AgentController {
             Err(err) => return SignInResult::failed(err.message()),
         };
 
-        // Persist + claim the device credential before the gate below, so a
-        // refusal has something concrete to clear and a success needs no
-        // second write.
+        // Persist + claim the device credential before the gate below, so a refusal has
+        // something concrete to clear and a success needs no second write.
         self.apply_tokens(id_token, refresh_token);
 
-        // Bound to a `let` on purpose: a temporary lock guard inside a `match`
-        // scrutinee lives until the end of the match, and `sign_out()` below
-        // takes the same (non-reentrant) lock.
+        // Bound to a `let` on purpose: a temporary lock guard inside a `match` scrutinee
+        // lives until the end of the match, and `sign_out()` below takes the same
         let bootstrap = self.api.lock().session_bootstrap();
         match bootstrap {
             Ok(()) => {}
             Err(crate::client::api::ApiError::Rejected(message)) => {
-                // The server rejected this account outright; holding tokens for
-                // it would leave the agent looking signed in and doing nothing.
+                // The server rejected this account outright; holding tokens for it would
+                // leave the agent looking signed in and doing nothing.
                 self.sign_out();
                 return SignInResult::failed(&message);
             }
             Err(_) => {
-                // Network problem, not a verdict. Keep the session - the normal
-                // connection-recovery path handles this.
+                // Network problem, not a verdict.
                 log::warn!("Signed in, but could not confirm authorization yet");
             }
         }
@@ -430,11 +373,7 @@ impl AgentController {
         }
     }
 
-    /// In-app account creation, no browser round-trip. Mirrors the web
-    /// register form's flow: create the Firebase account, attach name/phone,
-    /// send a verification email, then leave it signed out - the new account
-    /// still has to verify its email and sign in normally, exactly like the
-    /// web form's "Account created ... verify your email, then sign in."
+    /// In-app account creation, no browser round-trip.
     pub fn sign_up(
         self: &Arc<Self>,
         email: &str,
@@ -464,8 +403,8 @@ impl AgentController {
         };
 
         if let Err(msg) = self.api.lock().patch_profile(&id_token, first_name, last_name, phone) {
-            // Not fatal - the account exists either way, and the profile page
-            // can fill these in later. Only the sign-up itself must succeed.
+            // Not fatal - the account exists either way, and the profile page can fill
+            // these in later.
             log::warn!("Could not save profile details after sign-up: {msg}");
         }
         self.api.lock().send_email_verification(&id_token);
@@ -476,10 +415,8 @@ impl AgentController {
         }
     }
 
-    /// In-app password reset request - sends the email directly through
-    /// Identity Toolkit, no browser link needed. Enumeration-safe: `success`
-    /// here means the request was accepted, not that the email has an
-    /// account (see `FirebaseTokenService::send_password_reset_email`).
+    /// In-app password reset request - sends the email directly through Identity Toolkit,
+    /// no browser link needed.
     pub fn request_password_reset(self: &Arc<Self>, email: &str) -> SignInResult {
         let email = email.trim();
         if email.is_empty() {
@@ -494,9 +431,8 @@ impl AgentController {
         }
     }
 
-    /// Distinct from open_sign_in/"Re-link account": signs out cleanly (flush +
-    /// stop the session, clear tokens) and stops there — no new browser link
-    /// flow gets started, unlike re-link which immediately begins one.
+    /// Distinct from open_sign_in/"Re-link account": signs out cleanly (flush + stop the
+    /// session, clear tokens) and stops there — no new browser link flow gets started
     pub fn sign_out(self: &Arc<Self>) {
         self.link_flow.stop();
         self.flush_and_stop_tracker("sign-out");
@@ -504,9 +440,8 @@ impl AgentController {
         {
             let mut api = self.api.lock();
             api.set_tokens("", "");
-            // Drop the device credential too - after an explicit sign-out or
-            // re-link, this machine must not be able to quietly mint itself a
-            // new session.
+            // Drop the device credential too - after an explicit sign-out or re-link, this
+            // machine must not be able to quietly mint itself a new session.
             api.set_device_credential("", "");
         }
         self.connection_failures.store(0, Ordering::SeqCst);
@@ -518,11 +453,8 @@ impl AgentController {
         let on_tokens: OnTokens = Arc::new(move |id, refresh| {
             controller.apply_tokens(id, refresh);
         });
-        // Same reasoning as open_sign_in's on_error: this only ever fires
-        // async, after the caller has already gotten its return value back,
-        // so on_warning/vt-warning is the one channel that actually reaches
-        // the user - on_status_changed's vt-status event is real but its
-        // frontend listener discards event.detail.
+        // Same reasoning as open_sign_in's on_error: this only ever fires async, after the
+        // caller has already gotten its return value back, so on_warning/vt-warning is the
         let controller_err = Arc::clone(self);
         let on_error: OnError = Arc::new(move |msg| {
             controller_err.on_warning(msg);
@@ -543,8 +475,7 @@ impl AgentController {
         }
     }
 
-    /// Opens the diagnostic log file with the OS default handler (Notepad on
-    /// Windows). Errors if nothing has been logged yet.
+    /// Opens the diagnostic log file with the OS default handler (Notepad on Windows).
     pub fn open_log_file(&self) -> Result<(), String> {
         if !self.settings.log_path.exists() {
             return Err("No log file yet — run the agent for a bit first.".into());
@@ -607,8 +538,8 @@ impl AgentController {
         }
     }
 
-    /// Whether the agent can actually talk to the backend right now, as
-    /// opposed to merely holding a token. Checked on the UI's existing poll.
+    /// Whether the agent can actually talk to the backend right now, as opposed to merely
+    /// holding a token.
     pub fn get_connection_state(&self) -> ConnectionState {
         let (has_token, has_device) = {
             let api = self.api.lock();
@@ -627,13 +558,12 @@ impl AgentController {
 
         let failures = self.connection_failures.fetch_add(1, Ordering::SeqCst) + 1;
         if failures < CONNECTION_FAILURE_GRACE {
-            // Still inside the grace window - report healthy so the UI does
-            // not flicker on a single dropped request.
+            // Still inside the grace window - report healthy so the UI does not flicker on
+            // a single dropped request.
             return ConnectionState::Connected;
         }
 
-        // Out of grace. With a device credential we can still recover in-app;
-        // without one the only route left is a browser re-link.
+        // Out of grace.
         if has_device {
             ConnectionState::Disconnected
         } else {
@@ -641,10 +571,10 @@ impl AgentController {
         }
     }
 
-    /// The "Welcome back" action: get this machine talking to the backend
-    /// again without sending the user to a browser.
+    /// The "Welcome back" action: get this machine talking to the backend again without
+    /// sending the user to a browser.
     pub fn reconnect(self: &Arc<Self>) -> ReconnectResult {
-        // 1. Plain refresh first - covers expiry and transient outages.
+        // 1.
         if self.api.lock().refresh_token_if_needed() {
             return self.finish_reconnect();
         }
@@ -660,13 +590,12 @@ impl AgentController {
             };
         }
 
-        // 2. The refresh token is permanently dead - fall back to this
-        //    machine's own credential rather than a browser round trip.
+        // 2.
         match self.api.lock().reauth_with_device() {
             Ok(()) => {}
             Err(err) => {
-                // `is_rejected()` is the same terminal/retryable split the old
-                // `Result<(), bool>` contract carried as `Err(true)`/`Err(false)`.
+                // `is_rejected()` is the same terminal/retryable split the old `Result<(),
+                // bool>` contract carried as `Err(true)`/`Err(false)`.
                 let terminal = err.is_rejected();
                 return ReconnectResult {
                     success: false,
@@ -775,9 +704,8 @@ impl AgentController {
         self.api.lock().fetch_assigned_tasks(project_id)
     }
 
-    /// project_id must be a task-based project the viewer can manage (see
-    /// ProjectInfo.can_create_tasks) - the server re-checks this regardless
-    /// of what the UI already gated on.
+    /// Project_id must be a task-based project the viewer can manage (see
+    /// ProjectInfo.can_create_tasks) - the server re-checks this regardless of what the UI
     pub fn create_task(
         &self,
         project_id: &str,
@@ -795,8 +723,8 @@ impl AgentController {
 
     pub fn get_session(&self) -> SessionInfo {
         let mut session = self.api.lock().current_session_info();
-        // Idle state lives in the tracker, not the server - attach it to the
-        // poll the UI already runs rather than adding a second one.
+        // Idle state lives in the tracker, not the server - attach it to the poll the UI
+        // already runs rather than adding a second one.
         session.idle_stage = self
             .tracker
             .lock()
@@ -817,28 +745,22 @@ impl AgentController {
         self.api.lock().fetch_member_limits(project_id).ok()
     }
 
-    /// `None` covers a network/auth error the same as an older backend without
-    /// this route - the panels it feeds simply don't render, same convention
-    /// get_dashboard_summary already uses for its own optional payload.
+    /// `None` covers a network/auth error the same as an older backend without this route -
+    /// the panels it feeds simply don't render, same convention get_dashboard_summary
     pub fn get_agent_workspace(&self) -> Option<crate::types::AgentWorkspace> {
         match self.api.lock().fetch_agent_workspace() {
             Ok(workspace) => workspace,
             Err(e) => {
-                // This used to be silently swallowed (.ok().flatten()), which
-                // made "every panel this feeds is just missing" indistinguishable
-                // from "nothing is entitled to show" from the agent's own log -
-                // there was no way to tell a 401/500 apart from an older
-                // backend without the route (that case returns Ok(None), not
-                // Err, and never reaches here).
+                // This used to be silently swallowed (.ok().flatten()), which made "every
+                // panel this feeds is just missing" indistinguishable from "nothing is
                 log::warn!("Could not load workspace: {e}");
                 None
             }
         }
     }
 
-    /// Errors surface as their server message (Err(String)) rather than a
-    /// silent None - unlike the read-only panels above, these are writes the
-    /// user explicitly asked for and has to know the outcome of.
+    /// Errors surface as their server message (Err(String)) rather than a silent None -
+    /// unlike the read-only panels above, these are writes the user explicitly asked for
     pub fn create_time_entry(
         &self,
         member_id: &str,
@@ -874,8 +796,8 @@ impl AgentController {
             .map_err(|e| e.to_string())
     }
 
-    /// Empty on any failure - the screenshots panel is a transparency
-    /// surface, not something worth surfacing an error banner for.
+    /// Empty on any failure - the screenshots panel is a transparency surface, not
+    /// something worth surfacing an error banner for.
     pub fn get_my_screenshots(&self, limit: u32, project_id: Option<&str>) -> Vec<crate::types::ScreenshotRef> {
         match self.api.lock().fetch_my_screenshots(limit, project_id) {
             Ok(shots) => shots,
@@ -886,9 +808,8 @@ impl AgentController {
         }
     }
 
-    /// Empty on any failure or an older backend without the route - same
-    /// "transparency surface, not an error banner" reasoning as
-    /// get_my_screenshots above.
+    /// Empty on any failure or an older backend without the route - same "transparency
+    /// surface, not an error banner" reasoning as get_my_screenshots above.
     pub fn get_project_app_breakdown(&self, project_id: &str) -> crate::types::ProjectAppBreakdown {
         match self.api.lock().fetch_project_app_breakdown(project_id) {
             Ok(breakdown) => breakdown,
@@ -899,8 +820,8 @@ impl AgentController {
         }
     }
 
-    /// Empty string when the image can't be loaded - the caller renders a
-    /// placeholder rather than a broken <img>.
+    /// Empty string when the image can't be loaded - the caller renders a placeholder
+    /// rather than a broken <img>.
     pub fn get_screenshot_image(&self, screenshot_id: &str) -> String {
         self.api
             .lock()
@@ -915,16 +836,14 @@ impl AgentController {
         self.api.lock().fetch_task_detail(task_id.trim()).ok()
     }
 
-    /// `None` covers a network/auth error the same as an older backend
-    /// without this route yet - the sidebar widgets it feeds simply don't
-    /// render rather than showing an error over what's an optional extra.
+    /// `None` covers a network/auth error the same as an older backend without this route
+    /// yet - the sidebar widgets it feeds simply don't render rather than showing an error
     pub fn get_dashboard_summary(&self) -> Option<crate::types::DashboardSummary> {
         self.api.lock().fetch_dashboard_summary().ok().flatten()
     }
 
-    /// `None` covers both "network/auth error" and "no Hours-based budget
-    /// configured on this project" - the UI treats them identically (no card
-    /// shown), so there's nothing useful to distinguish here.
+    /// `None` covers both "network/auth error" and "no Hours-based budget configured on
+    /// this project" - the UI treats them identically (no card shown), so there's nothing
     pub fn get_project_budget_status(&self, project_id: &str) -> Option<crate::types::ProjectBudgetStatus> {
         if project_id.trim().is_empty() {
             return None;
@@ -938,24 +857,18 @@ impl AgentController {
 
     pub fn set_member_timezone(&self, timezone: &str) -> Result<(), String> {
         self.api.lock().update_member_timezone(timezone)?;
-        // Cached locally too, same reason theme is: readable synchronously
-        // at startup so the picker and header clock show what was chosen
-        // last, instead of this machine's own zone, before the profile
-        // fetch resolves (or if it fails). Best-effort - a write failure
-        // here must not undo a save the server already accepted.
+        // Cached locally too, same reason theme is: readable synchronously at startup so
+        // the picker and header clock show what was chosen last, instead of this machine's
         let mut prefs = self.get_app_settings().preferences;
         prefs.member_timezone = timezone.to_string();
         let _ = self.save_preferences(prefs);
         Ok(())
     }
 
-    /// tracking cannot start before the current disclosure notice has
-    /// been acknowledged. Fails CLOSED on a network problem or a malformed
-    /// response - the entire point of a consent gate is that "couldn't
-    /// check" must never be silently read as "consented". `Ok(None)` from
-    /// the fetch (nothing to disclose - e.g. no capability is enabled at
-    /// all) is not blocked here; CF-1's default-deny already means nothing
-    /// gets captured in that case.
+    /// tracking cannot start before the current disclosure notice has been
+    /// acknowledged. Fails CLOSED on a network problem or a malformed response - the
+    /// entire point of a consent gate is that "couldn't check" must never be silently
+    /// read as "consented".
     fn blocked_by_monitoring_notice(&self) -> Option<String> {
         match self.api.lock().fetch_monitoring_notice() {
             Ok(Some(notice)) if notice.requires_acknowledgement => {
@@ -968,13 +881,8 @@ impl AgentController {
         }
     }
 
-    /// An idle-triggered stop from the *previous* session can still be queued
-    /// for delivery (`ActivityTracker::flush_pending_stop`) at the moment the
-    /// user clicks Start again. The server keys the open session by member,
-    /// not by session id, so letting "start" through first would let the
-    /// pending stop land on the just-started session instead and kill it with
-    /// stale, idle-rewound totals. Flush it first; refuse to start only if it
-    /// genuinely can't be delivered right now (still offline).
+    /// An idle-triggered stop from the *previous* session can still be queued for delivery
+    /// (`ActivityTracker::flush_pending_stop`) at the moment the user clicks Start again.
     fn blocked_by_pending_idle_stop(&self) -> Option<String> {
         let tracker = self.tracker.lock();
         match tracker.as_ref() {
@@ -985,19 +893,13 @@ impl AgentController {
         }
     }
 
-    /// the current disclosure notice for the UI to show. `None` on any
-    /// failure (network, not signed in) - the UI treats that the same as
-    /// "nothing to show yet", not as "already acknowledged".
+    /// The current disclosure notice for the UI to show.
     pub fn get_monitoring_notice(&self) -> Option<crate::types::MonitoringNoticeView> {
         self.api.lock().fetch_monitoring_notice().ok().flatten()
     }
 
-    /// records that the notice was shown AND accepted - the two-step
-    /// disclosure-then-consent model from CF-0.2, collapsed into one command
-    /// because the UI only calls this once the user has actually clicked
-    /// through the notice (there's no "shown but not yet acted on" state in
-    /// this UI to represent separately). Returns false if either write
-    /// failed, so the caller knows not to let the notice dismiss.
+    /// Records that the notice was shown AND accepted - the two-step
+    /// disclosure-then-consent model from CF-0.2, collapsed into one command because the UI
     pub fn acknowledge_monitoring_notice(&self, notice_version: &str) -> bool {
         let disclosed = self.api.lock().post_monitoring_disclosure(notice_version).is_ok();
         let consented = self.api.lock().post_monitoring_consent(notice_version).is_ok();
@@ -1018,9 +920,8 @@ impl AgentController {
         if let Some(error) = self.blocked_by_pending_idle_stop() {
             return ActionResult { success: false, error: Some(error), session: None };
         }
-        // Seed with the task's known cumulative totals instead of 0s so a
-        // stop/resume (or a session reused across tasks) doesn't reset the
-        // clock the enforcement check on the other end evaluates against.
+        // Seed with the task's known cumulative totals instead of 0s so a stop/resume (or a
+        // session reused across tasks) doesn't reset the clock the enforcement check on the
         let tracking = self.api.lock().fetch_task_time_tracking(task_id.trim()).ok();
         let active_baseline = tracking.as_ref().map(|t| t.active_seconds).unwrap_or(0);
         let idle_baseline = tracking.as_ref().map(|t| t.idle_seconds).unwrap_or(0);
@@ -1049,10 +950,7 @@ impl AgentController {
         }
     }
 
-    /// Timer for a "calling" project, which has no tasks at all. Kept separate
-    /// from start_task_session rather than folded into it: there is no task
-    /// estimate to seed a baseline from, and the backend gates the two on
-    /// different things (task assignment vs. project membership).
+    /// Timer for a "calling" project, which has no tasks at all.
     pub fn start_project_session(&self, project_id: &str) -> ActionResult {
         let project_id = project_id.trim();
         if project_id.is_empty() {
@@ -1089,20 +987,15 @@ impl AgentController {
         }
     }
 
-    /// `stop_note` carries what the member said they worked on, when the
-    /// project has require_stop_note on. Every other stop in this codebase is
-    /// automatic (idle rewind, cap reached, shutdown) and passes None - there
-    /// is no user present to ask.
+    /// `stop_note` carries what the member said they worked on, when the project has
+    /// require_stop_note on.
     pub fn stop_session(&self, stop_note: Option<&str>) -> ActionResult {
         let tracker = self.tracker.lock();
         let (task_id, active_seconds, idle_seconds) = tracker
             .as_ref()
             .map(|t| t.current_task_progress())
             .unwrap_or((None, 0, 0));
-        // TC-Y: this posts "stop" straight to the API, bypassing the tick
-        // loop entirely - without this flag the next tick finds the session
-        // gone and try_recover_lost_session (agent/tracker.rs) mistakes the
-        // user's own Stop for a server-side abandonment and resumes it.
+        // TC-Y: this posts "stop" straight to the API, bypassing the tick loop entirely
         if let Some(tracker) = tracker.as_ref() {
             tracker.note_stop_requested();
         }
@@ -1128,9 +1021,8 @@ impl AgentController {
         }
     }
 
-    /// The break button: marks the session idle (preserving its accumulated
-    /// totals, unlike `stop_session`) and tells the tick loop to stop
-    /// counting active time until `resume_session`.
+    /// The break button: marks the session idle (preserving its accumulated totals, unlike
+    /// `stop_session`) and tells the tick loop to stop counting active time until
     pub fn pause_session(&self) -> ActionResult {
         let tracker = self.tracker.lock();
         let Some(tracker) = tracker.as_ref() else {
@@ -1158,17 +1050,12 @@ impl AgentController {
     }
 
     /// Whether closing the window should hide it instead of quitting.
-    /// Read from disk each time - the preference can change while running and
-    /// this is one small file read, not a hot path.
     pub fn close_to_tray(&self) -> bool {
         self.settings.preferences_store().load().close_to_tray
     }
 
-    /// True when nothing at all is stored for this machine - no cached token,
-    /// no device credential. Deliberately *not* "is currently authenticated":
-    /// a stale or rejected token still identifies a user, and that user gets
-    /// the Welcome Back / switch-account panel instead of a browser window
-    /// thrown over the top of it.
+    /// True when nothing at all is stored for this machine - no cached token, no device
+    /// credential.
     fn has_stored_identity(&self) -> bool {
         let stored = self.store.load();
         (stored.id_token.len() >= MIN_TOKEN_LENGTH && looks_like_jwt(&stored.id_token))
@@ -1193,13 +1080,8 @@ impl AgentController {
     }
 }
 
-/// Cheap shape check alongside MIN_TOKEN_LENGTH before treating a stored
-/// value as a plausible id token - three non-empty dot-separated segments,
-/// the same structural shape every JWT has. Not a signature check (the
-/// server already verifies that on every request); this only screens out
-/// obviously-wrong stored values (garbage, a truncated write, a non-token
-/// string that happened to clear the length bar) before bothering to use
-/// them.
+/// Cheap shape check alongside MIN_TOKEN_LENGTH before treating a stored value as a
+/// plausible id token - three non-empty dot-separated segments, the same structural shape
 fn looks_like_jwt(token: &str) -> bool {
     let parts: Vec<&str> = token.split('.').collect();
     parts.len() == 3 && parts.iter().all(|p| !p.is_empty())

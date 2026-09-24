@@ -186,12 +186,6 @@ fn handle_request(
     );
 }
 
-/// Defense-in-depth input validation on the one state-changing route that
-/// accepts a body: a same-machine browser tab (or any other local process)
-/// could otherwise POST here with no declared Content-Type and still have it
-/// parsed as JSON regardless of what it actually claims to be. Doesn't
-/// replace the real gate (the caller still needs a valid link token), just
-/// narrows what's accepted before that check even runs.
 fn has_json_content_type(request: &Request) -> bool {
     request.headers().iter().any(|h| {
         h.field.equiv("Content-Type")
@@ -208,10 +202,8 @@ fn read_body(request: &mut Request) -> Value {
     serde_json::from_slice(&buf).unwrap_or_else(|_| json!({}))
 }
 
-/// Only the configured dashboard origin may read these responses — this server
-/// is reachable by any process on localhost, and a wildcard origin would let
-/// any webpage the user has open (via a cross-origin fetch) read auth state
-/// and the live link token off it.
+/// Only the configured dashboard origin may read these responses — this server is reachable
+/// by any process on localhost, and a wildcard origin would let any webpage the user has
 fn cors_headers(origin: &str) -> Vec<Header> {
     vec![
         Header::from_bytes("Access-Control-Allow-Origin", origin).unwrap_or_else(|_| {
@@ -262,10 +254,8 @@ mod tests {
         ))
     }
 
-    /// Real `tiny_http::Server` on an OS-assigned port, driving the actual
-    /// (private) `handle_request` this module ships - not a fake standing in
-    /// for it. `link_flow` is the only piece each test needs to vary; the api
-    /// client and its URLs are inert (never dialed by the routes under test).
+    /// Real `tiny_http::Server` on an OS-assigned port, driving the actual (private)
+    /// `handle_request` this module ships - not a fake standing in for it.
     fn spawn_test_server(link_flow: Arc<AgentLinkFlow>) -> String {
         let server = Server::http("127.0.0.1:0").expect("bind test auth server");
         let addr = server.server_addr();
@@ -281,10 +271,8 @@ mod tests {
         format!("http://{addr}")
     }
 
-    // Guards Suggestion #3 (Content-Type defense-in-depth) and, together with
-    // the acceptance test below, that the route's actual match/reject
-    // decision still works end to end after the ApiError unification
-    // (Suggestion #13) touched the ApiClient this route holds a handle to.
+    // Guards Suggestion #3 (Content-Type defense-in-depth) and, together with the
+    // acceptance test below, that the route's actual match/reject decision still works end
 
     #[test]
     fn credentials_link_route_rejects_a_non_json_content_type() {

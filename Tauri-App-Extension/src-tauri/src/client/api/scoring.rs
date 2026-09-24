@@ -5,9 +5,8 @@ use serde_json::Value;
 use super::ApiClient;
 use crate::constants::HTTP_TIMEOUT_SEC;
 
-/// ACT-3: every server-tunable agent constant the plan names - scoring
-/// calibration, screenshot cadence, and the idle threshold - fetched and
-/// applied together since they share one poll cycle and one backend row.
+/// ACT-3: every server-tunable agent constant the plan names - scoring calibration,
+/// screenshot cadence, and the idle threshold - fetched and applied together since they
 pub struct ActivityScoringSettings {
     pub saturation_events: u64,
     pub window_ms: u64,
@@ -17,9 +16,8 @@ pub struct ActivityScoringSettings {
 }
 
 impl ApiClient {
-    /// `Err(())` on any failure (network, auth, malformed response) - callers
-    /// must keep using whatever's already cached rather than resetting to a
-    /// hardcoded default, same contract as fetch_app_display_names.
+    /// `Err(())` on any failure (network, auth, malformed response) - callers must keep
+    /// using whatever's already cached rather than resetting to a hardcoded default, same
     pub fn fetch_activity_scoring_settings(&mut self) -> Result<ActivityScoringSettings, ()> {
         let auth = self.authorized().ok_or(())?;
         let url = format!("{}/api/activity/scoring-settings", self.api_url);

@@ -4,10 +4,8 @@ use image::{ColorType, ImageEncoder};
 
 use crate::constants::{JPEG_QUALITY, MAX_SCREENSHOT_WIDTH};
 
-/// Deliberately light - just enough softening that reading any text takes
-/// real effort and isn't worth it, not a full redaction. A screenshot of a
-/// messaging app is still recognisably a messaging app, with something open
-/// in it; it just isn't a clean, comfortable read of the conversation.
+/// Deliberately light - just enough softening that reading any text takes real effort and
+/// isn't worth it, not a full redaction.
 const SENSITIVE_BLUR_SIGMA: f32 = 2.5;
 
 pub struct ScreenCapture;
@@ -18,9 +16,7 @@ impl ScreenCapture {
     }
 
     /// `blur` obscures the image for a personal messaging app/site
-    /// (capture/sensitive_apps.rs) - the screenshot is still taken and
-    /// uploaded, so time and app-name tracking are unaffected, but its
-    /// pixels are not a photo of the conversation.
+    /// (capture/sensitive_apps.rs) - the screenshot is still taken and uploaded, so time
     pub fn capture_jpeg_data_url(&self, blur: bool) -> Option<String> {
         if is_session_locked() {
             log::info!("Screenshot skipped: session is locked");
@@ -56,8 +52,8 @@ impl ScreenCapture {
             rgba = image::imageops::blur(&rgba, SENSITIVE_BLUR_SIGMA);
         }
 
-        // JPEG has no alpha channel — the encoder rejects Rgba8 outright ("does not
-        // support the color type Rgba8"), which silently killed every screenshot.
+        // JPEG has no alpha channel — the encoder rejects Rgba8 outright ("does not support
+        // the color type Rgba8"), which silently killed every screenshot.
         let rgb = image::DynamicImage::ImageRgba8(rgba).into_rgb8();
 
         let mut jpeg = Vec::new();
@@ -78,13 +74,6 @@ impl ScreenCapture {
     }
 }
 
-/// Picks the monitor showing the actual foreground/focused window - the same
-/// window capture/window.rs logs as the active app - so a screenshot always
-/// matches what was recorded as active. Multi-monitor setups where the mouse
-/// is parked on a different screen than the focused window used to disagree
-/// on which monitor got captured. Falls back to the cursor position, then to
-/// the first enumerated monitor, if the foreground window is unavailable or
-/// doesn't resolve to one.
 fn active_monitor() -> Option<xcap::Monitor> {
     if let Some((x, y)) = foreground_window_center() {
         if let Ok(monitor) = xcap::Monitor::from_point(x, y) {
@@ -106,8 +95,7 @@ fn active_monitor() -> Option<xcap::Monitor> {
 }
 
 /// Center point of the current foreground window's bounds, reusing
-/// `capture::window::get_foreground_window`'s HWND rather than a second,
-/// separate foreground-window lookup.
+/// `capture::window::get_foreground_window`'s HWND rather than a second, separate
 #[cfg(windows)]
 fn foreground_window_center() -> Option<(i32, i32)> {
     use windows::Win32::Foundation::{HWND, RECT};
@@ -142,13 +130,8 @@ fn cursor_position() -> Option<(i32, i32)> {
     None
 }
 
-/// Whether the interactive desktop is currently the secure/locked one
-/// (Winlogon's lock-screen desktop) rather than the normal "Default" desktop
-/// a regular user session captures. `OpenInputDesktop` with
-/// `DESKTOP_SWITCHDESKTOP` access fails when the calling process's session
-/// can't reach the current input desktop - the standard cheap signal for
-/// "the workstation is locked" - so capture is skipped rather than uploading
-/// a screenshot with no tracking value.
+/// Whether the interactive desktop is currently the secure/locked one (Winlogon's
+/// lock-screen desktop) rather than the normal "Default" desktop a regular user session
 #[cfg(windows)]
 fn is_session_locked() -> bool {
     use windows::Win32::System::StationsAndDesktops::{
@@ -165,19 +148,8 @@ fn is_session_locked() -> bool {
     }
 }
 
-/// Same technique every macOS lock-detection tool uses:
-/// `CGSessionCopyCurrentDictionary()` returns the current console session's
-/// attributes, keyed (among other things) by `CGSSessionScreenIsLocked` -
-/// present and true only while the lock screen is up. Declared by hand
-/// rather than pulling in a crate for it, since it's three C functions and
-/// one framework link.
-///
-/// UNVERIFIED, same caveat as `get_foreground_window_macos` in window.rs:
-/// there is no C toolchain available in this environment (`cargo check
-/// --target aarch64-apple-darwin` fails building Tauri's own
-/// `objc2-exception-helper` with "failed to find tool 'cc'"), so this has
-/// not been type-checked, built, or run on real macOS hardware. Treat as a
-/// first draft to validate there before shipping.
+/// Same technique every macOS lock-detection tool uses: `CGSessionCopyCurrentDictionary()`
+/// returns the current console session's attributes, keyed (among other things) by
 #[cfg(target_os = "macos")]
 mod macos_lock {
     use std::os::raw::{c_char, c_void};
@@ -213,9 +185,8 @@ mod macos_lock {
     pub fn is_session_locked() -> bool {
         unsafe {
             let dict = CGSessionCopyCurrentDictionary();
-            // No session dictionary at all (headless, SSH, no active GUI
-            // session) means there's no lock screen to hide a capture from -
-            // treated as unlocked, not locked.
+            // No session dictionary at all (headless, SSH, no active GUI session) means
+            // there's no lock screen to hide a capture from - treated as unlocked, not
             if dict.is_null() {
                 return false;
             }
@@ -228,9 +199,8 @@ mod macos_lock {
                 false
             } else {
                 let value = CFDictionaryGetValue(dict, key);
-                // Confirm it's actually a CFBoolean before reinterpreting the
-                // pointer as one - a missing key returns null (handled
-                // above), but a type mismatch would otherwise read garbage.
+                // Confirm it's actually a CFBoolean before reinterpreting the pointer as
+                // one - a missing key returns null (handled above), but a type mismatch
                 let is_locked = !value.is_null()
                     && CFGetTypeID(value) == CFBooleanGetTypeID()
                     && CFBooleanGetValue(value) != 0;

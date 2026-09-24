@@ -26,49 +26,30 @@ pub struct EventBuilder {
     activity: Arc<ActivityMeter>,
     url_script_path: PathBuf,
     macos_url_script_path: PathBuf,
-    /// MAC-3/CQ-4: server-delivered app-name overrides (CLS-1's
-    /// activity_categories, keyed by lowercased process_name/app_name -
-    /// window.rs already normalizes Windows .exe names and macOS display
-    /// names into the same field, `process_name`). A pure override layer:
-    /// empty (e.g. agent never reached the server, or offline) means every
-    /// lookup falls through to window.rs's own resolved app_name exactly as
-    /// before this existed - this can never make name resolution worse than
-    /// it already was, only better once populated.
+    /// MAC-3/CQ-4: server-delivered app-name overrides (CLS-1's activity_categories, keyed
+    /// by lowercased process_name/app_name - window.rs already normalizes Windows .exe
     display_names: Mutex<HashMap<String, String>>,
-    /// ACT-3: server-tunable screenshot cadence bounds, defaulted to the
-    /// compile-time constants and overwritten by `apply_screenshot_cadence`
-    /// on the tracker's periodic scoring-settings poll.
+    /// ACT-3: server-tunable screenshot cadence bounds, defaulted to the compile-time
+    /// constants and overwritten by `apply_screenshot_cadence` on the tracker's periodic
     screenshot_min_delay_sec: AtomicU64,
     screenshot_max_delay_sec: AtomicU64,
     /// Last URL successfully captured, with when it was captured.
-    ///
-    /// A screenshot is taken on its own schedule (90-210s) while URLs are read
-    /// on the app-slice tick (15s), so the two are never simultaneous. Reusing
-    /// the most recent read costs nothing - no extra subprocess - and lets a
-    /// capture carry the site that was actually open, instead of the server
-    /// having to infer it from a separate URL log afterwards.
     last_url: Mutex<Option<(String, Instant)>>,
-    /// Where the display-name map is persisted, so a cold start with no
-    /// network still resolves real app names instead of raw exe names.
+    /// Where the display-name map is persisted, so a cold start with no network still
+    /// resolves real app names instead of raw exe names.
     cache_path: PathBuf,
-    /// `get-app-icon.ps1` (Windows). Empty/missing elsewhere - icon extraction
-    /// is then a no-op and the UI keeps its letter tiles.
+    /// `get-app-icon.ps1` (Windows).
     app_icon_script_path: PathBuf,
-    /// Per-browser-window URL-capture health, keyed by HWND (process name off
-    /// Windows). `(consecutive failures, skip probing until)`. Guards against
-    /// hammering a page whose accessibility tree makes the read spike or
-    /// crash the browser - see URL_CAPTURE_MAX_FAILURES.
+    /// Per-browser-window URL-capture health, keyed by HWND (process name off Windows).
     url_backoff: Mutex<HashMap<String, (u32, Option<Instant>)>>,
-    /// Lowercased app patterns the org excluded from capture. Nothing is
-    /// recorded or even probed while one of these is focused.
+    /// Lowercased app patterns the org excluded from capture.
     excluded_apps: Mutex<HashSet<String>>,
-    /// App-icon send state, keyed by lowercased resolved app name. Shared with
-    /// the detached extraction threads. See `take_app_icon`.
+    /// App-icon send state, keyed by lowercased resolved app name.
     app_icons: Arc<Mutex<HashMap<String, IconSlot>>>,
 }
 
-/// Credits each observed URL from when it appeared until the next one did
-/// (the last runs to `now`), then trims the total back to one tick's worth.
+/// Credits each observed URL from when it appeared until the next one did (the last runs to
+/// `now`), then trims the total back to one tick's worth.
 fn attribute_dwell(
     observations: &[crate::capture::uia_url::UrlObservation],
     now: Instant,
@@ -79,8 +60,8 @@ fn attribute_dwell(
             .get(index + 1)
             .map(|next| next.at)
             .unwrap_or(now);
-        // A page open for under a second still gets one, so a fast
-        // click-through isn't recorded as zero time.
+        // A page open for under a second still gets one, so a fast click-through isn't
+        // recorded as zero time.
         let seconds = until
             .saturating_duration_since(observation.at)
             .as_secs()
@@ -88,9 +69,8 @@ fn attribute_dwell(
         out.push((observation.url.clone(), seconds));
     }
 
-    // Never hand out more than the tick actually covered - trim from the
-    // oldest, which is the entry most likely to have started before it. Every
-    // URL keeps at least a second, so nothing disappears entirely.
+    // Never hand out more than the tick actually covered - trim from the oldest, which is
+    // the entry most likely to have started before it.
     let mut total: u64 = out.iter().map(|(_, s)| *s).sum();
     let mut index = 0;
     while total > APP_LOG_INTERVAL_SEC && index < out.len() {
@@ -103,7 +83,7 @@ fn attribute_dwell(
     out
 }
 
-/// One app's icon lifecycle. An app with no entry has never been looked at.
+/// One app's icon lifecycle.
 enum IconSlot {
     /// Extraction thread is running.
     Pending,
@@ -113,9 +93,7 @@ enum IconSlot {
     Done,
 }
 
-/// Stop spawning extraction threads once this many distinct apps have been
-/// seen in one run. ponytail: a flat cap, not an LRU - a session touching 500
-/// distinct executables is not a real workflow.
+/// Stop spawning extraction threads once this many distinct apps have been seen in one run.
 const MAX_TRACKED_APP_ICONS: usize = 500;
 
 impl EventBuilder {
@@ -126,9 +104,8 @@ impl EventBuilder {
         cache_path: PathBuf,
         app_icon_script_path: PathBuf,
     ) -> Self {
-        // Seed from disk before the first server refresh - that refresh is up
-        // to DISPLAY_NAME_REFRESH_INTERVAL_SEC away, and may never arrive if
-        // the machine is offline.
+        // Seed from disk before the first server refresh - that refresh is up to
+        // DISPLAY_NAME_REFRESH_INTERVAL_SEC away, and may never arrive if the machine is
         let cached = classification_cache::load(&cache_path);
         Self {
             screen: ScreenCapture::new(),
@@ -147,17 +124,13 @@ impl EventBuilder {
         }
     }
 
-    /// Replaces the excluded-app list wholesale, so an exclusion the org
-    /// removed actually stops applying. Only called with a successful fetch -
-    /// a failed one leaves the previous list in place.
+    /// Replaces the excluded-app list wholesale, so an exclusion the org removed actually
+    /// stops applying.
     pub fn apply_capture_exclusions(&self, patterns: Vec<String>) {
         *self.excluded_apps.lock() = patterns.into_iter().collect();
     }
 
-    /// True when the focused window belongs to an app the org excluded from
-    /// capture. Matched against both the resolved display name and the raw
-    /// process name, since an admin may have typed either ("Slack" or
-    /// "slack.exe"). Same trim+lowercase comparison the backend uses.
+    /// True when the focused window belongs to an app the org excluded from capture.
     pub fn is_capture_excluded(&self, window: &ForegroundWindow) -> bool {
         if self.excluded_apps.lock().is_empty() {
             return false;
@@ -177,11 +150,6 @@ impl EventBuilder {
     }
 
     /// The icon to attach to this app slice, if one is ready.
-    ///
-    /// First sight of an app spawns a detached extraction thread and returns
-    /// `None`; a later slice for the same app picks up the result and sends it
-    /// exactly once. Non-Windows (or an unreadable exe path) never gets past
-    /// the first guard, so this is inert there.
     fn take_app_icon(&self, app_name: &str, exe_path: &str) -> Option<String> {
         if exe_path.is_empty() {
             return None;
@@ -217,11 +185,11 @@ impl EventBuilder {
         }
     }
 
-    /// ACT-3: applied from the periodic scoring-settings poll. A min above
-    /// the max is refused rather than stored - `random_screenshot_delay_sec`
-    /// would panic on `rng.gen_range` with an inverted bound, and the
-    /// backend already rejects this ordering before it can be sent, so this
-    /// is defense in depth, not the primary guard.
+    /// ACT-3: applied from the periodic scoring-settings poll. A min above the max is
+    /// refused rather than stored - `random_screenshot_delay_sec` would panic on
+    /// `rng.gen_range` with an inverted bound, and the backend already rejects this
+    /// ordering before it can be sent, so this is defense in depth, not the primary
+    /// guard.
     pub fn apply_screenshot_cadence(&self, min_delay_sec: u64, max_delay_sec: u64) {
         if min_delay_sec > 0 && max_delay_sec > 0 && min_delay_sec <= max_delay_sec {
             self.screenshot_min_delay_sec.store(min_delay_sec, Ordering::Relaxed);
@@ -229,19 +197,15 @@ impl EventBuilder {
         }
     }
 
-    /// Replaces the whole cache atomically (not merged) so a mapping removed
-    /// server-side actually disappears here too, rather than only ever
-    /// growing. Called periodically by the tracker loop - see
-    /// DISPLAY_NAME_REFRESH_INTERVAL_SEC.
+    /// Replaces the whole cache atomically (not merged) so a mapping removed server-side
+    /// actually disappears here too, rather than only ever growing.
     pub fn apply_display_names(&self, entries: Vec<(String, String)>) {
         classification_cache::save(&self.cache_path, &entries);
         *self.display_names.lock() = entries.into_iter().collect();
     }
 
-    /// The server-delivered name when the cache has one for this window's
-    /// process/app name, else whatever window.rs already resolved
-    /// (its own overrides() map or algorithmic title-casing on Windows; the
-    /// raw xcap display name on macOS).
+    /// The server-delivered name when the cache has one for this window's process/app name,
+    /// else whatever window.rs already resolved (its own overrides() map or algorithmic
     fn resolve_app_name(&self, window: &ForegroundWindow) -> String {
         let key = window.process_name.to_lowercase();
         if !key.is_empty() {
@@ -261,17 +225,8 @@ impl EventBuilder {
     }
 
     pub fn screenshot(&self, window: &ForegroundWindow) -> Option<ActivityEvent> {
-        // Computed before capture, not after: the blur decision needs the
-        // same URL the event itself reports, so a browser tab that navigated
-        // to something else between capture and here can't blur against a
-        // page no longer on screen.
         let url = self.recent_url(window);
-        // Blur asks a different question from labelling, so it gets a
-        // different URL. `url` above is only set when the reading is fresh
-        // enough to name the site confidently; `url_for_blur` also accepts an
-        // older one, because a stale WhatsApp reading is still a reason to
-        // blur. The title is passed too, since a packaged Store app reports
-        // ApplicationFrameHost rather than its own executable.
+        // Blur asks a different question from labelling, so it gets a different URL.
         let blur = crate::capture::sensitive_apps::is_messaging_target(
             &window.process_name,
             self.url_for_blur(window).as_deref(),
@@ -288,11 +243,8 @@ impl EventBuilder {
         })
     }
 
-    /// The cached URL, but only if the focused window is still a browser and
-    /// the reading is fresh. A stale URL attached to a capture would be worse
-    /// than none: the server would categorise the screenshot by a site the
-    /// member had already navigated away from, and would do so *confidently*,
-    /// ahead of its own inference.
+    /// The cached URL, but only if the focused window is still a browser and the reading is
+    /// fresh.
     fn recent_url(&self, window: &ForegroundWindow) -> Option<String> {
         if !window.is_browser {
             return None;
@@ -305,9 +257,8 @@ impl EventBuilder {
         Some(url.clone())
     }
 
-    /// The last known URL for this window, kept for longer than `recent_url`
-    /// would allow, for the blur decision only - never for what the event
-    /// reports. See URL_BLUR_GRACE_SEC.
+    /// The last known URL for this window, kept for longer than `recent_url` would allow,
+    /// for the blur decision only - never for what the event reports.
     fn url_for_blur(&self, window: &ForegroundWindow) -> Option<String> {
         if !window.is_browser {
             return None;
@@ -332,8 +283,8 @@ impl EventBuilder {
         }
     }
 
-    /// Every URL the member actually visited this tick, not just whichever
-    /// one they happened to be on at the sample instant.
+    /// Every URL the member actually visited this tick, not just whichever one they
+    /// happened to be on at the sample instant.
     pub fn url_slices(&self, window: &ForegroundWindow) -> Vec<ActivityEvent> {
         let observed = self.observed_urls_for(window);
         if !observed.is_empty() {
@@ -361,11 +312,8 @@ impl EventBuilder {
         }]
     }
 
-    /// Drains the subscription buffer and turns this window's navigations into
-    /// `(url, seconds)`, each URL credited from when it appeared until the
-    /// next one did (the last runs to now). Observations belonging to other
-    /// browser windows are discarded rather than credited - only the focused
-    /// window's time is this tick's to give away.
+    /// Drains the subscription buffer and turns this window's navigations into `(url,
+    /// seconds)`, each URL credited from when it appeared until the next one did (the last
     fn observed_urls_for(&self, window: &ForegroundWindow) -> Vec<(String, u64)> {
         let drained = crate::capture::uia_url::drain_url_changes();
         if drained.is_empty() {
@@ -382,18 +330,6 @@ impl EventBuilder {
         attribute_dwell(&mine, Instant::now())
     }
 
-    /// Suggestion #7: `read_browser_url` spawns a subprocess (PowerShell on
-    /// Windows, osascript on macOS) with its own internal timeout up to
-    /// URL_SCRIPT_TIMEOUT_SEC (8s) - calling it inline used to make the
-    /// tracker's tick thread block for that full worst case, delaying
-    /// everything else scheduled for the same tick (including idle
-    /// escalation). Running the capture on its own thread and only waiting
-    /// URL_CAPTURE_TICK_BUDGET_SEC for it here means a slow script just costs
-    /// this tick its URL (falls through to "no URL captured", same as today
-    /// when the script fails or returns nothing) instead of stalling the
-    /// tracker. The background thread is left to run to its own completion or
-    /// timeout independently; a late result after the deadline is simply
-    /// dropped (the receiver is gone by then).
     fn capture_url_bounded(&self, window: &ForegroundWindow) -> Option<String> {
         if !window.is_browser {
             return None;
@@ -425,14 +361,6 @@ impl EventBuilder {
         let result = match rx.recv_timeout(Duration::from_secs(URL_CAPTURE_TICK_BUDGET_SEC)) {
             Ok(result) => result,
             Err(_) => {
-                // Distinct from read_browser_url's own "failed or timed out"
-                // warning (that one only fires if the script itself hits its
-                // full URL_SCRIPT_TIMEOUT_SEC) - this is the *tick* giving up
-                // on waiting, which used to happen silently and looked
-                // identical in the feed to a genuine capture failure. Logged
-                // once it's actually hit so a still-too-tight budget on some
-                // machine shows up as this line, not as an unexplained
-                // permanent "no real URLs, ever" the next time someone asks.
                 log::warn!(
                     "URL capture: tick gave up after {URL_CAPTURE_TICK_BUDGET_SEC}s waiting on {process_name}, falling back to window title for this tick"
                 );
@@ -443,15 +371,14 @@ impl EventBuilder {
         result
     }
 
-    /// True when this window is in a URL-capture backoff window - don't even
-    /// spawn the reader.
+    /// True when this window is in a URL-capture backoff window - don't even spawn the
+    /// reader.
     fn url_capture_backed_off(&self, key: &str) -> bool {
         let map = self.url_backoff.lock();
         matches!(map.get(key), Some((_, Some(until))) if Instant::now() < *until)
     }
 
-    /// Fold one attempt's outcome into the per-window failure count. A success
-    /// clears the entry; URL_CAPTURE_MAX_FAILURES in a row arms a backoff.
+    /// Fold one attempt's outcome into the per-window failure count.
     fn record_url_capture_outcome(&self, key: &str, ok: bool) {
         let mut map = self.url_backoff.lock();
         if ok {
@@ -459,8 +386,8 @@ impl EventBuilder {
             return;
         }
         if map.len() > 128 {
-            // HWNDs are recycled by the OS and this is only a heuristic - a
-            // rare full reset just means a few windows get re-learned.
+            // HWNDs are recycled by the OS and this is only a heuristic - a rare full reset
+            // just means a few windows get re-learned.
             map.clear();
         }
         let entry = map.entry(key.to_string()).or_insert((0, None));
@@ -480,16 +407,11 @@ mod tests {
     use super::*;
     use crate::capture::activity::ActivityMeter;
 
-    // Guards MAC-3/CQ-4's override layer: the server-delivered cache wins
-    // when it has an entry, everything else falls through to what window.rs
-    // already resolved - this can never make name resolution worse than
-    // doing nothing here, only better once populated.
+    // Guards MAC-3/CQ-4's override layer: the server-delivered cache wins when it has an
+    // entry, everything else falls through to what window.rs already resolved - this can
 
     fn builder() -> EventBuilder {
-        // A unique cache path per builder. apply_display_names now writes to
-        // disk, so a shared path would let one test's mappings load into the
-        // next one - which is exactly what happened the first time this used a
-        // fixed filename.
+        // A unique cache path per builder.
         let unique = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -540,9 +462,8 @@ mod tests {
 
     #[test]
     fn works_uniformly_for_macos_style_process_names() {
-        // MAC-2 sets process_name = app_name on macOS (no separate exe form),
-        // and CLS-1 seeds macOS-style patterns ("Google Chrome") alongside
-        // the Windows .exe ones for exactly this case.
+        // MAC-2 sets process_name = app_name on macOS (no separate exe form), and CLS-1
+        // seeds macOS-style patterns ("Google Chrome") alongside the Windows .exe ones for
         let builder = builder();
         builder.apply_display_names(vec![("google chrome".to_string(), "Google Chrome".to_string())]);
         let win = window("Google Chrome", "Google Chrome");
@@ -584,10 +505,8 @@ mod tests {
         }
     }
 
-    // A screenshot carries the site that was open, so the server can
-    // categorise it directly instead of inferring from a separate URL log.
-    // The cache is only ever written by a real capture in url_slice; these
-    // seed it directly because that path needs a live browser.
+    // A screenshot carries the site that was open, so the server can categorise it directly
+    // instead of inferring from a separate URL log.
 
     #[test]
     fn no_url_on_a_screenshot_when_nothing_has_been_captured() {
@@ -597,8 +516,8 @@ mod tests {
 
     #[test]
     fn an_app_slice_carries_no_icon_without_an_executable_path() {
-        // window() leaves exe_path empty (the non-Windows / unreadable case),
-        // so extraction never even starts.
+        // Window() leaves exe_path empty (the non-Windows / unreadable case), so extraction
+        // never even starts.
         let builder = builder();
         match builder.app_slice(&window("code.exe", "VS Code")) {
             ActivityEvent::App { app_icon, .. } => assert_eq!(app_icon, None),
@@ -608,9 +527,8 @@ mod tests {
 
     #[test]
     fn a_missing_icon_script_settles_to_done_and_never_blocks_the_slice() {
-        // builder() passes an empty (non-existent) script path; the first
-        // slice spawns a thread that resolves to nothing, and no slice ever
-        // returns an icon or panics.
+        // Builder() passes an empty (non-existent) script path; the first slice spawns a
+        // thread that resolves to nothing, and no slice ever returns an icon or panics.
         let builder = builder();
         let mut win = window("code.exe", "VS Code");
         win.exe_path = "C:\\does\\not\\exist\\code.exe".to_string();
@@ -632,9 +550,8 @@ mod tests {
 
     #[test]
     fn dwell_is_credited_from_one_navigation_to_the_next() {
-        // Visited a, then b five seconds later, then c four after that; c is
-        // still open with three seconds gone. `now` is taken after the
-        // observations exist, or the last gap rounds down by a hair.
+        // Visited a, then b five seconds later, then c four after that; c is still open
+        // with three seconds gone.
         let observed = [observation("a", 12), observation("b", 7), observation("c", 3)];
         let out = attribute_dwell(&observed, Instant::now());
         let secs: Vec<u64> = out.iter().map(|(_, s)| *s).collect();
@@ -659,8 +576,8 @@ mod tests {
 
     #[test]
     fn the_tick_never_gives_away_more_time_than_it_covered() {
-        // Stale observations that together exceed one interval get trimmed
-        // from the oldest, and nothing is dropped entirely.
+        // Stale observations that together exceed one interval get trimmed from the oldest,
+        // and nothing is dropped entirely.
         let observed = [observation("a", 600), observation("b", 300), observation("c", 30)];
         let out = attribute_dwell(&observed, Instant::now());
         let total: u64 = out.iter().map(|(_, s)| *s).sum();
@@ -722,9 +639,8 @@ mod tests {
 
     #[test]
     fn a_stale_url_is_dropped_rather_than_attached() {
-        // Worse than no URL: the server would categorise the capture by a site
-        // the member had already left, and would trust it over its own
-        // inference.
+        // Worse than no URL: the server would categorise the capture by a site the member
+        // had already left, and would trust it over its own inference.
         let builder = builder();
         let stale = Instant::now() - Duration::from_secs(URL_CACHE_MAX_AGE_SEC + 1);
         *builder.last_url.lock() = Some(("https://github.com/x".to_string(), stale));
@@ -733,10 +649,8 @@ mod tests {
 
     #[test]
     fn a_stale_url_still_decides_the_blur_even_though_it_cannot_label() {
-        // The asymmetry this pair exists to pin: labelling must not claim a
-        // site it cannot prove, but blurring is asked "might this be private?"
-        // and a stale WhatsApp reading is still a yes. Dropping it here is how
-        // a browser left sitting on a conversation got captured in the clear.
+        // The asymmetry this pair exists to pin: labelling must not claim a site it cannot
+        // prove, but blurring is asked "might this be private?" and a stale WhatsApp
         let builder = builder();
         let stale = Instant::now() - Duration::from_secs(URL_CACHE_MAX_AGE_SEC + 1);
         *builder.last_url.lock() = Some(("https://web.whatsapp.com/".to_string(), stale));
@@ -752,8 +666,8 @@ mod tests {
 
     #[test]
     fn past_the_grace_window_even_the_blur_reading_is_dropped() {
-        // The generosity has a limit: an hour-old reading says nothing about
-        // what is on screen now.
+        // The generosity has a limit: an hour-old reading says nothing about what is on
+        // screen now.
         let builder = builder();
         let ancient = Instant::now() - Duration::from_secs(URL_BLUR_GRACE_SEC + 1);
         *builder.last_url.lock() = Some(("https://web.whatsapp.com/".to_string(), ancient));
@@ -770,8 +684,7 @@ mod tests {
 
     #[test]
     fn a_non_browser_window_never_carries_a_url() {
-        // Focus moved from the browser to an editor; the cached URL must not
-        // follow it.
+        // Focus moved from the browser to an editor; the cached URL must not follow it.
         let builder = builder();
         *builder.last_url.lock() = Some(("https://github.com/x".to_string(), Instant::now()));
         let editor = window("code.exe", "VS Code");

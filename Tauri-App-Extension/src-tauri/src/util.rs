@@ -17,10 +17,8 @@ pub fn open_url_in_launcher_or_browser(fallback_url: &str, link_token: Option<&s
         let mut url = format!("http://localhost:{port}/open");
         if let Some(token) = link_token {
             url.push_str(&format!("?link={}", urlencoding::encode(token)));
-            // Same hint the direct-browser fallback below gets - without this
-            // the launcher path always lands on the plain link page, ignoring
-            // which button (Google/Apple/Create account/Forgot password) sent
-            // the user there.
+            // Same hint the direct-browser fallback below gets - without this the launcher
+            // path always lands on the plain link page, ignoring which button
             if let Some(h) = hint {
                 url.push('&');
                 url.push_str(h);
@@ -47,9 +45,8 @@ pub fn open_url_in_launcher_or_browser(fallback_url: &str, link_token: Option<&s
 pub fn open_system_browser(url: &str) {
     #[cfg(target_os = "windows")]
     {
-        // ShellExecuteW hands the URL straight to the OS's URL handler - unlike
-        // `cmd /C start`, it never reparses the string as a command line, so
-        // shell metacharacters (&, |, %VAR%) in `url` can't be interpreted.
+        // ShellExecuteW hands the URL straight to the OS's URL handler - unlike `cmd /C
+        // start`, it never reparses the string as a command line, so shell metacharacters
         use windows::core::PCWSTR;
         use windows::Win32::UI::Shell::ShellExecuteW;
         use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
@@ -84,12 +81,6 @@ pub fn truncate(s: &str, max: usize) -> String {
     s.chars().take(max).collect()
 }
 
-/// Fixed allow-list for the `hint` query param appended to the browser
-/// sign-in URL (see `agent::controller::open_sign_in` and
-/// `auth::link_flow::AgentLinkFlow::start`). Unlike the link token spliced in
-/// next to it, `hint` used to go into that URL unescaped/unvalidated - only
-/// these exact values are ever sent by the frontend (App.tsx's sign-in
-/// buttons), so anything else is dropped rather than trusted.
 pub fn is_allowed_link_hint(hint: &str) -> bool {
     matches!(
         hint,

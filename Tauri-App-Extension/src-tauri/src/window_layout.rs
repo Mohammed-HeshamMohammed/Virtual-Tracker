@@ -1,22 +1,4 @@
 //! Which layout the main window uses, and the size that goes with it.
-//!
-//! - **Standard** 1320x660 - wider and noticeably shorter than the window
-//! used to be, so it fits a laptop screen without running off the bottom.
-//! This is the default now. On a screen with the room, and with the apps &
-//! screenshots card switched on (`show_insights` in prefs.rs, off by
-//! default), the week's top apps and the screenshots get a column of their
-//! own on the right; with it off, or without the room for the column, the
-//! window is that much narrower instead of showing the column half-hidden.
-//! - **Wide** 1420x820 - for a big monitor. Same column as Standard, just
-//! more room in it. Never picked by Auto on its own.
-//! - **Extended** 1100x750 - the original window, fixed size, no column ever
-//! (it doesn't shrink, so a hidden column would just be dead space) - for
-//! anyone who wants the classic layout and has a monitor for it. Never
-//! picked by Auto on its own, same as Wide.
-//! - **Focus** 1100x600 - screens too small even for Standard. No apps &
-//! screenshots column; the tasks get a narrow column of their own on the
-//! right instead, so the sidebar only holds the projects, and the main
-//! pane shows the top apps without the screenshots.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
@@ -40,19 +22,13 @@ impl LayoutKind {
             "wide" => Some(Self::Wide),
             "extended" => Some(Self::Extended),
             "focus" => Some(Self::Focus),
-            // Pre-rename value: Standard used to mean the 1100x750 window
-            // that "extended" now means, so an old explicit choice of
-            // "standard" would silently change shape under the same name -
-            // "compact" had no such conflict (it's simply Standard's old
-            // name), so only it gets carried forward.
             "compact" => Some(Self::Standard),
             _ => None,
         }
     }
 
-    /// The width the side column takes up, including the gap after it - what
-    /// the window loses when the column goes. Matches `.side-column` (and its
-    /// Wide override) in App.css. Zero for the layouts that have no column.
+    /// The width the side column takes up, including the gap after it - what the window
+    /// loses when the column goes.
     fn side_column_width(self) -> f64 {
         match self {
             Self::Wide => 360.0 + 14.0,
@@ -61,8 +37,7 @@ impl LayoutKind {
         }
     }
 
-    /// The size it opens at when the screen has room for it, with the side
-    /// column in place.
+    /// The size it opens at when the screen has room for it, with the side column in place.
     fn preferred_size(self) -> (f64, f64) {
         match self {
             Self::Standard => (1320.0, 660.0),
@@ -72,9 +47,8 @@ impl LayoutKind {
         }
     }
 
-    /// The smallest it can be squeezed to on a screen without room for its
-    /// preferred size, with the side column in place - below this its
-    /// columns stop fitting. Meaningless for Extended, which doesn't shrink.
+    /// The smallest it can be squeezed to on a screen without room for its preferred size,
+    /// with the side column in place - below this its columns stop fitting.
     fn min_size(self) -> (f64, f64) {
         match self {
             Self::Standard => (1180.0, 520.0),
@@ -88,21 +62,15 @@ impl LayoutKind {
 /// Kept clear between the window and the edge of the work area.
 const EDGE_MARGIN: f64 = 16.0;
 
-/// No window gets narrower than this, column or not: the sidebar plus a main
-/// pane its three stat tiles still fit across.
+/// No window gets narrower than this, column or not: the sidebar plus a main pane its three
+/// stat tiles still fit across.
 const NARROWEST: f64 = 960.0;
 
-/// Auto picks Standard from this much usable width up - Standard's own
-/// with-column minimum (its narrowest with insights on), plus a little room.
-/// Auto's pick can't depend on the insights setting (see auto_kind's own
-/// doc), so it has to clear the wider of Standard's two floors, not just the
-/// one the current setting happens to need.
+/// Auto picks Standard from this much usable width up - Standard's own with-column minimum
+/// (its narrowest with insights on), plus a little room.
 const AUTO_STANDARD_MIN_WIDTH: f64 = 1180.0 + EDGE_MARGIN;
 
-/// Auto picks Standard from this much usable height up. Standard's own
-/// preferred height (660) is already short, so this only needs to clear its
-/// shrink-to-fit floor with a little room, not the height a fixed window
-/// would need.
+/// Auto picks Standard from this much usable height up.
 const AUTO_STANDARD_MIN_HEIGHT: f64 = 520.0 + 40.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -116,13 +84,6 @@ pub struct WindowLayout {
 }
 
 /// The layout Auto picks for a screen's work area in logical pixels.
-///
-/// Wide and Extended are never picked automatically - both exist for someone
-/// who knows they have the monitor for it and asks for it by name. Standard
-/// fits comfortably shrunk down to a genuinely small screen already (see
-/// AUTO_STANDARD_MIN_WIDTH/HEIGHT, both close to its own shrink floor), so
-/// Focus is for screens too small even for that. The apps & screenshots
-/// setting doesn't change the pick - only the size the pick opens at.
 fn auto_kind(work_area: Option<(f64, f64)>) -> LayoutKind {
     match work_area {
         None => LayoutKind::Standard,
@@ -135,9 +96,8 @@ fn auto_kind(work_area: Option<(f64, f64)>) -> LayoutKind {
     }
 }
 
-/// Picks the layout and size for the stored layout preference, the apps &
-/// screenshots setting, and the screen's work area in logical pixels (`None`
-/// when no monitor could be read).
+/// Picks the layout and size for the stored layout preference, the apps & screenshots
+/// setting, and the screen's work area in logical pixels (`None` when no monitor could be
 pub fn resolve(
     preference: &str,
     show_insights: bool,
@@ -167,8 +127,8 @@ pub fn resolve(
     let (min_width, min_height) = kind.min_size();
     let (width, min_width) = (width - dropped, (min_width - dropped).max(NARROWEST));
 
-    // The others shrink to fit the screen they're on, down to the smallest
-    // size their columns still fit in.
+    // The others shrink to fit the screen they're on, down to the smallest size their
+    // columns still fit in.
     let (width, height) = match work_area {
         Some((area_width, area_height)) => (
             width.min(area_width - EDGE_MARGIN).max(min_width),
@@ -184,8 +144,8 @@ pub fn resolve(
     }
 }
 
-/// The work area (the screen minus the taskbar) of the monitor the window is
-/// on, in logical pixels.
+/// The work area (the screen minus the taskbar) of the monitor the window is on, in logical
+/// pixels.
 fn work_area(window: &WebviewWindow) -> Option<(f64, f64)> {
     let monitor = window
         .current_monitor()
@@ -205,17 +165,17 @@ pub fn current(window: &WebviewWindow, preference: &str, show_insights: bool) ->
     resolve(preference, show_insights, work_area(window))
 }
 
-/// How many steps a layout change takes to reach its new size, and how long
-/// each one lasts - about a fifth of a second in all.
+/// How many steps a layout change takes to reach its new size, and how long each one lasts
+/// - about a fifth of a second in all.
 const RESIZE_STEPS: u32 = 14;
 const RESIZE_STEP: Duration = Duration::from_millis(14);
 
-/// Bumped by every resize, so an animation still running when the next layout
-/// is picked stops where it is instead of fighting the new one.
+/// Bumped by every resize, so an animation still running when the next layout is picked
+/// stops where it is instead of fighting the new one.
 static RESIZE_GENERATION: AtomicU64 = AtomicU64::new(0);
 
-/// The size at step `step` of `steps` on the way from `from` to `to`, easing
-/// out so the window settles into place rather than stopping dead.
+/// The size at step `step` of `steps` on the way from `from` to `to`, easing out so the
+/// window settles into place rather than stopping dead.
 fn eased_size(from: (f64, f64), to: (f64, f64), step: u32, steps: u32) -> (f64, f64) {
     let t = (step as f64 / steps.max(1) as f64).clamp(0.0, 1.0);
     let eased = 1.0 - (1.0 - t).powi(3);
@@ -234,16 +194,13 @@ fn finish_resize(window: &WebviewWindow, (width, height): (f64, f64)) {
     let _ = window.center();
 }
 
-/// Sizes and re-centres the window for these settings. `animate` eases it
-/// there over a fifth of a second - for a change the member just made in
-/// Settings; startup sizes it in one step before the window is shown.
+/// Sizes and re-centres the window for these settings.
 pub fn apply(window: &WebviewWindow, preference: &str, show_insights: bool, animate: bool) -> WindowLayout {
     let layout = current(window, preference, show_insights);
     let target = (layout.width, layout.height);
     let generation = RESIZE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
-    // tauri.conf.json's minimum is the original window's size, which would
-    // stop the window from getting any shorter or narrower - lift it while
-    // resizing, then pin the new size as the minimum.
+    // Tauri.conf.json's minimum is the original window's size, which would stop the window
+    // from getting any shorter or narrower - lift it while resizing, then pin the new size
     let _ = window.set_min_size(None::<LogicalSize<f64>>);
 
     let from = window
@@ -257,8 +214,8 @@ pub fn apply(window: &WebviewWindow, preference: &str, show_insights: bool, anim
     match from {
         Some(from) if animate && from != target => {
             let window = window.clone();
-            // Off the command's thread: every window call hops to the main
-            // thread, which has to stay free to actually carry them out.
+            // Off the command's thread: every window call hops to the main thread, which
+            // has to stay free to actually carry them out.
             let spawned = std::thread::Builder::new()
                 .name("vt-layout-resize".into())
                 .spawn({
@@ -417,8 +374,8 @@ mod tests {
         );
     }
 
-    // Extended is the one layout that never shrinks - same as the original
-    // window, which had no notion of a screen too small for it either.
+    // Extended is the one layout that never shrinks - same as the original window, which
+    // had no notion of a screen too small for it either.
     #[test]
     fn extended_keeps_its_fixed_size_however_small_the_screen() {
         let extended = resolve("extended", true, Some(SCALED_900P));
@@ -434,9 +391,8 @@ mod tests {
         assert_eq!(size(focus), (960.0, 520.0));
     }
 
-    // The space goes with the column: switching the card off makes the window
-    // narrower by exactly the column's width, instead of stretching the main
-    // pane across where it was.
+    // The space goes with the column: switching the card off makes the window narrower by
+    // exactly the column's width, instead of stretching the main pane across where it was.
     #[test]
     fn switching_apps_and_screenshots_off_takes_the_column_and_its_width_away() {
         let wide = resolve("wide", false, Some(BIG_MONITOR));
@@ -482,8 +438,8 @@ mod tests {
         );
     }
 
-    // "compact" was Standard's name before this layout became the default -
-    // an old explicit choice of it must still resolve the same way.
+    // "compact" was Standard's name before this layout became the default - an old explicit
+    // choice of it must still resolve the same way.
     #[test]
     fn a_pre_rename_compact_choice_still_resolves_to_standard() {
         assert_eq!(

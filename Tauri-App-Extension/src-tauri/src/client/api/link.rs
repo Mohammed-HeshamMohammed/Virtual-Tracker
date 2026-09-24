@@ -27,10 +27,7 @@ impl ApiClient {
         Some((link_token, agent_secret))
     }
 
-    /// Claims a device credential for this machine using the token we already
-    /// hold. Covers the paths link/exchange doesn't: the browser's loopback
-    /// handoff (which skips the exchange entirely) and agents that linked
-    /// before device credentials existed. No-op once one is held.
+    /// Claims a device credential for this machine using the token we already hold.
     pub fn ensure_device_registered(&mut self) -> bool {
         if self.has_device_credential() {
             return true;
@@ -39,9 +36,8 @@ impl ApiClient {
             return false;
         };
         let url = format!("{}/api/activity/agent/device/register", self.api_url);
-        // AC-3: computed once, right here at registration - not per-tick,
-        // since VM status doesn't change mid-session. A signal for a manager
-        // to weigh in context, never a verdict this call blocks on.
+        // AC-3: computed once, right here at registration - not per-tick, since VM status
+        // doesn't change mid-session.
         let vm = detect_vm();
         let res = self
             .client
@@ -82,7 +78,7 @@ impl ApiClient {
         true
     }
 
-    /// Returns (HTTP status, tokens). Status 0 means a network error.
+    /// Returns (HTTP status, tokens).
     pub fn poll_link_exchange(
         &mut self,
         link_token: &str,
@@ -141,8 +137,8 @@ impl ApiClient {
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        // Falls back to the secret we already hold from link/init if the
-        // backend didn't echo it.
+        // Falls back to the secret we already hold from link/init if the backend didn't
+        // echo it.
         let device_secret = data
             .get("agentSecret")
             .and_then(|v| v.as_str())

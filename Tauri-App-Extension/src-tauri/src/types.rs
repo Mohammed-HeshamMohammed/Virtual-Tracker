@@ -1,12 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-/// ACT-4: the raw counters `ActivityMeter::score()` itself is built from,
-/// sent alongside the pre-computed `activity_level` so the **server** can
-/// recompute or re-weight a score later without an agent release - only
-/// `activity_level` used to cross the wire, which left the server with
-/// nothing to recompute from. `distinct_key_count` (not `distinct_keys`) and
-/// `keystroke_count` (not raw text) deliberately name these as counts, not
-/// content - see `activity_event_carries_no_keystroke_content_field` below.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ActivitySignal {
@@ -30,10 +23,8 @@ pub enum ActivityEvent {
         page_title: String,
         #[serde(rename = "activityLevel")]
         activity_level: u32,
-        /// Site open at capture time, when the focused window was a browser
-        /// and a recent reading exists. Lets the server categorise the capture
-        /// by what was actually on screen instead of inferring it from a
-        /// separate URL log. Omitted entirely when unknown - never guessed.
+        /// Site open at capture time, when the focused window was a browser and a recent
+        /// reading exists.
         #[serde(skip_serializing_if = "Option::is_none")]
         url: Option<String>,
         #[serde(flatten)]
@@ -47,8 +38,8 @@ pub enum ActivityEvent {
         page_title: String,
         #[serde(rename = "durationSeconds")]
         duration_seconds: u64,
-        /// A `data:image/png;base64,…` icon for this app, sent at most once
-        /// per distinct app per agent run. Omitted the rest of the time.
+        /// A `data:image/png;base64,…` icon for this app, sent at most once per distinct
+        /// app per agent run.
         #[serde(rename = "appIcon", skip_serializing_if = "Option::is_none")]
         app_icon: Option<String>,
         #[serde(flatten)]
@@ -90,8 +81,7 @@ pub struct LinkStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInstallReadiness {
-    /// The install directory is writable by this user, so the installer can
-    /// run unattended.
+    /// The install directory is writable by this user, so the installer can run unattended.
     pub writable: bool,
     /// Shown to the user when it is not, so they can tell their admin where.
     pub install_dir: String,
@@ -123,15 +113,8 @@ pub struct AgentTask {
     pub project_id: String,
 }
 
-/// create_task's result: the new task, plus whether the create call also
-/// managed to self-assign it (POST /api/tasks/:id/assignments, which
-/// explicitly allows the task's own creator - see assign_task_to_self's own
-/// doc comment for why that endpoint and not the flat
-/// POST /api/task-assignments). Self-assign can still fail on its own (e.g.
-/// the member is already at their work-hour limit), so it can fail even
-/// when creating the task itself succeeded. When it does, the task exists
-/// but won't show up in "Your tasks" (assigned_to-filtered) until someone
-/// assigns it.
+/// Create_task's result: the new task, plus whether the create call also managed to
+/// self-assign it (POST /api/tasks/:id/assignments, which explicitly allows the task's own
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTaskResult {
@@ -139,8 +122,8 @@ pub struct CreateTaskResult {
     pub self_assigned: bool,
 }
 
-/// Whether the agent can actually reach the backend, as distinct from merely
-/// holding a token. `Disconnected` is the state that shows the recovery view.
+/// Whether the agent can actually reach the backend, as distinct from merely holding a
+/// token.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ConnectionState {
@@ -164,52 +147,26 @@ pub struct ReconnectResult {
 pub struct ProjectInfo {
     pub id: String,
     pub name: String,
-    /// The server's project type name. Deliberately not an enum: the backend
-    /// owns the set (project-types.js) and the agent only needs has_tasks.
+    /// The server's project type name.
     #[serde(default)]
     pub project_type: String,
-    /// Whether this project has a task list at all. Server-derived from the
-    /// type. Defaults to true so an older backend that does not send it keeps
-    /// the previous task-based behavior rather than hiding the task picker.
+    /// Whether this project has a task list at all.
     #[serde(default = "default_true")]
     pub has_tasks: bool,
-    /// Whether a task must be selected before a timer can start. Defaults to
-    /// true (the previous unconditional behavior for normal projects); false
-    /// lets a normal project track against the project itself.
+    /// Whether a task must be selected before a timer can start.
     #[serde(default = "default_true")]
     pub require_task_to_track: bool,
     /// Whether stopping a timer on this project prompts for a note.
     #[serde(default)]
     pub require_stop_note: bool,
-    /// This project's Hours budget is spent, so no timer can start against
-    /// it. These used to be dropped from the list entirely, which rendered
-    /// as a bare "No projects to track against yet" with no way to tell an
-    /// exhausted budget apart from having no projects at all. Same reasoning
-    /// fetch_assigned_tasks already gives for keeping over-limit tasks
-    /// visible: explaining why it can't start beats hiding it.
     #[serde(default)]
     pub budget_exhausted: bool,
-    /// Real spend / target for this project's own budget, as a 0-100+
-    /// percent (can exceed 100 - that's exactly what budget_exhausted
-    /// means). `None` when the project has no budget configured, or its
-    /// target is 0 (nothing to divide by) - distinct from Some(0.0), a
-    /// budget that's real but genuinely untouched so far.
-    ///
-    /// Exists because the sidebar's other progress source (recentProjects,
-    /// task-completion percent) reads 0% for any project with no task
-    /// marked "done" yet, which is indistinguishable from a project that
-    /// has never been worked on at all - even when its budget shows real
-    /// spend. The UI prefers this field over the task-completion one
-    /// whenever a project actually has a budget to report.
+    /// Real spend / target for this project's own budget, as a 0-100+ percent (can exceed
+    /// 100 - that's exactly what budget_exhausted means).
     #[serde(default)]
     pub budget_spent_percent: Option<f64>,
-    /// Server-derived from viewerCanCreateProjectTasks (org admin, or this
-    /// member's own project_role = "manager" on this project) - gates the
-    /// "+ New task" row action so it only appears where the create call
-    /// would actually succeed, instead of every viewer seeing an affordance
-    /// that 403s for everyone but managers. Defaults false so an older
-    /// backend without this field simply hides the button rather than
-    /// showing one that always fails.
+    /// Server-derived from viewerCanCreateProjectTasks (org admin, or this member's own
+    /// project_role = "manager" on this project) - gates the "+ New task" row action so it
     #[serde(default)]
     pub can_create_tasks: bool,
 }
@@ -222,28 +179,24 @@ pub struct SessionInfo {
     pub task_id: Option<String>,
     pub task_title: Option<String>,
     pub project_id: Option<String>,
-    /// Idle escalation stage: 0 working, 1 warned (5m), 2 alerted (10m),
-    /// 3 stopped for idling (15m, idle time reversed).
+    /// Idle escalation stage: 0 working, 1 warned (5m), 2 alerted (10m), 3 stopped for
+    /// idling (15m, idle time reversed).
     #[serde(default)]
     pub idle_stage: u8,
     #[serde(default)]
     pub active_seconds: u64,
     #[serde(default)]
     pub idle_seconds: u64,
-    /// the server truncated active_seconds against the task's daily
-    /// cap on this sync - the timer is over its allowance and should be
-    /// stopped, not left running with a number that's no longer advancing.
     #[serde(default)]
     pub timer_capped: bool,
-    /// Same as timer_capped, but for the project's own budget stop-timer
-    /// threshold (Budget & Limits tab) instead of a task's daily hour cap.
+    /// Same as timer_capped, but for the project's own budget stop-timer threshold (Budget
+    /// & Limits tab) instead of a task's daily hour cap.
     #[serde(default)]
     pub budget_capped: bool,
 }
 
-/// the disclosure notice as shown to the UI, composed server-side from
-/// the live monitoring_policy row - the agent never hardcodes or composes
-/// this text itself. `requires_acknowledgement` is what gates tracking start.
+/// The disclosure notice as shown to the UI, composed server-side from the live
+/// monitoring_policy row - the agent never hardcodes or composes this text itself.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MonitoringNoticeView {
@@ -261,8 +214,8 @@ pub struct ActionResult {
     pub session: Option<SessionInfo>,
 }
 
-/// Mirrors the web dashboard's per-task time-tracking summary (was shown in the
-/// web's floating timer popup — that popup is gone, this is now its home).
+/// Mirrors the web dashboard's per-task time-tracking summary (was shown in the web's
+/// floating timer popup — that popup is gone, this is now its home).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskTimeTracking {
@@ -273,11 +226,11 @@ pub struct TaskTimeTracking {
     #[serde(default)]
     pub task_status: String,
     pub estimated_seconds: Option<u64>,
-    /// The portion of estimated_seconds that comes from overtime hours specifically,
-    /// broken out so it's visible instead of only ever appearing merged into the total.
+    /// The portion of estimated_seconds that comes from overtime hours specifically, broken
+    /// out so it's visible instead of only ever appearing merged into the total.
     pub overtime_seconds: Option<u64>,
-    /// Raw schedule breakdown behind estimated_seconds ("7 days x 8h/day"),
-    /// since the multiplied total alone doesn't show the reader how it's built.
+    /// Raw schedule breakdown behind estimated_seconds ("7 days x 8h/day"), since the
+    /// multiplied total alone doesn't show the reader how it's built.
     pub working_days: Option<u64>,
     pub hours_per_day: Option<f64>,
     pub overtime_hours_per_day: Option<f64>,
@@ -286,53 +239,44 @@ pub struct TaskTimeTracking {
     pub worked_today_seconds: Option<u64>,
     /// Active seconds worked today on this specific task.
     pub worked_today_on_task_seconds: Option<u64>,
-    /// Seconds left before the member/task cap (allowance already accounts for
-    /// any overtime the org has granted). None means no cap applies.
+    /// Seconds left before the member/task cap (allowance already accounts for any overtime
+    /// the org has granted).
     pub allowed_remaining_seconds: Option<i64>,
     #[serde(default)]
     pub limit_reached: bool,
     pub allowance_message: Option<String>,
-    /// the owning project's idle-time settings, fetched fresh on every
-    /// task/session transition instead of a hardcoded/org-wide constant - see
-    /// PLAN-agent-crash-safe-progress.md. `disable_idle_time = true` means no
-    /// active/idle split and no idle escalation for this project at all.
+    /// The owning project's idle-time settings, fetched fresh on every task/session
+    /// transition instead of a hardcoded/org-wide constant - see
     #[serde(default)]
     pub disable_idle_time: bool,
     #[serde(default = "default_idle_time_seconds")]
     pub idle_time_seconds: u64,
-    /// When true, active_seconds/estimated_seconds above are the whole
-    /// task's pooled total across every assignee combined, not just this
-    /// member's own - see the shared_task_budget column and the identical
-    /// field on the backend's getTaskTimeTracking response.
+    /// When true, active_seconds/estimated_seconds above are the whole task's pooled total
+    /// across every assignee combined, not just this member's own - see the
     #[serde(default)]
     pub shared_budget: bool,
 }
 
-/// 450s = 7.5 minutes, the same product default `ensure-lookup-schema.js`
-/// gives a project on creation - used here only as a deserialization
-/// fallback if a response is ever missing the field.
+/// 450s = 7.5 minutes, the same product default `ensure-lookup-schema.js` gives a project
+/// on creation - used here only as a deserialization fallback if a response is ever missing
 fn default_idle_time_seconds() -> u64 {
     450
 }
 
-/// A project's Hours-based budget, resolved for the current viewer -
-/// GET /api/projects/:id/budget-status. `None` (the Tauri command returns
-/// `Option<ProjectBudgetStatus>`) means no Hours-based budget is configured
-/// for this project at all, same as today's silence.
+/// A project's Hours-based budget, resolved for the current viewer - GET
+/// /api/projects/:id/budget-status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectBudgetStatus {
     /// "per_person": remaining is this viewer's own allotment/spend.
-    /// "shared": remaining is the whole team's pooled allotment/spend.
     pub scope: String,
     pub cap_seconds: u64,
     pub spent_seconds: u64,
     pub remaining_seconds: u64,
 }
 
-/// The viewer's own daily/weekly work-hour limits (People > member > Limits),
-/// for the profile view — separate from TaskTimeTracking, which is scoped to
-/// one task's allowance rather than the member's overall caps.
+/// The viewer's own daily/weekly work-hour limits (People > member > Limits), for the
+/// profile view — separate from TaskTimeTracking, which is scoped to one task's allowance
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MemberLimits {
@@ -340,9 +284,8 @@ pub struct MemberLimits {
     pub daily_hours: f64,
     #[serde(default)]
     pub weekly_hours: f64,
-    /// If true, this member is scheduled by shifts instead of daily/weekly
-    /// caps, so daily_hours/weekly_hours don't apply (matches
-    /// memberUsesShiftsForLimits on the backend).
+    /// If true, this member is scheduled by shifts instead of daily/weekly caps, so
+    /// daily_hours/weekly_hours don't apply (matches memberUsesShiftsForLimits on the
     #[serde(default)]
     pub uses_shifts: bool,
     /// Active seconds already logged today, across every task and project.
@@ -351,41 +294,32 @@ pub struct MemberLimits {
     /// Active seconds logged so far this rolling week.
     #[serde(default)]
     pub worked_week_seconds: i64,
-    /// Seconds left before the binding cap stops the timer. `None` means no
-    /// cap applies at all - not "zero left".
+    /// Seconds left before the binding cap stops the timer.
     #[serde(default)]
     pub allowed_remaining_seconds: Option<i64>,
     #[serde(default)]
     pub limit_reached: bool,
-    /// T5 - how much work is assigned across today's open tasks, a
-    /// different question from allowed_remaining_seconds above ("how much
-    /// am I still allowed to work" vs "how much work do I have").
+    /// T5 - how much work is assigned across today's open tasks, a different question from
+    /// allowed_remaining_seconds above ("how much am I still allowed to work" vs "how much
     #[serde(default)]
     pub assigned_today: AssignedToday,
-    /// Everything open on this person's plate across every project, with no
-    /// calendar applied - "how much work do I hold" to assigned_today's "how
-    /// much of it does today owe".
+    /// Everything open on this person's plate across every project, with no calendar
+    /// applied - "how much work do I hold" to assigned_today's "how much of it does today
     #[serde(default)]
     pub assigned_total: AssignedTotal,
-    /// Work Time & Limits > "Working days" - false blocks starting/resuming
-    /// a timer server-side (People > member > Work Time & Limits). Defaults
-    /// true so older backends without this field never falsely block.
+    /// Work Time & Limits > "Working days" - false blocks starting/resuming a timer
+    /// server-side (People > member > Work Time & Limits).
     #[serde(default = "default_true")]
     pub working_today: bool,
-    /// True when today is only worked because it's a double-clicked
-    /// "makeup day" flag, not a regular selected working day.
+    /// True when today is only worked because it's a double-clicked "makeup day" flag, not
+    /// a regular selected working day.
     #[serde(default)]
     pub is_makeup_day: bool,
-    /// Today's active/idle split, the same measure the dashboard grades
-    /// activity on. Zeroed on older backends, which the UI reads as
-    /// "nothing tracked yet" and hides.
+    /// Today's active/idle split, the same measure the dashboard grades activity on.
     #[serde(default)]
     pub today_activity: TodayActivity,
-    /// Same split as today_activity, scoped to the project the caller asked
-    /// about (get_member_limits' project_id argument) instead of every
-    /// project - `None` when no project was asked about, or on an older
-    /// backend without this field. Feeds the main pane's Activity ring
-    /// ("current project"), separate from the sidebar's person-wide ring.
+    /// Same split as today_activity, scoped to the project the caller asked about
+    /// (get_member_limits' project_id argument) instead of every project - `None` when no
     #[serde(default)]
     pub project_today_activity: Option<TodayActivity>,
     /// The member's local today, "YYYY-MM-DD" - which of `week_days` is today.
@@ -396,8 +330,8 @@ pub struct MemberLimits {
     pub week_days: Vec<WeekDay>,
 }
 
-/// One day of the member's week - active seconds from the daily rollup,
-/// idle seconds from the sessions that started that day.
+/// One day of the member's week - active seconds from the daily rollup, idle seconds from
+/// the sessions that started that day.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct WeekDay {
@@ -411,18 +345,15 @@ pub struct WeekDay {
     pub idle_seconds: i64,
 }
 
-// ── Agent workspace (GET /api/activity/workspace) ──────────────────────────
-// Everything the agent shows beyond the timer itself, resolved per-role
-// server-side. Every section but `own` is Option: the backend omits (nulls)
-// whichever the viewer isn't entitled to, so the UI renders what arrived and
-// carries no role logic of its own.
+// ── Agent workspace (GET /api/activity/workspace) ────────────────────────── Everything
+// the agent shows beyond the timer itself, resolved per-role server-side.
 
 /// One time-off policy's standing for this member.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TimeOffBalance {
-    /// What a time-off request is filed against - travels with the balance
-    /// so the request dialog needs no second fetch.
+    /// What a time-off request is filed against - travels with the balance so the request
+    /// dialog needs no second fetch.
     #[serde(default)]
     pub policy_id: String,
     #[serde(default)]
@@ -441,16 +372,14 @@ pub struct TimesheetStatus {
     pub period_start: String,
     #[serde(default)]
     pub period_end: String,
-    /// draft | submitted | approved | rejected (the timesheets CHECK set).
+    /// Draft | submitted | approved | rejected (the timesheets CHECK set).
     #[serde(default)]
     pub status: String,
     #[serde(default)]
     pub total_hours: f64,
 }
 
-/// Tracked-time earnings at the member's own rate. `hourly_rate` of 0 means
-/// no rate is configured (or the viewer may not see it) - the UI hides the
-/// card rather than showing an authoritative-looking zero.
+/// Tracked-time earnings at the member's own rate.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct EarningsSummary {
@@ -528,9 +457,7 @@ pub struct WorkspacePulse {
     pub members_worked_today_count: i64,
 }
 
-/// Server-decided permissions for controls the agent renders. Decided
-/// there, not from the agent's own copy of the role, so a spoofed local
-/// role cannot reveal a control.
+/// Server-decided permissions for controls the agent renders.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceCapabilities {
@@ -539,8 +466,8 @@ pub struct WorkspaceCapabilities {
     pub can_log_manual_time: bool,
 }
 
-/// One captured screenshot, without its bytes - the image is fetched one at
-/// a time via get_screenshot_image.
+/// One captured screenshot, without its bytes - the image is fetched one at a time via
+/// get_screenshot_image.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScreenshotRef {
@@ -550,9 +477,8 @@ pub struct ScreenshotRef {
     pub captured_at: Option<String>,
 }
 
-/// One app's share of this week's tracked time on a single project - the
-/// task-less counterpart to a task's progress bar: "what have I actually
-/// been doing here" instead of "how much of the estimate is left".
+/// One app's share of this week's tracked time on a single project - the task-less
+/// counterpart to a task's progress bar: "what have I actually been doing here" instead of
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectAppTime {
@@ -579,8 +505,8 @@ pub struct ProjectAppBreakdown {
     pub shown_seconds: u64,
 }
 
-/// The task's own detail, for showing what you're actually meant to be doing
-/// while tracking it.
+/// The task's own detail, for showing what you're actually meant to be doing while tracking
+/// it.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TaskDetail {
@@ -614,8 +540,8 @@ pub struct TaskSubtask {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentWorkspace {
-    /// Named `own` because `self` is a Rust keyword - the wire field really
-    /// is "self", which the serde rename below restores on both sides.
+    /// Named `own` because `self` is a Rust keyword - the wire field really is "self",
+    /// which the serde rename below restores on both sides.
     #[serde(rename = "self", default)]
     pub own: WorkspaceSelf,
     #[serde(default)]
@@ -651,11 +577,8 @@ pub struct AssignedTodayByProjectType {
     pub calling: i64,
 }
 
-/// See PLAN-livesyncandagenttimer.md §11 (T5) for the allocation rules this
-/// mirrors from the backend's assigned-today.service.js - demandSeconds is
-/// everything due today (including rollover from earlier days);
-/// plannedSeconds is the part that fits under the member's own cap;
-/// deferredSeconds is what got pushed to later days, never dropped.
+/// See PLAN-livesyncandagenttimer.md §11 (T5) for the allocation rules this mirrors from
+/// the backend's assigned-today.service.js - demandSeconds is everything due today
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AssignedToday {
@@ -673,12 +596,8 @@ pub struct AssignedToday {
     pub by_project_type: AssignedTodayByProjectType,
 }
 
-/// The un-scheduled counterpart to AssignedToday: every open assignment in
-/// every unarchived project, whether it is due today, overdue, or not started
-/// yet. `worked_seconds` is not clamped to the estimate, so it can exceed
-/// `assigned_seconds` on an overrun; `remaining_seconds` is summed per
-/// assignment, so an overrun on one task never cancels out another's
-/// outstanding hours (see assigned-today.service.js).
+/// The un-scheduled counterpart to AssignedToday: every open assignment in every unarchived
+/// project, whether it is due today, overdue, or not started yet.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AssignedTotal {
@@ -694,9 +613,8 @@ pub struct AssignedTotal {
     pub project_count: i64,
 }
 
-/// The viewer's own People-page member record (GET /api/members/current) -
-/// the same data the web dashboard's Members table shows for this person,
-/// not just what's in their Firebase JWT claims.
+/// The viewer's own People-page member record (GET /api/members/current) - the same data
+/// the web dashboard's Members table shows for this person, not just what's in their
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct MemberProfile {
@@ -716,18 +634,14 @@ pub struct MemberProfile {
     pub phone: String,
     #[serde(default)]
     pub teams: u32,
-    /// The member's own IANA zone (`members.timezone`) - the calendar every
-    /// day-boundary decision for this person is resolved in, and the fallback
-    /// a project's own zone defers to when it declares none. Empty when never
-    /// set, in which case the backend treats the member as UTC.
+    /// The member's own IANA zone (`members.timezone`) - the calendar every day-boundary
+    /// decision for this person is resolved in, and the fallback a project's own zone
     #[serde(default)]
     pub timezone: String,
 }
 
-/// One day's row out of the web dashboard's own "Weekly trends" chart
-/// (GET /api/dashboard/general) - reused rather than re-derived so the
-/// agent's chart is never a moment out of sync with the one the member
-/// already knows from the web.
+/// One day's row out of the web dashboard's own "Weekly trends" chart (GET
+/// /api/dashboard/general) - reused rather than re-derived so the agent's chart is never a
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct WeeklyActivityDay {
@@ -739,9 +653,8 @@ pub struct WeeklyActivityDay {
     pub idle_hours: f64,
 }
 
-/// One row out of the web dashboard's "Recent projects" panel - the same
-/// per-project progress the member already sees there, not something the
-/// agent computes on its own.
+/// One row out of the web dashboard's "Recent projects" panel - the same per-project
+/// progress the member already sees there, not something the agent computes on its own.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RecentProjectSummary {
@@ -753,9 +666,8 @@ pub struct RecentProjectSummary {
     pub member_count: u32,
 }
 
-/// The member's own ("me", never "all" - the agent is a personal tool, not
-/// a manager's view) slice of GET /api/dashboard/general - the same payload
-/// that fills the web dashboard's own general/personal view.
+/// The member's own ("me", never "all" - the agent is a personal tool, not a manager's
+/// view) slice of GET /api/dashboard/general - the same payload that fills the web
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DashboardSummary {
@@ -779,8 +691,6 @@ pub struct AgentNotification {
     pub message: String,
     #[serde(default)]
     pub target_version: Option<String>,
-    /// Set on an Owner message: the conversation this belongs to, which is
-    /// what a reply is posted against.
     #[serde(default)]
     pub thread_id: Option<String>,
     #[serde(default)]
@@ -800,26 +710,15 @@ pub struct AgentNotificationList {
 
 #[cfg(test)]
 mod tests {
-    // Guards CF-0.3: "No keystroke *content* logging... it must never
-    // capture the actual characters typed (that's keylogging, a
-    // categorically higher legal risk)." ActivityEvent is the wire format
-    // for everything the agent sends the backend - if a future change ever
-    // adds a field meant to carry typed text, it has to touch this enum, and
-    // this test is what catches it before it ships. Source-scan rather than
-    // reflection since Rust has no runtime field enumeration; bounded to the
-    // enum's own text so an unrelated field elsewhere named e.g. "content"
-    // (there isn't one, but hypothetically) wouldn't false-positive this.
+    // Guards CF-0.3: "No keystroke *content* logging... it must never capture the
+    // actual characters typed (that's keylogging, a categorically higher legal risk)."
+    // ActivityEvent is the wire format for everything the agent sends the backend - if
+    // a future change ever adds a field meant to carry typed text, it has to touch this
+    // enum, and this test is what catches it before it ships.
     #[test]
     fn activity_event_carries_no_classification_verdict() {
         // The agent caches the server's classification data locally (see
-        // capture/classification_cache.rs). That cache is safe to keep on a
-        // machine the member controls *only* because it has no authority:
-        // categories are resolved server-side at read time, so editing the
-        // file changes what one person's own window displays and nothing else.
-        //
-        // The moment ActivityEvent grows a category field, that stops being
-        // true - the local cache becomes authoritative and therefore worth
-        // tampering with. This fails loudly the day someone tries.
+        // capture/classification_cache.rs).
         let source = include_str!("types.rs");
         let start = source.find("pub enum ActivityEvent").expect("ActivityEvent enum must exist");
         let end = start + source[start..].find("
@@ -855,10 +754,8 @@ mod tests {
 mod queue_compat_tests {
     use super::*;
 
-    /// An agent that queued events before `url` existed must still be able to
-    /// read its own backlog after auto-updating. queue.rs persists
-    /// ActivityEvent as JSON lines, so this is a real on-disk compatibility
-    /// boundary between two agent versions, not a theoretical one.
+    /// An agent that queued events before `url` existed must still be able to read its own
+    /// backlog after auto-updating.
     #[test]
     fn a_pre_url_screenshot_event_still_deserializes() {
         let old = r#"{"type":"screenshot","imageData":"data:image/jpeg;base64,AAA",
@@ -869,11 +766,8 @@ mod queue_compat_tests {
         assert!(parsed.is_ok(), "old queued event must still parse: {parsed:?}");
     }
 
-    /// The other direction: a manual downgrade leaves a new-format backlog for
-    /// an older binary. Serde ignores unknown fields by default, so `url`
-    /// should be skipped rather than rejected - asserted here because the day
-    /// someone adds #[serde(deny_unknown_fields)] this becomes a silent
-    /// data-loss bug for anyone who downgraded.
+    /// The other direction: a manual downgrade leaves a new-format backlog for an older
+    /// binary.
     #[test]
     fn an_unknown_future_field_is_ignored_not_rejected() {
         let future = r#"{"type":"screenshot","imageData":"d","appName":"a","pageTitle":"p",

@@ -6,10 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::auth::dpapi;
 
-// MAC-1: one entry, one machine/user profile - matches the previous
-// single-file-per-install model. "tokens" as the username rather than an
-// actual account name since this store never held more than one credential
-// set at a time.
+// MAC-1: one entry, one machine/user profile - matches the previous single-file-per-install
+// model.
 const KEYRING_SERVICE: &str = "com.virtualtracker.agent";
 const KEYRING_USERNAME: &str = "tokens";
 
@@ -18,8 +16,8 @@ const KEYRING_USERNAME: &str = "tokens";
 struct StorePayload {
     id_token: String,
     refresh_token: String,
-    // Device credential; defaulted so stores written before it existed still
-    // load instead of being discarded as unreadable.
+    // Device credential; defaulted so stores written before it existed still load instead
+    // of being discarded as unreadable.
     #[serde(default)]
     device_id: String,
     #[serde(default)]
@@ -46,11 +44,8 @@ impl From<StorePayload> for StoredCredentials {
     }
 }
 
-/// MAC-1/F1: tokens live in the OS credential store (Windows Credential
-/// Manager / macOS Keychain / *nix Secret Service) via the `keyring` crate,
-/// not a hand-rolled DPAPI-encrypted file. `path` is kept only to locate and
-/// migrate a pre-existing file from an install that predates this change -
-/// see `load_legacy_file`.
+/// MAC-1/F1: tokens live in the OS credential store (Windows Credential Manager / macOS
+/// Keychain / *nix Secret Service) via the `keyring` crate, not a hand-rolled
 pub struct TokenStore {
     path: PathBuf,
 }
@@ -64,11 +59,11 @@ impl TokenStore {
         match Entry::new(KEYRING_SERVICE, KEYRING_USERNAME) {
             Ok(entry) => Some(entry),
             Err(err) => {
-                // No usable OS credential store on this platform/session -
-                // callers fall back to returning empty credentials on load,
-                // and log-and-drop on save, rather than crashing. This should
-                // be rare (v1's default store selection covers Windows,
-                // macOS, and most *nix desktops) but must degrade, not panic.
+                // No usable OS credential store on this platform/session - callers fall
+                // back to returning empty credentials on load, and log-and-drop on
+                // save, rather than crashing. This should be rare (v1's default store
+                // selection covers Windows, macOS, and most *nix desktops) but must
+                // degrade, not panic.
                 log::warn!("OS credential store unavailable: {err}");
                 None
             }
@@ -82,19 +77,13 @@ impl TokenStore {
                     Ok(data) => return data.into(),
                     Err(err) => log::warn!("Could not parse token store from OS credential store: {err}"),
                 },
-                // NoEntry just means nothing has been saved yet (or the
-                // one-time migration below hasn't run) - not an error worth
-                // logging on every normal cold start.
+                // NoEntry just means nothing has been saved yet (or the one-time migration
+                // below hasn't run) - not an error worth logging on every normal cold
                 Err(keyring::Error::NoEntry) => {}
                 Err(err) => log::warn!("Could not read token store from OS credential store: {err}"),
             }
         }
 
-        // One-time migration: an install from before this change may still
-        // have a DPAPI-encrypted (Windows) or plain-JSON token file on disk.
-        // Adopt it into the OS keyring and remove the file so this path is
-        // taken at most once per install - without it, every existing signed
-        // -in user would be silently signed out the first time they update.
         match self.load_legacy_file() {
             Some(credentials) => {
                 self.save(&credentials);
@@ -120,10 +109,6 @@ impl TokenStore {
     }
 
     /// Returns whether the credential actually landed in the OS store.
-    /// Callers that already have a channel back to the UI (see
-    /// `AgentController::apply_tokens`) use `false` to warn the user instead
-    /// of letting a broken keyring silently sign them out on next launch with
-    /// no diagnostic anywhere.
     pub fn save(&self, credentials: &StoredCredentials) -> bool {
         let payload = StorePayload {
             id_token: credentials.id_token.clone(),
@@ -152,8 +137,8 @@ impl TokenStore {
                 Err(err) => log::warn!("Could not clear token store: {err}"),
             }
         }
-        // Also remove a lingering legacy file, if any - a stale plaintext/
-        // DPAPI file left on disk after sign-out would defeat the point.
+        // Also remove a lingering legacy file, if any - a stale plaintext/ DPAPI file left
+        // on disk after sign-out would defeat the point.
         if self.path.exists() {
             let _ = fs::remove_file(&self.path);
         }
@@ -164,14 +149,8 @@ impl TokenStore {
 mod tests {
     use super::*;
 
-    // Deliberately does NOT touch the real OS credential store (Windows
-    // Credential Manager / Keychain / Secret Service) - a live round-trip
-    // there under the production KEYRING_SERVICE/KEYRING_USERNAME would risk
-    // clobbering a real signed-in session's tokens on whatever machine runs
-    // this suite, and a failed assertion mid-test could leave that overwrite
-    // in place. What's tested here is the pure migration-parsing logic:
-    // load_legacy_file() and the StorePayload -> StoredCredentials mapping,
-    // both of which only ever touch a throwaway temp file.
+    // Deliberately does NOT touch the real OS credential store (Windows Credential Manager
+    // / Keychain / Secret Service) - a live round-trip there under the production
 
     fn temp_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("vt-token-store-test-{name}-{}.json", std::process::id()))
@@ -215,10 +194,8 @@ mod tests {
 
     #[test]
     fn a_legacy_store_missing_the_device_fields_still_loads() {
-        // Guards the #[serde(default)] on device_id/agent_secret - a file
-        // written before device credentials existed must not become
-        // unreadable ("discarded as unreadable" is exactly what the comment
-        // on StorePayload says this must not do).
+        // Guards the #[serde(default)] on device_id/agent_secret - a file written before
+        // device credentials existed must not become unreadable ("discarded as unreadable"
         let path = temp_path("pre-device-fields");
         fs::write(&path, br#"{"idToken":"id-1","refreshToken":"refresh-1"}"#).unwrap();
         let store = TokenStore::new(path.clone());

@@ -25,10 +25,8 @@ impl ApiClient {
             .map(|s| s.to_string())
     }
 
-    /// Fails loudly (`Err`) rather than silently returning an empty map on
-    /// network/parse failure - an empty map reads downstream as "no project
-    /// has a budget limit," which would fail-open a budget gate on a
-    /// transient blip instead of surfacing the problem.
+    /// Fails loudly (`Err`) rather than silently returning an empty map on network/parse
+    /// failure - an empty map reads downstream as "no project has a budget limit," which
     pub fn fetch_project_budgets_map(
         &mut self,
     ) -> Result<std::collections::HashMap<String, (bool, Option<f64>)>, ApiError> {
@@ -58,10 +56,8 @@ impl ApiClient {
             };
             let spent = item.get("spent").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let target = item.get("target").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            // None (not 0.0) when there's no real target to divide by - a
-            // project with a budget row but nothing to compare against isn't
-            // "0% spent", it's "not measurable", same distinction
-            // budget_exhausted already draws elsewhere.
+            // None (not 0.0) when there's no real target to divide by - a project with a
+            // budget row but nothing to compare against isn't "0% spent", it's "not
             let spent_percent = if target > 0.0 { Some((spent / target) * 100.0) } else { None };
 
             let stop_when_reached = item
@@ -253,27 +249,18 @@ impl ApiClient {
         Ok(tasks)
     }
 
-    /// Creates a task on a task-based project (POST /api/tasks - gated
-    /// server-side by viewerCanCreateProjectTasks, the same check
-    /// ProjectInfo.can_create_tasks already reflects), then best-effort
-    /// self-assigns it so it actually shows up in "Your tasks"
-    /// (fetch_assigned_tasks is assigned_to-filtered) without a trip to the
-    /// web dashboard first.
+    /// Creates a task on a task-based project (POST /api/tasks - gated server-side by
+    /// viewerCanCreateProjectTasks, the same check ProjectInfo.can_create_tasks already
     pub fn create_task(
         &mut self,
         project_id: &str,
         title: &str,
         estimate_hours: Option<f64>,
         description: Option<&str>,
-        // "low" | "medium" | "high" | "urgent" - PRIORITY_CONFIG's own key
-        // set (Dashboard-Web task-constants.tsx). Not validated here; an
-        // unrecognized value is the server's to reject, same as every other
-        // field in this body.
+        // "low" | "medium" | "high" | "urgent" - PRIORITY_CONFIG's own key set
+        // (Dashboard-Web task-constants.tsx).
         priority: Option<&str>,
-        // "YYYY-MM-DD". The column is a timestamptz, but the server already
-        // date-only-coerces this on write (dateOnly() in tasks-postgres.
-        // service.js) - a plain date string matches what the web wizard
-        // itself sends.
+        // "YYYY-MM-DD".
         due_date: Option<&str>,
     ) -> Result<crate::types::CreateTaskResult, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
@@ -283,25 +270,18 @@ impl ApiClient {
             "title": title,
             "status": "todo",
         });
-        // estimateAssignmentSeconds (task-schedule-math.js) is
-        // working_days * (duration_hours_per_day + overtime_hours_per_day) *
-        // 3600 - with no start/due date range set, working_days=1 makes
-        // duration_hours_per_day alone equal to the plain hour estimate the
-        // dialog collects, without also needing a date-range picker here.
+        // EstimateAssignmentSeconds (task-schedule-math.js) is working_days *
+        // (duration_hours_per_day + overtime_hours_per_day) * 3600 - with no start/due date
         if let Some(hours) = estimate_hours.filter(|h| *h > 0.0) {
             create_body["working_days"] = json!(1);
             create_body["duration_hours_per_day"] = json!(hours);
         }
-        // Same field names task-api.ts's own outgoing payload uses
-        // (description, priority, due_date) - matching the web wizard's
-        // wire shape rather than inventing a parallel one.
+        // Same field names task-api.ts's own outgoing payload uses (description, priority,
+        // due_date) - matching the web wizard's wire shape rather than inventing a parallel
         if let Some(d) = description.filter(|d| !d.trim().is_empty()) {
             create_body["description"] = json!(d);
         }
         // Defaults to "medium" server-side when omitted (tasks-postgres.
-        // service.js), same as the web wizard's own default - sent
-        // explicitly anyway so a blank picker and an active "Medium"
-        // selection produce an identical task either way.
         create_body["priority"] = json!(priority.filter(|p| !p.trim().is_empty()).unwrap_or("medium"));
         if let Some(d) = due_date.filter(|d| !d.trim().is_empty()) {
             create_body["due_date"] = json!(d);
@@ -355,12 +335,8 @@ impl ApiClient {
         Ok(crate::types::CreateTaskResult { task, self_assigned })
     }
 
-    /// Best-effort - see create_task's own doc comment for why a `false`
-    /// here is an expected outcome, not treated as this call's error.
-    ///
-    /// assigneeIds carries only the caller's own id and removeUnlisted is
-    /// left false (the server default): on a brand-new task there are no
-    /// other assignees yet, so this only ever adds, never removes.
+    /// Best-effort - see create_task's own doc comment for why a `false` here is an
+    /// expected outcome, not treated as this call's error.
     fn assign_task_to_self(&mut self, task_id: &str) -> Result<bool, ApiError> {
         let member_id = self
             .fetch_viewer_member_id()
@@ -384,9 +360,8 @@ impl ApiClient {
         Ok(res.status().is_success())
     }
 
-    /// Per-task time-tracking summary — daily total, task estimate, and any
-    /// overtime allowance. Was shown in the web dashboard's timer popup; that
-    /// popup is gone, this is now its only home.
+    /// Per-task time-tracking summary — daily total, task estimate, and any overtime
+    /// allowance.
     pub fn fetch_task_time_tracking(
         &mut self,
         task_id: &str,
@@ -447,10 +422,8 @@ impl ApiClient {
         })
     }
 
-    /// A project's Hours-based budget remaining, resolved server-side for the
-    /// current viewer (per-person vs shared scope). `Ok(None)` means no
-    /// Hours-based budget is configured on this project at all - not an
-    /// error, just nothing to show.
+    /// A project's Hours-based budget remaining, resolved server-side for the current
+    /// viewer (per-person vs shared scope).
     pub fn fetch_project_budget_status(
         &mut self,
         project_id: &str,
@@ -510,9 +483,7 @@ impl ApiClient {
         }
         let body: Value = res.json().map_err(|_| ApiError::Network)?;
         let data = body.get("data").ok_or(ApiError::Network)?;
-        // timerAllowance is what actually gates the start button server-side.
-        // Absent on older backends - every field below then keeps its zero
-        // value and the UI shows the plain caps, no allowance line.
+        // TimerAllowance is what actually gates the start button server-side.
         let allowance = data.get("timerAllowance");
         let allowance_num = |key: &str| -> i64 {
             allowance
@@ -526,8 +497,8 @@ impl ApiClient {
             uses_shifts: data.get("usesShifts").and_then(|v| v.as_bool()).unwrap_or(false),
             worked_today_seconds: allowance_num("workedTodaySeconds"),
             worked_week_seconds: allowance_num("workedWeekSeconds"),
-            // Explicit null means "no cap", which is not the same as 0 left -
-            // only a real number becomes Some(..).
+            // Explicit null means "no cap", which is not the same as 0 left - only a real
+            // number becomes Some(..).
             allowed_remaining_seconds: allowance
                 .and_then(|a| a.get("allowedRemainingSeconds"))
                 .and_then(|v| v.as_i64()),
@@ -559,19 +530,14 @@ impl ApiClient {
                 }
             }),
             today_day: data.get("todayDay").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-            // Absent on an older backend - the week chart then falls back to an
-            // empty week rather than failing the whole limits fetch.
+            // Absent on an older backend - the week chart then falls back to an empty week
+            // rather than failing the whole limits fetch.
             week_days: parse_week_days(data.get("weekDays")),
         })
     }
 
-    /// Everything the agent shows beyond the timer itself (time off, timesheet,
-    /// earnings, and - per role - team status, pending approvals, org pulse),
-    /// in one round trip. The whole payload is serde-shaped, so unlike the
-    /// hand-parsed fetches above this is a straight deserialize; every section
-    /// but `self` is Option and simply arrives null for a viewer the backend
-    /// doesn't entitle to it. `Ok(None)` on a 404 (older backend without the
-    /// route), same convention as fetch_dashboard_summary.
+    /// Everything the agent shows beyond the timer itself (time off, timesheet, earnings,
+    /// and - per role - team status, pending approvals, org pulse), in one round trip.
     pub fn fetch_agent_workspace(&mut self) -> Result<Option<crate::types::AgentWorkspace>, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!("{}/api/activity/workspace", self.api_url);
@@ -586,11 +552,8 @@ impl ApiClient {
             return Ok(None);
         }
         if !res.status().is_success() {
-            // Was collapsed to a bare ApiError::Network, indistinguishable
-            // from a real connection failure - which made a 401 (stale
-            // token) or a 500 (real server error) impossible to tell apart
-            // from "route not deployed yet" in the log. The status code is
-            // the one piece of information worth keeping here.
+            // Was collapsed to a bare ApiError::Network, indistinguishable from a real
+            // connection failure - which made a 401 (stale token) or a 500 (real server
             let status = res.status();
             let body: Value = res.json().unwrap_or_else(|_| json!({}));
             let message = body.get("error").and_then(|v| v.as_str()).unwrap_or("request failed");
@@ -605,10 +568,7 @@ impl ApiClient {
             .map_err(|_| ApiError::Network)
     }
 
-    /// Logs time that was never tracked live. Gated to Manager-and-above by
-    /// the workspace `canLogManualTime` capability the UI reads - the server
-    /// separately enforces that entries for *other* members need a
-    /// management role (assertTimeEntryWriteAuthorized).
+    /// Logs time that was never tracked live.
     pub fn create_time_entry(
         &mut self,
         member_id: &str,
@@ -618,9 +578,7 @@ impl ApiClient {
         duration_seconds: i64,
         description: &str,
     ) -> Result<(), ApiError> {
-        // Empty member_id means "me". Resolved here rather than plumbed
-        // through the UI, which has no reason to know its own member id -
-        // nothing else in the agent's frontend carries it.
+        // Empty member_id means "me".
         let resolved_member = if member_id.trim().is_empty() {
             self.fetch_viewer_member_id()
                 .ok_or_else(|| ApiError::Rejected("Could not resolve your member profile".into()))?
@@ -629,10 +587,6 @@ impl ApiClient {
         };
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!("{}/api/time-entries", self.api_url);
-        // No "source": the time-entries schema doesn't accept it, and the
-        // backend rejected the whole entry for it ("Unexpected field:
-        // source"). The column defaults to 'manual', which is what this is -
-        // and a client able to set it could mark manual time as tracked.
         let mut body = json!({
             "member_id": resolved_member,
             "project_id": project_id,
@@ -650,9 +604,8 @@ impl ApiClient {
         self.post_expecting_ok(&auth, url, &body, "Could not save the time entry")
     }
 
-    /// The viewer's own recent screenshots (ids + timestamps), optionally
-    /// narrowed to one project - image bytes come one at a time from
-    /// fetch_screenshot_image.
+    /// The viewer's own recent screenshots (ids + timestamps), optionally narrowed to one
+    /// project - image bytes come one at a time from fetch_screenshot_image.
     pub fn fetch_my_screenshots(
         &mut self,
         limit: u32,
@@ -674,9 +627,8 @@ impl ApiClient {
             return Ok(Vec::new());
         }
         if !res.status().is_success() {
-            // Same reasoning as fetch_agent_workspace: keep the real status
-            // instead of a bare ApiError::Network, so a 401/500 is
-            // distinguishable from "not deployed yet" in the log.
+            // Same reasoning as fetch_agent_workspace: keep the real status instead of a
+            // bare ApiError::Network, so a 401/500 is distinguishable from "not deployed
             let status = res.status();
             let body: Value = res.json().unwrap_or_else(|_| json!({}));
             let message = body.get("error").and_then(|v| v.as_str()).unwrap_or("request failed");
@@ -690,9 +642,8 @@ impl ApiClient {
             .collect())
     }
 
-    /// Top apps by tracked time on one project this week - the task-less
-    /// counterpart to a task's progress bar. `Ok(Vec::new())` on a 404 (older
-    /// backend without the route), same convention as fetch_project_budget_status.
+    /// Top apps by tracked time on one project this week - the task-less counterpart to a
+    /// task's progress bar.
     pub fn fetch_project_app_breakdown(
         &mut self,
         project_id: &str,
@@ -721,8 +672,8 @@ impl ApiClient {
         }
         let body: Value = res.json().map_err(|_| ApiError::Network)?;
         let data = body.get("data").cloned().unwrap_or_else(|| json!({}));
-        // An older server returns a bare array here; read that as the app list
-        // with no totals rather than failing the whole panel.
+        // An older server returns a bare array here; read that as the app list with no
+        // totals rather than failing the whole panel.
         if let Some(list) = data.as_array() {
             let apps: Vec<crate::types::ProjectAppTime> =
                 list.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect();
@@ -737,10 +688,7 @@ impl ApiClient {
         Ok(serde_json::from_value(data).unwrap_or_default())
     }
 
-    /// One screenshot as a `data:` URL. The endpoint already returns it in
-    /// that form, so the webview can render the string directly - it cannot
-    /// fetch the image itself, having no way to attach the auth header to an
-    /// <img src>.
+    /// One screenshot as a `data:` URL.
     pub fn fetch_screenshot_image(&mut self, screenshot_id: &str) -> Result<String, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!(
@@ -766,9 +714,7 @@ impl ApiClient {
             .to_string())
     }
 
-    /// Submits the viewer's own timesheet for a period. The server refuses a
-    /// period already submitted or approved (409), which surfaces as the
-    /// message rather than a generic failure.
+    /// Submits the viewer's own timesheet for a period.
     pub fn submit_timesheet(&mut self, period_start: &str, period_end: &str) -> Result<(), ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!("{}/api/timesheets/submit", self.api_url);
@@ -795,9 +741,8 @@ impl ApiClient {
         self.post_expecting_ok(&auth, url, &body, "Could not submit the request")
     }
 
-    /// One POST + "did it work, and if not what did the server say" - the
-    /// three write calls above differ only in URL and body, and each needs
-    /// the server's own message surfaced rather than a generic failure.
+    /// One POST + "did it work, and if not what did the server say" - the three write calls
+    /// above differ only in URL and body, and each needs the server's own message surfaced
     fn post_expecting_ok(
         &self,
         auth: &str,
@@ -827,12 +772,8 @@ impl ApiClient {
         ))
     }
 
-    /// The open task's own detail - description, priority, due date and
-    /// subtask checklist - so "what am I actually meant to be doing" is
-    /// answerable without opening the web app. Two calls because subtasks
-    /// are a child collection (/api/tasks/:id/subtasks), and a failure on
-    /// the child is non-fatal: the task detail is still worth showing
-    /// without its checklist.
+    /// The open task's own detail - description, priority, due date and subtask checklist -
+    /// so "what am I actually meant to be doing" is answerable without opening the web app.
     pub fn fetch_task_detail(&mut self, task_id: &str) -> Result<crate::types::TaskDetail, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let encoded = urlencoding::encode(task_id).to_string();
@@ -877,8 +818,8 @@ impl ApiClient {
             description: text("description"),
             status: text("status"),
             priority: text("priority"),
-            // Trimmed to the date - the column is a timestamp and the UI
-            // only ever shows the day.
+            // Trimmed to the date - the column is a timestamp and the UI only ever shows
+            // the day.
             due_date: data
                 .get("due_date")
                 .or_else(|| data.get("dueDate"))
@@ -917,8 +858,8 @@ impl ApiClient {
             name: str_field("name"),
             email: str_field("email"),
             avatar_url: str_field("avatarUrl"),
-            // role_name (from role enrichment) is the human label; role can be
-            // a raw id/slug when enrichment didn't attach a name.
+            // Role_name (from role enrichment) is the human label; role can be a raw
+            // id/slug when enrichment didn't attach a name.
             role: {
                 let named = str_field("role_name");
                 if named.is_empty() { str_field("role") } else { named }
@@ -927,9 +868,8 @@ impl ApiClient {
             date_added: str_field("dateAdded"),
             phone: str_field("phone"),
             teams: data.get("teams").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-            // /api/members/current returns the member row as-is, so the column
-            // name is snake_case; accept the camelCase spelling too rather
-            // than depending on which shim the response came through.
+            // /api/members/current returns the member row as-is, so the column name is
+            // snake_case; accept the camelCase spelling too rather than depending on which
             timezone: {
                 let snake = str_field("timezone");
                 if snake.is_empty() { str_field("timeZone") } else { snake }
@@ -937,12 +877,8 @@ impl ApiClient {
         })
     }
 
-    /// The same payload GET /api/dashboard/general feeds the web dashboard's
-    /// own personal/general view with - only the "me" slice, never "all"
-    /// (that's the manager cross-team view, out of scope for a per-member
-    /// agent). `Ok(None)` on a 404/older backend that doesn't have this
-    /// route yet, same convention as fetch_project_budget_status - "nothing
-    /// to show" rather than an error banner over an optional widget.
+    /// The same payload GET /api/dashboard/general feeds the web dashboard's own
+    /// personal/general view with - only the "me" slice, never "all" (that's the manager
     pub fn fetch_dashboard_summary(&mut self) -> Result<Option<crate::types::DashboardSummary>, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!("{}/api/dashboard/general", self.api_url);
@@ -1011,9 +947,7 @@ fn parse_week_days(node: Option<&Value>) -> Vec<crate::types::WeekDay> {
 }
 
 /// Parses the `assignedToday` block on GET /api/activity/limits (T5,
-/// PLAN-livesyncandagenttimer.md §11). Absent on older backends - every
-/// field then keeps its zero default via #[derive(Default)], same fallback
-/// timerAllowance already relies on above.
+/// PLAN-livesyncandagenttimer.md §11).
 fn parse_assigned_today(node: Option<&Value>) -> crate::types::AssignedToday {
     let i64_field = |key: &str| -> i64 {
         node.and_then(|n| n.get(key)).and_then(|v| v.as_i64()).unwrap_or(0)
@@ -1038,9 +972,7 @@ fn parse_assigned_today(node: Option<&Value>) -> crate::types::AssignedToday {
     }
 }
 
-/// Parses the `assignedTotal` block on GET /api/activity/limits. Absent on
-/// older backends, which zeroes every field - the UI reads a zero total as
-/// "nothing assigned" and hides the badge, same as an empty plate.
+/// Parses the `assignedTotal` block on GET /api/activity/limits.
 fn parse_assigned_total(node: Option<&Value>) -> crate::types::AssignedTotal {
     let i64_field = |key: &str| -> i64 {
         node.and_then(|n| n.get(key)).and_then(|v| v.as_i64()).unwrap_or(0)
@@ -1081,15 +1013,6 @@ mod tests {
         api
     }
 
-    // Regression for the bug this endpoint switch fixed: a per-project
-    // manager (project_role = "manager" - the same check that lets
-    // can_create_tasks show the "+ New task" button at all) whose org-wide
-    // role sat below Manager tier could create a task and then be silently
-    // refused assigning it to themselves, because the old call
-    // (POST /api/task-assignments) is gated by an org-wide-management-only
-    // check with no exception for the task's own creator. This asserts the
-    // call now reaches the per-task endpoint, whose canSyncTaskAssignments
-    // explicitly allows the creator - which is always who calls this.
     #[test]
     fn assign_task_to_self_posts_to_the_per_task_assignments_endpoint_not_the_flat_one() {
         let url = fake_server(|request| {
@@ -1097,8 +1020,6 @@ mod tests {
             if path == "/api/activity/scope" {
                 return (200, r#"{"data": {"viewerMemberId": "m1"}}"#.to_string());
             }
-            // The bug this test guards against: a regression back to the
-            // flat endpoint would hit this path instead and fail here.
             assert_ne!(
                 path, "/api/task-assignments",
                 "must not use the flat endpoint - it has no creator exception",
@@ -1117,9 +1038,7 @@ mod tests {
 
     #[test]
     fn assign_task_to_self_reports_false_rather_than_erroring_on_a_business_rejection() {
-        // e.g. the creator is already at their own daily/weekly work-hour
-        // limit - create_task's own doc comment covers why this must not
-        // unwind the already-created task.
+        // E.g.
         let url = fake_server(|request| {
             if request.url() == "/api/activity/scope" {
                 return (200, r#"{"data": {"viewerMemberId": "m1"}}"#.to_string());
@@ -1143,14 +1062,8 @@ mod diagnostic_error_tests {
         api
     }
 
-    // Regression for a real diagnostic dead end: both fetches used to
-    // collapse every non-404 failure into a bare ApiError::Network, making a
-    // 401 (stale/invalid token) indistinguishable from an actual dropped
-    // connection - and, since get_agent_workspace/get_my_screenshots then
-    // discarded the error entirely (.ok().flatten() / .unwrap_or_default()),
-    // indistinguishable from "nothing to show" too. Nothing in agent.log
-    // could tell "the backend refused this" apart from "the request never
-    // reached it" or "there was simply no data".
+    // Regression for a real diagnostic dead end: both fetches used to collapse every
+    // non-404 failure into a bare ApiError::Network, making a 401 (stale/invalid token)
     #[test]
     fn workspace_401_is_a_rejected_error_naming_its_status_not_a_bare_network_error() {
         let url = fake_server(|_request| (401, r#"{"error": "Invalid token"}"#.to_string()));
@@ -1176,15 +1089,13 @@ mod diagnostic_error_tests {
         }
     }
 
-    // Unchanged behavior, pinned so the branch above can't accidentally
-    // swallow the still-important "older backend" case into Rejected too.
+    // Unchanged behavior, pinned so the branch above can't accidentally swallow the
+    // still-important "older backend" case into Rejected too.
     #[test]
     fn workspace_404_is_still_ok_none_not_an_error() {
         let url = fake_server(|_request| (404, "not found".to_string()));
         let mut api = authed_client(url);
-        // matches!, not assert_eq! - Ok(None) doesn't need AgentWorkspace to
-        // implement PartialEq, and adding that derive just for a test that
-        // never actually compares one isn't worth it.
+        // Matches!, not assert_eq!
         assert!(matches!(api.fetch_agent_workspace(), Ok(None)));
     }
 
@@ -1236,8 +1147,7 @@ mod diagnostic_error_tests {
         assert_eq!(breakdown.app_count, 9);
     }
 
-    // A server on the previous release still returns a bare array here. Read
-    // it as the app list rather than failing the whole panel.
+    // A server on the previous release still returns a bare array here.
     #[test]
     fn project_app_breakdown_accepts_an_older_servers_bare_array() {
         let url = fake_server(|_request| {
@@ -1264,13 +1174,8 @@ mod project_budget_percent_tests {
         api
     }
 
-    // The actual bug: a project's real spend/target was only ever kept for
-    // projects with stop_timers_when_reached on - every other budgeted
-    // project's spend was computed by the server, sent over the wire, and
-    // then discarded here into a bare `false`. The sidebar's other progress
-    // source (task-completion percent) reads 0% until a task is marked
-    // done, so a project tracked by budget instead of a checklist showed a
-    // flat, misleading 0% no matter how much had actually been spent.
+    // The actual bug: a project's real spend/target was only ever kept for projects with
+    // stop_timers_when_reached on - every other budgeted project's spend was computed by
     #[test]
     fn spent_percent_is_kept_even_when_stop_timers_when_reached_is_off() {
         let url = fake_server(|_request| {

@@ -1,6 +1,4 @@
-//! Window, tray and log-file commands. These stay synchronous: they are
-//! main-thread UI calls, not network I/O, so `run_blocking` would only add a
-//! hop.
+//! Window, tray and log-file commands.
 
 use std::sync::Arc;
 
@@ -21,10 +19,8 @@ pub fn minimize_current(window: tauri::WebviewWindow) -> Result<(), String> {
     window.minimize().map_err(|e| e.to_string())
 }
 
-/// With "Keep running in tray" on (the default), the titlebar close button
-/// only hides the window - tracking keeps running and the tray's Quit item is
-/// the real exit. With it off, closing quits, same as before.
-/// Stays synchronous: window operations must run on the main thread.
+/// With "Keep running in tray" on (the default), the titlebar close button only hides the
+/// window - tracking keeps running and the tray's Quit item is the real exit.
 #[tauri::command]
 pub fn close_window(
     app: AppHandle,
@@ -40,12 +36,8 @@ pub fn close_window(
     Ok(())
 }
 
-/// Pushed from the frontend's own existing 5s session poll (App.tsx's
-/// refresh()) rather than driven by a second poller here - see
-/// TrayStatusItems's own doc comment for why. A no-op before the tray
-/// finishes building (brief startup window) or on Linux (no tray at all).
-/// Stays synchronous: MenuItem::set_text/set_enabled are main-thread UI
-/// calls, not network I/O - nothing here needs run_blocking.
+/// Pushed from the frontend's own existing 5s session poll (App.tsx's refresh()) rather
+/// than driven by a second poller here - see TrayStatusItems's own doc comment for why.
 #[tauri::command]
 #[cfg(not(target_os = "linux"))]
 pub fn set_tray_status(
@@ -67,8 +59,8 @@ pub fn set_tray_status(
 #[cfg(target_os = "linux")]
 pub fn set_tray_status(_label: String, _tracking: bool, _paused: bool, _session_open: bool) {}
 
-/// The layout the window is using, so the frontend can arrange itself to
-/// match the size the window was given.
+/// The layout the window is using, so the frontend can arrange itself to match the size the
+/// window was given.
 #[tauri::command]
 pub fn get_window_layout(
     app: AppHandle,

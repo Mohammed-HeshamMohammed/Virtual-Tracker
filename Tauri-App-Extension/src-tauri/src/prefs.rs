@@ -7,11 +7,7 @@ fn default_true() -> bool {
     true
 }
 
-/// Every field carries its own `serde(default)`. Without it, adding a field
-/// here makes every preferences.json written by an older build fail to
-/// deserialize - and `load()` falls back to `unwrap_or_default()`, silently
-/// wiping the user's other settings. Per-field defaults let old files load as
-/// written, with only the new key filled in.
+/// Every field carries its own `serde(default)`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserPreferences {
@@ -27,43 +23,25 @@ pub struct UserPreferences {
     /// Closing the window hides it in the tray instead of quitting the agent.
     #[serde(default = "default_true")]
     pub close_to_tray: bool,
-    /// Set after the first successful startup. `start_hidden` only applies once
-    /// this is true - a fresh install always shows the window on first launch,
-    /// since the user has never seen the tray icon yet.
+    /// Set after the first successful startup.
     #[serde(default)]
     pub has_launched_before: bool,
-    /// Set the first time the window is hidden to the tray in this install, so
-    /// the "still running" notice is shown once and never repeated.
+    /// Set the first time the window is hidden to the tray in this install, so the "still
+    /// running" notice is shown once and never repeated.
     #[serde(default)]
     pub tray_notice_shown: bool,
-    /// "system" | "light" | "dark". Lives here rather than in the webview's
-    /// localStorage so it survives a reinstall like every other preference,
-    /// and so the window can be painted before the first React render.
+    /// "system" | "light" | "dark".
     #[serde(default = "default_theme")]
     pub theme: String,
-    /// Last IANA zone the member picked (get_member_profile's own copy is
-    /// the source of truth once it loads). Cached here for the same reason
-    /// theme is: readable synchronously at startup, before the profile
-    /// fetch resolves - or if it fails - so the picker and header clock
-    /// show what was chosen last instead of falling back to this machine's
-    /// own zone.
+    /// Last IANA zone the member picked (get_member_profile's own copy is the source of
+    /// truth once it loads).
     #[serde(default)]
     pub member_timezone: String,
-    /// "auto" | "standard" | "wide" | "extended" | "focus". Standard is the
-    /// default shape now (was "compact"): wider and shorter, so it fits a
-    /// laptop screen without the window running off the bottom. Extended is
-    /// the original 1100x750 window, for anyone who wants the room and has a
-    /// monitor for it. Auto picks Standard wherever it fits, Focus on
-    /// screens too small even for that, and never picks Wide or Extended on
-    /// its own - see window_layout.rs.
+    /// "auto" | "standard" | "wide" | "extended" | "focus".
     #[serde(default = "default_layout")]
     pub layout: String,
-    /// Whether the week's top apps and the screenshots are shown in Standard
-    /// and Wide - off by default, since most people open the app to track
-    /// time, not to browse last week's apps, and the column it would
-    /// otherwise reserve makes the default window that much wider for
-    /// nothing. Extended always shows it regardless (it doesn't shrink, so
-    /// hiding it would just leave dead space); Focus leaves it out.
+    /// Whether the week's top apps and the screenshots are shown in Standard and Wide - off
+    /// by default, since most people open the app to track time, not to browse last week's
     #[serde(default)]
     pub show_insights: bool,
 }
@@ -115,9 +93,8 @@ impl PreferencesStore {
 
     pub fn load(&self) -> UserPreferences {
         if !self.path.exists() {
-            // Write the defaults back immediately so the file actually exists
-            // again after being deleted, instead of only reappearing once the
-            // user happens to toggle a setting.
+            // Write the defaults back immediately so the file actually exists again after
+            // being deleted, instead of only reappearing once the user happens to toggle a
             let defaults = UserPreferences::default();
             let _ = self.save(&defaults);
             return defaults;
@@ -141,9 +118,8 @@ impl PreferencesStore {
 mod tests {
     use super::UserPreferences;
 
-    /// A preferences.json written before `closeToTray` existed must keep every
-    /// setting the user actually chose. This is the one regression that would
-    /// silently destroy their configuration, so it is pinned here.
+    /// A preferences.json written before `closeToTray` existed must keep every setting the
+    /// user actually chose.
     #[test]
     fn loads_preferences_written_before_close_to_tray_existed() {
         let old = r#"{"launchAtLogin":false,"startHidden":true,"autoSignIn":false}"#;
@@ -156,8 +132,8 @@ mod tests {
         assert!(prefs.close_to_tray);
     }
 
-    /// Fresh installs get auto sign-in on; an existing file that says otherwise
-    /// still wins (covered above).
+    /// Fresh installs get auto sign-in on; an existing file that says otherwise still wins
+    /// (covered above).
     #[test]
     fn defaults_enable_auto_sign_in_and_close_to_tray() {
         let prefs = UserPreferences::default();
@@ -174,8 +150,8 @@ mod tests {
         assert_eq!(prefs.member_timezone, "");
     }
 
-    /// Every install predates the layout setting, so an old file has to load
-    /// with its other choices intact and the layout left to decide by screen.
+    /// Every install predates the layout setting, so an old file has to load with its other
+    /// choices intact and the layout left to decide by screen.
     #[test]
     fn loads_preferences_written_before_layout_existed() {
         let old = r#"{"closeToTray":false,"theme":"light","memberTimezone":"Africa/Cairo"}"#;

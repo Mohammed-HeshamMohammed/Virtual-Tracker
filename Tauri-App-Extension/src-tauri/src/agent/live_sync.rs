@@ -1,10 +1,5 @@
-//! PLAN-livesyncandagenttimer.md P10 - subscribes the agent to the same
-//! presence-WebSocket change bus Dashboard-Web reuses as its live-sync
-//! transport (§3/§4). Best-effort only: frames carry no data, this
-//! thread only exists to shrink the 5s SESSION_POLL_SEC gap to sub-second for
-//! `changedEvent("task-assignments")`/`changedEvent("tasks")` (case 45, T4/T5).
-//! The poll stays as-is and is what keeps working when this connection is
-//! down - never remove it in favor of this.
+//! PLAN-livesyncandagenttimer.md P10 - subscribes the agent to the same presence-WebSocket
+//! change bus Dashboard-Web reuses as its live-sync transport (§3/§4).
 use std::io::ErrorKind;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::Arc;
@@ -18,8 +13,8 @@ use crate::client::api::ApiClient;
 
 pub type LiveSyncCallback = Arc<dyn Fn(String) + Send + Sync>;
 
-/// Same cadence as presence-ws.ts's HEARTBEAT_MS, well under the server's
-/// 120s heartbeatStaleMs.
+/// Same cadence as presence-ws.ts's HEARTBEAT_MS, well under the server's 120s
+/// heartbeatStaleMs.
 const PING_INTERVAL: Duration = Duration::from_secs(30);
 /// How often a blocked read wakes up to check whether it's time to ping.
 const READ_POLL_TIMEOUT: Duration = Duration::from_secs(10);
@@ -28,9 +23,9 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const RECONNECT_BACKOFF: Duration = Duration::from_secs(5);
 const NOT_SIGNED_IN_RETRY: Duration = Duration::from_secs(5);
 
-/// Spawns the subscriber thread. Fire-and-forget: a failure here must never
-/// affect the rest of the agent, which is why this returns nothing and every
-/// error inside just logs and retries.
+/// Spawns the subscriber thread. Fire-and-forget: a failure here must never affect the
+/// rest of the agent, which is why this returns nothing and every error inside just
+/// logs and retries.
 pub fn spawn(api_url: String, api: Arc<Mutex<ApiClient>>, on_message: LiveSyncCallback) {
     thread::Builder::new()
         .name("vt-live-sync".into())
@@ -46,9 +41,7 @@ fn run_loop(api_url: &str, api: &Arc<Mutex<ApiClient>>, on_message: &(dyn Fn(Str
             continue;
         };
 
-        // Always back off before retrying, including a clean server-initiated
-        // close (e.g. a rejected/expired token) - otherwise a server that
-        // keeps closing the connection immediately turns into a hot loop.
+        // Always back off before retrying, including a clean server-initiated close (e.g.
         if let Err(err) = connect_and_pump(api_url, &token, on_message) {
             log::warn!("[live-sync] {err}");
         }
@@ -83,12 +76,8 @@ fn connect_and_pump(
     loop {
         match socket.read() {
             Ok(Message::Text(text)) => {
-                // Re-serialize through serde_json rather than forwarding the
-                // wire bytes verbatim: the callback embeds this string
-                // directly into a `window.eval(...)` call (see lib.rs), so
-                // this is what guarantees it's syntactically valid JSON with
-                // every string properly escaped, not a trust assumption
-                // about what the server happens to send.
+                // Re-serialize through serde_json rather than forwarding the wire bytes
+                // verbatim: the callback embeds this string directly into a
                 match serde_json::from_str::<serde_json::Value>(&text) {
                     Ok(value) => {
                         if let Ok(canonical) = serde_json::to_string(&value) {
@@ -103,8 +92,8 @@ fn connect_and_pump(
             Err(tungstenite::Error::Io(io_err))
                 if io_err.kind() == ErrorKind::WouldBlock || io_err.kind() == ErrorKind::TimedOut =>
             {
-                // Just the read-timeout poll tick, not a real error - fall
-                // through to the ping check below.
+                // Just the read-timeout poll tick, not a real error - fall through to the
+                // ping check below.
             }
             Err(err) => return Err(format!("read failed: {err}")),
         }
@@ -118,8 +107,7 @@ fn connect_and_pump(
     }
 }
 
-/// Returns (uses_tls, host, port). `api_url` is `https://host[:port]`
-/// (Settings::load() strips any trailing slash and never leaves a path).
+/// Returns (uses_tls, host, port).
 fn parse_ws_target(api_url: &str) -> Result<(bool, String, u16), String> {
     let (tls, rest) = if let Some(rest) = api_url.strip_prefix("https://") {
         (true, rest)
@@ -128,8 +116,8 @@ fn parse_ws_target(api_url: &str) -> Result<(bool, String, u16), String> {
     } else {
         return Err(format!("unrecognized API URL scheme: {api_url}"));
     };
-    // Strip any path in case an override includes one - the presence path is
-    // appended separately in connect_and_pump.
+    // Strip any path in case an override includes one - the presence path is appended
+    // separately in connect_and_pump.
     let authority = rest.split('/').next().unwrap_or(rest);
     let default_port = if tls { 443 } else { 80 };
     match authority.rsplit_once(':') {

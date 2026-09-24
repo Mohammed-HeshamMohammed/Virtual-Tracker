@@ -1,10 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-/// Crash-safe mirror of `ActivityTracker`'s in-memory `task_progress`. Written
-/// on every credited tick so an unclean exit (crash/kill/reboot) between two
-/// `sync` calls doesn't lose whatever active/idle seconds were only ever held
-/// in RAM - see PLAN-agent-crash-safe-progress.md, PS-1/PS-2.
+/// Crash-safe mirror of `ActivityTracker`'s in-memory `task_progress`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PersistedProgress {
     pub session_id: String,

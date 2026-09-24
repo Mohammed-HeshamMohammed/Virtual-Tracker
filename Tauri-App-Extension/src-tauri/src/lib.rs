@@ -15,8 +15,8 @@ mod window_layout;
 use std::sync::Arc;
 
 use tauri::{AppHandle, Manager, WindowEvent};
-// tray-icon is a non-Linux-only Cargo feature (see Cargo.toml) - these types
-// don't exist in the dependency graph at all when building for Linux.
+// Tray-icon is a non-Linux-only Cargo feature (see Cargo.toml) - these types don't exist in
+// the dependency graph at all when building for Linux.
 #[cfg(not(target_os = "linux"))]
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -36,13 +36,8 @@ pub struct AppState {
     controller: Arc<AgentController>,
 }
 
-/// Handles to the tray menu's live-status items, so set_tray_status (called
-/// from the frontend's own existing 5s session poll - see App.tsx's
-/// refresh() - can update them in place instead of rebuilding the whole
-/// menu on a second, independent timer that would double the
-/// GET /api/activity/session traffic the frontend already generates.
-/// `None` until the tray is actually built in .setup() below, and always
-/// `None` on Linux (no tray icon at all there - see the Cargo.toml comment).
+/// Handles to the tray menu's live-status items, so set_tray_status (called from the
+/// frontend's own existing 5s session poll - see App.tsx's refresh() - can update them in
 #[cfg(not(target_os = "linux"))]
 pub struct TrayStatusItems {
     status: MenuItem<tauri::Wry>,
@@ -55,22 +50,6 @@ pub struct TrayStatusItems {
 pub type TrayStatusState = std::sync::Mutex<Option<TrayStatusItems>>;
 
 // Commands that touch the network are declared `#[tauri::command(async)]`.
-// A plain `#[tauri::command]` on a non-async fn runs on the main thread, so a
-// single blocking HTTP call (15s timeout, 30s for event POSTs, and both can
-// queue behind the same ApiClient mutex the tracker holds) freezes the window
-// - which is what "Not responding" after a fullscreen game or a sleep/wake
-// actually was. Only the commands below that genuinely stay on the main thread
-// (window operations) or touch no network are left synchronous.
-//
-// Marking a command `async` only changes *where* it runs (Tauri dispatches it
-// via `async_runtime::spawn`, off the main thread) - it does NOT make blocking
-// calls inside it safe. A plain synchronous body run that way still executes
-// directly on a tokio worker thread, and this app's blocking `reqwest`
-// calls panic there ("Cannot drop a runtime in a context where blocking is
-// not allowed") - the same class of crash for every command below that
-// touches the network. `run_blocking` is what actually fixes it: it hands the
-// blocking body to `spawn_blocking`, tokio's dedicated pool where blocking is
-// the expected case.
 pub(crate) async fn run_blocking<T, F>(f: F) -> T
 where
     T: Send + 'static,
@@ -132,15 +111,10 @@ where
 
 
 
-/// What the app was called before it became My Virtual Tracker. The autostart
-/// plugin names its start-at-login entry after the product name, so the old
-/// entry would keep launching the app a second time at login.
+/// What the app was called before it became My Virtual Tracker.
 const LEGACY_PRODUCT_NAME: &str = "Virtual Tracker Agent";
 
-/// Removes the start-at-login entry registered under the old product name. The
-/// Windows installer removes it too, but only for the account that ran the
-/// installer - this covers every other user (and macOS, which has no installer
-/// step). A missing entry is the normal case after the first run.
+/// Removes the start-at-login entry registered under the old product name.
 fn remove_legacy_autostart(app: &AppHandle) {
     if app.package_info().name == LEGACY_PRODUCT_NAME {
         return;
@@ -180,10 +154,8 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
-/// Installed builds run with no attached console, so stderr-only logging (the
-/// env_logger default) is invisible — nobody could ever see why a screenshot
-/// or URL upload failed. Logs to a file next to the other agent state
-/// (agent-store.json etc), and still echoes to stderr for `cargo run`/dev use.
+/// Installed builds run with no attached console, so stderr-only logging (the env_logger
+/// default) is invisible — nobody could ever see why a screenshot or URL upload failed.
 struct TeeWriter {
     file: std::fs::File,
 }
@@ -220,12 +192,7 @@ fn init_logging() {
     let _ = builder.try_init();
 }
 
-/// Shown when the agent can't even build its HTTP client (broken local
-/// TLS/cert store) - this happens before any Tauri window exists, and
-/// release builds hide the console (`main.rs`'s `windows_subsystem`
-/// attribute), so without this the failure would be invisible outside the
-/// log file. Reuses the same wide-string WinAPI pattern
-/// `util::open_system_browser` already uses elsewhere in this codebase.
+/// Shown when the agent can't even build its HTTP client (broken local TLS/cert store)
 #[cfg(windows)]
 fn show_startup_error(message: &str) {
     use windows::core::PCWSTR;
@@ -246,12 +213,8 @@ fn show_startup_error(message: &str) {
 #[cfg(not(windows))]
 fn show_startup_error(_message: &str) {}
 
-/// Shown the first time the window is hidden to the tray in a given install,
-/// whichever path gets there first - startup with `start_hidden` on, or the
-/// close button with "keep running in tray" on. Without this a user who has
-/// never seen the tray icon assumes the app failed to open. Reuses the same
-/// WinAPI pattern as `show_startup_error`; a no-op elsewhere is an accepted
-/// gap rather than a new cross-platform notification dependency.
+/// Shown the first time the window is hidden to the tray in a given install, whichever path
+/// gets there first - startup with `start_hidden` on, or the close button with "keep
 #[cfg(windows)]
 fn show_tray_hidden_notice() {
     use windows::core::PCWSTR;
@@ -270,9 +233,8 @@ fn show_tray_hidden_notice() {
 #[cfg(not(windows))]
 fn show_tray_hidden_notice() {}
 
-/// Shows the one-time "still running" notice and flags it shown, exactly once
-/// per install - re-reads preferences fresh rather than trusting a value
-/// captured at startup, since the close-button path can fire long after.
+/// Shows the one-time "still running" notice and flags it shown, exactly once per install -
+/// re-reads preferences fresh rather than trusting a value captured at startup, since the
 fn notify_hidden_to_tray_once(controller: &Arc<AgentController>) {
     let mut prefs = controller.get_app_settings().preferences;
     if prefs.tray_notice_shown {
@@ -283,10 +245,7 @@ fn notify_hidden_to_tray_once(controller: &Arc<AgentController>) {
     show_tray_hidden_notice();
 }
 
-/// CommandOrControl+Shift+P - Pause/Resume toggle. Named functions (not
-/// constants) because `Shortcut` isn't `const`-constructible; called once at
-/// plugin-build time and once at registration time in .setup(), so the two
-/// call sites can never drift out of sync with each other.
+/// CommandOrControl+Shift+P - Pause/Resume toggle.
 fn pause_resume_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
     tauri_plugin_global_shortcut::Shortcut::new(
         Some(tauri_plugin_global_shortcut::Modifiers::SHIFT | tauri_plugin_global_shortcut::Modifiers::CONTROL),
@@ -302,10 +261,10 @@ fn stop_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
     )
 }
 
-/// The one thing that confirms a global shortcut actually landed - it fires
-/// while some other app is focused by definition, so there's no toast/tray
-/// label on screen to notice otherwise. Best-effort: a notification failure
-/// here must never surface as if the action itself failed.
+/// The one thing that confirms a global shortcut actually landed - it fires while some
+/// other app is focused by definition, so there's no toast/tray label on screen to
+/// notice otherwise. Best-effort: a notification failure here must never surface as if
+/// the action itself failed.
 fn notify_shortcut_action(app: &AppHandle, action: &str) {
     use tauri_plugin_notification::NotificationExt;
     let _ = app
@@ -336,19 +295,18 @@ pub fn run() {
 
     // Taken before `.setup()` moves `controller` wholesale into its closure.
     let exit_controller = Arc::clone(&controller);
-    // Same reason: the global-shortcut handler below is registered as part
-    // of the plugin chain, before `.setup()` runs.
+    // Same reason: the global-shortcut handler below is registered as part of the plugin
+    // chain, before `.setup()` runs.
     let shortcut_controller = Arc::clone(&controller);
 
     tauri::Builder::default()
-        // Must be registered first: a second launch hits this instead of running
-        // its own app, so only one copy of the agent is ever tracking at once.
+        // Must be registered first: a second launch hits this instead of running its own
+        // app, so only one copy of the agent is ever tracking at once.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             show_main_window(app);
         }))
-        // Must come right after single-instance: that's what forwards the
-        // virtualtracker:// URL a Windows/Linux second-instance launch was
-        // spawned with into this plugin's on_open_url listener below.
+        // Must come right after single-instance: that's what forwards the virtualtracker://
+        // URL a Windows/Linux second-instance launch was spawned with into this plugin's
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(
@@ -358,13 +316,8 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_notification::init())
-        // System-wide, so Pause/Resume/Stop work while some other app is
-        // focused - the tray menu (set_tray_status et al.) needs a click to
-        // even see, this needs neither. Deliberately no "Start" shortcut:
-        // starting a specific task/project is a choice the webview's own
-        // state has to make (see TrayStatusItems's doc comment for the same
-        // limitation on the tray side) - a global hotkey has nothing to
-        // pick from.
+        // System-wide, so Pause/Resume/Stop work while some other app is focused - the tray
+        // menu (set_tray_status et al.) needs a click to even see, this needs neither.
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(move |app, shortcut, event| {
@@ -445,31 +398,23 @@ pub fn run() {
             commands::work::is_session_paused,
         ])
         .setup(move |app| {
-            // Registration is separate from the handler wired into the
-            // plugin above - the handler fires for a shortcut whether or
-            // not it happens to be one of these two, so an unregistered
-            // shortcut here would just mean this app is never given the
-            // keypress to begin with, not that it's silently ignored later.
+            // Registration is separate from the handler wired into the plugin above - the
+            // handler fires for a shortcut whether or not it happens to be one of these
             {
                 use tauri_plugin_global_shortcut::GlobalShortcutExt;
                 let _ = app.global_shortcut().register(pause_resume_shortcut());
                 let _ = app.global_shortcut().register(stop_shortcut());
             }
 
-            // Dev builds and Linux have no installer to write the OS-level
-            // scheme registration, so the plugin has to do it at runtime.
-            // Release Windows/macOS builds get it from the NSIS/Info.plist
-            // step the `deep-link` config in tauri.conf.json feeds into.
+            // Dev builds and Linux have no installer to write the OS-level scheme
+            // registration, so the plugin has to do it at runtime.
             #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
             {
                 let _ = app.deep_link().register_all();
             }
 
             // The browser tab that finishes a Google/Apple/email link (see
-            // `AgentLinkFlow::start`) navigates to virtualtracker://link-complete
-            // once it's done. Credentials themselves already arrive via the
-            // existing poll/loopback exchange - this only brings the agent
-            // window to the front so the user isn't left staring at the browser.
+            // `AgentLinkFlow::start`) navigates to virtualtracker://link-complete once it's
             let deep_link_handle = app.handle().clone();
             app.deep_link().on_open_url(move |_event| {
                 show_main_window(&deep_link_handle);
@@ -481,7 +426,6 @@ pub fn run() {
                 if let Some(window) = handle.get_webview_window("main") {
                     // JSON string escaping is a strict subset of valid JS string-literal
                     // escaping, so the serialized value can be embedded directly - handles
-                    // quotes, backslashes, and control chars a hand-rolled replace() would miss.
                     if let Ok(json) = serde_json::to_string(&text) {
                         let _ = window.eval(format!(
                             "window.dispatchEvent(new CustomEvent('vt-status', {{ detail: {json} }}));"
@@ -490,10 +434,8 @@ pub fn run() {
                 }
             }));
 
-            // Same wiring as vt-status above, on its own event - warnings are
-            // the rarer, user-actionable case (e.g. a broken OS credential
-            // store) that's meant to surface as a toast, not folded into the
-            // routine status stream every view already refetches on.
+            // Same wiring as vt-status above, on its own event - warnings are the rarer,
+            // user-actionable case (e.g.
             let warning_handle = app.handle().clone();
             let warning_controller = Arc::clone(&controller);
             warning_controller.add_warning_listener(Arc::new(move |text| {
@@ -506,9 +448,8 @@ pub fn run() {
                 }
             }));
 
-            // P10 - forward the raw "changed"/"scope-changed" frame text as-is;
-            // it's already JSON, so no re-serialization needed (it's not a Rust
-            // string being embedded, it's the literal JSON payload).
+            // P10 - forward the raw "changed"/"scope-changed" frame text as-is; it's
+            // already JSON, so no re-serialization needed (it's not a Rust string being
             let live_sync_handle = app.handle().clone();
             let live_sync_controller = Arc::clone(&controller);
             live_sync_controller.add_live_sync_listener(Arc::new(move |frame_json: String| {
@@ -525,18 +466,11 @@ pub fn run() {
             controller.start();
             controller.maybe_auto_sign_in();
 
-            // No tray icon on Linux: see the Cargo.toml comment on the `tauri`
-            // dependency for why (RUSTSEC-2024-0429, accepted risk documented
-            // in release.yml). "Keep running in tray" still works the same on
-            // Linux via the window-hide branch below - there's just no tray
-            // click to bring it back; the single-instance relaunch (see the
-            // `tauri_plugin_single_instance` registration above) is the way
-            // back in on that platform instead.
+            // No tray icon on Linux: see the Cargo.toml comment on the `tauri` dependency
+            // for why (RUSTSEC-2024-0429, accepted risk documented in release.yml).
             #[cfg(not(target_os = "linux"))]
             {
-                // Disabled by design - a label, not a control. Kept in sync
-                // by set_tray_status (see TrayStatusItems's own doc comment)
-                // rather than a second poller of its own.
+                // Disabled by design - a label, not a control.
                 let status_i =
                     MenuItem::with_id(app, "status", "Not tracking", false, None::<&str>)?;
                 let pause_i = MenuItem::with_id(app, "pause", "Pause", false, None::<&str>)?;
@@ -573,11 +507,8 @@ pub fn run() {
                             let _ = tray_controller.open_sign_in(None);
                         }
                         "open" => tray_controller.open_web_app(),
-                        // No stop-note prompt here (P6/handleStopClick's
-                        // dialog is a webview form the tray menu can't show)
-                        // - a project that requires one still gets it
-                        // enforced server-side; this just can't collect the
-                        // text itself.
+                        // No stop-note prompt here (P6/handleStopClick's dialog is a
+                        // webview form the tray menu can't show)
                         "pause" => {
                             let _ = tray_controller.pause_session();
                         }
@@ -610,8 +541,8 @@ pub fn run() {
             }
 
             if let Some(window) = app.get_webview_window("main") {
-                // Sized before anything is drawn, so a small screen never
-                // shows the standard window running off its bottom edge.
+                // Sized before anything is drawn, so a small screen never shows the
+                // standard window running off its bottom edge.
                 let layout_prefs = controller.get_app_settings().preferences;
                 let layout = window_layout::apply(&window, &layout_prefs.layout, layout_prefs.show_insights, false);
                 log::info!(
@@ -627,8 +558,8 @@ pub fn run() {
                 let close_controller = Arc::clone(&controller);
                 window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
-                        // Always prevent the default close - either path below
-                        // handles the window itself.
+                        // Always prevent the default close - either path below handles the
+                        // window itself.
                         api.prevent_close();
                         if close_controller.close_to_tray() {
                             let _ = win.hide();
@@ -639,8 +570,8 @@ pub fn run() {
                         win.app_handle().exit(0);
                     }
                 });
-                // A first run always shows the window - the user has never
-                // seen the tray icon yet and has no reason to look for it.
+                // A first run always shows the window - the user has never seen the tray
+                // icon yet and has no reason to look for it.
                 if start_hidden && has_launched_before {
                     let _ = window.hide();
                     notify_hidden_to_tray_once(&controller);
@@ -657,17 +588,8 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(move |_app_handle, event| {
-            // flushes the same way an explicit quit/tray-quit already
-            // does (controller.stop() -> flush_and_stop_tracker), but on
-            // tauri::RunEvent::Exit specifically - which Tauri's event loop
-            // emits both for an explicit app.exit() *and* an OS-initiated
-            // shutdown/logoff (WM_QUERYENDSESSION on Windows), unlike the
-            // window-level CloseRequested handler above, which only ever
-            // fires for a user closing the window. Turns an OS shutdown mid-
-            // session into a clean stop instead of the unclean-exit case
-            // PS-1/PS-2 exist to recover from. Harmless to call twice (an
-            // explicit quit already called stop(); this just no-ops on the
-            // second call since the tracker's already stopped).
+            // Flushes the same way an explicit quit/tray-quit already does
+            // (controller.stop() -> flush_and_stop_tracker), but on tauri::RunEvent::Exit
             if let tauri::RunEvent::Exit = event {
                 exit_controller.stop();
             }

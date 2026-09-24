@@ -1,17 +1,4 @@
 //! Disk-backed cache of the server's app display-name mappings.
-//!
-//! **This cache has no authority.** Categories are resolved server-side at
-//! read time and the agent never sends a category (there is a test in
-//! types.rs enforcing that). So a member who edits or deletes this file
-//! changes what their own agent window displays to them, and nothing else -
-//! not a single number in any report. That is the actual protection: the file
-//! is not worth tampering with, rather than being locked.
-//!
-//! ponytail: plain JSON in the per-user data directory. Encrypting it at rest
-//! (keyring-sealed AEAD) would raise the cost of casual inspection of which
-//! internal tools an organisation tracks, but cannot stop the logged-in user
-//! reading it - the agent must decrypt it to use it. Worth adding as
-//! defence-in-depth for confidentiality; not load-bearing for integrity.
 
 use std::collections::HashMap;
 use std::fs;
@@ -25,9 +12,6 @@ pub fn load(path: &Path) -> Vec<(String, String)> {
         return Vec::new();
     };
     let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&raw) else {
-        // A truncated or hand-edited file is discarded rather than trusted.
-        // The next refresh rewrites it; until then names fall back exactly as
-        // they did before this cache existed.
         log::warn!("Classification cache is unreadable, ignoring it");
         return Vec::new();
     };
@@ -46,8 +30,8 @@ pub fn save(path: &Path, entries: &[(String, String)]) {
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
-    // Write-then-rename: a crash mid-write must not leave a truncated file
-    // that the next start has to throw away.
+    // Write-then-rename: a crash mid-write must not leave a truncated file that the next
+    // start has to throw away.
     let tmp: PathBuf = path.with_extension("json.tmp");
     if fs::write(&tmp, json).is_ok() && fs::rename(&tmp, path).is_err() {
         let _ = fs::remove_file(&tmp);
@@ -71,8 +55,8 @@ mod tests {
 
     #[test]
     fn entries_survive_a_save_and_load_round_trip() {
-        // The offline bug this exists for: without persistence a cold start
-        // with no network shows "chrome.exe" instead of "Google Chrome".
+        // The offline bug this exists for: without persistence a cold start with no network
+        // shows "chrome.exe" instead of "Google Chrome".
         let path = temp_path("roundtrip");
         save(&path, &[("chrome.exe".into(), "Google Chrome".into())]);
         let loaded = load(&path);
@@ -90,8 +74,8 @@ mod tests {
 
     #[test]
     fn saving_replaces_rather_than_merges() {
-        // A mapping removed server-side must actually disappear here too -
-        // same contract apply_display_names already has in memory.
+        // A mapping removed server-side must actually disappear here too - same contract
+        // apply_display_names already has in memory.
         let path = temp_path("replace");
         save(&path, &[("chrome.exe".into(), "Google Chrome".into())]);
         save(&path, &[("firefox.exe".into(), "Mozilla Firefox".into())]);

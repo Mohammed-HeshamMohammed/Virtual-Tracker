@@ -1,16 +1,11 @@
-//! App-icon extraction. Windows-only: shells out to `get-app-icon.ps1`, which
-//! renders the executable's associated icon to a 32x32 PNG and prints it as a
-//! `data:image/png;base64,…` line. Everything else is a no-op — the UI falls
-//! back to a coloured letter tile, exactly as before this existed.
 
 use std::path::Path;
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-/// Returns a `data:image/png;base64,…` string for the given executable's icon,
-/// or `None` if it can't be read (non-Windows, missing script, missing exe,
-/// script failure, or an implausibly large result).
+/// Returns a `data:image/png;base64,…` string for the given executable's icon, or `None` if
+/// it can't be read (non-Windows, missing script, missing exe, script failure, or an
 pub fn read_app_icon(script_path: &Path, exe_path: &str) -> Option<String> {
     if exe_path.is_empty() {
         return None;

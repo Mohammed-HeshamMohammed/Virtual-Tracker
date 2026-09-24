@@ -1,20 +1,8 @@
-//! Personal messaging apps and sites the agent blurs a screenshot for, rather
-//! than skip capturing entirely.
-//!
-//! * **The URL is often absent.** `EventBuilder::recent_url` deliberately
-//! returns `None` unless the focused window is still a browser *and* the
-//! reading is fresh, because a stale URL would mislabel the capture. When
-//! it declines, a browser sitting on web.whatsapp.com offers nothing but
-//! `chrome.exe` to match on - and that is not a messaging app.
-//! * **Store/UWP apps do not report their own process.** On Windows the
-//! foreground window of a packaged app belongs to `ApplicationFrameHost.exe`,
-//! so the Microsoft Store build of WhatsApp never matched by executable.
-//! * **In-site DMs are not their own host.** Facebook, Instagram, X and
-//! LinkedIn conversations live under the ordinary site host, so a host-only
-//! rule cannot see them; those need the path.
+//! Personal messaging apps and sites the agent blurs a screenshot for, rather than skip
+//! capturing entirely.
 
-/// Executable names (Windows) or bundle-derived process names (macOS),
-/// lowercased; the caller trims any `.exe` before comparing.
+/// Executable names (Windows) or bundle-derived process names (macOS), lowercased; the
+/// caller trims any `.exe` before comparing.
 const MESSAGING_EXES: &[&str] = &[
     "telegram",
     "whatsapp",
@@ -32,10 +20,7 @@ const MESSAGING_EXES: &[&str] = &[
     "messages",  // macOS iMessage
 ];
 
-/// Hosts whose every page is a conversation. Matched on label boundaries, so
-/// a marker covers its subdomains ("web.telegram.org" catches the "/k/",
-/// "/a/" and "/z/" clients) without matching a domain that merely ends in the
-/// same letters.
+/// Hosts whose every page is a conversation.
 const MESSAGING_URL_HOSTS: &[&str] = &[
     "web.whatsapp.com",
     "messenger.com",
@@ -51,8 +36,8 @@ const MESSAGING_URL_HOSTS: &[&str] = &[
     "app.chanty.com",
 ];
 
-/// Conversations that live at a path inside an ordinary site, so the host
-/// alone cannot identify them. Matched as host + path prefix.
+/// Conversations that live at a path inside an ordinary site, so the host alone cannot
+/// identify them.
 const MESSAGING_URL_PATHS: &[(&str, &str)] = &[
     ("facebook.com", "/messages"),
     ("instagram.com", "/direct"),
@@ -62,8 +47,7 @@ const MESSAGING_URL_PATHS: &[(&str, &str)] = &[
     ("discord.com", "/channels"),
 ];
 
-/// Words that identify a messaging app when they appear as a whole word in a
-/// window title.
+/// Words that identify a messaging app when they appear as a whole word in a window title.
 const TITLE_WORDS: &[&str] = &[
     "whatsapp",
     "telegram",
@@ -84,10 +68,8 @@ const TITLE_PHRASES: &[&str] = &[
     "slack |", // Slack's own title format: "Slack | general | Workspace"
 ];
 
-/// Whether this foreground window is one of the messaging apps/sites a
-/// screenshot should be blurred for. `url` and `title` are the same readings
-/// `EventBuilder::screenshot` already attaches to the event - no extra
-/// capture happens to answer this.
+/// Whether this foreground window is one of the messaging apps/sites a screenshot should be
+/// blurred for.
 pub fn is_messaging_target(process_name: &str, url: Option<&str>, title: Option<&str>) -> bool {
     if process_matches(process_name) {
         return true;
@@ -99,8 +81,8 @@ pub fn is_messaging_target(process_name: &str, url: Option<&str>, title: Option<
 }
 
 fn process_matches(process_name: &str) -> bool {
-    // Lowercase before trimming ".exe" - trim_end_matches is case-sensitive,
-    // so trimming first left "TELEGRAM.EXE" untouched and never matched.
+    // Lowercase before trimming ".exe" - trim_end_matches is case-sensitive, so trimming
+    // first left "TELEGRAM.EXE" untouched and never matched.
     let lowered = process_name.trim().to_lowercase();
     let exe = lowered.trim_end_matches(".exe");
     !exe.is_empty() && MESSAGING_EXES.iter().any(|candidate| *candidate == exe)
@@ -122,8 +104,8 @@ fn url_matches(url: &str) -> bool {
     })
 }
 
-/// Whole-word matching, so "WhatsApp" in a title is a hit but "whatsappish"
-/// is not, and a phrase only counts where its words are adjacent.
+/// Whole-word matching, so "WhatsApp" in a title is a hit but "whatsappish" is not, and a
+/// phrase only counts where its words are adjacent.
 fn title_matches(title: &str) -> bool {
     let lowered = title.to_lowercase();
     if TITLE_PHRASES.iter().any(|phrase| lowered.contains(phrase)) {
@@ -134,9 +116,8 @@ fn title_matches(title: &str) -> bool {
         .any(|word| TITLE_WORDS.contains(&word))
 }
 
-/// The lowercased host of a URL, with scheme, userinfo, port, path, query and
-/// fragment all stripped - e.g. `https://user@web.whatsapp.com:443/a/b?x#y`
-/// becomes `web.whatsapp.com`.
+/// The lowercased host of a URL, with scheme, userinfo, port, path, query and fragment all
+/// stripped - e.g.
 fn url_host(url: &str) -> Option<String> {
     let after_scheme = url.split("://").nth(1).unwrap_or(url);
     let authority_end = after_scheme.find(['/', '?', '#']).unwrap_or(after_scheme.len());
@@ -150,7 +131,7 @@ fn url_host(url: &str) -> Option<String> {
     }
 }
 
-/// The lowercased path, without query or fragment. `""` when the URL has none.
+/// The lowercased path, without query or fragment.
 fn url_path(url: &str) -> String {
     let after_scheme = url.split("://").nth(1).unwrap_or(url);
     let Some(path_start) = after_scheme.find('/') else {
@@ -174,7 +155,7 @@ mod tests {
         assert!(target("Telegram.exe", None));
         assert!(target("WhatsApp.exe", None));
         assert!(target("Messenger.exe", None));
-        // macOS has no .exe suffix on process names.
+        // MacOS has no .exe suffix on process names.
         assert!(target("Telegram", None));
     }
 
@@ -203,8 +184,8 @@ mod tests {
 
     #[test]
     fn direct_messages_inside_an_ordinary_site_are_matched_by_path() {
-        // A host-only rule cannot see these: the conversation lives under the
-        // same host as the rest of the site.
+        // A host-only rule cannot see these: the conversation lives under the same host as
+        // the rest of the site.
         assert!(target("chrome.exe", Some("https://www.facebook.com/messages/t/99")));
         assert!(target("chrome.exe", Some("https://www.instagram.com/direct/inbox/")));
         assert!(target("chrome.exe", Some("https://x.com/messages/12-34")));
@@ -213,8 +194,8 @@ mod tests {
 
     #[test]
     fn the_rest_of_those_sites_is_not_blurred() {
-        // Only the conversation paths, not the whole site - someone's
-        // LinkedIn feed is not a private conversation.
+        // Only the conversation paths, not the whole site - someone's LinkedIn feed is not
+        // a private conversation.
         assert!(!target("chrome.exe", Some("https://www.facebook.com/somepage")));
         assert!(!target("chrome.exe", Some("https://www.instagram.com/explore/")));
         assert!(!target("chrome.exe", Some("https://www.linkedin.com/feed/")));
@@ -224,9 +205,6 @@ mod tests {
 
     #[test]
     fn a_title_catches_what_the_process_and_url_cannot() {
-        // Packaged Store apps report ApplicationFrameHost, not their own
-        // executable, and a browser whose URL reading went stale reports no
-        // URL at all. Both used to mean no blur.
         assert!(is_messaging_target("ApplicationFrameHost.exe", None, Some("WhatsApp")));
         assert!(is_messaging_target("chrome.exe", None, Some("(3) WhatsApp - Google Chrome")));
         assert!(is_messaging_target("chrome.exe", None, Some("Telegram Web")));
@@ -245,8 +223,8 @@ mod tests {
 
     #[test]
     fn everyday_words_do_not_blur_by_themselves() {
-        // The reason "signal", "teams", "line" and "messages" are not
-        // title words: these are ordinary documents, not conversations.
+        // The reason "signal", "teams", "line" and "messages" are not title words: these
+        // are ordinary documents, not conversations.
         assert!(!is_messaging_target("excel.exe", None, Some("signal strength report.xlsx")));
         assert!(!is_messaging_target("word.exe", None, Some("teams and responsibilities.docx")));
         assert!(!is_messaging_target("code.exe", None, Some("line endings.txt")));
@@ -263,9 +241,6 @@ mod tests {
 
     #[test]
     fn a_domain_that_merely_contains_a_marker_as_a_substring_is_not_matched() {
-        // "messenger.com" used to match anywhere in the URL string, including
-        // as a substring of an unrelated domain's name - a real false
-        // positive, not a hypothetical one.
         assert!(!target("chrome.exe", Some("https://trendmessenger.com/")));
         assert!(!target("chrome.exe", Some("https://example.com/go?to=messenger.com/spam")));
         assert!(!target("chrome.exe", Some("https://notdiscord.com/")));

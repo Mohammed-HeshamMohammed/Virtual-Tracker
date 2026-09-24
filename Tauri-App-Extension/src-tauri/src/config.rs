@@ -26,7 +26,6 @@ pub struct Settings {
 impl Settings {
     pub fn load() -> Self {
         // Release builds always use production endpoints.
-        // Debug builds also default to production unless VT_* overrides are set.
         load_env_files();
 
         let project_root = project_root();
@@ -85,9 +84,7 @@ impl Settings {
 }
 
 /// `VT_AUTH_URL` exists for pointing a dev build at a local Auth-Backend
-/// (`http://127.0.0.1:5712`). A release build only honours it over HTTPS -
-/// email, password and tokens go to this host, so a plaintext override in a
-/// shipped build is not a configuration choice, it is an attack.
+/// (`http://127.0.0.1:5712`).
 fn resolve_auth_url() -> String {
     pick_auth_url(
         &env::var("VT_AUTH_URL").unwrap_or_default(),
@@ -128,8 +125,8 @@ mod tests {
 
     #[test]
     fn release_builds_refuse_a_plaintext_override() {
-        // Credentials and tokens go to this host - a shipped build must not be
-        // talked into sending them over HTTP by an environment variable.
+        // Credentials and tokens go to this host - a shipped build must not be talked into
+        // sending them over HTTP by an environment variable.
         assert_eq!(pick_auth_url("http://evil.example", false), PROD_AUTH_URL);
         assert_eq!(
             pick_auth_url("https://staging-auth.example", false),
@@ -163,10 +160,8 @@ fn resolve_script(project_root: &Path, name: &str) -> PathBuf {
         // Dev build: CARGO_MANIFEST_DIR/../scripts/<name>.
         project_root.join("scripts").join(name),
         project_root.join(name),
-        // Release build: tauri.conf.json declares the resource as
-        // "../scripts/<name>" (relative to src-tauri) — NSIS/MSI preserve that
-        // leading ".." literally as an "_up_" folder next to the exe. Confirmed
-        // from an actual installed build: <installdir>\_up_\scripts\<name>.
+        // Release build: tauri.conf.json declares the resource as "../scripts/<name>"
+        // (relative to src-tauri) — NSIS/MSI preserve that leading ".." literally as an
         exe_dir
             .as_ref()
             .map(|d| d.join("_up_").join("scripts").join(name))

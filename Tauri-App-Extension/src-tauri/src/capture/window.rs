@@ -15,19 +15,13 @@ use crate::constants::URL_SCRIPT_TIMEOUT_SEC;
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
-/// Suppresses the console window a spawned powershell/cmd process would
-/// otherwise flash on screen — this runs silently in the background.
+/// Suppresses the console window a spawned powershell/cmd process would otherwise flash on
+/// screen — this runs silently in the background.
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-// This cluster backs Windows's own
-// get_foreground_window_win/resolve_display_name path specifically - macOS
-// gets its display name straight from xcap's app_name instead (see
-// get_foreground_window_macos's own comment), and Linux has no window-
-// capture backend at all yet (get_foreground_window's #[cfg(not(...))]
-// fallback). Real, used code on Windows; genuinely unreachable elsewhere,
-// with no test exercising it directly the way browser_hint_from_exe's tests
-// do below - hence the explicit allow rather than leaving it to warn.
+// This cluster backs Windows's own get_foreground_window_win/resolve_display_name path
+// specifically - macOS gets its display name straight from xcap's app_name instead (see
 #[allow(dead_code)]
 static DISPLAY_OVERRIDES: OnceLock<HashMap<&'static str, &'static str>> = OnceLock::new();
 
@@ -48,9 +42,8 @@ fn overrides() -> &'static HashMap<&'static str, &'static str> {
             ("powerpnt.exe", "PowerPoint"),
             ("python.exe", "Python"),
             ("pythonw.exe", "Python"),
-            // Packaged (Store) apps, now that they resolve past
-            // ApplicationFrameHost: their executables are named for the
-            // package, which title-cases into things like "Calculatorapp".
+            // Packaged (Store) apps, now that they resolve past ApplicationFrameHost: their
+            // executables are named for the package, which title-cases into things like
             ("calculatorapp.exe", "Calculator"),
             ("calculator.exe", "Calculator"),
             ("spotify.exe", "Spotify"),
@@ -72,23 +65,18 @@ fn overrides() -> &'static HashMap<&'static str, &'static str> {
     })
 }
 
-// Browser detection and naming now come from capture/browsers.rs - one table
-// instead of a list here, another in the PowerShell script, and a third in
-// uia_url.rs, each of which had drifted to a different set.
+// Browser detection and naming now come from capture/browsers.rs - one table instead of a
+// list here, another in the PowerShell script, and a third in uia_url.rs, each of which had
 
 #[derive(Debug, Clone)]
 pub struct ForegroundWindow {
     pub app_name: String,
     pub title: String,
     pub process_name: String,
-    /// Full path to the executable. Windows-only; empty elsewhere and on the
-    /// paths where the process image name can't be read. Used for app-icon
-    /// extraction (capture/app_icon.rs).
+    /// Full path to the executable.
     pub exe_path: String,
-    // Read back only inside read_browser_url's #[cfg(windows)] branch -
-    // always constructed (every get_foreground_window_* branch sets them,
-    // hwnd to 0 where there's no such concept), just never read on whatever
-    // platform doesn't have a real capture backend.
+    // Read back only inside read_browser_url's #[cfg(windows)] branch - always constructed
+    // (every get_foreground_window_* branch sets them, hwnd to 0 where there's no such
     #[allow(dead_code)]
     pub hwnd: usize,
     pub is_browser: bool,
@@ -97,14 +85,10 @@ pub struct ForegroundWindow {
 }
 
 /// The name used when the foreground window could not be identified at all.
-/// Kept as one constant because it is both what this module writes and what
-/// callers must recognise; two spellings would silently stop matching.
 pub const UNIDENTIFIED: &str = "Unknown";
 
-/// Windows' own shell surfaces, which are chrome rather than programs: the
-/// Start menu, the search flyout, the lock screen, the touch keyboard, the
-/// notification centre, and the frame host that draws packaged apps' title
-/// bars when its real occupant could not be resolved.
+/// Windows' own shell surfaces, which are chrome rather than programs: the Start menu, the
+/// search flyout, the lock screen, the touch keyboard, the notification centre, and the
 const SHELL_SURFACES: &[&str] = &[
     "applicationframehost.exe",
     "lockapp.exe",
@@ -120,8 +104,6 @@ const SHELL_SURFACES: &[&str] = &[
 
 impl ForegroundWindow {
     /// Whether we actually know what the member was looking at.
-    ///
-    /// A slice we cannot attribute is not tracked time. Callers skip it.
     pub fn is_identified(&self) -> bool {
         if self.hwnd == 0 && cfg!(windows) {
             return false;
@@ -134,9 +116,8 @@ impl ForegroundWindow {
         !app.is_empty() && !app.eq_ignore_ascii_case(UNIDENTIFIED)
     }
 
-    /// Whether this is one of Windows' own shell surfaces rather than an app
-    /// the member chose to use. Unlike `is_identified`, we know exactly what
-    /// this is - it just should not be counted as an application.
+    /// Whether this is one of Windows' own shell surfaces rather than an app the member
+    /// chose to use.
     pub fn is_shell_surface(&self) -> bool {
         let process = self.process_name.trim().to_lowercase();
         SHELL_SURFACES.contains(&process.as_str())
@@ -166,20 +147,8 @@ pub fn get_foreground_window() -> ForegroundWindow {
     }
 }
 
-/// MAC-2: `xcap::Window` (already a dependency here for screenshot capture,
-/// `screen.rs`) does the NSWorkspace/CGWindowListCopyWindowInfo work
-/// internally on macOS - see xcap's own `src/macos/impl_window.rs`, which is
-/// exactly the approach this function would otherwise have had to hand-roll
-/// via raw Objective-C FFI. Reusing it means this integrates an
-/// already-shipped, already-compiling-on-other-platforms implementation
-/// instead of adding new, unverifiable-from-this-environment FFI code.
-///
-/// UNVERIFIED: written without any way to compile-check macOS-specific code
-/// on this machine (no C toolchain available even for `cargo check --target
-/// aarch64-apple-darwin` - Tauri's own macOS build needs `cc` for its
-/// Objective-C bridging, which isn't installed here). `xcap::Window`'s API
-/// itself is real and documented; this integration has not been built or
-/// run on real macOS hardware. Treat as a first draft to validate there.
+/// MAC-2: `xcap::Window` (already a dependency here for screenshot capture, `screen.rs`)
+/// does the NSWorkspace/CGWindowListCopyWindowInfo work internally on macOS - see xcap's
 #[cfg(target_os = "macos")]
 fn get_foreground_window_macos() -> ForegroundWindow {
     let unknown = || ForegroundWindow {
@@ -206,11 +175,8 @@ fn get_foreground_window_macos() -> ForegroundWindow {
     let app_name = focused.app_name().to_string();
     let title_raw = focused.title().trim().to_string();
     let title = if title_raw.is_empty() { "Unknown".to_string() } else { title_raw };
-    // macOS has no separate exe-vs-display-name split the way Windows does -
-    // xcap's app_name() is already the display name ("Google Chrome"), and
-    // it's also exactly what get-browser-url-macos.applescript's
-    // `tell application "<processName>"` / `tell process "<processName>"`
-    // expect as an argument (see tryBrowserByProcess/readFirefoxUrl there).
+    // MacOS has no separate exe-vs-display-name split the way Windows does - xcap's
+    // app_name() is already the display name ("Google Chrome"), and it's also exactly what
     let process_name = app_name.clone();
     let browser_hint = browser_hint_from_exe(&app_name.to_lowercase());
     let is_browser = !browser_hint.is_empty();
@@ -219,20 +185,19 @@ fn get_foreground_window_macos() -> ForegroundWindow {
         app_name,
         title,
         process_name,
-        // App-icon extraction is Windows-only (capture/app_icon.rs); xcap
-        // gives no executable path on macOS anyway.
+        // App-icon extraction is Windows-only (capture/app_icon.rs); xcap gives no
+        // executable path on macOS anyway.
         exe_path: String::new(),
-        // HWND is a Windows-specific concept with no macOS equivalent; the
-        // only consumer of this field is #[cfg(windows)]-gated, so 0 here is
-        // inert, not a placeholder standing in for something unfetched.
+        // HWND is a Windows-specific concept with no macOS equivalent; the only consumer of
+        // this field is #[cfg(windows)]-gated, so 0 here is inert, not a placeholder
         hwnd: 0,
         is_browser,
         browser_hint,
     }
 }
 
-/// The window class a packaged (Store/UWP) app's real window carries, inside
-/// the frame `ApplicationFrameHost.exe` draws around it.
+/// The window class a packaged (Store/UWP) app's real window carries, inside the frame
+/// `ApplicationFrameHost.exe` draws around it.
 #[cfg(windows)]
 const CORE_WINDOW_CLASS: &str = "Windows.UI.Core.CoreWindow";
 
@@ -242,8 +207,7 @@ struct CoreWindowSearch {
     found_pid: u32,
 }
 
-/// Looks for the frame's real occupant: a CoreWindow child belonging to some
-/// other process. Returns FALSE to stop the enumeration once it has one.
+/// Looks for the frame's real occupant: a CoreWindow child belonging to some other process.
 #[cfg(windows)]
 unsafe extern "system" fn core_window_probe(
     child: windows::Win32::Foundation::HWND,
@@ -354,10 +318,8 @@ fn get_foreground_window_win() -> ForegroundWindow {
             exe_path = path;
         }
 
-        // A packaged app hides behind the frame host that draws it; ask the
-        // frame's children who is really in there. If nothing answers, the
-        // frame host is left standing and `is_shell_surface` keeps it out of
-        // the app log rather than letting it pose as an app.
+        // A packaged app hides behind the frame host that draws it; ask the frame's
+        // children who is really in there.
         if process_name.eq_ignore_ascii_case("ApplicationFrameHost.exe") {
             if let Some(real_pid) = packaged_app_pid(hwnd, pid) {
                 if let Some((name, path)) = process_image_for_pid(real_pid) {
@@ -420,15 +382,8 @@ fn resolve_display_name(process_name: &str, title: &str) -> String {
     }
 }
 
-// Its own tests below call this directly on every platform (deliberately -
-// see their comment), so it's never actually dead where it matters; the
-// #[allow] is only for the plain non-test lib build, where its real callers
-// (get_foreground_window_win/_macos, both #[cfg]-gated) leave it unreachable
-// on whichever platform isn't Windows or macOS.
-/// Resolves to the browser's UI Automation pane name ("Google Chrome",
-/// "Mozilla Firefox", ...), which is what get-browser-url.ps1 wants in order
-/// to try the right pane first. Takes a Windows exe name or a macOS display
-/// name - `browsers::lookup` handles both.
+// Its own tests below call this directly on every platform (deliberately - see their
+// comment), so it's never actually dead where it matters; the #[allow] is only for the
 #[allow(dead_code)]
 fn browser_hint_from_exe(exe: &str) -> String {
     crate::capture::browsers::browser_hint(exe)
@@ -463,8 +418,8 @@ pub(crate) fn run_command_timeout(mut command: Command, timeout: Duration) -> Op
     }
 }
 
-/// Logs the missing-script warning once per process instead of every poll —
-/// it fires on every browser-focused tick otherwise, which is noisy.
+/// Logs the missing-script warning once per process instead of every poll — it fires on
+/// every browser-focused tick otherwise, which is noisy.
 #[allow(dead_code)]
 static WARNED_MISSING_SCRIPT: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
@@ -481,19 +436,12 @@ pub fn read_browser_url(
     {
         let _ = macos_script_path;
 
-        // Preferred path: in-process UI Automation against a cached address-bar
-        // element. No subprocess, and on every tick after the first for a given
-        // window, no tree walk either - see capture/uia_url.rs.
+        // Preferred path: in-process UI Automation against a cached address-bar element.
         if crate::capture::uia_url::healthy() {
             let url = crate::capture::uia_url::read_url(window.hwnd, timeout);
             if let Some(url) = url {
                 return Some(url.chars().take(MAX_URL_LEN).collect());
             }
-            // Trust the reader's "no URL here" and skip the subprocess - that
-            // is the whole point on a page heavy enough to be a problem. The
-            // history lookup is still worth a try: it costs no browser work
-            // at all, and it is exactly the case (address bar unreadable)
-            // that used to leave a bare window title behind.
             if crate::capture::uia_url::healthy() {
                 return url_from_history(window);
             }
@@ -555,15 +503,8 @@ pub fn read_browser_url(
             }
             return None;
         }
-        // get-browser-url-macos.applescript expects (bundleId, processName) -
-        // this agent doesn't have a bundle identifier for the focused app
-        // (xcap::Window exposes app_name/pid, not bundle id), so bundleId is
-        // passed empty. The script's own tryBrowserByBundle("") short-
-        // circuits immediately and falls through to tryBrowserByProcess(),
-        // which matches on exactly the process_name this agent does have -
-        // this was passing process_name for *both* arguments before MAC-2
-        // made is_browser true on macOS at all, which is why the mismatch
-        // was never reachable/noticed.
+        // Get-browser-url-macos.applescript expects (bundleId, processName) - this agent
+        // doesn't have a bundle identifier for the focused app (xcap::Window exposes
         let mut cmd = Command::new("osascript");
         cmd.arg(macos_script_path)
             .arg("")
@@ -589,10 +530,8 @@ pub fn read_browser_url(
 mod tests {
     use super::*;
 
-    // browser_hint_from_exe now delegates to capture/browsers.rs and returns
-    // the browser's UI Automation pane name rather than a short vendor tag -
-    // that's what get-browser-url.ps1 actually wants. These guard the
-    // delegation itself; the table's own coverage is tested in browsers.rs.
+    // Browser_hint_from_exe now delegates to capture/browsers.rs and returns the browser's
+    // UI Automation pane name rather than a short vendor tag - that's what
 
     #[test]
     fn recognizes_macos_app_display_names() {
@@ -612,8 +551,8 @@ mod tests {
         // Browsers the old hardcoded list never covered.
         assert_eq!(browser_hint_from_exe("librewolf.exe"), "LibreWolf");
         assert_eq!(browser_hint_from_exe("arc.exe"), "Arc");
-        // The hint is the UIA *pane* name, which isn't always the display
-        // name - Whale's window pane is just "Whale".
+        // The hint is the UIA *pane* name, which isn't always the display name - Whale's
+        // window pane is just "Whale".
         assert_eq!(browser_hint_from_exe("whale.exe"), "Whale");
     }
 
@@ -636,9 +575,8 @@ mod tests {
         }
     }
 
-    // Windows' own chrome kept turning up in Top Apps: opening the Start
-    // menu or clicking the search box puts one of these in front, and each was
-    // logged as an app by its executable's name with a tick's seconds on it.
+    // Windows' own chrome kept turning up in Top Apps: opening the Start menu or clicking
+    // the search box puts one of these in front, and each was logged as an app by its
     #[test]
     fn windows_own_shell_surfaces_are_not_apps() {
         for exe in [
@@ -657,8 +595,6 @@ mod tests {
     }
 
     // The frame host is only ever a stand-in for the packaged app inside it.
-    // Resolved, the real app's name arrives instead; unresolved, the frame is
-    // not an app either and the tick goes unattributed.
     #[test]
     fn an_unresolved_frame_host_is_not_an_app() {
         assert!(win("ApplicationFrameHost.exe", "Applicationframehost", 42).is_shell_surface());
@@ -687,8 +623,8 @@ mod tests {
         }
     }
 
-    // Packaged apps resolve to executables named for their package, which the
-    // generic title-caser turns into "Calculatorapp" and "Snippingtool".
+    // Packaged apps resolve to executables named for their package, which the generic
+    // title-caser turns into "Calculatorapp" and "Snippingtool".
     #[test]
     fn packaged_apps_get_the_name_people_know_them_by() {
         assert_eq!(
@@ -709,8 +645,8 @@ mod tests {
         );
     }
 
-    // An executable nobody has an override for still reads as a name rather
-    // than a filename - that path is unchanged.
+    // An executable nobody has an override for still reads as a name rather than a filename
+    // - that path is unchanged.
     #[test]
     fn an_unknown_executable_still_title_cases_its_own_name() {
         assert_eq!(
@@ -724,9 +660,6 @@ mod tests {
         assert!(win("code.exe", "VS Code", 42).is_identified());
     }
 
-    // The bug this guards: an elevated or already-closed window leaves the
-    // "Unknown" sentinel, and the tracker used to upload it as an app by that
-    // name, where it collected real seconds in Top Apps.
     #[test]
     fn the_unknown_sentinel_is_not_an_app() {
         assert!(!win("Unknown", "Unknown", 42).is_identified());
@@ -741,8 +674,7 @@ mod tests {
         assert!(!win("   ", "VS Code", 42).is_identified());
     }
 
-    // No foreground window at all - the desktop between alt-tabs, or the lock
-    // screen. Windows always hands back a handle, so zero is the only signal.
+    // No foreground window at all - the desktop between alt-tabs, or the lock screen.
     #[cfg(windows)]
     #[test]
     fn no_foreground_window_is_not_an_app() {
@@ -750,10 +682,8 @@ mod tests {
     }
 }
 
-/// Last resort when nothing could read the address bar live: ask the browser's
-/// own history what URL it recorded for the page title we can see. See
-/// capture/history.rs for why this is scoped to a single title lookup rather
-/// than reading history generally.
+/// Last resort when nothing could read the address bar live: ask the browser's own history
+/// what URL it recorded for the page title we can see.
 #[cfg(windows)]
 fn url_from_history(window: &ForegroundWindow) -> Option<String> {
     let url = crate::capture::history::lookup_url_by_title(&window.process_name, &window.title)?;

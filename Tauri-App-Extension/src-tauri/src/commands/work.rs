@@ -1,5 +1,5 @@
-//! Projects, tasks, sessions and the things a member submits:
-//! time entries, timesheets, time-off requests.
+//! Projects, tasks, sessions and the things a member submits: time entries, timesheets,
+//! time-off requests.
 
 use std::sync::Arc;
 

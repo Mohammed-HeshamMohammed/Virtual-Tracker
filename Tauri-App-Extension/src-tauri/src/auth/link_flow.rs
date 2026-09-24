@@ -20,9 +20,8 @@ struct PendingSession {
 pub struct AgentLinkFlow {
     api: Arc<Mutex<ApiClient>>,
     web_url: String,
-    /// Auth-Backend base URL - only the `provider=google` hint targets this
-    /// directly (see `util::build_link_sign_in_url`); every other hint still
-    /// goes to `web_url`.
+    /// Auth-Backend base URL - only the `provider=google` hint targets this directly (see
+    /// `util::build_link_sign_in_url`); every other hint still goes to `web_url`.
     auth_url: String,
     pending: Arc<Mutex<Option<PendingSession>>>,
     poll_generation: Arc<AtomicU64>,
@@ -43,12 +42,8 @@ impl AgentLinkFlow {
         }
     }
 
-    /// Suggestion #14b: test-only constructor that seeds a pending link
-    /// session directly instead of going through `start()`, which would
-    /// otherwise make a real network call and open a real browser window
-    /// (`util::open_url_in_launcher_or_browser`) - neither acceptable side
-    /// effect belongs in a unit test. Lets `auth::server`'s route tests
-    /// exercise `apply_web_credentials`'s matching-token path deterministically.
+    /// Suggestion #14b: test-only constructor that seeds a pending link session directly
+    /// instead of going through `start()`, which would otherwise make a real network call
     #[cfg(test)]
     pub fn new_with_pending(
         api: Arc<Mutex<ApiClient>>,
@@ -82,12 +77,7 @@ impl AgentLinkFlow {
         true
     }
 
-    /// `hint` is an extra `key=value` query pair appended to the browser URL -
-    /// e.g. `"provider=google"` or `"mode=signup"` - so the web login page can
-    /// jump straight to the right pane/provider instead of always landing on
-    /// plain email/password. Purely cosmetic on the completion mechanism: the
-    /// link token is what ties the browser tab back to this device regardless
-    /// of which hint (or none) sent the user there.
+    /// `hint` is an extra `key=value` query pair appended to the browser URL - e.g.
     pub fn start(&self, hint: Option<&str>, on_tokens: OnTokens, on_error: Option<OnError>) -> bool {
         let generation = self.poll_generation.fetch_add(1, Ordering::SeqCst) + 1;
         *self.on_tokens.lock() = Some(on_tokens);
@@ -117,8 +107,8 @@ impl AgentLinkFlow {
         }
         let sign_in_url = build_link_sign_in_url(&self.web_url, &self.auth_url, &encoded, valid_hint);
         open_url_in_launcher_or_browser(&sign_in_url, Some(&link_token), valid_hint);
-        // Truncated, not the full URL - it carries the live link token in
-        // its query string, and this log is user-openable from Settings.
+        // Truncated, not the full URL - it carries the live link token in its query string,
+        // and this log is user-openable from Settings.
         let preview = link_token.chars().take(8).collect::<String>();
         log::info!("Opened sign-in page for session {preview}…");
         self.spawn_poll(pending, generation);
@@ -160,7 +150,8 @@ impl AgentLinkFlow {
         *self.pending.lock() = None;
     }
 
-    /// Resume exchange polling using the callbacks from the last `start` / `ensure_polling`.
+    /// Resume exchange polling using the callbacks from the last `start` /
+    /// `ensure_polling`.
     pub fn resume_existing(&self) -> bool {
         let on_tokens = self.on_tokens.lock().clone();
         let on_error = self.on_error.lock().clone();

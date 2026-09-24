@@ -19,21 +19,17 @@ use crate::queue::EventQueue;
 
 pub type StatusCallback = Arc<dyn Fn(String) + Send + Sync>;
 
-/// Consecutive failed session fetches before the UI is told the numbers are
-/// unconfirmed. At SESSION_POLL_SEC (5s) this is one minute - long enough that
-/// an ordinary blip never shows a warning, short enough that a real outage
-/// does not go unmentioned for a whole shift.
+/// Consecutive failed session fetches before the UI is told the numbers are unconfirmed.
 const DEGRADED_TICKS: u32 = 12;
 
-/// how many ticks between session polls.
+/// How many ticks between session polls.
 const SESSION_FETCH_EVERY_N_TICKS: u32 = 3;
 
-/// how long the tracker waits for the shared client before giving up on
-/// this tick's poll.
+/// How long the tracker waits for the shared client before giving up on this tick's poll.
 const SESSION_FETCH_LOCK_WAIT: Duration = Duration::from_millis(750);
 
-/// How often to retry the offline queue while ticking every SESSION_POLL_SEC —
-/// no point hammering a dead connection every 5s.
+/// How often to retry the offline queue while ticking every SESSION_POLL_SEC — no point
+/// hammering a dead connection every 5s.
 const QUEUE_FLUSH_INTERVAL_SEC: u64 = 30;
 
 pub struct ActivityTracker {
@@ -41,61 +37,34 @@ pub struct ActivityTracker {
     events: EventBuilder,
     activity: Arc<ActivityMeter>,
     queue: EventQueue,
-    /// crash-safe mirror of `task_progress`, written on every credited
-    /// tick so an unclean exit doesn't lose whatever RAM alone was holding.
+    /// Crash-safe mirror of `task_progress`, written on every credited tick so an unclean
+    /// exit doesn't lose whatever RAM alone was holding.
     progress: ProgressStore,
     on_status: Option<StatusCallback>,
     stop: Arc<AtomicBool>,
     /// Set by `pause()`/cleared by `resume()` or `note_stop_requested()`.
-    /// While true, `tick()` skips its normal fetch_session/status handling
-    /// entirely (see `tick_paused`) - crediting only idle time and
-    /// periodically re-syncing to keep the paused session from being swept
-    /// up as abandoned.
     paused: Arc<AtomicBool>,
-    /// Set by `note_stop_requested()` (called from `AppController::stop_session`,
-    /// which posts "stop" straight to the API without going through the tick
-    /// loop). Consumed once by the next `session is None` tick so a
-    /// user-initiated stop is never mistaken for the server abandoning the
-    /// session out from under the agent - see `try_recover_lost_session`.
+    /// Set by `note_stop_requested()` (called from `AppController::stop_session`, which
+    /// posts "stop" straight to the API without going through the tick loop).
     expect_stop: Arc<AtomicBool>,
     session_id: Arc<Mutex<Option<String>>>,
-    /// Task currently being tracked plus the cumulative active/idle seconds
-    /// worked on it so far (server baseline at session/task start + elapsed
-    /// ticks since, split by whether there was recent mouse/keyboard input).
-    /// Read by the controller on stop/quit so the final flush carries the real
-    /// numbers instead of hardcoded 0s.
+    /// Task currently being tracked plus the cumulative active/idle seconds worked on it so
+    /// far (server baseline at session/task start + elapsed ticks since, split by whether
     task_progress: Arc<Mutex<(Option<String>, u64, u64)>>,
     /// Mirrors `TickState::last_project_id` (see that field's own comment) so
-    /// `pause()`/`resume()` - called directly from the controller, outside
-    /// the tick loop - can reach it too. Sticky by design: sets once a
-    /// task-less session reports a project id and is never cleared, so a
-    /// break taken on a calling-project session still has somewhere to read
-    /// its project id from when the button is pressed again.
+    /// `pause()`/`resume()` - called directly from the controller, outside the tick loop -
     last_project_id: Arc<Mutex<String>>,
-    /// Current idle escalation stage, readable by the UI.
-    /// 0 = working, 3 = stopped for idling (1/2 no longer used - idle time is
-    /// decided solely by the project's own allowance now, no separate
-    /// warn/alert stages ahead of it).
     idle_stage: Arc<Mutex<u8>>,
-    /// an idle-escalation "stop" that hasn't reached the server yet.
-    /// While this is `Some`, `tick()` does nothing but retry it - it must not
-    /// fetch_session or otherwise touch session state, because that is
-    /// exactly what let tracking silently resume (with the idle rewind never
-    /// applied) whenever the original stop POST failed.
+    /// An idle-escalation "stop" that hasn't reached the server yet.
     pending_stop: Arc<Mutex<Option<PendingStop>>>,
-    /// AC-1: throttle for the synthetic-input warning below - a jiggler runs
-    /// continuously, so without this the same detection would log every
-    /// SESSION_POLL_SEC forever instead of once per episode.
+    /// AC-1: throttle for the synthetic-input warning below - a jiggler runs continuously,
+    /// so without this the same detection would log every SESSION_POLL_SEC forever instead
     last_synthetic_warning_at: Mutex<Option<Instant>>,
-    /// ACT-3: server-tunable idle threshold (org-wide fallback, used only
-    /// when a project doesn't set its own), defaulted to the compile-time
-    /// constant and overwritten by `apply_idle_thresholds` on the periodic
-    /// scoring-settings poll.
     idle_threshold_sec: AtomicU64,
 }
 
-/// Everything needed to retry a "stop" action that failed to reach the
-/// server, captured at the moment idle escalation decided to stop the timer.
+/// Everything needed to retry a "stop" action that failed to reach the server, captured at
+/// the moment idle escalation decided to stop the timer.
 #[derive(Clone)]
 struct PendingStop {
     task_id: String,
@@ -104,25 +73,14 @@ struct PendingStop {
     idle_seconds: u64,
 }
 
-/// Cumulative active seconds at the last moment there was real input, plus the
-/// escalation stage already announced. When the timer is stopped for idling,
-/// the active total is rewound to `active_at_last_input` - i.e. everything
-/// credited since the user actually stopped touching the machine is reversed,
-/// which is the whole point of the flags.
+/// Cumulative active seconds at the last moment there was real input, plus the escalation
+/// stage already announced.
 #[derive(Default)]
 struct IdleWatch {
     stage: u8,
     active_at_last_input: u64,
 }
 
-/// Suggestion #11: everything `loop_run` used to hand-maintain as ~10 separate
-/// locals and thread through `tick()` as 15 `&mut` parameters, bundled into
-/// one struct. Purely a carrier for state between ticks - every field here is
-/// the exact same variable that existed before, with the exact same meaning
-/// and the exact same read/write sites inside `tick()` (see that function's
-/// own comments for what each one does); only *how* it's passed around
-/// changed. This is what makes a future capture type additive (one new field)
-/// instead of another signature change across every call site.
 struct TickState {
     last_app_log_at: Instant,
     next_screenshot_at: Instant,
@@ -130,54 +88,30 @@ struct TickState {
     current_session: String,
     next_flush_at: Instant,
     task_id: String,
-    /// Last-seen project id for a task-less (calling project) session - not
-    /// carried on the session JSON when it goes missing, so this is the only
-    /// way a recovery resume (see try_recover_lost_session) knows what to
-    /// resume against.
+    /// Last-seen project id for a task-less (calling project) session - not carried on the
+    /// session JSON when it goes missing, so this is the only way a recovery resume (see
     last_project_id: String,
     active_baseline: u64,
     active_elapsed: u64,
     idle_baseline: u64,
     idle_elapsed: u64,
-    /// this session's project's own idle settings, re-fetched on every
-    /// task/project transition instead of a hardcoded/org-wide constant.
-    /// `true` means no active/idle split and no idle escalation at all for
-    /// this project.
+    /// This session's project's own idle settings, re-fetched on every task/project
+    /// transition instead of a hardcoded/org-wide constant.
     idle_time_disabled: bool,
     idle_threshold_sec_for_project: u64,
-    /// the two fields above were refreshed only when the *task* id
-    /// changed, which a task-less (project) session can never trigger - its
-    /// task id is always `""`, and `reset_task_progress` leaves `task_id` at
-    /// `""` too, so `"" != ""` is false and the read was skipped entirely.
-    /// Those sessions therefore ran on `IDLE_THRESHOLD_SEC` (60s) instead of
-    /// the project's own allowance, and ignored `disableIdleTime` outright -
-    /// and since crossing the threshold stops and rewinds immediately (there
-    /// are no warn stages), that meant stopping after a minute away from the
-    /// keyboard and reversing the time since the last input. Set whenever the
-    /// session identity changes under us, so the refresh is keyed on session
-    /// as well as task.
+    /// The two fields above were refreshed only when the *task* id changed, which a
+    /// task-less (project) session can never trigger - its task id is always `""`, and
     idle_settings_stale: bool,
     next_sync_at: Instant,
     idle_watch: IdleWatch,
-    /// Real wall-clock time of the last credited tick. Ticks are
-    /// credited by measuring the gap to this, not by assuming the loop's
-    /// sleep duration elapsed exactly - a tick that took longer (network I/O:
-    /// fetch_session/post_events/post_session_action all run inline) used to
-    /// silently under-credit the session.
     last_tick_at: Instant,
     /// MAC-3/CQ-4: due immediately on the first tick, then re-fetched every
     /// DISPLAY_NAME_REFRESH_INTERVAL_SEC - see maybe_refresh_display_names.
     next_display_name_refresh_at: Instant,
-    /// ACT-3: same immediate-then-periodic schedule, see
-    /// maybe_refresh_activity_scoring.
+    /// ACT-3: same immediate-then-periodic schedule, see maybe_refresh_activity_scoring.
     next_scoring_refresh_at: Instant,
-    /// ticks since the last session poll, see SESSION_FETCH_EVERY_N_TICKS.
+    /// Ticks since the last session poll, see SESSION_FETCH_EVERY_N_TICKS.
     ticks_since_session_fetch: u32,
-    /// consecutive failed `fetch_session` calls. Keeping the clock
-    /// running through a blip is deliberate - nothing is lost, it queues and
-    /// catches up - but it used to be *silent*, so a member could be looking
-    /// at a number nothing had confirmed for an hour with no way to tell.
-    /// Past DEGRADED_TICKS the status line says so.
     failed_session_fetches: u32,
 }
 
@@ -210,10 +144,8 @@ impl TickState {
     }
 }
 
-/// Idle time is entirely the project's call now: `idle_threshold_sec` (the
-/// per-project allowance, or this org-wide fallback) is the only threshold -
-/// crossing it stops the timer and rewinds the idle stretch immediately, with
-/// no separate warn/alert stages first.
+/// Idle time is entirely the project's call now: `idle_threshold_sec` (the per-project
+/// allowance, or this org-wide fallback) is the only threshold - crossing it stops the
 fn valid_idle_threshold(threshold_sec: u64) -> bool {
     threshold_sec > 0
 }
@@ -263,9 +195,8 @@ impl ActivityTracker {
         *self.idle_stage.lock()
     }
 
-    /// Caller (`AgentController::start_tracker`) always stops any prior tracker
-    /// and builds a fresh instance before calling this, so there's no existing
-    /// loop to guard against here — just clear the stop flag and spawn.
+    /// Caller (`AgentController::start_tracker`) always stops any prior tracker and builds
+    /// a fresh instance before calling this, so there's no existing loop to guard against
     pub fn start(self: &Arc<Self>) {
         self.stop.store(false, Ordering::SeqCst);
         self.activity.start();
@@ -278,10 +209,8 @@ impl ActivityTracker {
 
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
-        // CQ-1: unregister the global input hooks now that ACT-1 uses real
-        // ones - a leaked low-level hook is a system-wide problem, not just
-        // this process's, so this must happen on every stop path, not just
-        // process exit.
+        // CQ-1: unregister the global input hooks now that ACT-1 uses real ones - a leaked
+        // low-level hook is a system-wide problem, not just this process's, so this must
         self.activity.stop();
         *self.session_id.lock() = None;
     }
@@ -290,39 +219,18 @@ impl ActivityTracker {
         self.paused.load(Ordering::SeqCst)
     }
 
-    /// Call right before/after telling the backend to stop the session
-    /// outside the tick loop (e.g. the Stop button), so the next tick's
-    /// now-missing session reads as an intentional stop, not an abandonment
-    /// to recover from.
-    ///
-    /// Also ends any break in progress. Without this, stopping from a
-    /// paused session left `paused` true forever - nothing else ever clears
-    /// it (only `resume()` does) - so every tick kept taking `tick_paused`'s
-    /// branch, which never calls `fetch_session()` and so could never
-    /// notice the session was gone: the loop believed it was on an endless
-    /// break for a session the server had already closed, `is_session_paused`
-    /// kept reporting true, and Stop read as doing nothing at all - clicking
-    /// it just left the agent exactly as paused as before.
+    /// Call right before/after telling the backend to stop the session outside the tick
+    /// loop (e.g.
     pub fn note_stop_requested(&self) {
         self.expect_stop.store(true, Ordering::SeqCst);
         self.paused.store(false, Ordering::SeqCst);
     }
 
-    /// The break button: marks the session idle server-side, preserving its
-    /// accumulated active/idle totals (never resets to 0 the way clicking
-    /// Stop then Start again used to). Nothing is tracked while paused - see
-    /// `tick_paused` for how the idle time itself gets credited and synced.
+    /// The break button: marks the session idle server-side, preserving its accumulated
+    /// active/idle totals (never resets to 0 the way clicking Stop then Start again used
     pub fn pause(&self) -> Result<(), String> {
         let (task_id, active_seconds, idle_seconds) = self.task_progress.lock().clone();
         let task_id = task_id.filter(|id| !id.is_empty());
-        // A calling (task-less) session has no task id for the server to
-        // derive its project from, and this always used to pass None here
-        // regardless - which relied entirely on the server still having the
-        // session open with its project id already attached, and produced
-        // "taskId or projectId is required to start a timer" whenever that
-        // fallback came up empty. last_project_id (set from the session
-        // itself in tick()) is the same value try_recover_lost_session
-        // already trusts for this exact case.
         let project_id = task_id.is_none().then(|| self.last_project_id.lock().clone()).filter(|id| !id.is_empty());
         self.api.lock().post_session_action(
             "idle",
@@ -357,17 +265,11 @@ impl ActivityTracker {
         Ok(())
     }
 
-    /// The session currently being tracked, if any — used to cleanly close it
-    /// server-side on quit instead of leaving it "active" forever (which would
-    /// otherwise get silently resumed the next time the agent signs in).
     pub fn current_session_id(&self) -> Option<String> {
         self.session_id.lock().clone()
     }
 
-    /// One delivery attempt for a pending idle-stop, if any. Returns `true`
-    /// when there's nothing pending (already delivered, or never was one) and
-    /// `false` when a pending stop still exists and this attempt didn't land.
-    /// Shared by `tick()`'s own per-tick retry and `flush_pending_stop` below.
+    /// One delivery attempt for a pending idle-stop, if any.
     fn try_deliver_pending_stop(&self) -> bool {
         let Some(pending) = self.pending_stop.lock().clone() else {
             return true;
@@ -394,29 +296,13 @@ impl ActivityTracker {
         delivered
     }
 
-    /// Must be called (and must succeed) before a NEW session is allowed to
-    /// start. The server keys an open session by member, not by session id
-    /// (`findOpenSession`), so if an idle-triggered stop for the *previous*
-    /// session is still queued here when "start" is posted, the server sees
-    /// its own still-"active" old row and just overwrites it in place rather
-    /// than opening an independent new one - the new session and the old
-    /// pending stop are now the same server row. The next tick's retry then
-    /// delivers that pending stop, which "stops" the row with the OLD,
-    /// idle-rewound totals - silently killing the session the user just
-    /// started and discarding whatever it had already accumulated. Flushing
-    /// here first, before start_task_session/start_project_session post
-    /// "start", closes that window entirely: either the old stop lands first
-    /// (so "start" opens a genuinely fresh row), or it's still stuck (network
-    /// down) and starting anyway would just race it again, so callers should
-    /// refuse to start rather than proceed.
+    /// Must be called (and must succeed) before a NEW session is allowed to start.
     pub fn flush_pending_stop(&self) -> bool {
         self.try_deliver_pending_stop()
     }
 
-    /// Task being tracked plus the real cumulative active/idle seconds worked
-    /// on it so far (baseline pulled from the server at session start +
-    /// elapsed ticks). The controller reads this right before posting "stop"
-    /// so a clean quit/sign-out/logout flushes the real numbers instead of 0s.
+    /// Task being tracked plus the real cumulative active/idle seconds worked on it so far
+    /// (baseline pulled from the server at session start + elapsed ticks).
     pub fn current_task_progress(&self) -> (Option<String>, u64, u64) {
         self.task_progress.lock().clone()
     }
@@ -440,8 +326,7 @@ impl ActivityTracker {
         }
     }
 
-    /// Try to resend anything queued from a prior outage. Throttled — no point
-    /// retrying every 5s against a connection that's still down.
+    /// Try to resend anything queued from a prior outage.
     fn maybe_flush_queue(&self, next_flush_at: &mut Instant) {
         if Instant::now() < *next_flush_at {
             return;
@@ -451,13 +336,8 @@ impl ActivityTracker {
             .flush(|session_id, events| self.api.lock().post_events(session_id, events));
     }
 
-    /// MAC-3/CQ-4: pulls the latest server-delivered app display-name map
-    /// (CLS-1) into the event builder's cache. Best-effort and independent
-    /// of session/tracking state - runs on this schedule regardless of
-    /// whether a timer is active, since it's cheap and display names should
-    /// be fresh by the time a session starts, not fetched for the first time
-    /// mid-session. A failed fetch leaves the existing cache untouched (see
-    /// fetch_app_display_names's contract) and is retried next interval.
+    /// MAC-3/CQ-4: pulls the latest server-delivered app display-name map (CLS-1) into the
+    /// event builder's cache.
     fn maybe_refresh_display_names(&self, next_refresh_at: &mut Instant) {
         if Instant::now() < *next_refresh_at {
             return;
@@ -466,19 +346,14 @@ impl ActivityTracker {
         if let Ok(entries) = self.api.lock().fetch_app_display_names() {
             self.events.apply_display_names(entries);
         }
-        // Same schedule, same best-effort contract: a failed fetch keeps the
-        // exclusions already in force rather than clearing them, so a network
-        // blip can never start capturing an app the org excluded.
+        // Same schedule, same best-effort contract: a failed fetch keeps the exclusions
+        // already in force rather than clearing them, so a network blip can never start
         if let Ok(patterns) = self.api.lock().fetch_capture_exclusions() {
             self.events.apply_capture_exclusions(patterns);
         }
     }
 
-    /// ACT-3: pulls server-tunable scoring calibration into the running
-    /// ActivityMeter. Same best-effort/throttled shape as
-    /// maybe_refresh_display_names - a failed fetch leaves the meter on
-    /// whatever it already had (the compile-time defaults, or the last
-    /// successful fetch) rather than resetting anything.
+    /// ACT-3: pulls server-tunable scoring calibration into the running ActivityMeter.
     fn maybe_refresh_activity_scoring(&self, next_refresh_at: &mut Instant) {
         if Instant::now() < *next_refresh_at {
             return;
@@ -493,18 +368,11 @@ impl ActivityTracker {
         }
     }
 
-    /// the part of a tick that needs no network and no shared lock -
-    /// crediting elapsed time and checking idle escalation.
-    ///
-    /// Run on the ticks that skip the session poll, so deferring a poll never
-    /// defers the clock. Without this, a tick that yielded the lock would also
-    /// skip `tick_progress`, and the elapsed time would pile up until the
-    /// sleep/hibernate clamp threw it away.
+    /// The part of a tick that needs no network and no shared lock - crediting elapsed time
+    /// and checking idle escalation.
     fn tick_local_progress(&self, state: &mut TickState) {
         if !state.was_active || state.current_session.is_empty() {
-            // Not tracking - or paused by the server (C1). Nothing to credit,
-            // and the clock restarts, so the next tracked tick counts only its
-            // own span and never the time spent here.
+            // Not tracking - or paused by the server (C1).
             state.last_tick_at = Instant::now();
             return;
         }
@@ -520,9 +388,8 @@ impl ActivityTracker {
         );
         let _ = idle_now;
 
-        // Idle escalation must not wait on a poll either: it is the thing that
-        // stops a session nobody is at, and delaying it would credit active
-        // time to an empty chair.
+        // Idle escalation must not wait on a poll either: it is the thing that stops a
+        // session nobody is at, and delaying it would credit active time to an empty chair.
         let stopped = self.tick_idle_escalation(
             &mut state.idle_watch,
             &state.task_id,
@@ -535,9 +402,8 @@ impl ActivityTracker {
             state.idle_threshold_sec_for_project,
         );
         if stopped {
-            // Exactly what the polling path does on an idle stop (see the
-            // sibling call in `tick`) - the session is over the same way
-            // whichever tick happened to notice.
+            // Exactly what the polling path does on an idle stop (see the sibling call in
+            // `tick`) - the session is over the same way whichever tick happened to notice.
             state.was_active = false;
             state.current_session = String::new();
             *self.session_id.lock() = None;
@@ -555,49 +421,28 @@ impl ActivityTracker {
     }
 
     fn tick(&self, state: &mut TickState) {
-        // cheap no-op unless the hooks have gone quiet while the OS is
-        // still seeing input. Idle time does not depend on them any more, but
-        // the activity score does.
+        // Cheap no-op unless the hooks have gone quiet while the OS is still seeing input.
         self.activity.restart_hooks_if_dead();
 
         self.maybe_flush_queue(&mut state.next_flush_at);
         self.maybe_refresh_display_names(&mut state.next_display_name_refresh_at);
         self.maybe_refresh_activity_scoring(&mut state.next_scoring_refresh_at);
 
-        // retry an idle-stop that hasn't landed yet, and do nothing
-        // else this tick. Fetching a session now - before the server has
-        // confirmed the stop - is exactly what let a task-id mismatch on the
-        // next tick re-baseline from the server's still-active, pre-rewind
-        // totals and silently resume tracking.
+        // Retry an idle-stop that hasn't landed yet, and do nothing else this tick.
         if self.pending_stop.lock().is_some() {
             self.try_deliver_pending_stop();
             return;
         }
 
-        // Break in progress: skip fetch_session/status handling entirely so
-        // the server's "idle" status (set by `pause()`) never gets read back
-        // as "session over" and reset - see `tick_paused`.
+        // Break in progress: skip fetch_session/status handling entirely so the server's
+        // "idle" status (set by `pause()`) never gets read back as "session over" and reset
         if self.paused.load(Ordering::SeqCst) {
             self.tick_paused(state);
             return;
         }
 
         // Bound to a `let` on purpose, same reasoning as
-        // `AgentController::sign_in_with_password`'s `session_bootstrap` call:
-        // a temporary `MutexGuard` created inside a `match` scrutinee lives
-        // until the end of the whole match, not just until `fetch_session()`
-        // returns. Matching directly on `self.api.lock().fetch_session()`
-        // left `self.api` locked for the entire body of the `Err(_)` arm
-        // below - which itself calls `upload_screenshot`/`upload_app_slice`,
-        // each re-locking the same (non-reentrant) mutex. That is a
-        // self-deadlock the moment both conditions are true (mid-session and
-        // fetch_session fails), silently hanging the tracker thread forever.
-        // Never triggered before because this branch had zero test coverage
-        // until Suggestion #14 added it - the deadlock showed up immediately
-        // once the branch was actually exercised end to end.
-        // poll on a schedule, and only if the shared client is free.
-        // A skipped poll is not a failed one - it must not count toward the
-        // offline warning, and it costs no tracked time.
+        // `AgentController::sign_in_with_password`'s `session_bootstrap` call: a temporary
         state.ticks_since_session_fetch = state.ticks_since_session_fetch.saturating_add(1);
         if state.ticks_since_session_fetch < SESSION_FETCH_EVERY_N_TICKS {
             self.tick_local_progress(state);
@@ -620,16 +465,11 @@ impl ActivityTracker {
             }
             Err(_) => {
                 state.failed_session_fetches = state.failed_session_fetches.saturating_add(1);
-                // past a minute of silence, say so. The clock keeps
-                // running on purpose, but "still counting" and "confirmed by
-                // the server" are different claims and the member is entitled
-                // to know which one they are looking at.
+                // Past a minute of silence, say so.
                 if state.failed_session_fetches == DEGRADED_TICKS {
                     self.emit_status("Offline — still counting, not yet synced");
                 }
-                // Backend unreachable. If we were mid-session, keep capturing under
-                // it — nothing gets lost, it just queues locally (and keeps ticking
-                // active/idle seconds) until reconnected, when the next sync catches up.
+                // Backend unreachable.
                 if state.was_active && !state.current_session.is_empty() {
                     let window = get_foreground_window();
                     let session_id = state.current_session.clone();
@@ -644,11 +484,7 @@ impl ActivityTracker {
                         state.idle_time_disabled,
                         state.idle_threshold_sec_for_project,
                     );
-                    // No screenshots while idle - see tick_progress's doc
-                    // comment. next_screenshot_at is left untouched so the
-                    // very next active tick captures immediately instead of
-                    // waiting out the rest of a cadence that elapsed while
-                    // nobody was there to be captured.
+                    // No screenshots while idle - see tick_progress's doc comment.
                     if !idle_now && now >= state.next_screenshot_at {
                         self.upload_screenshot(&session_id, &window);
                         state.next_screenshot_at =
@@ -663,17 +499,6 @@ impl ActivityTracker {
             }
         };
         let Some(session) = session else {
-            // TC-X: the server can close a session out from under the agent
-            // (abandoned-session sweep - five minutes without the session row
-            // being touched, see Dashboard-Backend's agent-heartbeat.js) after
-            // an auth/network outage that has nothing to do with the user
-            // actually stopping. A healthy agent no longer trips this at all:
-            // its session poll marks the row as watched. What still reaches
-            // here is a genuine outage longer than five minutes. tick_progress runs off wall-clock, not the
-            // network, so the local counters kept climbing the whole time -
-            // discarding them here (the old behavior) silently threw away
-            // real, worked, tracked time. Try to resume with the local total
-            // carried forward before giving up.
             let stop_was_requested = self.expect_stop.swap(false, Ordering::SeqCst);
             if !stop_was_requested && self.try_recover_lost_session(state) {
                 self.emit_status("Task session active");
@@ -703,21 +528,12 @@ impl ActivityTracker {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if status != "active" {
-            // C1: a pause is not the end of the session. This used to reset
-            // everything - task, baselines, session id - on any non-active
-            // status, so a pause coming from anywhere other than this agent
-            // (historically the dashboard, on a single "agent offline"
-            // reading) stopped capture outright and threw away the running
-            // totals. Keep them: when the server says "active" again for the
-            // same session, the active path below skips re-baselining and
-            // `was_active` comes back on, so counting picks up where it was.
             if status == "idle" && !state.current_session.is_empty() {
                 if state.was_active {
                     self.emit_status("Timer idle — capture paused");
                 }
                 state.was_active = false;
-                // Nothing is credited while paused. Restart the clock so the
-                // first tracked tick afterwards does not count the pause.
+                // Nothing is credited while paused.
                 state.last_tick_at = Instant::now();
                 return;
             }
@@ -751,9 +567,8 @@ impl ActivityTracker {
 
         if state.current_session.as_str() != session_id {
             state.current_session = session_id.clone();
-            // a different session can carry different project settings
-            // even when the task id is unchanged (and is always unchanged for
-            // task-less sessions, where it is `""` on both sides).
+            // A different session can carry different project settings even when the task
+            // id is unchanged (and is always unchanged for task-less sessions, where it is
             state.idle_settings_stale = true;
             *self.session_id.lock() = Some(session_id.clone());
             state.last_app_log_at = Instant::now() - Duration::from_secs(APP_LOG_INTERVAL_SEC);
@@ -763,10 +578,8 @@ impl ActivityTracker {
             state.last_app_log_at = Instant::now();
         }
 
-        // Task can change under a session that's already open (resume onto a
-        // different task) - re-baseline from the server's known totals for it
-        // whenever the tracked task id changes, so we resume from the real
-        // cumulative instead of quietly restarting the count at 0.
+        // Task can change under a session that's already open (resume onto a different
+        // task) - re-baseline from the server's known totals for it whenever the tracked
         let session_task_id = session
             .get("taskId")
             .or_else(|| session.get("task_id"))
@@ -774,20 +587,15 @@ impl ActivityTracker {
             .unwrap_or("")
             .to_string();
         let task_changed = state.task_id.as_str() != session_task_id;
-        // settings follow *either* identity. Re-baselining still keys on
-        // the task alone - a recovered session (try_recover_lost_session) has
-        // already carried its own totals forward by hand, and re-reading them
-        // from the server here would throw that away.
+        // Settings follow *either* identity.
         if task_changed || state.idle_settings_stale {
             let tracking = if session_task_id.is_empty() {
                 None
             } else {
                 self.api.lock().fetch_task_time_tracking(&session_task_id).ok()
             };
-            // Task-less (calling project) sessions have no per-task totals to
-            // re-baseline from, so the session's own accumulated seconds are
-            // the cumulative figure - without this a resume would restart the
-            // count at 0 and push a lower total than already recorded.
+            // Task-less (calling project) sessions have no per-task totals to re-baseline
+            // from, so the session's own accumulated seconds are the cumulative figure -
             let session_seconds = |key: &str| {
                 session.get(key).and_then(|v| v.as_u64()).unwrap_or(0)
             };
@@ -805,15 +613,8 @@ impl ActivityTracker {
                     .unwrap_or_else(|| session_seconds("idleSeconds"));
             }
 
-            // task-anchored sessions get this from the same
-            // fetch_task_time_tracking call above (task-time-tracking.js
-            // attaches the owning project's settings to every response).
-            // Calling (task-less) sessions have no such fetch, so their
-            // settings are read straight off the session the agent already
-            // has (normalizeSession attaches them there for task-less
-            // sessions only - see activity/routes.js). A failed fetch on the
-            // task path falls back to the org-wide default rather than
-            // flapping on a transient network error.
+            // Task-anchored sessions get this from the same fetch_task_time_tracking call
+            // above (task-time-tracking.js attaches the owning project's settings to every
             state.idle_time_disabled = tracking
                 .as_ref()
                 .map(|t| t.disable_idle_time)
@@ -829,14 +630,8 @@ impl ActivityTracker {
                         .and_then(|v| v.as_u64())
                         .unwrap_or_else(|| self.idle_threshold_sec.load(Ordering::Relaxed))
                 });
-            // the org-wide poll has always been validated
-            // (apply_idle_thresholds), but the per-project value went straight
-            // in unchecked - and nothing upstream guarantees it is positive:
-            // projects.idle_time_seconds carries no CHECK (> 0), and the
-            // project modal floors a cleared field to 0 rather than rejecting
-            // it. A 0 threshold makes `idle_for < 0` unsatisfiable, so
-            // tick_idle_escalation would stop and rewind on the very first
-            // tick and the member could never track on that project at all.
+            // The org-wide poll has always been validated (apply_idle_thresholds), but the
+            // per-project value went straight in unchecked - and nothing upstream
             state.idle_threshold_sec_for_project = if valid_idle_threshold(reported_threshold) {
                 reported_threshold
             } else {
@@ -848,13 +643,13 @@ impl ActivityTracker {
             };
             state.idle_settings_stale = false;
 
-            // an unclean exit (crash/kill/reboot) between two `sync`
-            // calls loses whatever PS-1's on-disk mirror hadn't reached the
-            // server yet - reconcile against it here, same GREATEST-style
-            // rule TC-4 already applies server-side for `sync`, so a restart
-            // never displays less than what was last actually shown. Scoped
-            // to the exact same session+task on purpose: a leftover file from
-            // an already-closed session must never bleed into a new one.
+            // an unclean exit (crash/kill/reboot) between two `sync` calls loses
+            // whatever PS-1's on-disk mirror hadn't reached the server yet - reconcile
+            // against it here, same GREATEST-style rule TC-4 already applies
+            // server-side for `sync`, so a restart never displays less than what was
+            // last actually shown. Scoped to the exact same session+task on purpose: a
+            // leftover file from an already-closed session must never bleed into a new
+            // one.
             let persisted_task_id = if session_task_id.is_empty() {
                 None
             } else {
@@ -871,10 +666,7 @@ impl ActivityTracker {
         }
 
         if !state.was_active {
-            // Coming back from a pause (C1), or starting: count from now. The
-            // clock last moved on the final not-tracking tick, up to a tick
-            // earlier, and that span was not work - without this the first
-            // tracked tick after a pause credited up to five seconds of it.
+            // Coming back from a pause (C1), or starting: count from now.
             state.last_tick_at = Instant::now();
         }
         state.was_active = true;
@@ -892,8 +684,8 @@ impl ActivityTracker {
         );
         self.maybe_flag_synthetic_input();
 
-        // Calling-project sessions have no task, so they sync on project id
-        // instead - gating purely on task id would leave their time unrecorded.
+        // Calling-project sessions have no task, so they sync on project id instead -
+        // gating purely on task id would leave their time unrecorded.
         let session_project_id = session
             .get("projectId")
             .or_else(|| session.get("project_id"))
@@ -934,16 +726,9 @@ impl ActivityTracker {
         }
 
         // No screenshots while idle - see tick_progress's doc comment.
-        // next_screenshot_at is left untouched so the very next active tick
-        // captures immediately instead of waiting out the rest of a cadence
-        // An app the org excluded from capture is skipped here, not filtered
-        // out server-side after the fact: nothing about it - title, URL or
-        // pixels - should leave the machine, and we must not pay the UI
-        // Automation probe for it either. Time still accrues; only the
-        // content capture stops.
         let capture_excluded = self.events.is_capture_excluded(&window);
 
-        // that elapsed while nobody was there to be captured.
+        // That elapsed while nobody was there to be captured.
         if !idle_now && !capture_excluded && now >= state.next_screenshot_at {
             self.upload_screenshot(&session_id, &window);
             state.next_screenshot_at =
@@ -969,12 +754,8 @@ impl ActivityTracker {
             );
             state.next_sync_at = now + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
 
-            // the server already truncated active_seconds against the
-            // task's daily cap (timerCapped) or stopped counting because the
-            // project's own budget stop-timer threshold was crossed
-            // (budgetCapped) - stop here too, same shape as the idle-stop
-            // path above, or the local clock keeps advancing past a number
-            // the server has stopped recording.
+            // The server already truncated active_seconds against the task's daily cap
+            // (timerCapped) or stopped counting because the project's own budget stop-timer
             let cap = match &sync_result {
                 Ok(info) if info.timer_capped => {
                     Some(("Timer stopped — task's daily hour limit reached", "timer_cap"))
@@ -1013,15 +794,8 @@ impl ActivityTracker {
         }
     }
 
-    /// AC-1: "a session that's 100% active but ~100% injected is a
-    /// near-certain fake" - falls out of ACT-1's real hooks almost for free.
-    /// Log-only, throttled to once per 10 minutes per episode: this is a
-    /// signal for human review (Part E's GDPR Art. 22 guardrail - never an
-    /// automatic verdict), not a block, and full session-level surfacing
-    /// (an integrity score in the UI, backend storage) is AC-4's job, not
-    /// this one. Gated on a real activity score too, not just a high
-    /// fraction alone - a handful of injected events with few total inputs
-    /// isn't a meaningful sample.
+    /// AC-1: "a session that's 100% active but ~100% injected is a near-certain fake" -
+    /// falls out of ACT-1's real hooks almost for free.
     fn maybe_flag_synthetic_input(&self) {
         const HIGH_ACTIVITY_SCORE: u32 = 80;
         const HIGH_INJECTED_FRACTION: f64 = 0.85;
@@ -1050,7 +824,7 @@ impl ActivityTracker {
         );
     }
 
-    /// Idle enforcement. Returns true when the timer was stopped.
+    /// Idle enforcement.
     #[allow(clippy::too_many_arguments)]
     fn tick_idle_escalation(
         &self,
@@ -1064,28 +838,20 @@ impl ActivityTracker {
         idle_time_disabled: bool,
         idle_threshold_sec: u64,
     ) -> bool {
-        // idle time disabled for this project means no warn/alert/
-        // auto-stop/rewind either - the switch does what it says end to end,
-        // not just for the active/idle split in tick_progress.
+        // Idle time disabled for this project means no warn/alert/ auto-stop/rewind either
+        // - the switch does what it says end to end, not just for the active/idle split in
         if idle_time_disabled {
             return false;
         }
-        // Idle escalation is Windows-only until real input-hook listeners
-        // exist for other platforms (see ActivityMeter::run_listeners /
-        // HOOKS_SUPPORTED). Off Windows, idle_seconds() only grows from
-        // process start and never resets, which would otherwise force-stop
-        // every session ~15 minutes after launch regardless of real
-        // activity - so escalation is skipped entirely rather than acting on
-        // that unreliable/absent signal.
+        // Idle escalation is Windows-only until real input-hook listeners exist for other
+        // platforms (see ActivityMeter::run_listeners / HOOKS_SUPPORTED).
         if !ActivityMeter::HOOKS_SUPPORTED {
             return false;
         }
         let idle_for = self.activity.idle_seconds();
         let active_total = active_baseline.saturating_add(*active_elapsed);
 
-        // Real input: remember this as the last honest point the clock can be
-        // rewound to. Same per-project threshold tick_progress uses -
-        // this is the identical boundary.
+        // Real input: remember this as the last honest point the clock can be rewound to.
         if idle_for < idle_threshold_sec {
             if watch.stage != 0 {
                 watch.stage = 0;
@@ -1097,11 +863,6 @@ impl ActivityTracker {
         }
 
         // Past the project's own allowance: stop immediately and rewind.
-        // Never let the rewind push the total up, and never below zero -
-        // clamping both ways because a mis-ordered snapshot would otherwise
-        // mint or destroy hours. `reversed` moves to idle rather than
-        // disappearing - active and idle still have to sum to the real
-        // elapsed wall-clock time, not silently fall short of it.
         let (rewound, reversed) = Self::rewind_active(active_total, watch.active_at_last_input);
         let idle_total = idle_baseline.saturating_add(*idle_elapsed).saturating_add(reversed);
 
@@ -1129,12 +890,8 @@ impl ActivityTracker {
             )
             .is_ok();
         if !delivered {
-            // the network problem that often accompanies an idle
-            // stretch must not mean the stop is silently lost. Without
-            // this, the server still thinks the session is active, and
-            // the next tick's re-baseline path would resume tracking
-            // with the rewind never applied - re-crediting exactly the
-            // idle time this escalation just reversed.
+            // The network problem that often accompanies an idle stretch must not mean the
+            // stop is silently lost.
             *self.pending_stop.lock() = Some(PendingStop {
                 task_id: task_id.to_string(),
                 project_id: project_id.to_string(),
@@ -1151,40 +908,20 @@ impl ActivityTracker {
         true
     }
 
-    /// Seconds to credit for one tick: real elapsed wall time since the last
-    /// credited tick, not an assumed SESSION_POLL_SEC. One iteration of
-    /// `loop_run` is `sleep(SESSION_POLL_SEC) + however long tick() itself
-    /// took` — and `tick()` does real network I/O every time (fetch_session
-    /// every tick, plus periodic app/screenshot/sync POSTs) — so crediting a
-    /// fixed interval silently under-counts by however long that I/O took.
-    /// The error was one-directional: the clock could only ever run slow.
+    /// Seconds to credit for one tick: real elapsed wall time since the last credited
+    /// tick, not an assumed SESSION_POLL_SEC.
     ///
-    /// Clamped to `SESSION_POLL_SEC * 4` on purpose: a sleep/hibernate gap
-    /// makes the real elapsed time huge, and that must never be banked as
-    /// active work. A resumed laptop credits at most this, then idle
-    /// escalation takes over and rewinds to the last real input - which is
-    /// the correct outcome for a suspend, not a fabricated block of "active"
-    /// time in a single tick.
+    /// Clamped to `SESSION_POLL_SEC * 4` on purpose: a sleep/hibernate gap makes the
+    /// real elapsed time huge, and that must never be banked as active work. A resumed
+    /// laptop credits at most this, then idle escalation takes over and rewinds to the
+    /// last real input - which is the correct outcome for a suspend, not a fabricated
+    /// block of "active" time in a single tick.
     fn credited_seconds(elapsed: Duration) -> u64 {
         elapsed.as_secs().min(SESSION_POLL_SEC * 4)
     }
 
-    /// The part of `elapsed` that was credited, so the caller can roll the
-    /// remainder into the next tick instead of dropping it.
-    ///
-    /// `credited_seconds` truncates to whole seconds and the caller used
-    /// to set `last_tick_at = now`, which threw the fraction away. A tick is
-    /// always `SESSION_POLL_SEC` plus however long `tick()` took - and `tick()`
-    /// does real network I/O every time - so that fraction was never zero and
-    /// the error only ever ran one way: the clock could only lose time. At
-    /// 120ms of work per tick it is 11 minutes of an eight-hour shift; at 800ms
-    /// on a struggling machine it is over an hour. The laggier the machine, the
-    /// more it lost, which is why the lag reports and the short-hours reports
-    /// came from the same people.
-    ///
-    /// When the clamp bites - a sleep/hibernate gap - there is no remainder to
-    /// carry: that time must not be banked at all, so the whole gap is
-    /// consumed and idle escalation takes over from there.
+    /// The part of `elapsed` that was credited, so the caller can roll the remainder into
+    /// the next tick instead of dropping it.
     fn consumed_span(elapsed: Duration, credited: u64) -> Duration {
         let cap = Duration::from_secs(SESSION_POLL_SEC * 4);
         if elapsed > cap {
@@ -1193,17 +930,11 @@ impl ActivityTracker {
         Duration::from_secs(credited)
     }
 
-    /// Counts the credited seconds as idle rather than active if there's been
-    /// no mouse/keyboard input for IDLE_THRESHOLD_SEC - an open session
-    /// sitting untouched shouldn't silently rack up "active" hours.
+    /// Counts the credited seconds as idle rather than active if there's been no
+    /// mouse/keyboard input for IDLE_THRESHOLD_SEC - an open session sitting untouched
     #[allow(clippy::too_many_arguments)]
-    /// Returns whether this tick's delta was credited to idle rather than
-    /// active - callers use it to skip screenshot/app-slice capture while
-    /// the user is idle (a screenshot of an idle desktop is never useful,
-    /// and taking one defeats the point of idle detection in the first
-    /// place). Always `false` when idle time is disabled for the project,
-    /// since there's no idle bucket to fall into - see the `active_elapsed`
-    /// branch below.
+    /// Returns whether this tick's delta was credited to idle rather than active - callers
+    /// use it to skip screenshot/app-slice capture while the user is idle (a screenshot of
     fn tick_progress(
         &self,
         task_id: &str,
@@ -1218,19 +949,12 @@ impl ActivityTracker {
         let now = Instant::now();
         let elapsed = now.duration_since(*last_tick_at);
         let delta = Self::credited_seconds(elapsed);
-        // Not `now`: the sub-second remainder stays owed and is credited by the
-        // next tick that pushes the total past a whole second. See consumed_span.
+        // Not `now`: the sub-second remainder stays owed and is credited by the next tick
+        // that pushes the total past a whole second.
         *last_tick_at = now - (elapsed - Self::consumed_span(elapsed, delta));
 
-        // a project with idle time disabled never splits into idle at
-        // all - everything is credited active. Otherwise use this session's
-        // own project's threshold (fetched on every task/project transition),
-        // never the flat org-wide `self.idle_threshold_sec`.
-        // Same HOOKS_SUPPORTED gate tick_idle_escalation uses above, for the
-        // same reason: off-Windows, idle_seconds() only grows monotonically
-        // from process start and never resets. Without this gate, every tick
-        // past the first idle_threshold_sec on a non-Windows build would be
-        // misclassified as idle forever, even with continuous real input.
+        // A project with idle time disabled never splits into idle at all - everything is
+        // credited active.
         let credited_idle = if idle_time_disabled {
             *active_elapsed += delta;
             false
@@ -1257,10 +981,8 @@ impl ActivityTracker {
         };
         *self.task_progress.lock() = (id.clone(), active_seconds, idle_seconds);
 
-        // same values, same call site, so the on-disk mirror can never
-        // drift from what's in RAM. Scoped to the current session so PS-2's
-        // restart reconciliation can tell a fresh session's leftovers apart
-        // from a genuinely resumable one.
+        // Same values, same call site, so the on-disk mirror can never drift from what's in
+        // RAM.
         if let Some(session_id) = self.session_id.lock().clone() {
             self.progress.save(&PersistedProgress {
                 session_id,
@@ -1271,17 +993,12 @@ impl ActivityTracker {
         }
     }
 
-    /// While paused, credits the whole wall-clock delta to idle (a break is
-    /// not activity) and periodically re-syncs so the paused session's
-    /// `updated_at` stays fresh enough to survive the abandoned-session sweep
-    /// (SESSION_STALE_MS in Dashboard-Backend's agent-heartbeat.js) through a
-    /// long break. Does not touch `status` — `pause()` already set it to
-    /// "idle" server-side; a bare "sync" here just keeps the timestamp alive.
+    /// While paused, credits the whole wall-clock delta to idle (a break is not activity)
+    /// and periodically re-syncs so the paused session's `updated_at` stays fresh enough to
     fn tick_paused(&self, state: &mut TickState) {
         let now = Instant::now();
-        // same carry as tick_progress - a break's seconds are counted the
-        // same way worked ones are, so the remainder is owed here too rather
-        // than thrown away on every tick of a long break.
+        // Same carry as tick_progress - a break's seconds are counted the same way worked
+        // ones are, so the remainder is owed here too rather than thrown away on every tick
         let elapsed = now.duration_since(state.last_tick_at);
         let delta = Self::credited_seconds(elapsed);
         state.last_tick_at = now - (elapsed - Self::consumed_span(elapsed, delta));
@@ -1309,13 +1026,8 @@ impl ActivityTracker {
         }
     }
 
-    /// Attempts to resume a session the server closed as abandoned, carrying
-    /// the local unsynced total (baseline + elapsed) forward as the new
-    /// session's starting point instead of losing it. Returns false (caller
-    /// falls back to a full reset) when there is nothing local worth saving,
-    /// or the resume call itself fails - a network blip here just means the
-    /// next tick's fetch_session() finds still-no-session and tries again
-    /// naturally, rather than this method needing its own retry loop.
+    /// Attempts to resume a session the server closed as abandoned, carrying the local
+    /// unsynced total (baseline + elapsed) forward as the new session's starting point
     fn try_recover_lost_session(&self, state: &mut TickState) -> bool {
         if !state.was_active || state.current_session.is_empty() {
             return false;
@@ -1342,11 +1054,8 @@ impl ActivityTracker {
                     "Recovered a session the server closed as abandoned - resumed with {active_total}s active / {idle_total}s idle carried forward"
                 );
                 state.current_session = info.id.unwrap_or_default();
-                // this adopts a brand-new session id without going
-                // through the tick's own session-change branch, so nothing
-                // else would mark the project's idle settings for a re-read -
-                // the recovered session would keep running on whatever was
-                // already cached.
+                // This adopts a brand-new session id without going through the tick's own
+                // session-change branch, so nothing else would mark the project's idle
                 state.idle_settings_stale = true;
                 *self.session_id.lock() = Some(state.current_session.clone());
                 state.active_baseline = active_total;
@@ -1381,23 +1090,19 @@ impl ActivityTracker {
         *active_elapsed = 0;
         *idle_baseline = 0;
         *idle_elapsed = 0;
-        // No session means no project to have fetched a threshold from - back
-        // to the bootstrap default so a stale disabled-project's setting can
-        // never bleed into whatever session/project starts next.
+        // No session means no project to have fetched a threshold from - back to the
+        // bootstrap default so a stale disabled-project's setting can never bleed into
         *idle_time_disabled = false;
         *idle_threshold_sec = IDLE_THRESHOLD_SEC;
-        // A resumed session must not credit the gap since tracking stopped -
-        // without this, signing back in after a long break would credit that
-        // entire gap (clamped to SESSION_POLL_SEC * 4, but still wrong) on
-        // the very next tick_progress call.
+        // A resumed session must not credit the gap since tracking stopped - without this,
+        // signing back in after a long break would credit that entire gap (clamped to
         *last_tick_at = Instant::now();
         *self.task_progress.lock() = (None, 0, 0);
         *self.idle_stage.lock() = 0;
         self.progress.clear();
     }
 
-    /// The rewind arithmetic on its own, so it can be tested without a live
-    /// session. Returns (new_active_total, seconds_reversed).
+    /// The rewind arithmetic on its own, so it can be tested without a live session.
     fn rewind_active(active_total: u64, active_at_last_input: u64) -> (u64, u64) {
         let rewound = active_at_last_input.min(active_total);
         (rewound, active_total.saturating_sub(rewound))
@@ -1423,20 +1128,13 @@ impl ActivityTracker {
         session_id: &str,
         window: &crate::capture::window::ForegroundWindow,
     ) {
-        // A window we could not identify is a gap in what the agent can see,
-        // not an app called "Unknown". Uploading it anyway put that literal
-        // name in Top Apps with real seconds against it - see
-        // ForegroundWindow::is_identified. The session still runs; only this
-        // tick's attribution is dropped.
+        // A window we could not identify is a gap in what the agent can see, not an app
+        // called "Unknown".
         if !window.is_identified() {
             log::debug!("skipping app slice: foreground window could not be identified");
             return;
         }
 
-        // The Start menu, the search flyout, the lock screen and the frame
-        // host are Windows itself, not something the member opened. They used
-        // to reach Top Apps as "Searchhost", "Shellexperiencehost" and
-        // "Applicationframehost" with real seconds against them.
         if window.is_shell_surface() {
             log::debug!(
                 "skipping app slice: {} is a shell surface, not an app",
@@ -1451,13 +1149,8 @@ impl ActivityTracker {
             self.queue.enqueue(session_id, &[app_event]);
         }
 
-        // Was true unconditionally whenever no URL was captured at all (not a
-        // browser, or the capture script came back empty) — every non-browser
-        // app log line was claiming "+ URL" it never had.
-        // One event per URL actually visited this tick - the address-bar
-        // subscription reports every navigation, so a member moving quickly
-        // through pages no longer collapses into whichever one the poll
-        // happened to land on.
+        // Was true unconditionally whenever no URL was captured at all (not a browser, or
+        // the capture script came back empty) — every non-browser app log line was claiming
         let mut url_sent = 0usize;
         let url_events = self.events.url_slices(window);
         if !url_events.is_empty() {
@@ -1488,12 +1181,8 @@ impl ActivityTracker {
 
 #[cfg(test)]
 mod tests {
-    /// Makes `idle_seconds()` report a machine nobody is touching, and puts
-    /// the real OS query back on drop so one test cannot leak into another.
-    /// idle takes the smaller of the hook clock and the OS's own
-    /// GetLastInputInfo, and the machine running this suite is in use by
-    /// definition - so "nobody is here" has to be simulated for both sources.
-    /// Only the Windows-only idle-escalation tests need it.
+    /// Makes `idle_seconds()` report a machine nobody is touching, and puts the real OS
+    /// query back on drop so one test cannot leak into another.
     #[cfg(windows)]
     struct SimulatedOsIdle;
 
@@ -1527,16 +1216,11 @@ mod tests {
     use crate::config::Settings;
     use crate::test_support::{fake_jwt, fake_server};
 
-    // Suggestion #14a: end-to-end tick() coverage, made tractable by the
-    // TickState refactor (Suggestion #11) - a test can now hand tick() one
-    // struct instead of hand-threading 15 `&mut` locals. These exercise the
-    // real session-transition and idle-escalation state machine against a
-    // real (fake) HTTP server, not just the pure helpers tested elsewhere in
-    // this module.
+    // Suggestion #14a: end-to-end tick() coverage, made tractable by the TickState refactor
+    // (Suggestion #11) - a test can now hand tick() one struct instead of hand-threading 15
 
-    /// A `Settings` pointed at `api_url`, with every filesystem path inside
-    /// its own fresh temp directory so parallel tests never share state (the
-    /// queue file in particular - EventQueue::new reads it on construction).
+    /// A `Settings` pointed at `api_url`, with every filesystem path inside its own fresh
+    /// temp directory so parallel tests never share state (the queue file in particular -
     fn test_settings(api_url: String) -> Settings {
         let dir = std::env::temp_dir().join(format!(
             "vt-tracker-test-{}-{:?}",
@@ -1561,9 +1245,8 @@ mod tests {
         }
     }
 
-    /// A tracker whose `ApiClient` already holds a not-yet-expired id token,
-    /// so `authorized()` never needs a real Firebase round-trip, pointed at
-    /// `api_url`.
+    /// A tracker whose `ApiClient` already holds a not-yet-expired id token, so
+    /// `authorized()` never needs a real Firebase round-trip, pointed at `api_url`.
     fn test_tracker(api_url: String) -> ActivityTracker {
         let mut api = ApiClient::new(api_url.clone(), "http://127.0.0.1:1".into())
             .expect("HTTP client builds in a test environment");
@@ -1577,20 +1260,16 @@ mod tests {
         )
     }
 
-    /// Answers exactly the routes a session-transition tick needs; anything
-    /// else 404s, which every caller in `tick()` already treats as a
-    /// harmless failed best-effort fetch (display names, scoring settings).
+    /// Answers exactly the routes a session-transition tick needs; anything else 404s,
+    /// which every caller in `tick()` already treats as a harmless failed best-effort fetch
     fn session_test_server(session_body: &'static str) -> String {
         fake_server(move |request| {
             let path = request.url().split('?').next().unwrap_or("").to_string();
             match (request.method(), path.as_str()) {
                 (Method::Get, "/api/activity/session") => (200, session_body.to_string()),
                 (Method::Get, p) if p.starts_with("/api/tasks/") && p.ends_with("/time-tracking") => {
-                    // idleTimeSeconds=1 so a test that shrinks the org-wide
-                    // idle stages via apply_idle_thresholds (warn/alert/stop) isn't
-                    // gated on the real 450s/60s default while it does - this
-                    // project-sourced value is what tick_idle_escalation's "is this
-                    // real input" check now reads, not the org-wide atomic.
+                    // IdleTimeSeconds=1 so a test that shrinks the org-wide idle stages via
+                    // apply_idle_thresholds (warn/alert/stop) isn't gated on the real
                     (200, r#"{"data": {"activeSeconds": 0, "idleSeconds": 0, "disableIdleTime": false, "idleTimeSeconds": 1}}"#.to_string())
                 }
                 (Method::Post, "/api/activity/events") => {
@@ -1604,9 +1283,8 @@ mod tests {
         })
     }
 
-    // C1: the server says this session is paused - historically the dashboard,
-    // on a single "agent offline" reading. The agent used to reset everything
-    // and drop the session; it must keep it and its running totals.
+    // C1: the server says this session is paused - historically the dashboard, on a single
+    // "agent offline" reading.
     #[test]
     fn a_server_pause_keeps_the_session_and_its_totals() {
         let tracker = test_tracker(session_test_server(IDLE_SESSION_WITH_TASK));
@@ -1689,16 +1367,12 @@ mod tests {
 
     const ACTIVE_SESSION_WITH_TASK: &str = r#"{"data": {"id": "sess-1", "status": "active", "taskId": "task-1", "projectId": "proj-1", "activeSeconds": 0, "idleSeconds": 0}}"#;
 
-    /// a task-less ("calling project") session - no `taskId`, and the
-    /// project's own idle settings attached to the session itself, exactly as
-    /// `normalizeSession` sends them (`activity/routes.js`). Until this
-    /// fixture existed the whole task-less branch had no coverage at all:
-    /// every session fixture in this suite was task-anchored, which is why
-    /// the settings-refresh bug shipped unnoticed.
+    /// A task-less ("calling project") session - no `taskId`, and the project's own idle
+    /// settings attached to the session itself, exactly as `normalizeSession` sends them
     const ACTIVE_SESSION_TASK_LESS: &str = r#"{"data": {"id": "sess-2", "status": "active", "taskId": null, "projectId": "proj-1", "activeSeconds": 0, "idleSeconds": 0, "disableIdleTime": false, "idleTimeSeconds": 450}}"#;
 
-    /// Same shape, but with the unusable `0` allowance a cleared field in the
-    /// project modal actually stores (nothing upstream forbids it).
+    /// Same shape, but with the unusable `0` allowance a cleared field in the project modal
+    /// actually stores (nothing upstream forbids it).
     const ACTIVE_SESSION_TASK_LESS_ZERO_ALLOWANCE: &str = r#"{"data": {"id": "sess-3", "status": "active", "taskId": null, "projectId": "proj-1", "activeSeconds": 0, "idleSeconds": 0, "disableIdleTime": false, "idleTimeSeconds": 0}}"#;
 
     #[test]
@@ -1716,27 +1390,17 @@ mod tests {
     #[test]
     fn tick_keeps_capturing_under_the_last_known_session_when_fetch_session_fails() {
         // A real, listening, always-500 server - not a dropped/unbound port.
-        // Whether a closed port fails a connect attempt fast or slow is an
-        // OS/sandbox networking detail this test has no business depending
-        // on; a server that's reached but answers with a server error hits
-        // the exact same `Err(_)` arm in tick() (fetch_session's contract
-        // treats "reached but bad response" and "unreachable" the same way),
-        // deterministically and fast.
         let base_url = fake_server(|_request| (500, "{}".to_string()));
         let tracker = test_tracker(base_url);
 
-        // Simulate a tick that already has a session open - the exact
-        // scenario TC-2/this branch exists for: keep ticking under the last
-        // known session across a network blip instead of tearing it down.
+        // Simulate a tick that already has a session open - the exact scenario TC-2/this
+        // branch exists for: keep ticking under the last known session across a network
         let mut state = TickState::new();
         state.was_active = true;
         state.current_session = "sess-1".to_string();
         state.task_id = "task-1".to_string();
-        // Skip the incidental best-effort refreshes and screenshot capture -
-        // none of them are what this test is about (and a real screenshot
-        // capture, via xcap, isn't reliable in a headless/sandboxed test
-        // environment). The app/URL log path below is what exercises the
-        // "backend unreachable" behavior this test guards.
+        // Skip the incidental best-effort refreshes and screenshot capture - none of them
+        // are what this test is about (and a real screenshot capture, via xcap, isn't
         let far_future = std::time::Instant::now() + Duration::from_secs(3600);
         state.next_screenshot_at = far_future;
         state.next_display_name_refresh_at = far_future;
@@ -1749,15 +1413,9 @@ mod tests {
         assert_eq!(state.task_id, "task-1");
     }
 
-    // `tick_idle_escalation` itself short-circuits to a no-op off Windows
-    // (`if !ActivityMeter::HOOKS_SUPPORTED { return false; }`, see its own
-    // doc comment) because idle_seconds() has no real input hook to reset it
-    // on those platforms - the escalation this test exercises does not exist
-    // to test outside Windows. Without this guard the test fails on every
-    // non-Windows CI/dev machine regardless of the sleep/threshold timing:
-    // `tick_idle_escalation` returns `false` immediately, before ever
-    // reading `idle_for`.
-    /// the project's allowance must reach a task-less session.
+    // `tick_idle_escalation` itself short-circuits to a no-op off Windows (`if
+    // !ActivityMeter::HOOKS_SUPPORTED { return false; }`, see its own doc comment) because
+    /// The project's allowance must reach a task-less session.
     #[test]
     fn tick_reads_the_projects_idle_allowance_for_a_task_less_session() {
         let tracker = test_tracker(session_test_server(ACTIVE_SESSION_TASK_LESS));
@@ -1778,10 +1436,8 @@ mod tests {
         );
     }
 
-    /// `projects.idle_time_seconds` has no `CHECK (> 0)` and the project
-    /// modal floors a cleared field to `0`, so `0` is reachable. Taken
-    /// literally it makes `idle_for < 0` unsatisfiable, which stops and
-    /// rewinds the session on its very first tick.
+    /// `projects.idle_time_seconds` has no `CHECK (> 0)` and the project modal floors a
+    /// cleared field to `0`, so `0` is reachable.
     #[test]
     fn an_unusable_project_idle_allowance_falls_back_to_the_org_wide_value() {
         let tracker = test_tracker(session_test_server(ACTIVE_SESSION_TASK_LESS_ZERO_ALLOWANCE));
@@ -1801,21 +1457,15 @@ mod tests {
     #[test]
     fn tick_stops_the_timer_once_the_idle_escalation_deadline_passes() {
         let tracker = test_tracker(session_test_server(ACTIVE_SESSION_WITH_TASK));
-        // Shrunk far below any real project allowance so this test finishes
-        // in a few seconds instead of waiting out a real idle period.
+        // Shrunk far below any real project allowance so this test finishes in a few
+        // seconds instead of waiting out a real idle period.
         tracker.apply_idle_thresholds(1);
         let mut state = TickState::new();
 
-        // idle now takes the smaller of the hook clock and the OS's own
-        // GetLastInputInfo. The machine running this suite is in use by
-        // definition, so "nobody is here" has to be simulated for both sources
-        // or the escalation can never fire.
+        // Idle now takes the smaller of the hook clock and the OS's own GetLastInputInfo.
         let _os_idle = SimulatedOsIdle::seconds(9_999);
 
-        // Starts the session. ActivityMeter's last-input clock is set at
-        // construction and nothing in this test ever feeds it real input, so
-        // idle_seconds() grows with real wall-clock time from here exactly
-        // as it would if the user genuinely walked away.
+        // Starts the session.
         tracker.tick(&mut state);
         assert!(state.was_active, "precondition: the session must have started");
 
@@ -1826,9 +1476,8 @@ mod tests {
         assert!(state.current_session.is_empty());
     }
 
-    // Windows-only, same as the sibling above: tick_idle_escalation short-
-    // circuits on `!ActivityMeter::HOOKS_SUPPORTED` off Windows, so `stopped`
-    // is always false there and the rewind never runs.
+    // Windows-only, same as the sibling above: tick_idle_escalation short- circuits on
+    // `!ActivityMeter::HOOKS_SUPPORTED` off Windows, so `stopped` is always false there and
     #[cfg(windows)]
     #[test]
     fn idle_escalation_folds_the_reversed_active_chunk_into_idle_instead_of_discarding_it() {
@@ -1839,25 +1488,24 @@ mod tests {
         let tracker = test_tracker(base_url);
         tracker.apply_idle_thresholds(1);
 
-        // as above, both idle sources have to say nobody is here.
+        // As above, both idle sources have to say nobody is here.
         let _os_idle = SimulatedOsIdle::seconds(9_999);
 
-        // Real idle_seconds() growing from construction, same technique the
-        // test above uses - nothing here ever feeds ActivityMeter real input.
+        // Real idle_seconds() growing from construction, same technique the test above uses
+        // - nothing here ever feeds ActivityMeter real input.
         thread::sleep(Duration::from_millis(3_500));
 
         let mut watch = IdleWatch {
             stage: 0,
-            // The last confirmed real input was at 10s of active time -
-            // everything credited active since then (up to 100s) is the
-            // idle grace window tick_progress mistakenly counted active.
+            // The last confirmed real input was at 10s of active time - everything credited
+            // active since then (up to 100s) is the idle grace window tick_progress
             active_at_last_input: 10,
         };
         let active_baseline = 0u64;
         let active_elapsed = 100u64;
         let idle_baseline = 0u64;
-        // The couple of ticks tick_progress had already credited idle by the
-        // time escalation ran on the same tick it crossed the threshold.
+        // The couple of ticks tick_progress had already credited idle by the time
+        // escalation ran on the same tick it crossed the threshold.
         let idle_elapsed = 2u64;
 
         let stopped = tracker.tick_idle_escalation(
@@ -1876,17 +1524,11 @@ mod tests {
         let (_, active_seconds, idle_seconds) = tracker.task_progress.lock().clone();
         // Rewound to the last real input - 10s, not 0 and not the full 100s.
         assert_eq!(active_seconds, 10);
-        // The reversed 90s (100 - 10) joins the 2s tick_progress already
-        // credited idle - the fix this guards: that 90s used to just vanish,
-        // reported nowhere, instead of landing here.
         assert_eq!(idle_seconds, 92);
     }
 
-    /// `disable_idle_time = true` on the project must mean no idle
-    /// escalation at all - the same idle stretch that stops the timer in the
-    /// test above must leave it running when the project has idle time
-    /// disabled. Guards the exact bug this task exists to fix: the switch
-    /// used to save to the database and change nothing.
+    /// `disable_idle_time = true` on the project must mean no idle escalation at all - the
+    /// same idle stretch that stops the timer in the test above must leave it running when
     #[test]
     fn tick_never_escalates_when_the_projects_idle_time_is_disabled() {
         let base_url = fake_server(move |request| {
@@ -1906,8 +1548,8 @@ mod tests {
             }
         });
         let tracker = test_tracker(base_url);
-        // Same shrunk threshold as the test above - if disable_idle_time were
-        // being ignored, this would stop the timer within the same 3.5s.
+        // Same shrunk threshold as the test above - if disable_idle_time were being
+        // ignored, this would stop the timer within the same 3.5s.
         tracker.apply_idle_thresholds(1);
         let mut state = TickState::new();
 
@@ -1921,12 +1563,8 @@ mod tests {
         assert_eq!(state.current_session, "sess-1");
     }
 
-    /// Guards the Start/idle-stop race: `start_task_session`/
-    /// `start_project_session` must refuse to proceed (get `false` back) while
-    /// a pending idle-stop genuinely can't be delivered, and must actually
-    /// clear it (get `true`, and `pending_stop` empty) the moment the server
-    /// accepts it - a caller that pressed on regardless would let the pending
-    /// stop later land on the session it just started.
+    /// Guards the Start/idle-stop race: `start_task_session`/ `start_project_session` must
+    /// refuse to proceed (get `false` back) while a pending idle-stop genuinely can't be
     #[test]
     fn flush_pending_stop_reports_false_while_stuck_and_true_once_delivered() {
         let attempts = std::sync::Arc::new(AtomicUsize::new(0));
@@ -1966,22 +1604,16 @@ mod tests {
         assert!(tracker.flush_pending_stop(), "nothing pending - must not block starting a session");
     }
 
-    /// ID-3, missed the first time: tick_progress and tick_idle_escalation
-    /// both already respected idle_time_disabled, but tick_paused - the
-    /// third and only other place idle_elapsed grows - credited a break to
-    /// idle unconditionally. This is the regression guard for that gap:
-    /// pausing on a project with idle time disabled must not tick idle_elapsed
-    /// up at all.
+    /// ID-3, missed the first time: tick_progress and tick_idle_escalation both already
+    /// respected idle_time_disabled, but tick_paused - the third and only other place
     #[test]
     fn tick_paused_never_credits_idle_when_the_projects_idle_time_is_disabled() {
         let base_url = fake_server(|_| (200, "{}".to_string()));
         let tracker = test_tracker(base_url);
         let mut state = TickState::new();
         state.idle_time_disabled = true;
-        // Past due right away by default (TickState::new() sets next_sync_at
-        // to construction time), which would otherwise fire tick_paused's
-        // conditional sync POST mid-test - pushed out so this test only
-        // exercises the idle-crediting logic itself.
+        // Past due right away by default (TickState::new() sets next_sync_at to
+        // construction time), which would otherwise fire tick_paused's conditional sync
         state.next_sync_at = Instant::now() + Duration::from_secs(3600);
 
         thread::sleep(Duration::from_millis(1_100));
@@ -1991,9 +1623,8 @@ mod tests {
         assert_eq!(state.active_elapsed, 0, "a break must not be credited as active work either - it should be left out of both totals, not moved into the other one");
     }
 
-    /// Same setup, idle time *not* disabled - the elapsed wall-clock time
-    /// must still land in idle_elapsed exactly as before this fix, since the
-    /// guard above only skips crediting when the project's flag is set.
+    /// Same setup, idle time *not* disabled - the elapsed wall-clock time must still land
+    /// in idle_elapsed exactly as before this fix, since the guard above only skips
     #[test]
     fn tick_paused_still_credits_idle_normally_when_idle_time_is_not_disabled() {
         let base_url = fake_server(|_| (200, "{}".to_string()));
@@ -2009,11 +1640,8 @@ mod tests {
         assert_eq!(state.active_elapsed, 0, "a break is never active time");
     }
 
-    /// Clicking Stop from a paused session used to leave `paused` true
-    /// forever - nothing else ever cleared it, so every later tick kept
-    /// taking tick_paused's branch, which never calls fetch_session() and so
-    /// could never notice the session the Stop button had just closed. The
-    /// agent believed it was on an endless break; Stop read as doing nothing.
+    /// Clicking Stop from a paused session used to leave `paused` true forever - nothing
+    /// else ever cleared it, so every later tick kept taking tick_paused's branch, which
     #[test]
     fn stopping_a_paused_session_actually_ends_the_break() {
         let base_url = fake_server(|_| (200, "{}".to_string()));
@@ -2029,15 +1657,6 @@ mod tests {
         );
     }
 
-    /// A task-less (calling-project) session has no task id for the server to
-    /// derive its project from on pause/resume - pause()/resume() used to
-    /// always send `None` for the project id regardless, relying entirely on
-    /// the server still having the session open with a project id already
-    /// attached. Whenever that fallback came up empty this produced "taskId
-    /// or projectId is required to start a timer" even though a project was
-    /// plainly selected. last_project_id - populated from the session's own
-    /// field in tick(), the exact value try_recover_lost_session already
-    /// trusts for this same case - closes that gap.
     #[test]
     fn pausing_a_task_less_session_sends_its_project_id_so_the_server_can_find_it() {
         let captured_body = std::sync::Arc::new(Mutex::new(String::new()));
@@ -2068,17 +1687,10 @@ mod tests {
         );
     }
 
-    /// Screenshots must stop while the user is idle - a picture of an empty
-    /// desk defeats the point of idle detection. tick_progress's return
-    /// value is the signal callers (tick, in both its normal and
-    /// fetch-session-failed branches) gate `upload_screenshot` on; this
-    /// tests that signal directly, at the level where the active/idle split
-    /// itself is decided, rather than the network side effect three calls
-    /// away.
-    // a tick period is never a whole number of seconds - it is the sleep
-    // plus however long the tick's network I/O took. Truncating and resetting
-    // last_tick_at to `now` discarded that fraction every single tick, so the
-    // clock could only ever run slow.
+    /// Screenshots must stop while the user is idle - a picture of an empty desk defeats
+    /// the point of idle detection.
+    // A tick period is never a whole number of seconds - it is the sleep plus however long
+    // the tick's network I/O took.
     #[test]
     fn a_tick_carries_its_sub_second_remainder_into_the_next_one() {
         // 5.4s of real time credits 5s now and leaves 0.4s owed.
@@ -2091,8 +1703,7 @@ mod tests {
 
     #[test]
     fn carried_remainders_eventually_credit_a_whole_second() {
-        // Three 5.4s ticks are 16.2s of real time. Truncating each in
-        // isolation credits 15s and loses 1.2s; carrying credits 16s.
+        // Three 5.4s ticks are 16.2s of real time.
         let mut owed = Duration::ZERO;
         let mut total = 0u64;
         for _ in 0..3 {
@@ -2105,8 +1716,8 @@ mod tests {
         assert_eq!(owed, Duration::from_millis(200));
     }
 
-    // A resumed laptop must not bank the whole suspend as active work, and
-    // must not keep owing it either - the gap is consumed and dropped.
+    // A resumed laptop must not bank the whole suspend as active work, and must not keep
+    // owing it either - the gap is consumed and dropped.
     #[test]
     fn a_sleep_gap_is_clamped_and_leaves_nothing_owed() {
         let elapsed = Duration::from_secs(3_600);
@@ -2143,29 +1754,22 @@ mod tests {
         );
 
         if ActivityMeter::HOOKS_SUPPORTED {
-            // Real hooks: ActivityMeter's last-input clock was set at
-            // construction and nothing here ever fed it real input, so
-            // idle_seconds() grew with the sleep above exactly as it would
-            // if the user genuinely walked away - same setup
-            // tick_stops_the_timer_once_the_idle_escalation_deadline_passes
-            // relies on.
+            // Real hooks: ActivityMeter's last-input clock was set at construction and
+            // nothing here ever fed it real input, so idle_seconds() grew with the sleep
             assert!(credited_idle, "should report idle once idle_seconds() clears the threshold");
             assert_eq!(active_elapsed, 0);
             assert!(idle_elapsed >= 1);
         } else {
-            // No real hooks on this platform - idle_seconds() can't move,
-            // so tick_progress always credits active. Documents why the
-            // assertion flips rather than silently skipping the platform.
+            // No real hooks on this platform - idle_seconds() can't move, so tick_progress
+            // always credits active.
             assert!(!credited_idle);
             assert!(active_elapsed >= 1);
             assert_eq!(idle_elapsed, 0);
         }
     }
 
-    /// The disabled-project counterpart: even once the same real idle time
-    /// has elapsed, idle_time_disabled must keep tick_progress reporting
-    /// "not idle" - screenshots keep flowing exactly as ID-3 already
-    /// guarantees the active/idle split itself does.
+    /// The disabled-project counterpart: even once the same real idle time has elapsed,
+    /// idle_time_disabled must keep tick_progress reporting "not idle" - screenshots keep
     #[test]
     fn tick_progress_never_reports_idle_when_the_projects_idle_time_is_disabled() {
         let base_url = fake_server(|_| (200, "{}".to_string()));
@@ -2191,9 +1795,8 @@ mod tests {
         assert_eq!(idle_elapsed, 0);
     }
 
-    // Guards ACT-3: a server-pushed idle threshold is only applied if it's
-    // sane - idle time is decided solely by the project's own allowance now,
-    // so there's nothing left to validate but "not zero".
+    // Guards ACT-3: a server-pushed idle threshold is only applied if it's sane - idle time
+    // is decided solely by the project's own allowance now, so there's nothing left to
 
     #[test]
     fn a_positive_idle_threshold_is_valid() {
@@ -2205,17 +1808,13 @@ mod tests {
         assert!(!valid_idle_threshold(0));
     }
 
-    // Guards TC-2: the tracker must credit real elapsed wall time, not an
-    // assumed SESSION_POLL_SEC per tick. Before this fix every tick credited
-    // exactly 5s regardless of how long the tick's own network I/O took,
-    // which meant every recorded hour was short by an amount proportional to
-    // the user's network latency.
+    // Guards TC-2: the tracker must credit real elapsed wall time, not an assumed
+    // SESSION_POLL_SEC per tick.
 
     #[test]
     fn credits_real_elapsed_time_not_the_assumed_poll_interval() {
-        // A tick that actually took 9s (5s sleep + 4s of slow HTTP) must
-        // credit 9, not SESSION_POLL_SEC (5). This is the bug that made every
-        // recorded hour short.
+        // A tick that actually took 9s (5s sleep + 4s of slow HTTP) must credit 9, not
+        // SESSION_POLL_SEC (5).
         assert_eq!(ActivityTracker::credited_seconds(Duration::from_secs(9)), 9);
     }
 
@@ -2226,8 +1825,8 @@ mod tests {
 
     #[test]
     fn a_suspend_gap_cannot_bank_hours_nobody_worked() {
-        // Laptop closed for 2h: clamp to SESSION_POLL_SEC * 4, then let idle
-        // escalation take over and rewind to the last real input.
+        // Laptop closed for 2h: clamp to SESSION_POLL_SEC * 4, then let idle escalation
+        // take over and rewind to the last real input.
         assert_eq!(
             ActivityTracker::credited_seconds(Duration::from_secs(7200)),
             super::SESSION_POLL_SEC * 4,
@@ -2254,9 +1853,8 @@ mod tests {
         assert_eq!(ActivityTracker::credited_seconds(Duration::from_secs(0)), 0);
     }
 
-    // Guards the money-adjacent bit of idle escalation: when the timer auto-
-    // stops, exactly the time worked after the user stopped touching the
-    // machine must come off - no more, no less, and never a wrapped u64.
+    // Guards the money-adjacent bit of idle escalation: when the timer auto- stops, exactly
+    // the time worked after the user stopped touching the machine must come off
 
     #[test]
     fn reverses_only_the_time_credited_since_the_user_went_idle() {

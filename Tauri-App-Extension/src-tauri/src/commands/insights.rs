@@ -1,5 +1,5 @@
-//! Read-only views the tracker shows back to the member - their own
-//! screenshots, app breakdown, dashboard summary and the monitoring notice.
+//! Read-only views the tracker shows back to the member - their own screenshots, app
+//! breakdown, dashboard summary and the monitoring notice.
 
 use std::sync::Arc;
 

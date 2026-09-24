@@ -3,17 +3,15 @@
 
 use std::path::PathBuf;
 
-/// What a browser is built on. Decides the omnibox selectors and the shape of
-/// the history database - the two things that vary by engine rather than by
-/// vendor.
+/// What a browser is built on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Engine {
     /// Chrome, Edge, Brave, Opera, Vivaldi, Arc, Yandex, Whale...
     Chromium,
     /// Firefox, Waterfox, LibreWolf, Zen...
     Gecko,
-    /// Safari and IE - detected so we don't mistake them for non-browsers,
-    /// but neither exposes anything we can read on Windows.
+    /// Safari and IE - detected so we don't mistake them for non-browsers, but neither
+    /// exposes anything we can read on Windows.
     Other,
 }
 
@@ -29,12 +27,10 @@ pub enum ProfileBase {
 }
 
 pub struct Browser {
-    /// Executable names, lowercased. Several browsers ship more than one.
+    /// Executable names, lowercased.
     pub exes: &'static [&'static str],
     /// Human name, and what `resolve_display_name` should report.
     pub display_name: &'static str,
-    /// The `Name` of the browser's own UI Automation pane, used to scope the
-    /// address-bar search away from page content.
     pub pane_name: &'static str,
     pub engine: Engine,
     pub profile_base: ProfileBase,
@@ -42,8 +38,7 @@ pub struct Browser {
     pub profile_dir: &'static str,
 }
 
-/// Every browser the agent recognises. Order matters only for the first-match
-/// exe lookup, and no exe appears twice.
+/// Every browser the agent recognises.
 pub const BROWSERS: &[Browser] = &[
     Browser {
         exes: &["chrome.exe"],
@@ -85,8 +80,8 @@ pub const BROWSERS: &[Browser] = &[
         profile_base: ProfileBase::Local,
         profile_dir: r"Chromium\User Data",
     },
-    // Opera keeps profiles directly under a roaming per-channel folder rather
-    // than the usual "User Data/<Profile>" layout.
+    // Opera keeps profiles directly under a roaming per-channel folder rather than the
+    // usual "User Data/<Profile>" layout.
     Browser {
         exes: &["opera.exe", "launcher.exe"],
         display_name: "Opera",
@@ -167,7 +162,7 @@ pub const BROWSERS: &[Browser] = &[
         profile_base: ProfileBase::None,
         profile_dir: "",
     },
-    // macOS only - matched on xcap's app_name rather than an exe.
+    // MacOS only - matched on xcap's app_name rather than an exe.
     Browser {
         exes: &["safari"],
         display_name: "Safari",
@@ -178,8 +173,7 @@ pub const BROWSERS: &[Browser] = &[
     },
 ];
 
-/// Address-bar automation ids, by engine. Chromium's omnibox and Firefox's
-/// urlbar are the only two shapes that actually exist across this list.
+/// Address-bar automation ids, by engine.
 pub fn omnibox_automation_ids(engine: Engine) -> &'static [&'static str] {
     match engine {
         Engine::Chromium => &[
@@ -221,8 +215,8 @@ pub fn omnibox_names(engine: Engine) -> &'static [&'static str] {
     }
 }
 
-/// Every automation id and name across all engines - what to search when the
-/// browser isn't recognised but the window still looks like one.
+/// Every automation id and name across all engines - what to search when the browser isn't
+/// recognised but the window still looks like one.
 pub fn all_omnibox_automation_ids() -> Vec<&'static str> {
     let mut out = omnibox_automation_ids(Engine::Chromium).to_vec();
     out.extend_from_slice(omnibox_automation_ids(Engine::Gecko));
@@ -239,8 +233,8 @@ pub fn all_omnibox_names() -> Vec<&'static str> {
     out
 }
 
-/// Look a browser up by executable (Windows) or display name (macOS, where
-/// xcap gives "Google Chrome" rather than an exe).
+/// Look a browser up by executable (Windows) or display name (macOS, where xcap gives
+/// "Google Chrome" rather than an exe).
 pub fn lookup(process_or_app_name: &str) -> Option<&'static Browser> {
     let key = process_or_app_name.trim().to_lowercase();
     if key.is_empty() {
@@ -252,11 +246,7 @@ pub fn lookup(process_or_app_name: &str) -> Option<&'static Browser> {
     {
         return Some(browser);
     }
-    // macOS / display-name form: "Google Chrome", "Brave Browser", "Firefox".
-    //
-    // Whole words only, never a substring: a plain `contains` matched
-    // "search.exe" against Arc and "monarch.exe" against Arc too, quietly
-    // turning unrelated apps into browsers.
+    // MacOS / display-name form: "Google Chrome", "Brave Browser", "Firefox".
     if key.len() < 3 {
         return None;
     }
@@ -273,17 +263,16 @@ pub fn is_browser(process_or_app_name: &str) -> bool {
     lookup(process_or_app_name).is_some()
 }
 
-/// Short engine/vendor tag handed to get-browser-url.ps1 so it can try the
-/// right pane first. Empty for anything unrecognised.
+/// Short engine/vendor tag handed to get-browser-url.ps1 so it can try the right pane
+/// first.
 pub fn browser_hint(process_or_app_name: &str) -> String {
     lookup(process_or_app_name)
         .map(|b| b.pane_name.to_string())
         .unwrap_or_default()
 }
 
-/// Profile directories that may contain a history database for this browser,
-/// newest-looking first. Empty when the browser keeps nothing readable, or off
-/// Windows.
+/// Profile directories that may contain a history database for this browser, newest-looking
+/// first.
 pub fn history_profile_dirs(browser: &Browser) -> Vec<PathBuf> {
     let base = match browser.profile_base {
         ProfileBase::Local => dirs::data_local_dir(),
@@ -397,8 +386,6 @@ mod tests {
             "",
             "   ",
             "explorer.exe",
-            // Substring matching used to turn all of these into browsers:
-            // "search"/"monarch" contain "arc", "operator" contains "opera".
             "search.exe",
             "monarch.exe",
             "operator.exe",
@@ -410,7 +397,7 @@ mod tests {
 
     #[test]
     fn macos_short_app_names_still_resolve() {
-        // xcap reports "Firefox", not "Mozilla Firefox".
+        // Xcap reports "Firefox", not "Mozilla Firefox".
         assert_eq!(lookup("Firefox").unwrap().display_name, "Mozilla Firefox");
         assert_eq!(lookup("Chrome").unwrap().display_name, "Google Chrome");
         assert_eq!(lookup("Edge").unwrap().display_name, "Microsoft Edge");

@@ -4,12 +4,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-/// One address-bar change, as it happened. Polling every APP_LOG_INTERVAL_SEC
-/// only ever sees whatever page a member happened to be on at the sample
-/// instant - someone moving through five records in a dialer in fifteen
-/// seconds got one of them recorded. Subscribing to the omnibox's value
-/// instead means every navigation is seen, with the timestamp it occurred at,
-/// so real dwell can be attributed per URL.
+/// One address-bar change, as it happened.
 #[derive(Debug, Clone)]
 pub struct UrlObservation {
     pub hwnd: usize,
@@ -17,8 +12,7 @@ pub struct UrlObservation {
     pub at: Instant,
 }
 
-/// Everything the event handler has recorded since the last call. Ordered
-/// oldest-first; consecutive duplicates for one window are already collapsed.
+/// Everything the event handler has recorded since the last call.
 pub fn drain_url_changes() -> Vec<UrlObservation> {
     #[cfg(windows)]
     {
@@ -30,17 +24,14 @@ pub fn drain_url_changes() -> Vec<UrlObservation> {
     }
 }
 
-/// Attempts allowed before a reader that has never once produced a URL is
-/// written off as broken (see `healthy`). Generously more than the handful of
-/// ticks a real session needs to hit its first readable address bar.
+/// Attempts allowed before a reader that has never once produced a URL is written off as
+/// broken (see `healthy`).
 const TRIAL_ATTEMPTS: u64 = 25;
 
 static ATTEMPTS: AtomicU64 = AtomicU64::new(0);
 static SUCCESSES: AtomicU64 = AtomicU64::new(0);
 
-/// Read the address-bar URL for a browser window. `None` when the window has
-/// no readable address bar, the reader is unavailable, or it didn't answer
-/// within `timeout`.
+/// Read the address-bar URL for a browser window.
 #[allow(unused_variables)]
 pub fn read_url(hwnd: usize, timeout: Duration) -> Option<String> {
     #[cfg(windows)]
@@ -58,15 +49,8 @@ pub fn read_url(hwnd: usize, timeout: Duration) -> Option<String> {
     }
 }
 
-/// Whether a `None` from `read_url` should be trusted as "this window really
-/// has no URL" rather than "the reader is broken".
-///
-/// Safety valve: if this code has a bug, or UIA behaves differently on some
-/// machine, the in-process path would silently return `None` forever and URL
-/// capture would just stop working with nothing in the logs to say why. After
-/// `TRIAL_ATTEMPTS` reads with not one success, we stop trusting it and the
-/// caller resumes using the (now much cheaper) script - degrading to the old
-/// behaviour instead of losing the feature.
+/// Whether a `None` from `read_url` should be trusted as "this window really has no URL"
+/// rather than "the reader is broken".
 pub fn healthy() -> bool {
     if !available() {
         return false;
@@ -74,9 +58,7 @@ pub fn healthy() -> bool {
     SUCCESSES.load(Ordering::Relaxed) > 0 || ATTEMPTS.load(Ordering::Relaxed) < TRIAL_ATTEMPTS
 }
 
-/// Whether the in-process reader is usable at all. `false` means the caller
-/// should fall back to the script path (non-Windows, or COM/UIA refused to
-/// start).
+/// Whether the in-process reader is usable at all.
 pub fn available() -> bool {
     #[cfg(windows)]
     {
@@ -88,9 +70,7 @@ pub fn available() -> bool {
     }
 }
 
-/// Shared with the script path so both produce identical output. Accepts a
-/// full http(s) URL, or a bare `host.tld[/path]` which the omnibox shows when
-/// the scheme is hidden.
+/// Shared with the script path so both produce identical output.
 pub fn normalize_url(raw: &str) -> Option<String> {
     let text = raw.trim();
     if text.is_empty() || text.contains(char::is_whitespace) {
@@ -99,7 +79,7 @@ pub fn normalize_url(raw: &str) -> Option<String> {
     if text.starts_with("http://") || text.starts_with("https://") {
         return Some(text.to_string());
     }
-    // host.tld, optionally with a path - the omnibox's scheme-less display.
+    // Host.tld, optionally with a path - the omnibox's scheme-less display.
     let host = text.split('/').next().unwrap_or("");
     let looks_like_host = host.contains('.')
         && !host.starts_with('.')
@@ -142,16 +122,12 @@ mod imp {
         UIA_ValueValuePropertyId,
     };
 
-    /// Value-changed events we've been handed but not yet reported. Bounded:
-    /// the tracker drains this every app-slice tick, so anything past this is
-    /// a runaway page redirecting in a loop, not real browsing.
+    /// Value-changed events we've been handed but not yet reported.
     const MAX_PENDING_OBSERVATIONS: usize = 256;
 
     static OBSERVATIONS: Mutex<Vec<super::UrlObservation>> = Mutex::new(Vec::new());
 
-    /// Records one address-bar change. Called on a UIA-owned thread, so it
-    /// does the absolute minimum: parse, push, return. Anything slow here
-    /// back-pressures the browser's own event delivery.
+    /// Records one address-bar change.
     fn observe(hwnd: usize, raw: &str) {
         let Some(url) = super::normalize_url(raw) else {
             return;
@@ -160,8 +136,8 @@ mod imp {
         if pending.last().is_some_and(|last: &super::UrlObservation| {
             last.hwnd == hwnd && last.url == url
         }) {
-            // Chromium fires several value-changed events per navigation as
-            // the omnibox settles; only the distinct URL matters.
+            // Chromium fires several value-changed events per navigation as the omnibox
+            // settles; only the distinct URL matters.
             return;
         }
         if pending.len() >= MAX_PENDING_OBSERVATIONS {
@@ -178,8 +154,7 @@ mod imp {
         std::mem::take(&mut *OBSERVATIONS.lock())
     }
 
-    /// COM callback subscribed to one omnibox element's value. `hwnd` is baked
-    /// in because the event gives us the element, not the window.
+    /// COM callback subscribed to one omnibox element's value.
     #[windows::core::implement(IUIAutomationPropertyChangedEventHandler)]
     struct ValueChangeHandler {
         hwnd: usize,
@@ -201,9 +176,7 @@ mod imp {
         }
     }
 
-    /// How long the worker gives one UIA search before abandoning it. The
-    /// caller has its own (shorter) deadline; this only bounds how long the
-    /// worker itself stays stuck on a pathological window.
+    /// How long the worker gives one UIA search before abandoning it.
     const WORKER_FIND_BUDGET: Duration = Duration::from_secs(6);
 
     type Reply = SyncSender<Option<String>>;
@@ -225,8 +198,8 @@ mod imp {
         }
         let tx = sender()?;
         let (reply_tx, reply_rx) = sync_channel(0);
-        // try_send, not send: a full queue means the worker is stuck on a
-        // previous window, and waiting our turn would just move the stall here.
+        // Try_send, not send: a full queue means the worker is stuck on a previous window,
+        // and waiting our turn would just move the stall here.
         if tx.try_send((hwnd, reply_tx)).is_err() {
             log::debug!("URL capture: UIA worker busy, skipping this tick");
             return None;
@@ -239,9 +212,8 @@ mod imp {
         let started = thread::Builder::new()
             .name("vt-uia".into())
             .spawn(move || {
-                // MTA: this thread only ever makes client calls and may block,
-                // which is exactly what Microsoft's UIA client guidance says
-                // to keep off an STA.
+                // MTA: this thread only ever makes client calls and may block, which is
+                // exactly what Microsoft's UIA client guidance says to keep off an STA.
                 let init = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
                 if init.is_err() {
                     log::warn!("URL capture: CoInitializeEx failed ({init:?}); UIA reader off");
@@ -264,8 +236,8 @@ mod imp {
                 log::info!("URL capture: in-process UIA reader ready");
                 while let Ok((hwnd, reply)) = rx.recv() {
                     let url = unsafe { reader.read(hwnd) };
-                    // The caller may already have timed out and dropped its
-                    // receiver; that's fine, the result is simply discarded.
+                    // The caller may already have timed out and dropped its receiver;
+                    // that's fine, the result is simply discarded.
                     let _ = reply.try_send(url);
                 }
             })
@@ -280,14 +252,13 @@ mod imp {
     struct Reader {
         automation: IUIAutomation,
         omnibox: IUIAutomationCondition,
-        /// Omnibox element per browser HWND. The element outlives navigation;
-        /// only its value changes.
+        /// Omnibox element per browser HWND.
         cache: HashMap<usize, IUIAutomationElement>,
-        /// Windows a search has already failed on, so we don't re-walk their
-        /// tree every tick. Cleared whenever the cache is trimmed.
+        /// Windows a search has already failed on, so we don't re-walk their tree every
+        /// tick.
         misses: HashMap<usize, u32>,
-        /// Live value-changed subscriptions, kept so they can be removed
-        /// again - UIA holds the handler alive until we do.
+        /// Live value-changed subscriptions, kept so they can be removed again - UIA holds
+        /// the handler alive until we do.
         handlers: HashMap<usize, (IUIAutomationElement, IUIAutomationPropertyChangedEventHandler)>,
     }
 
@@ -311,17 +282,15 @@ mod imp {
                 match read_value(&element) {
                     Ok(value) => return normalize_url(&value),
                     Err(_) => {
-                        // Window closed, or the element went stale. Fall
-                        // through and search once more.
+                        // Window closed, or the element went stale.
                         self.cache.remove(&hwnd);
                         self.unsubscribe(hwnd);
                     }
                 }
             }
 
-            // A window whose tree we've already searched without finding an
-            // address bar isn't going to grow one - don't pay for the walk
-            // again on every tick.
+            // A window whose tree we've already searched without finding an address bar
+            // isn't going to grow one - don't pay for the walk again on every tick.
             if self.misses.get(&hwnd).is_some_and(|n| *n >= 2) {
                 return None;
             }
@@ -342,8 +311,8 @@ mod imp {
             };
             self.misses.remove(&hwnd);
             if self.cache.len() > 64 {
-                // Browser windows come and go; a periodic reset just means a
-                // few of them pay for one more search.
+                // Browser windows come and go; a periodic reset just means a few of them
+                // pay for one more search.
                 self.unsubscribe_all();
                 self.cache.clear();
                 self.misses.clear();
@@ -353,10 +322,8 @@ mod imp {
             read_value(&element).ok().and_then(|v| normalize_url(&v))
         }
 
-        /// Subscribe to this omnibox's value so navigations are seen as they
-        /// happen rather than sampled once a tick. Scoped to the single
-        /// element and the single property - the cheapest subscription UIA
-        /// offers, and nothing like walking the tree.
+        /// Subscribe to this omnibox's value so navigations are seen as they happen rather
+        /// than sampled once a tick.
         unsafe fn subscribe(&mut self, hwnd: usize, element: &IUIAutomationElement) {
             if self.handlers.contains_key(&hwnd) {
                 return;
@@ -375,8 +342,8 @@ mod imp {
                     self.handlers.insert(hwnd, (element.clone(), handler));
                 }
                 Err(err) => {
-                    // Not fatal - polling still works, we just miss
-                    // navigations between ticks for this window.
+                    // Not fatal - polling still works, we just miss navigations between
+                    // ticks for this window.
                     log::debug!("URL capture: could not subscribe to window {hwnd}: {err}");
                 }
             }
@@ -412,9 +379,6 @@ mod imp {
         Ok(pattern.CurrentValue()?.to_string())
     }
 
-    /// `(ControlType is Edit or ComboBox) AND (AutomationId or Name is one we
-    /// know)`. One condition, therefore one tree walk - the script used to
-    /// issue one search per candidate id and name.
     unsafe fn build_omnibox_condition(
         automation: &IUIAutomation,
     ) -> windows::core::Result<IUIAutomationCondition> {
@@ -431,9 +395,8 @@ mod imp {
                 })
                 .collect();
 
-        // Union across every engine in capture/browsers.rs: one condition
-        // that finds Chromium's omnibox and Firefox's urlbar alike, so a
-        // single prebuilt search serves whatever browser the member opens.
+        // Union across every engine in capture/browsers.rs: one condition that finds
+        // Chromium's omnibox and Firefox's urlbar alike, so a single prebuilt search serves
         let mut identity_conditions: Vec<Option<IUIAutomationCondition>> = Vec::new();
         for id in crate::capture::browsers::all_omnibox_automation_ids() {
             identity_conditions.push(
@@ -493,9 +456,7 @@ mod tests {
         assert_eq!(normalize_url("example.4"), None);
     }
 
-    /// End-to-end against a real browser. Ignored by default: needs a desktop
-    /// session and an installed Chrome, so it can't run on the Linux CI box.
-    /// Run by hand on Windows after touching the UIA code:
+    /// End-to-end against a real browser.
     #[cfg(windows)]
     #[test]
     #[ignore = "needs a real desktop session and Chrome installed"]
@@ -524,8 +485,8 @@ mod tests {
             .spawn()
             .expect("launch chrome");
 
-        // Chrome forks; the window belongs to whichever chrome.exe owns it, so
-        // ask the OS rather than assuming it's our direct child.
+        // Chrome forks; the window belongs to whichever chrome.exe owns it, so ask the OS
+        // rather than assuming it's our direct child.
         let hwnd = (|| {
             let deadline = Instant::now() + Duration::from_secs(30);
             while Instant::now() < deadline {
@@ -567,8 +528,8 @@ mod tests {
             last
         });
 
-        // Solution C: the first read subscribes to the omnibox, so navigating
-        // now should surface without anyone polling for it.
+        // Solution C: the first read subscribes to the omnibox, so navigating now should
+        // surface without anyone polling for it.
         let mut observed: Vec<String> = Vec::new();
         if result.is_some() {
             let _ = super::drain_url_changes(); // discard the initial settle

@@ -1,12 +1,4 @@
 //! Last-resort URL resolution from the browser's own history database.
-//!
-//! This never enumerates or uploads browsing history. It answers exactly one
-//! question - "what URL does the page currently on screen have?" - by looking
-//! up the single title the agent already captured, restricted to visits from
-//! the last few days. That keeps collection to what the member already
-//! consented to (the focused window during tracked time) rather than turning
-//! the agent into a history harvester, which is a materially different thing
-//! and would need its own disclosure.
 #![cfg_attr(not(windows), allow(dead_code))]
 
 use std::collections::HashMap;
@@ -17,17 +9,14 @@ use parking_lot::Mutex;
 
 use crate::capture::browsers::{self, Browser, Engine};
 
-/// The database is locked while the browser runs, so it has to be copied
-/// before it can be read. Copying is the expensive part, so a snapshot is
-/// reused for this long before being taken again.
+/// The database is locked while the browser runs, so it has to be copied before it can be
+/// read.
 const SNAPSHOT_TTL: Duration = Duration::from_secs(120);
 
-/// Never copy a history file larger than this. A pathological profile
-/// shouldn't turn a URL lookup into a disk-thrashing exercise.
+/// Never copy a history file larger than this.
 const MAX_HISTORY_BYTES: u64 = 300 * 1024 * 1024;
 
-/// Only consider recent visits. Without this, a page title that happens to
-/// match something visited months ago would resurrect that old URL.
+/// Only consider recent visits.
 const MAX_VISIT_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 /// Unix epoch expressed in the 1601-based epoch Chromium stores, in seconds.
@@ -41,7 +30,6 @@ struct Snapshot {
 static SNAPSHOTS: Mutex<Option<HashMap<PathBuf, Snapshot>>> = Mutex::new(None);
 
 /// Strip the browser's own name off a window title, leaving the page title.
-/// "Houston TX Homes - Zillow - Google Chrome" -> "Houston TX Homes - Zillow".
 pub fn page_title_from_window_title(window_title: &str, browser: &Browser) -> String {
     let mut title = window_title.trim();
     for name in [browser.display_name, browser.pane_name] {
@@ -56,9 +44,7 @@ pub fn page_title_from_window_title(window_title: &str, browser: &Browser) -> St
     title.trim().to_string()
 }
 
-/// The URL the browser last recorded for this exact page title, if it visited
-/// it recently. `None` when the browser is unknown, nothing matches, or the
-/// database can't be read.
+/// The URL the browser last recorded for this exact page title, if it visited it recently.
 pub fn lookup_url_by_title(process_or_app_name: &str, window_title: &str) -> Option<String> {
     let browser = browsers::lookup(process_or_app_name)?;
     let file_name = browsers::history_file_name(browser.engine)?;
@@ -94,8 +80,8 @@ fn snapshot_of(source: &Path) -> Option<PathBuf> {
         }
     }
 
-    // One stable filename per source, so snapshots overwrite rather than
-    // accumulating a copy of every profile's history in temp.
+    // One stable filename per source, so snapshots overwrite rather than accumulating a
+    // copy of every profile's history in temp.
     let mut hash: u64 = 1469598103934665603;
     for byte in source.to_string_lossy().as_bytes() {
         hash ^= u64::from(*byte);
@@ -104,8 +90,8 @@ fn snapshot_of(source: &Path) -> Option<PathBuf> {
     let copy = std::env::temp_dir().join(format!("vt-history-{hash:016x}.db"));
 
     std::fs::copy(source, &copy).ok()?;
-    // A write-ahead log holds the newest visits; without it the copy can be
-    // minutes stale, which is exactly the window we care about.
+    // A write-ahead log holds the newest visits; without it the copy can be minutes stale,
+    // which is exactly the window we care about.
     for suffix in ["-wal", "-shm"] {
         let extra = PathBuf::from(format!("{}{suffix}", source.display()));
         if extra.is_file() {
@@ -196,8 +182,8 @@ mod tests {
         assert_eq!(lookup_url_by_title("chrome.exe", "Unknown"), None);
     }
 
-    /// Builds a Chromium-shaped history db and proves the query finds the
-    /// right row, respects recency, and returns nothing for a stranger.
+    /// Builds a Chromium-shaped history db and proves the query finds the right row,
+    /// respects recency, and returns nothing for a stranger.
     #[test]
     fn chromium_history_lookup_matches_title_and_recency() {
         let dir = std::env::temp_dir().join(format!("vt-hist-test-{}", std::process::id()));

@@ -1,24 +1,13 @@
-//! AC-3: a device-level "might be a VM" signal, reported once at device
-//! registration - never a verdict, never anything that blocks or alters
-//! tracking. See the backend's `agent_devices.vm_detected` column: it is
-//! surfaced to a manager alongside device ownership, weighed in context, not
-//! auto-penalized (a false positive here is both wrong and, per the plan's
-//! own warning, real legal exposure against a legitimate remote worker on a
-//! VDI/cloud dev box). Deliberately lean, per the plan's "do not over-invest"
-//! guidance: CPUID's hypervisor-present bit alone catches the overwhelming
-//! majority of real cases and has essentially no false-negative risk (every
-//! hypervisor, even a paravirtualized one with nothing else to fingerprint,
-//! sets it) - driver-file checks are a cheap corroborating extra, not load-
-//! bearing. ponytail: CPUID alone is the rung here.
+//! AC-3: a device-level "might be a VM" signal, reported once at device registration -
+//! never a verdict, never anything that blocks or alters tracking.
 
 pub struct VmDetection {
     pub detected: bool,
     pub signals: Vec<String>,
 }
 
-/// CPUID leaf 1, ECX bit 31 - the hypervisor-present bit every hypervisor
-/// sets on the guest's virtual CPU, regardless of what hardware it emulates.
-/// The single most reliable, lowest-false-positive VM signal available.
+/// CPUID leaf 1, ECX bit 31 - the hypervisor-present bit every hypervisor sets on the
+/// guest's virtual CPU, regardless of what hardware it emulates.
 #[cfg(target_arch = "x86_64")]
 fn cpuid_hypervisor_signals() -> Vec<String> {
     use std::arch::x86_64::__cpuid;
@@ -29,9 +18,8 @@ fn cpuid_hypervisor_signals() -> Vec<String> {
     }
     signals.push("cpuid_hypervisor_bit".to_string());
 
-    // Leaf 0x40000000: EBX/ECX/EDX spell out a 12-byte vendor ID string once
-    // the hypervisor bit is set - every major hypervisor (VMware, VirtualBox,
-    // Hyper-V, KVM, Xen, Parallels) publishes one.
+    // Leaf 0x40000000: EBX/ECX/EDX spell out a 12-byte vendor ID string once the hypervisor
+    // bit is set - every major hypervisor (VMware, VirtualBox, Hyper-V, KVM, Xen
     let leaf0 = __cpuid(0x4000_0000);
     let mut vendor = [0u8; 12];
     vendor[0..4].copy_from_slice(&leaf0.ebx.to_le_bytes());
@@ -49,13 +37,8 @@ fn cpuid_hypervisor_signals() -> Vec<String> {
     Vec::new()
 }
 
-/// macOS-only signal: the kernel publishes whether it's running under a
-/// hypervisor directly. Unverified on real macOS hardware - this codebase is
-/// built and tested from Windows only (see `capture/activity.rs`'s
-/// non-Windows `run_listeners` for the established precedent of flagging that
-/// honestly rather than guessing silently) - but the command and its 0/1
-/// output are Apple's own documented `sysctl` contract, not something this
-/// crate has to reverse-engineer.
+/// MacOS-only signal: the kernel publishes whether it's running under a hypervisor
+/// directly.
 #[cfg(target_os = "macos")]
 fn macos_hypervisor_signals() -> Vec<String> {
     use std::process::Command;
@@ -72,9 +55,7 @@ fn macos_hypervisor_signals() -> Vec<String> {
     Vec::new()
 }
 
-/// Runs every signal check available on this platform and combines them into
-/// one report. Called once at device registration, not per-tick - VM status
-/// doesn't change mid-session.
+/// Runs every signal check available on this platform and combines them into one report.
 pub fn detect_vm() -> VmDetection {
     let mut signals = cpuid_hypervisor_signals();
     signals.extend(macos_hypervisor_signals());
@@ -94,10 +75,8 @@ mod tests {
     #[cfg(target_arch = "x86_64")]
     #[test]
     fn cpuid_check_never_panics_and_orders_the_bit_signal_first() {
-        // Whether *this* machine is actually a VM is environment-dependent -
-        // the only thing a unit test can assert either way is that it runs
-        // cleanly and, if it does find the hypervisor bit, reports that
-        // exact signal first.
+        // Whether *this* machine is actually a VM is environment-dependent - the only thing
+        // a unit test can assert either way is that it runs cleanly and, if it does find
         let signals = cpuid_hypervisor_signals();
         if !signals.is_empty() {
             assert_eq!(signals[0], "cpuid_hypervisor_bit");

@@ -1,20 +1,13 @@
-//! Suggestion #14: shared test-only helpers for exercising real HTTP code
-//! (`ApiClient`'s network methods, `ActivityTracker::tick()`, `AuthServer`'s
-//! routes) without a mocking crate. Compiled only under `#[cfg(test)]` - see
-//! the `mod test_support;` declaration in `lib.rs`.
+//! Suggestion #14: shared test-only helpers for exercising real HTTP code (`ApiClient`'s
+//! network methods, `ActivityTracker::tick()`, `AuthServer`'s routes) without a mocking
 
 use std::thread;
 
 use base64::Engine;
 use tiny_http::{Response, Server};
 
-/// Minimal in-process HTTP server for exercising client code against real
-/// HTTP over a real socket. `tiny_http` is already a direct dependency - it
-/// backs the real local auth callback server in `auth/server.rs` - so this
-/// reuses it as a test double instead of adding a mocking crate or hand-
-/// parsing raw sockets. `handler` decides the status/body for each request it
-/// sees; it runs on the server's own background thread for the lifetime of
-/// the test process, so keep it fast and panic-free.
+/// Minimal in-process HTTP server for exercising client code against real HTTP over a real
+/// socket.
 pub fn fake_server<F>(mut handler: F) -> String
 where
     F: FnMut(&mut tiny_http::Request) -> (u16, String) + Send + 'static,
@@ -34,10 +27,8 @@ where
     format!("http://{addr}")
 }
 
-/// A syntactically valid (unsigned) JWT carrying only the `exp` claim that
-/// matters to `FirebaseTokenService::id_token_expiry_ms`. Lets a test hand
-/// `ApiClient` an id token it treats as still valid, so `authorized()`'s
-/// refresh check passes without a real Firebase round-trip.
+/// A syntactically valid (unsigned) JWT carrying only the `exp` claim that matters to
+/// `FirebaseTokenService::id_token_expiry_ms`.
 pub fn fake_jwt(exp_offset_secs: i64) -> String {
     let exp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

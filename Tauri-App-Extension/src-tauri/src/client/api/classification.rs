@@ -6,18 +6,8 @@ use super::ApiClient;
 use crate::constants::HTTP_TIMEOUT_SEC;
 
 impl ApiClient {
-    /// MAC-3/CQ-4: `app`-type rows from CLS-1's activity_categories that
-    /// carry a display_name - the single server-delivered mapping meant to
-    /// replace window.rs's hardcoded overrides() map. Category/domain rows
-    /// are backend/dashboard concerns the agent has no use for, so they're
-    /// filtered out here rather than parsed and discarded by every caller.
-    ///
-    /// `Ok(vec![])` on a reachable-but-empty response is a legitimate
-    /// result, not an error - it just means nothing has display names set
-    /// yet. `Err(())` means the fetch itself failed (network, auth); callers
-    /// must leave the existing cache in place rather than clearing it, so a
-    /// transient failure doesn't blank out names that were working a moment
-    /// ago.
+    /// MAC-3/CQ-4: `app`-type rows from CLS-1's activity_categories that carry a
+    /// display_name - the single server-delivered mapping meant to replace window.rs's
     pub fn fetch_app_display_names(&mut self) -> Result<Vec<(String, String)>, ()> {
         let auth = self.authorized().ok_or(())?;
         let url = format!("{}/api/classification/categories", self.api_url);

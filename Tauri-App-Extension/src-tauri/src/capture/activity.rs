@@ -12,99 +12,56 @@ use crate::constants::{
 };
 use crate::types::ActivitySignal;
 
-/// Minimum gap between two counted mouse-MOVE events. A low-level hook fires
-/// on every OS-level pixel delta - during a fast drag that can be hundreds of
-/// events/second, which would swamp the scoring window and pin activity to
-/// 100% from movement alone (worse than the old 100ms-poll behaviour this
-/// replaces). Keyboard and mouse *clicks* are never throttled - only
-/// continuous movement is. ponytail: a flat throttle, not full path-entropy
-/// analysis ("straight-line/looping = automated") - upgrade there if a
-/// jiggler using large, slow, human-speed movements ever shows up in
-/// practice; the OS injected-flag (AC-1) already catches the common case.
-// Windows-only: its one use site is inside the #[cfg(windows)] mouse-hook
-// callback below - there's no macOS/Linux input-hook implementation yet for
-// this to throttle.
+/// Minimum gap between two counted mouse-MOVE events.
+// Windows-only: its one use site is inside the #[cfg(windows)] mouse-hook callback below -
+// there's no macOS/Linux input-hook implementation yet for this to throttle.
 #[cfg(windows)]
 const MOUSE_MOVE_MIN_INTERVAL_MS: u64 = 50;
 
-/// Rolling mouse/keyboard activity score (0-100). ACT-2: weighted by input
-/// *type* (keyboard > click > move) and keystroke *quality* (distinct keys,
-/// human-irregular cadence), not a flat event count - see `score()`. Also
-/// tracks ACT-1/AC-1's injected-vs-hardware split for jiggler/auto-clicker
-/// detection.
+/// Rolling mouse/keyboard activity score (0-100).
 pub struct ActivityMeter {
     keyboard_count: AtomicU64,
     click_count: AtomicU64,
     move_count: AtomicU64,
-    /// ACT-1/AC-1: how many of the counted inputs in the current window were
-    /// flagged by the OS as synthetically generated (SendInput and
-    /// equivalent) rather than from real hardware. The single strongest
-    /// anti-cheat signal available almost for free once real hooks exist.
+    /// ACT-1/AC-1: how many of the counted inputs in the current window were flagged by the
+    /// OS as synthetically generated (SendInput and equivalent) rather than from real
     injected_count: AtomicU64,
-    /// ACT-2: distinct virtual-key codes seen this window - "200 presses of
-    /// the same key is a macro" needs to know how many *different* keys were
-    /// struck, not just how many keydowns fired.
+    /// ACT-2: distinct virtual-key codes seen this window - "200 presses of the same key is
+    /// a macro" needs to know how many *different* keys were struck, not just how many
     distinct_keys: Mutex<HashSet<u32>>,
-    /// ACT-2: recent keydown timestamps (capped ring), used to judge
-    /// cadence - "perfectly even spacing is a macro; human timing is
-    /// irregular."
     key_timestamps_ms: Mutex<Vec<u64>>,
-    /// ACT-4: last observed cursor position, used to accumulate real
-    /// on-screen travel distance rather than a raw move-event count (which
-    /// MOUSE_MOVE_MIN_INTERVAL_MS already throttles and so undercounts fast
-    /// drags). `None` right after a window roll, so the first move of a new
-    /// window contributes no distance instead of a bogus jump from stale
-    /// coordinates.
     last_mouse_pos: Mutex<Option<(i32, i32)>>,
     mouse_distance_px: Mutex<f64>,
     window_start_ms: AtomicU64,
-    /// ACT-3: server-tunable calibration, defaulted to the compile-time
-    /// constants and overwritten by `apply_scoring_settings` on the
-    /// tracker's periodic poll - see `agent::tracker::maybe_refresh_activity_scoring`.
+    /// ACT-3: server-tunable calibration, defaulted to the compile-time constants and
+    /// overwritten by `apply_scoring_settings` on the tracker's periodic poll - see
     saturation_events: AtomicU64,
     window_ms: AtomicU64,
     started: AtomicBool,
-    /// Timestamp of the last observed mouse/keyboard input, independent of the
-    /// scoring window above - used to tell the tracker "no input for N
-    /// seconds" so it can count idle vs. active seconds honestly instead of
-    /// treating every tick as active just because a session is open.
     last_input_ms: AtomicU64,
-    /// MOUSE_MOVE_MIN_INTERVAL_MS's own throttle state - Windows-only for the
-    /// same reason that constant is, see its doc comment.
+    /// MOUSE_MOVE_MIN_INTERVAL_MS's own throttle state - Windows-only for the same reason
+    /// that constant is, see its doc comment.
     #[cfg(windows)]
     last_mouse_move_ms: AtomicU64,
     #[cfg(not(windows))]
     _last_mouse_move_ms: AtomicU64,
-    /// CQ-1: OS thread ID the input hooks are installed on (0 = not
-    /// running). `stop()` posts WM_QUIT to this thread to unblock its
-    /// message loop and unregister the hooks cleanly - required now that
-    /// ACT-1 uses real system-wide hooks, which must not outlive the tracker
-    /// (a leaked low-level hook is a system-wide problem, not just this
-    /// process's).
+    /// CQ-1: OS thread ID the input hooks are installed on (0 = not running).
     #[cfg(windows)]
     hook_thread_id: AtomicU32,
     #[cfg(not(windows))]
     _hook_thread_id: AtomicU32,
-    /// CQ-1: handle to the spawned hook-listener thread. `stop()` joins this
-    /// (bounded) before returning, so a fast stop()-then-start() can never
-    /// spawn a new hook thread while the old one's own cleanup - which
-    /// zeroes METER_FOR_HOOK - is still running. See `join_hook_thread`.
+    /// CQ-1: handle to the spawned hook-listener thread.
     hook_thread_handle: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
-// Tests need to simulate a machine nobody is touching, which the real query
-// cannot do - the machine running the suite is, by definition, in use.
-//
-// Thread-local, not a static: `cargo test` runs tests in parallel, and a
-// process-wide override let one test's simulated idle leak into another that
-// wanted the real reading. Each test thread now gets its own answer.
+// Tests need to simulate a machine nobody is touching, which the real query cannot do - the
+// machine running the suite is, by definition, in use.
 #[cfg(test)]
 thread_local! {
     static TEST_IDLE_OVERRIDE_SEC: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
-/// Pretend the OS reports this many seconds of idle on this thread. `None`
-/// restores the real query. Test-only.
+/// Pretend the OS reports this many seconds of idle on this thread.
 #[cfg(test)]
 pub fn override_system_idle_for_test(seconds: Option<u64>) {
     TEST_IDLE_OVERRIDE_SEC.with(|cell| cell.set(seconds));
@@ -115,8 +72,8 @@ fn test_idle_override() -> Option<u64> {
     TEST_IDLE_OVERRIDE_SEC.with(|cell| cell.get())
 }
 
-/// Seconds since the last input the OS itself recorded for this session, or
-/// `None` where there is no such query (non-Windows, or the call failed).
+/// Seconds since the last input the OS itself recorded for this session, or `None` where
+/// there is no such query (non-Windows, or the call failed).
 #[cfg(windows)]
 fn system_idle_seconds() -> Option<u64> {
     #[cfg(test)]
@@ -131,8 +88,8 @@ fn system_idle_seconds() -> Option<u64> {
         cbSize: std::mem::size_of::<LASTINPUTINFO>() as u32,
         dwTime: 0,
     };
-    // SAFETY: `info` is a correctly sized, fully initialised LASTINPUTINFO,
-    // and the call only writes `dwTime`.
+    // SAFETY: `info` is a correctly sized, fully initialised LASTINPUTINFO, and the
+    // call only writes `dwTime`.
     if !unsafe { GetLastInputInfo(&mut info) }.as_bool() {
         return None;
     }
@@ -197,15 +154,7 @@ impl ActivityMeter {
         }
     }
 
-    /// reinstall the input hooks if Windows has removed them behind our
-    /// back.
-    ///
-    /// Idle time no longer depends on the hooks (see `idle_seconds`), so a
-    /// dead hook can no longer stop a session - but it does flatten the
-    /// activity *score*, which is built from per-event counts the OS-level
-    /// query cannot provide. A member typing normally would score at the floor
-    /// and look disengaged. Tearing the thread down and starting it again
-    /// re-runs `SetWindowsHookExW`.
+    /// Reinstall the input hooks if Windows has removed them behind our back.
     pub fn restart_hooks_if_dead(self: &Arc<Self>) -> bool {
         if !Self::HOOKS_SUPPORTED || !self.hooks_look_dead() {
             return false;
@@ -218,11 +167,8 @@ impl ActivityMeter {
         true
     }
 
-    /// CQ-1: unregisters the OS-level hooks and blocks (bounded) until the
-    /// hook thread has actually exited before returning. Safe to call even
-    /// if start() was never called or the thread already exited -
-    /// `hook_thread_id`/`hook_thread_handle` are 0/None in both cases and
-    /// this is a no-op.
+    /// CQ-1: unregisters the OS-level hooks and blocks (bounded) until the hook thread has
+    /// actually exited before returning.
     pub fn stop(&self) {
         self.started.store(false, Ordering::SeqCst);
         #[cfg(windows)]
@@ -239,13 +185,7 @@ impl ActivityMeter {
         self.join_hook_thread();
     }
 
-    /// Blocks until the hook thread (if any) has exited, up to a few
-    /// seconds. This is the fix for the race where `stop()` used to return
-    /// immediately after posting WM_QUIT: `start()` could then spawn a new
-    /// hook thread before the old one had unregistered its hooks and zeroed
-    /// `METER_FOR_HOOK`/`hook_thread_id`, so the old thread's cleanup could
-    /// stomp on the new thread's state and leave input hooks permanently
-    /// dead with nothing logged.
+    /// Blocks until the hook thread (if any) has exited, up to a few seconds.
     fn join_hook_thread(&self) {
         let Some(handle) = self.hook_thread_handle.lock().take() else {
             return;
@@ -271,17 +211,14 @@ impl ActivityMeter {
             UnhookWindowsHookEx, MSG, WH_KEYBOARD_LL, WH_MOUSE_LL,
         };
 
-        // SAFETY: METER_FOR_HOOK is set once, immediately before installing
-        // the hooks, and only ever read from the two hook callbacks below
-        // (which only run on this same thread's message loop while the hooks
-        // are installed) - never mutated concurrently with a read.
+        // SAFETY: METER_FOR_HOOK is set once, immediately before installing the hooks,
+        // and only ever read from the two hook callbacks below (which only run on this
+        // same thread's message loop while the hooks are installed) - never mutated
+        // concurrently with a read.
         METER_FOR_HOOK.store(self as *const ActivityMeter as usize, Ordering::SeqCst);
 
-        // Low-level hooks are process-thread-scoped and require the
-        // installing thread to pump messages for callbacks to fire at all -
-        // this is not optional infrastructure, it's how WH_*_LL delivery
-        // works. hmod is None: the hook procs are compiled into this binary,
-        // not a separate DLL.
+        // Low-level hooks are process-thread-scoped and require the installing thread to
+        // pump messages for callbacks to fire at all - this is not optional infrastructure
         let keyboard_hook = unsafe {
             SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook_proc), HINSTANCE::default(), 0)
         };
@@ -302,9 +239,8 @@ impl ActivityMeter {
             .store(unsafe { GetCurrentThreadId() }, Ordering::SeqCst);
 
         let mut msg = MSG::default();
-        // Blocks until a message arrives - stop() unblocks this by posting
-        // WM_QUIT to this exact thread id. GetMessageW returns false (0) on
-        // WM_QUIT or a real error; either way, exit the loop and clean up.
+        // Blocks until a message arrives - stop() unblocks this by posting WM_QUIT to this
+        // exact thread id.
         while unsafe { GetMessageW(&mut msg, None, 0, 0) }.as_bool() {
             unsafe {
                 let _ = TranslateMessage(&msg);
@@ -322,26 +258,12 @@ impl ActivityMeter {
 
     #[cfg(not(windows))]
     fn run_listeners(&self) {
-        // macOS equivalent is CGEventTap (kCGSessionEventTap) with a
-        // CFRunLoop on this thread and kCGEventSourceStateID to distinguish
-        // hardware from synthetic input - deliberately not implemented here.
-        // Unlike the NSWorkspace/CGWindowListCopyWindowInfo calls in
-        // window.rs (one-shot queries reusing an already-integrated,
-        // already-verified crate), a correct CGEventTap needs persistent
-        // run-loop and callback-lifetime management that is easy to get
-        // subtly wrong and impossible to verify without real macOS hardware
-        // - shipping that blind is worse than an honestly-flagged gap.
-        // Activity stays at floor until a real Mac is available to build
-        // and test this against.
+        // MacOS equivalent is CGEventTap (kCGSessionEventTap) with a CFRunLoop on this
+        // thread and kCGEventSourceStateID to distinguish hardware from synthetic input -
     }
 
-    // note_input through on_mouse_move: real production callers are the
-    // #[cfg(windows)] hook callbacks further down (there's no macOS/Linux
-    // input-hook implementation yet). Never actually dead where it matters -
-    // the tests below call all four directly on every platform, deliberately,
-    // to exercise the scoring logic independent of any real OS hook - but
-    // that only holds in the (lib test) build; the plain (lib) build has
-    // neither a real hook nor a test calling them on non-Windows targets.
+    // Note_input through on_mouse_move: real production callers are the #[cfg(windows)]
+    // hook callbacks further down (there's no macOS/Linux input-hook implementation yet).
     #[allow(dead_code)]
     fn note_input(&self, injected: bool) {
         if injected {
@@ -357,9 +279,7 @@ impl ActivityMeter {
         {
             let mut timestamps = self.key_timestamps_ms.lock();
             timestamps.push(now_ms());
-            // Capped ring - oldest dropped first. CADENCE_SAMPLE_SIZE is
-            // small (30), so a linear shift here is cheap relative to typing
-            // speed (at most ~10 keydowns/sec from a human).
+            // Capped ring - oldest dropped first.
             if timestamps.len() > CADENCE_SAMPLE_SIZE {
                 timestamps.remove(0);
             }
@@ -389,12 +309,6 @@ impl ActivityMeter {
     }
 
     /// Seconds since the last real mouse/keyboard input.
-    ///
-    /// `GetLastInputInfo` is the authority instead. It is a kernel-level query
-    /// answered from the session's own input record: it needs no hook, cannot
-    /// be silently removed, and never stalls. The hooks stay - the activity
-    /// *score* genuinely needs per-event counts, which this cannot give - but
-    /// they no longer decide whether someone is present.
     pub fn idle_seconds(&self) -> u64 {
         let from_hooks = {
             let last = self.last_input_ms.load(Ordering::Relaxed);
@@ -406,9 +320,8 @@ impl ActivityMeter {
         }
     }
 
-    /// Whether the hooks have gone quiet while the OS still sees input - the
-    /// signature of a hook Windows removed behind our back. Callers log it and
-    /// reinstall; nothing about idle depends on the answer.
+    /// Whether the hooks have gone quiet while the OS still sees input - the signature of a
+    /// hook Windows removed behind our back.
     #[allow(dead_code)]
     pub fn hooks_look_dead(&self) -> bool {
         let Some(from_os) = system_idle_seconds() else {
@@ -418,27 +331,15 @@ impl ActivityMeter {
             let last = self.last_input_ms.load(Ordering::Relaxed);
             now_ms().saturating_sub(last) / 1000
         };
-        // The OS saw input recently and the hooks did not. One tick of skew is
-        // normal; half a minute is not.
+        // The OS saw input recently and the hooks did not.
         from_os <= 2 && from_hooks > 30
     }
 
-    /// Whether real OS input-hook tracking is actually running on this
-    /// platform. Windows is the only target where `run_listeners` installs
-    /// real hooks (above) - everywhere else `last_input_ms` never updates
-    /// past process start, so `idle_seconds()` only grows monotonically and
-    /// is not a trustworthy "no input for N seconds" signal. Any caller that
-    /// would act on idle time (warnings, auto-stop escalation) must check
-    /// this first rather than treating process-start time as a fake activity
-    /// baseline - see `agent::tracker::tick_idle_escalation`.
+    /// Whether real OS input-hook tracking is actually running on this platform.
     pub const HOOKS_SUPPORTED: bool = cfg!(windows);
 
-    /// ACT-2: keyboard's weighted contribution scaled down when the
-    /// keystrokes look like a macro rather than real typing - either the
-    /// same key hammered repeatedly (low distinct-key ratio) or perfectly
-    /// even timing (low cadence variance). Multiplicative, not a hard zero:
-    /// this is a scoring signal, not the anti-cheat verdict (that's AC-1's
-    /// OS-level injected flag).
+    /// ACT-2: keyboard's weighted contribution scaled down when the keystrokes look like a
+    /// macro rather than real typing - either the same key hammered repeatedly (low
     fn keyboard_quality_multiplier(&self, keyboard_count: u64) -> f64 {
         if keyboard_count == 0 {
             return 1.0;
@@ -458,9 +359,8 @@ impl ActivityMeter {
         distinct_ratio * cadence_multiplier
     }
 
-    /// Standard deviation of inter-keystroke intervals in the current
-    /// sample, or `None` with fewer than two timestamps to derive an
-    /// interval from.
+    /// Standard deviation of inter-keystroke intervals in the current sample, or `None`
+    /// with fewer than two timestamps to derive an interval from.
     fn keystroke_interval_stddev_ms(&self) -> Option<f64> {
         let timestamps = self.key_timestamps_ms.lock();
         if timestamps.len() < 2 {
@@ -492,9 +392,7 @@ impl ActivityMeter {
         pct.max(ACTIVITY_MIN_SCORE)
     }
 
-    /// ACT-3: applied from the periodic scoring-settings poll. Zero values
-    /// are refused rather than stored - a saturation of 0 would divide by
-    /// zero in `score()`, and a window of 0 would roll every single tick.
+    /// ACT-3: applied from the periodic scoring-settings poll.
     pub fn apply_scoring_settings(&self, saturation_events: u64, window_ms: u64) {
         if saturation_events > 0 {
             self.saturation_events.store(saturation_events, Ordering::Relaxed);
@@ -504,11 +402,8 @@ impl ActivityMeter {
         }
     }
 
-    /// ACT-4: the raw counters behind `score()`, for the server to persist
-    /// per capture and recompute or re-weight from later without an agent
-    /// release. Deliberately reads the same window `score()` would (calls
-    /// `maybe_roll_window` first) so a signal and the score sent alongside it
-    /// in the same capture always describe the same window.
+    /// ACT-4: the raw counters behind `score()`, for the server to persist per capture and
+    /// recompute or re-weight from later without an agent release.
     pub fn signal_snapshot(&self) -> ActivitySignal {
         self.maybe_roll_window();
         let now = now_ms();
@@ -522,11 +417,8 @@ impl ActivityMeter {
         }
     }
 
-    /// ACT-1/AC-1: fraction (0.0-1.0) of this window's counted input that was
-    /// OS-flagged as synthetic. `None` when the window has no input at all -
-    /// distinct from `Some(0.0)` (input happened and none of it was
-    /// synthetic), since "no signal yet" and "confirmed clean" should not be
-    /// flagged identically by a caller doing anti-cheat scoring.
+    /// ACT-1/AC-1: fraction (0.0-1.0) of this window's counted input that was OS-flagged as
+    /// synthetic.
     pub fn injected_fraction(&self) -> Option<f64> {
         self.maybe_roll_window();
         let total = self.keyboard_count.load(Ordering::Relaxed)
@@ -566,11 +458,11 @@ impl ActivityMeter {
     }
 }
 
-// SAFETY: raw pointer to the single ActivityMeter instance, valid for the
-// lifetime of run_listeners (set at its start, cleared at its end) - see the
-// SAFETY note where it's stored. Hook callbacks are process-global function
-// pointers with no closure capture, so a static is the standard way to reach
-// instance state from them; this crate only ever creates one ActivityMeter.
+// SAFETY: raw pointer to the single ActivityMeter instance, valid for the lifetime of
+// run_listeners (set at its start, cleared at its end) - see the SAFETY note where it's
+// stored. Hook callbacks are process-global function pointers with no closure capture,
+// so a static is the standard way to reach instance state from them; this crate only
+// ever creates one ActivityMeter.
 #[cfg(windows)]
 static METER_FOR_HOOK: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
@@ -586,10 +478,8 @@ unsafe extern "system" fn keyboard_hook_proc(
 
     if code >= 0 {
         let msg = wparam.0 as u32;
-        // Down-transitions only - WM_KEYUP would double-count every press,
-        // and Windows already resends WM_KEYDOWN at OS auto-repeat rate
-        // while a key is held, which is the real "fast typing" signal this
-        // replaces the 100ms poller to stop missing.
+        // Down-transitions only - WM_KEYUP would double-count every press, and Windows
+        // already resends WM_KEYDOWN at OS auto-repeat rate while a key is held, which is
         if msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN {
             let ptr = METER_FOR_HOOK.load(Ordering::SeqCst);
             if ptr != 0 {
@@ -653,11 +543,7 @@ fn now_ms() -> u64 {
 mod tests {
     use super::*;
 
-    // Pure scoring/window logic - platform-independent, no hook needed. The
-    // hooks themselves (real OS callback delivery, injected-flag accuracy)
-    // are exactly the part that cannot be verified without live global input
-    // on real hardware; what's tested here is everything a bug in that
-    // delivery would still need to feed correctly.
+    // Pure scoring/window logic - platform-independent, no hook needed.
 
     fn keydown(meter: &ActivityMeter, vk_code: u32) {
         meter.on_keyboard_input(vk_code, false);
@@ -680,14 +566,8 @@ mod tests {
         assert!(score < 100, "20 keystrokes should not already saturate");
     }
 
-    /// Pushes `count` irregularly-spaced timestamps (never a uniform
-    /// interval) directly into the meter's cadence buffer, bypassing real
-    /// wall-clock timing entirely. A tight test loop's real timestamps land
-    /// within the same millisecond far more often than genuine typing does,
-    /// which would trip the machine-cadence penalty for reasons that have
-    /// nothing to do with what a given test is actually checking - this is
-    /// the deterministic stand-in used anywhere a test needs cadence to
-    /// read as "human" without depending on how fast the test happens to run.
+    /// Pushes `count` irregularly-spaced timestamps (never a uniform interval) directly
+    /// into the meter's cadence buffer, bypassing real wall-clock timing entirely.
     fn seed_irregular_timestamps(meter: &ActivityMeter, count: u64) {
         let mut timestamps = meter.key_timestamps_ms.lock();
         let mut t = 0u64;
@@ -710,9 +590,8 @@ mod tests {
 
     #[test]
     fn keyboard_outweighs_mouse_click_which_outweighs_mouse_move() {
-        // Below CADENCE_MIN_SAMPLES on purpose - isolates pure per-type
-        // weight comparison from the cadence signal, which is its own,
-        // separately-tested thing.
+        // Below CADENCE_MIN_SAMPLES on purpose - isolates pure per-type weight comparison
+        // from the cadence signal, which is its own, separately-tested thing.
         let a = ActivityMeter::new();
         for i in 0..5u32 {
             keydown(&a, i);
@@ -750,9 +629,8 @@ mod tests {
     #[test]
     fn perfectly_even_keystroke_timing_is_penalized() {
         let meter = ActivityMeter::new();
-        // Manufacture perfectly even 50ms-spaced timestamps directly - real
-        // hook delivery timing can't be controlled from a unit test, but the
-        // penalty this feeds is exactly what's under test here.
+        // Manufacture perfectly even 50ms-spaced timestamps directly - real hook delivery
+        // timing can't be controlled from a unit test, but the penalty this feeds is
         {
             let mut timestamps = meter.key_timestamps_ms.lock();
             for i in 0..15u64 {
@@ -786,11 +664,8 @@ mod tests {
 
     #[test]
     fn a_held_navigation_key_still_gets_some_credit() {
-        // MIN_DISTINCT_KEY_RATIO's floor - a single legitimately-held key
-        // (arrow key, backspace) must not drop to near-zero. Cadence seeded
-        // irregular so this isolates the distinct-ratio floor specifically;
-        // a real OS-auto-repeated key is a separate, arguably-fair case
-        // where both signals firing together is correct, not tested here.
+        // MIN_DISTINCT_KEY_RATIO's floor - a single legitimately-held key (arrow key,
+        // backspace) must not drop to near-zero.
         let meter = ActivityMeter::new();
         meter.distinct_keys.lock().insert(8); // backspace - the only key struck
         seed_irregular_timestamps(&meter, 15);
@@ -811,8 +686,8 @@ mod tests {
             timestamps.push(50);
             timestamps.push(100);
         }
-        // 3 distinct keys matching the count, so the distinct-ratio term is
-        // 1.0 and this isolates cadence's effect alone.
+        // 3 distinct keys matching the count, so the distinct-ratio term is 1.0 and this
+        // isolates cadence's effect alone.
         for i in 0..3u32 {
             meter.distinct_keys.lock().insert(i);
         }
@@ -890,12 +765,8 @@ mod tests {
         assert_eq!(signal.injected_event_count, 1);
     }
 
-    // idle used to read only the hook-fed timestamp, so a hook Windows
-    // silently removed froze it and the session stopped and rewound while the
-    // member was typing. These pin the OS-level cross-check that replaced it.
-    // No assumption that anyone is at the machine - this runs on CI too. What
-    // it checks is that the query answers at all on Windows, and that the
-    // tick-count wrap handling never yields an absurd reading.
+    // Idle used to read only the hook-fed timestamp, so a hook Windows silently removed
+    // froze it and the session stopped and rewound while the member was typing.
     #[test]
     fn the_os_idle_query_answers_on_windows_and_is_absent_elsewhere() {
         let answer = system_idle_seconds();
@@ -910,8 +781,8 @@ mod tests {
     #[test]
     fn a_frozen_hook_timestamp_cannot_by_itself_report_idle() {
         let meter = ActivityMeter::new();
-        // The hooks last saw input an hour ago - the state Windows leaves
-        // behind when it drops a slow low-level hook without telling anyone.
+        // The hooks last saw input an hour ago - the state Windows leaves behind when it
+        // drops a slow low-level hook without telling anyone.
         meter
             .last_input_ms
             .store(now_ms().saturating_sub(60 * 60 * 1000), Ordering::Relaxed);
@@ -973,7 +844,6 @@ mod tests {
     #[test]
     fn stop_without_start_never_panics() {
         // CQ-1: must be safe to call on a meter that was never started (e.g.
-        // sign-in failed before start() ran) - hook_thread_id is 0 either way.
         let meter = ActivityMeter::new();
         meter.stop();
     }

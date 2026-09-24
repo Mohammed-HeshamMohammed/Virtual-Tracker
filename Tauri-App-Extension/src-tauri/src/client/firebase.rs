@@ -6,23 +6,18 @@ use serde_json::Value;
 
 use crate::constants::HTTP_TIMEOUT_SEC;
 
-/// Why a token refresh failed. Collapsing these into one "it didn't work" is
-/// what made a dead session indistinguishable from a flaky network - they need
-/// opposite responses: retry vs. re-authenticate this device.
+/// Why a token refresh failed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RefreshOutcome {
     Ok,
     /// Network or backend problem; the credentials are probably still fine.
     Unreachable,
-    /// Firebase rejected the refresh token outright (revoked, password change,
-    /// disabled account). Retrying will never succeed.
+    /// Firebase rejected the refresh token outright (revoked, password change, disabled
+    /// account).
     Rejected,
 }
 
 /// Why an email/password sign-in failed, in the agent's own vocabulary.
-/// `NeedsBrowser` is the important one: a second factor or a provider we can't
-/// drive from a native form, where the honest answer is to hand the user to
-/// the browser link flow rather than fail with a Firebase error code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PasswordSignInError {
     BadCredentials,
@@ -47,10 +42,7 @@ impl PasswordSignInError {
         }
     }
 
-    /// Maps Identity Toolkit's `error.message` code. Anything unrecognised is
-    /// treated as bad credentials rather than surfacing a raw Google string -
-    /// every code this endpoint returns for a *failed* password sign-in is
-    /// some flavour of "that login didn't work".
+    /// Maps Identity Toolkit's `error.message` code.
     pub fn from_firebase_code(code: &str) -> Self {
         // Codes arrive as "INVALID_PASSWORD" or "TOO_MANY_ATTEMPTS_TRY_LATER : <detail>".
         let code = code.split(':').next().unwrap_or(code).trim();
@@ -64,9 +56,6 @@ impl PasswordSignInError {
 }
 
 /// Why an in-app account-creation call failed, in the agent's own vocabulary
-/// - mirrors `PasswordSignInError`'s shape for the same reason: every code
-/// Identity Toolkit's `accounts:signUp` can return for a *failed* signup is
-/// collapsed into one of a few user-facing outcomes instead of a raw string.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SignUpError {
     EmailInUse,
@@ -105,8 +94,7 @@ pub struct FirebaseTokenService {
 }
 
 impl FirebaseTokenService {
-    /// `auth_url` is Auth-Backend, the only service that serves the Firebase
-    /// web config - the dashboard API 404s it on purpose.
+    /// `auth_url` is Auth-Backend, the only service that serves the Firebase web config
     pub fn new(auth_url: String, client: Client) -> Self {
         Self {
             auth_url,
@@ -128,11 +116,7 @@ impl FirebaseTokenService {
         {
             Ok(res) if res.status().is_success() => {
                 let body: Value = res.json().ok()?;
-                // serverApiKey is unrestricted (or restricted only to Identity
-                // Toolkit) - apiKey is the browser's referrer-restricted key,
-                // which Google 403s for this agent's direct (no-Referer)
-                // calls to securetoken/identitytoolkit. Fall back to apiKey
-                // for older Auth-Backend deployments that predate the field.
+                // ServerApiKey is unrestricted (or restricted only to Identity Toolkit)
                 let key = body
                     .pointer("/config/serverApiKey")
                     .or_else(|| body.pointer("/config/apiKey"))
@@ -168,8 +152,8 @@ impl FirebaseTokenService {
         if refresh_token.is_empty() {
             return (RefreshOutcome::Rejected, None);
         }
-        // The API key comes from our own backend, so failing to get it means
-        // the backend is unreachable - not that the credentials are bad.
+        // The API key comes from our own backend, so failing to get it means the backend is
+        // unreachable - not that the credentials are bad.
         let Some(api_key) = self.firebase_api_key() else {
             return (RefreshOutcome::Unreachable, None);
         };
@@ -193,8 +177,8 @@ impl FirebaseTokenService {
 
         let status = res.status();
         if !status.is_success() {
-            // 4xx is Firebase telling us the credential is bad; 5xx is Google
-            // having a bad day and is worth retrying.
+            // 4xx is Firebase telling us the credential is bad; 5xx is Google having a bad
+            // day and is worth retrying.
             let outcome = if status.is_client_error() {
                 log::warn!("Token refresh rejected ({})", status.as_u16());
                 RefreshOutcome::Rejected
@@ -218,9 +202,7 @@ impl FirebaseTokenService {
         (RefreshOutcome::Ok, Some((id_token.to_string(), next_refresh)))
     }
 
-    /// Trades a backend-minted custom token for a real id/refresh pair. This is
-    /// what lets the agent recover using its own device credential instead of
-    /// sending the user back through a browser link.
+    /// Trades a backend-minted custom token for a real id/refresh pair.
     pub fn sign_in_with_custom_token(&mut self, custom_token: &str) -> Option<(String, String)> {
         let api_key = self.firebase_api_key()?;
         let url = format!(
@@ -252,9 +234,8 @@ impl FirebaseTokenService {
 }
 
 impl FirebaseTokenService {
-    /// Email/password sign-in, the same Identity Toolkit call the web app makes
-    /// through the Firebase SDK. The password is used once here and never
-    /// stored, logged or echoed back.
+    /// Email/password sign-in, the same Identity Toolkit call the web app makes through the
+    /// Firebase SDK.
     pub fn sign_in_with_password(
         &mut self,
         email: &str,
@@ -293,8 +274,8 @@ impl FirebaseTokenService {
             return Err(PasswordSignInError::from_firebase_code(code));
         }
 
-        // A successful response carrying an MFA challenge instead of tokens -
-        // the second factor cannot be answered from this form.
+        // A successful response carrying an MFA challenge instead of tokens - the second
+        // factor cannot be answered from this form.
         if data.get("mfaPendingCredential").is_some() {
             return Err(PasswordSignInError::NeedsBrowser);
         }
@@ -312,9 +293,7 @@ impl FirebaseTokenService {
         Ok((id_token, refresh))
     }
 
-    /// Which providers exist for an email, straight from Auth-Backend. Lets the
-    /// form say "this account signs in with Google" instead of letting Firebase
-    /// answer a password attempt with a generic failure.
+    /// Which providers exist for an email, straight from Auth-Backend.
     pub fn sign_in_methods(&self, email: &str) -> Option<Vec<String>> {
         let url = format!("{}/api/auth/resolve-sign-in-methods", self.auth_url);
         let res = self
@@ -338,10 +317,7 @@ impl FirebaseTokenService {
     }
 
     /// In-app account creation, the same Identity Toolkit call
-    /// `createUserWithEmailAndPassword` makes on the web. Returns fresh
-    /// tokens for the new account; the caller decides whether to keep them
-    /// (this agent signs back out and asks the user to verify + sign in
-    /// normally, matching the web form).
+    /// `createUserWithEmailAndPassword` makes on the web.
     pub fn sign_up_with_password(
         &mut self,
         email: &str,
@@ -391,12 +367,7 @@ impl FirebaseTokenService {
         Ok((id_token, refresh))
     }
 
-    /// Identity Toolkit's out-of-band email call. `request_type` is
-    /// `"VERIFY_EMAIL"` (needs `id_token`, no `email`) or `"PASSWORD_RESET"`
-    /// (needs `email`, no auth). Returns the raw `error.message` code on
-    /// failure so callers can decide what it means for them - a
-    /// `PASSWORD_RESET` caller treats `EMAIL_NOT_FOUND` as success (see
-    /// `send_password_reset_email`), a `VERIFY_EMAIL` caller just logs it.
+    /// Identity Toolkit's out-of-band email call.
     fn send_oob_code(
         &mut self,
         request_type: &str,
@@ -438,16 +409,16 @@ impl FirebaseTokenService {
             .to_string())
     }
 
-    /// Best-effort: a freshly created account not getting its verification
-    /// email is annoying, not fatal, and the account still exists either way.
+    /// Best-effort: a freshly created account not getting its verification email is
+    /// annoying, not fatal, and the account still exists either way.
     pub fn send_email_verification(&mut self, id_token: &str) {
         if let Err(code) = self.send_oob_code("VERIFY_EMAIL", None, Some(id_token)) {
             log::warn!("Could not send verification email: {code}");
         }
     }
 
-    /// Enumeration-safe, same as the web's `sendFirebasePasswordResetEmail`:
-    /// an unknown email reports the same success as a real one.
+    /// Enumeration-safe, same as the web's `sendFirebasePasswordResetEmail`: an unknown
+    /// email reports the same success as a real one.
     pub fn send_password_reset_email(&mut self, email: &str) -> Result<(), String> {
         match self.send_oob_code("PASSWORD_RESET", Some(email), None) {
             Ok(()) => Ok(()),
@@ -489,8 +460,8 @@ mod tests {
 
     #[test]
     fn wrong_password_and_unknown_email_read_the_same() {
-        // Deliberate: telling the two apart is an account-enumeration oracle,
-        // and Firebase itself now collapses them into INVALID_LOGIN_CREDENTIALS.
+        // Deliberate: telling the two apart is an account-enumeration oracle, and Firebase
+        // itself now collapses them into INVALID_LOGIN_CREDENTIALS.
         for code in ["INVALID_PASSWORD", "EMAIL_NOT_FOUND", "INVALID_LOGIN_CREDENTIALS"] {
             assert_eq!(
                 PasswordSignInError::from_firebase_code(code),

@@ -13,8 +13,7 @@ fn local_timezone() -> Option<String> {
         .filter(|tz| !tz.is_empty())
 }
 
-/// The body of a session action. Its own function so what the server is told
-/// can be tested without a live request (the test server cannot read bodies).
+/// The body of a session action.
 #[allow(clippy::too_many_arguments)]
 fn session_action_payload(
     action: &str,
@@ -31,17 +30,15 @@ fn session_action_payload(
         "activeSeconds": active_seconds,
         "idleSeconds": idle_seconds,
     });
-    // Which calendar day this member's hours belong to is decided from their
-    // timezone. Deliberately a zone *name*, never a timestamp: the server still
-    // stamps every session itself.
+    // Which calendar day this member's hours belong to is decided from their timezone.
     if let Some(tz) = time_zone {
         payload["timeZone"] = json!(tz);
     }
     if let Some(tid) = task_id {
         payload["taskId"] = json!(tid);
     }
-    // Calling projects have no task, so this is the only thing tying the
-    // session to the project it belongs to.
+    // Calling projects have no task, so this is the only thing tying the session to the
+    // project it belongs to.
     if let Some(pid) = project_id {
         payload["projectId"] = json!(pid);
     }
@@ -57,10 +54,7 @@ fn session_action_payload(
 }
 
 impl ApiClient {
-    /// `Ok(None)` = reachable, genuinely no active session. `Err(_)` = could
-    /// not reach the backend, or reached it but got a bad response — the
-    /// caller should keep tracking under the last known session rather than
-    /// treat this the same as "no session".
+    /// `Ok(None)` = reachable, genuinely no active session.
     pub fn fetch_session(&mut self) -> Result<Option<Value>, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
         let url = format!("{}/api/activity/session", self.api_url);
@@ -87,9 +81,8 @@ impl ApiClient {
         active_seconds: u64,
         idle_seconds: u64,
         stop_note: Option<&str>,
-        // Why this happened ("member_pause", "idle_escalation", ...), so the
-        // server can record it (PLAN-timer-stop-resilience.md D2). `None` for
-        // syncs, which are not state changes.
+        // Why this happened ("member_pause", "idle_escalation", ...), so the server can
+        // record it (PLAN-timer-stop-resilience.md D2).
         reason: Option<&str>,
     ) -> Result<crate::types::SessionInfo, String> {
         let auth = self
@@ -111,9 +104,8 @@ impl ApiClient {
             .post(url)
             .header("Authorization", auth)
             .header("Content-Type", "application/json")
-            // Ties the server's session history to the build that wrote it
-            // (PLAN D4), so a report can be matched to a version without
-            // asking the member which one they have.
+            // Ties the server's session history to the build that wrote it (PLAN D4), so a
+            // report can be matched to a version without asking the member which one they
             .header("X-Agent-Version", env!("CARGO_PKG_VERSION"))
             .json(&payload)
             .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
@@ -167,8 +159,8 @@ fn session_info_from_json(data: Option<&Value>) -> crate::types::SessionInfo {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
         task_title: None,
-        // Filled in by the controller from the live tracker - the server has
-        // no view of local idle state.
+        // Filled in by the controller from the live tracker - the server has no view of
+        // local idle state.
         idle_stage: 0,
         project_id: data
             .and_then(|d| d.get("projectId").or_else(|| d.get("project_id")))
