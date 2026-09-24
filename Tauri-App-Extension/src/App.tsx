@@ -1882,6 +1882,11 @@ function MainApp() {
   // The authoritative value the moment it loads; the cached one only bridges
   // the gap before that (or across a failed refresh) - see cachedTimezone.
   const displayTimezone = memberProfile?.timezone || cachedTimezone;
+  // A project can declare the calendar its days are counted in, and the server
+  // buckets project and task totals in that zone. Showing them against the
+  // member's own clock would put the numbers and the clock a day apart.
+  const projectTimezone = selectedProject?.timezone || displayTimezone;
+  const timezoneOverridden = Boolean(selectedProject?.timezone) && selectedProject?.timezone !== displayTimezone;
   const footerName = memberProfile?.name || displayName;
   const footerEmail = memberProfile?.email || profile?.email || "";
   const footerRole = memberProfile?.role || "";
@@ -2061,7 +2066,7 @@ function MainApp() {
     breakdown: projectAppBreakdown,
     screenshots: projectScreenshots,
     screenshotImages: projectScreenshotImages.urls,
-    timeZone: displayTimezone,
+    timeZone: projectTimezone,
     selectedScreenshotId: selectedProjectScreenshotId,
     loading: projectStatsLoading,
     onSelectScreenshot: handleSelectProjectScreenshot,
@@ -2286,7 +2291,7 @@ function MainApp() {
           screenshots={screenshots}
           screenshotImages={screenshotImages.urls}
           selectedScreenshotId={selectedScreenshotId}
-          screenshotTimeZone={displayTimezone}
+          screenshotTimeZone={projectTimezone}
           onSelectScreenshot={handleSelectScreenshot}
           onRequestTimeOff={openTimeOff}
           onSubmitTimesheet={() => void handleSubmitTimesheet()}
@@ -2473,8 +2478,11 @@ function MainApp() {
             <div className="page-header">
               <div className="page-header-titles">
                 <span className="page-header-clock">
-                  {fmtWallClock(wallClockNow, displayTimezone || undefined)}
-                  <span className="page-header-date">{fmtWallDate(wallClockNow, displayTimezone || undefined)}</span>
+                  {fmtWallClock(wallClockNow, projectTimezone || undefined)}
+                  <span className="page-header-date">
+                    {fmtWallDate(wallClockNow, projectTimezone || undefined)}
+                    {timezoneOverridden ? ` · ${projectTimezone}` : ""}
+                  </span>
                 </span>
                 <h2 className="page-title">{trackingLabel || "Time Tracking"}</h2>
               </div>

@@ -29,6 +29,10 @@ pub struct CreateTaskResult {
 pub struct ProjectInfo {
     pub id: String,
     pub name: String,
+    /// The calendar this project's days are counted in. Empty means the
+    /// member's own zone, which is every project that declares nothing.
+    #[serde(default)]
+    pub timezone: String,
     /// The server's project type name.
     #[serde(default)]
     pub project_type: String,

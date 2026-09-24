@@ -38,8 +38,8 @@ export async function createProjectPg(data) {
        id, name, status, billable, disable_activity, allow_project_tracking, disable_idle_time,
        idle_time_seconds, client_id, managers_notes, users_notes, viewers_notes, type, end_date,
        require_task_to_track, restrict_task_creation, require_stop_note, client_can_manage, client_can_track,
-       created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$20)
+       timezone, created_by, updated_by
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$21)
      RETURNING *`,
     [
       id,
@@ -61,6 +61,7 @@ export async function createProjectPg(data) {
       data.requireStopNote ?? false,
       data.clientCanManage === true,
       data.clientCanTrack === true,
+      data.timezone ?? null,
       uuidOrNull(data.createdBy),
     ],
   );
@@ -93,6 +94,7 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
     requireStopNote: "require_stop_note",
     clientCanManage: "client_can_manage",
     clientCanTrack: "client_can_track",
+    timezone: "timezone",
     updatedBy: "updated_by",
   };
   const sets = [];

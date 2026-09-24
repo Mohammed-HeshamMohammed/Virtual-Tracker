@@ -42,6 +42,7 @@ export interface CreateProjectFormPayload {
   disableIdleTime: boolean
   idleTimeSeconds: number
   endDate: string
+  timezone: string
   subProjectIds: string[]
   clientIds: string[]
   teamIds: string[]

@@ -90,6 +90,8 @@ export type AgentTask = {
 export type ProjectInfo = {
   id: string;
   name: string;
+  /** Absent or empty means the member's own zone. */
+  timezone?: string;
   projectType: string;
   hasTasks: boolean;
   requireTaskToTrack: boolean;

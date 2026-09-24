@@ -115,9 +115,16 @@ impl ApiClient {
                 .or_else(|| item.get("can_create_tasks"))
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
+            let timezone = item
+                .get("timezone")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .trim()
+                .to_string();
             projects.push(crate::types::ProjectInfo {
                 id,
                 name,
+                timezone,
                 project_type,
                 has_tasks,
                 require_task_to_track,
