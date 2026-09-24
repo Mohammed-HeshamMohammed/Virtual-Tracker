@@ -53,3 +53,19 @@ pub async fn acknowledge_monitoring_notice(state: tauri::State<'_, AppState>, no
     let controller = Arc::clone(&state.controller);
     Ok(run_blocking(move || controller.acknowledge_monitoring_notice(&notice_version)).await)
 }
+
+/// `minutes = None` ends the break.
+#[tauri::command]
+pub async fn set_private_break(
+    state: tauri::State<'_, AppState>,
+    minutes: Option<u32>,
+    reason: String,
+) -> Result<i64, String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.set_private_break(minutes, &reason)).await
+}
+
+#[tauri::command]
+pub fn capture_status(state: tauri::State<'_, AppState>) -> crate::types::CaptureStatus {
+    state.controller.capture_status()
+}

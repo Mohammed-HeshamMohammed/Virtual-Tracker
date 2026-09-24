@@ -13,6 +13,9 @@ pub struct ActivityScoringSettings {
     pub screenshot_min_delay_sec: u64,
     pub screenshot_max_delay_sec: u64,
     pub idle_threshold_sec: u64,
+    pub blur_default: bool,
+    pub outside_work_hours: bool,
+    pub break_until_ms: i64,
 }
 
 impl ApiClient {
@@ -40,6 +43,12 @@ impl ApiClient {
             screenshot_min_delay_sec: field("screenshotMinDelaySec")?,
             screenshot_max_delay_sec: field("screenshotMaxDelaySec")?,
             idle_threshold_sec: field("idleThresholdSec")?,
+            // Absent on an older backend, which must read as "no restriction"
+            // rather than blocking every capture.
+            blur_default: data.get("blurDefault").and_then(|v| v.as_bool()).unwrap_or(false),
+            outside_work_hours: data.get("captureBlockReason").and_then(|v| v.as_str())
+                == Some("outside_work_hours"),
+            break_until_ms: data.get("breakUntilMs").and_then(|v| v.as_i64()).unwrap_or(0),
         })
     }
 }

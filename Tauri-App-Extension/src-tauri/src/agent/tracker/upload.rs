@@ -8,6 +8,12 @@ impl ActivityTracker {
         session_id: &str,
         window: &crate::capture::window::ForegroundWindow,
     ) {
+        // Guarded here rather than at the two call sites in tick.rs: the
+        // degraded path checked neither exclusions nor this, so a member on a
+        // break stayed captured whenever the session fetch was failing.
+        if self.events.gate.blocked() || self.events.is_capture_excluded(window) {
+            return;
+        }
         let Some(event) = self.events.screenshot(window) else {
             return;
         };
@@ -25,6 +31,9 @@ impl ActivityTracker {
     ) {
         // A window we could not identify is a gap in what the agent can see, not an app
         // called "Unknown".
+        if self.events.gate.blocked() || self.events.is_capture_excluded(window) {
+            return;
+        }
         if !window.is_identified() {
             log::debug!("skipping app slice: foreground window could not be identified");
             return;

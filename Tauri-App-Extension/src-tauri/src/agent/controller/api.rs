@@ -23,6 +23,41 @@ impl AgentController {
             .map_err(|error| error.to_string())
     }
 
+    /// Stops capture immediately, then records it. The local gate is set
+    /// first so a failed request cannot leave the member still captured
+    /// after they asked not to be.
+    pub fn set_private_break(&self, minutes: Option<u32>, reason: &str) -> Result<i64, String> {
+        let until = self
+            .api
+            .lock()
+            .set_private_break(minutes, reason)
+            .map_err(|error| error.to_string());
+        // Nothing is capturing without a running tracker, and a fresh one
+        // picks the break up from the server on its first settings poll.
+        if let Some(tracker) = self.tracker.lock().as_ref() {
+            tracker.gate().set_break(match (minutes, &until) {
+                (None, _) => 0,
+                (Some(_), Ok(ms)) => *ms,
+                // The request failed, but the member still asked to stop.
+                (Some(m), Err(_)) => crate::capture::capture_gate::now_plus_minutes_ms(m),
+            });
+        }
+        until
+    }
+
+    pub fn capture_status(&self) -> crate::types::CaptureStatus {
+        let guard = self.tracker.lock();
+        let Some(gate) = guard.as_ref().map(|t| t.gate()) else {
+            return crate::types::CaptureStatus::default();
+        };
+        let state = gate.state();
+        crate::types::CaptureStatus {
+            blocked: state != crate::capture::capture_gate::CaptureBlock::Allowed,
+            reason: state.message().unwrap_or_default().to_string(),
+            break_until_ms: gate.break_until_ms(),
+        }
+    }
+
     pub fn get_agent_notifications(&self) -> Result<crate::types::AgentNotificationList, String> {
         self.api.lock().fetch_agent_notifications().map_err(|error| error.to_string())
     }

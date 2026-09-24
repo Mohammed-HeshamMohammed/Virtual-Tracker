@@ -17,6 +17,13 @@ import { getMemberByIdPg, updateMemberPg } from "../../lib/postgres/members-post
 import { getSingleByMemberId } from "../../lib/postgres/member-data-store.js";
 import { recordScreenshotAccess } from "../compliance/data-retention.js";
 import { getActivityScoringSettings, setActivityScoringSettings } from "./scoring-settings.js";
+import {
+  getEffectiveCaptureSettings,
+  setMemberCaptureSettings,
+  startPrivateBreak,
+  endPrivateBreak,
+  getMyCaptureSummary,
+} from "./member-capture-settings.js";
 import { computeDHash } from "./perceptual-hash.js";
 import { getSessionIntegritySummary, getMemberIntegrityFlags, contestIntegrityFlag } from "./integrity-score.js";
 import { getAuthAdmin, getDb } from "../../config/firebase.js";
@@ -2185,6 +2192,34 @@ export async function routeActivity(req, res, url, origin) {
     return true;
   }
 
+  const captureSettingsMatch = pn.match(/^\/api\/activity\/members\/([0-9a-f-]{36})\/capture-settings$/i);
+  if (captureSettingsMatch && (req.method === "GET" || req.method === "PATCH")) {
+    const viewer = getAuthContext(req);
+    if (!viewer) {
+      sendJson(res, origin, 401, { success: false, error: "Authentication is required." });
+      return true;
+    }
+    const targetId = captureSettingsMatch[1];
+    try {
+      let data;
+      if (req.method === "GET") {
+        data = await getEffectiveCaptureSettings(targetId);
+      } else {
+        data = await setMemberCaptureSettings(targetId, await readJsonBody(req), viewer);
+      }
+      sendJson(res, origin, 200, { success: true, data });
+    } catch (e) {
+      const status = e?.code === "FORBIDDEN" ? 403 : e?.code?.startsWith("INVALID_") ? 400 : 500;
+      if (status === 500) logSafeError("[activity/member-capture-settings]", e);
+      sendJson(res, origin, status, {
+        success: false,
+        error: status === 500 ? "Failed to update capture settings." : e.message,
+        code: e?.code,
+      });
+    }
+    return true;
+  }
+
   if (pn === "/api/activity/scoring-settings" && req.method === "GET") {
     const idToken = readIdToken(req, url);
     if (!idToken) {
@@ -2192,10 +2227,56 @@ export async function routeActivity(req, res, url, origin) {
       return true;
     }
     try {
-      sendJson(res, origin, 200, { success: true, data: await getActivityScoringSettings() });
+      // The agent polls this; a signed-in member gets their own resolved
+      // settings, anything without a member context gets the org row.
+      const memberId = getAuthContext(req)?.memberId;
+      const data = memberId ? await getEffectiveCaptureSettings(memberId) : await getActivityScoringSettings();
+      sendJson(res, origin, 200, { success: true, data });
     } catch (e) {
       logSafeError("[activity/scoring-settings GET]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load scoring settings." });
+    }
+    return true;
+  }
+
+  if (pn === "/api/activity/my-capture-summary" && req.method === "GET") {
+    const viewer = getAuthContext(req);
+    if (!viewer) {
+      sendJson(res, origin, 401, { success: false, error: "Authentication is required." });
+      return true;
+    }
+    try {
+      const data = await getMyCaptureSummary(viewer.memberId, url.searchParams.get("tz"));
+      sendJson(res, origin, 200, { success: true, data });
+    } catch (e) {
+      logSafeError("[activity/my-capture-summary]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load your capture summary." });
+    }
+    return true;
+  }
+
+  if (pn === "/api/activity/private-break" && req.method === "POST") {
+    const viewer = getAuthContext(req);
+    if (!viewer) {
+      sendJson(res, origin, 401, { success: false, error: "Authentication is required." });
+      return true;
+    }
+    try {
+      const body = await readJsonBody(req);
+      // A falsy minutes ends the break, so there is one route and one verb
+      // rather than a DELETE the agent would need a new helper to call.
+      const data = Number(body.minutes) > 0
+        ? await startPrivateBreak(viewer.memberId, body.minutes, body.reason)
+        : await endPrivateBreak(viewer.memberId);
+      sendJson(res, origin, 200, { success: true, data });
+    } catch (e) {
+      const status = e?.code?.startsWith("INVALID_") ? 400 : 500;
+      if (status === 500) logSafeError("[activity/private-break]", e);
+      sendJson(res, origin, status, {
+        success: false,
+        error: status === 400 ? e.message : "Failed to update your break.",
+        code: e?.code,
+      });
     }
     return true;
   }

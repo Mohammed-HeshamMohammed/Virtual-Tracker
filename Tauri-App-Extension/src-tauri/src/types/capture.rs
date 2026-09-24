@@ -99,3 +99,11 @@ pub struct ProjectAppBreakdown {
     #[serde(default)]
     pub shown_seconds: u64,
 }
+
+#[derive(Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureStatus {
+    pub blocked: bool,
+    pub reason: String,
+    pub break_until_ms: i64,
+}

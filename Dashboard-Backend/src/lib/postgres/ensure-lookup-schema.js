@@ -1068,6 +1068,31 @@ GROUP BY task_id`,
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
   `INSERT INTO capture_minimization_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
+  // Per-member overrides for everything capture-related. NULL means inherit
+  // the org row; break_until/break_reason are the member's own privacy break.
+  `CREATE TABLE IF NOT EXISTS member_capture_settings (
+  member_id                UUID PRIMARY KEY,
+  screenshot_min_delay_sec INT     CHECK (screenshot_min_delay_sec > 0),
+  screenshot_max_delay_sec INT     CHECK (screenshot_max_delay_sec > 0),
+  blur_default             BOOLEAN,
+  work_start_min           SMALLINT CHECK (work_start_min BETWEEN 0 AND 1439),
+  work_end_min             SMALLINT CHECK (work_end_min BETWEEN 0 AND 1439),
+  break_until              TIMESTAMPTZ,
+  break_reason             VARCHAR(200),
+  updated_by               UUID,
+  updated_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (screenshot_min_delay_sec IS NULL OR screenshot_max_delay_sec IS NULL
+         OR screenshot_min_delay_sec <= screenshot_max_delay_sec)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_member_capture_break ON member_capture_settings (break_until)
+   WHERE break_until IS NOT NULL`,
+  // NULL member_id keeps the existing org-wide rows meaning what they did.
+  "ALTER TABLE capture_exclusions ADD COLUMN IF NOT EXISTS member_id UUID",
+  "DROP INDEX IF EXISTS idx_capture_exclusions_unique",
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_capture_exclusions_org
+   ON capture_exclusions (match_type, lower(pattern)) WHERE member_id IS NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_capture_exclusions_member
+   ON capture_exclusions (member_id, match_type, lower(pattern)) WHERE member_id IS NOT NULL`,
   `CREATE TABLE IF NOT EXISTS data_retention_settings (
   data_type      VARCHAR(20) PRIMARY KEY CHECK (data_type IN ('screenshots', 'app_logs', 'url_logs', 'sessions')),
   retention_days INT NOT NULL DEFAULT 90 CHECK (retention_days > 0),

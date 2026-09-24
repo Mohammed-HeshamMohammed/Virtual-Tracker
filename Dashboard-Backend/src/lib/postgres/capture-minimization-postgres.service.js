@@ -1,18 +1,30 @@
 import { query } from "./client.js";
 
-export async function getCaptureExclusionsPg() {
+/** `memberId` null lists the org-wide rows only; a member id lists theirs too. */
+export async function getCaptureExclusionsPg(memberId = null) {
   return query(
-    `SELECT id, match_type, pattern, note, created_by, created_at FROM capture_exclusions ORDER BY created_at DESC`,
+    `SELECT id, match_type, pattern, note, created_by, created_at, member_id
+       FROM capture_exclusions
+      WHERE member_id IS NULL OR member_id = $1
+      ORDER BY created_at DESC`,
+    [memberId],
   );
 }
 
 export async function addCaptureExclusionPg(input) {
+  const memberId = input.memberId ?? null;
+  // Two partial unique indexes, so the conflict target has to carry the same
+  // predicate - a bare ON CONFLICT (match_type, lower(pattern)) matches
+  // neither of them and errors instead of doing nothing.
+  const conflict = memberId
+    ? "(member_id, match_type, lower(pattern)) WHERE member_id IS NOT NULL"
+    : "(match_type, lower(pattern)) WHERE member_id IS NULL";
   const rows = await query(
-    `INSERT INTO capture_exclusions (match_type, pattern, note, created_by)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (match_type, lower(pattern)) DO NOTHING
-     RETURNING id, match_type, pattern, note, created_by, created_at`,
-    [input.matchType, input.pattern, input.note ?? null, input.createdBy ?? null],
+    `INSERT INTO capture_exclusions (match_type, pattern, note, created_by, member_id)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT ${conflict} DO NOTHING
+     RETURNING id, match_type, pattern, note, created_by, created_at, member_id`,
+    [input.matchType, input.pattern, input.note ?? null, input.createdBy ?? null, memberId],
   );
   return rows[0] ?? null;
 }

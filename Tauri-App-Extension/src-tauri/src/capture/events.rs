@@ -33,6 +33,9 @@ pub struct EventBuilder {
     /// constants and overwritten by `apply_screenshot_cadence` on the tracker's periodic
     screenshot_min_delay_sec: AtomicU64,
     screenshot_max_delay_sec: AtomicU64,
+    /// Blur every screenshot for this member, whatever the window is.
+    blur_default: std::sync::atomic::AtomicBool,
+    pub gate: crate::capture::capture_gate::CaptureGate,
     /// Last URL successfully captured, with when it was captured.
     last_url: Mutex<Option<(String, Instant)>>,
     /// Where the display-name map is persisted, so a cold start with no network still
@@ -115,6 +118,8 @@ impl EventBuilder {
             display_names: Mutex::new(cached.into_iter().collect()),
             screenshot_min_delay_sec: AtomicU64::new(SCREENSHOT_MIN_DELAY_SEC),
             screenshot_max_delay_sec: AtomicU64::new(SCREENSHOT_MAX_DELAY_SEC),
+            blur_default: std::sync::atomic::AtomicBool::new(false),
+            gate: Default::default(),
             last_url: Mutex::new(None),
             cache_path,
             app_icon_script_path,
@@ -190,6 +195,11 @@ impl EventBuilder {
     /// `rng.gen_range` with an inverted bound, and the backend already rejects this
     /// ordering before it can be sent, so this is defense in depth, not the primary
     /// guard.
+    pub fn apply_capture_policy(&self, blur_default: bool, outside_work_hours: bool, break_until_ms: i64) {
+        self.blur_default.store(blur_default, Ordering::Relaxed);
+        self.gate.apply(outside_work_hours, break_until_ms);
+    }
+
     pub fn apply_screenshot_cadence(&self, min_delay_sec: u64, max_delay_sec: u64) {
         if min_delay_sec > 0 && max_delay_sec > 0 && min_delay_sec <= max_delay_sec {
             self.screenshot_min_delay_sec.store(min_delay_sec, Ordering::Relaxed);
@@ -227,7 +237,8 @@ impl EventBuilder {
     pub fn screenshot(&self, window: &ForegroundWindow) -> Option<ActivityEvent> {
         let url = self.recent_url(window);
         // Blur asks a different question from labelling, so it gets a different URL.
-        let blur = crate::capture::sensitive_apps::is_messaging_target(
+        let blur = self.blur_default.load(Ordering::Relaxed)
+            || crate::capture::sensitive_apps::is_messaging_target(
             &window.process_name,
             self.url_for_blur(window).as_deref(),
             Some(window.title.as_str()),

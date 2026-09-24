@@ -95,6 +95,7 @@ export const TENANT_SCOPED_TABLES = [
   "activity_scoring_settings",
   "screenshot_access_log",
   "capture_exclusions",
+  "member_capture_settings",
   "capture_minimization_settings",
   "data_retention_settings",
   "monitoring_capabilities",

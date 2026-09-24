@@ -1,5 +1,6 @@
 pub mod activity;
 pub mod browsers;
+pub mod capture_gate;
 pub mod app_icon;
 pub mod classification_cache;
 pub mod events;

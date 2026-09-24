@@ -422,6 +422,8 @@ pub fn run() {
             commands::app_info::get_member_profile,
             commands::app_info::set_member_timezone,
             commands::insights::get_dashboard_summary,
+            commands::insights::set_private_break,
+            commands::insights::capture_status,
             commands::work::start_task_session,
             commands::insights::get_monitoring_notice,
             commands::insights::acknowledge_monitoring_notice,

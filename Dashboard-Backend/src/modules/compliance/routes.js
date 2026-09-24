@@ -218,7 +218,9 @@ export async function routeCompliance(req, res, url, origin) {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
     try {
-      const rows = await getCaptureExclusions();
+      // The member's own exclusions travel with the org-wide ones, so the
+      // agent needs no second request and no awareness that both exist.
+      const rows = await getCaptureExclusions(viewer.memberId);
       sendJson(res, origin, 200, {
         success: true,
         data: {

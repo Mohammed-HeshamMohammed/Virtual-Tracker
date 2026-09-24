@@ -31,8 +31,8 @@ function normalizeExclusionRow(row) {
   };
 }
 
-export async function getCaptureExclusions() {
-  const rows = await getCaptureExclusionsPg();
+export async function getCaptureExclusions(memberId = null) {
+  const rows = await getCaptureExclusionsPg(memberId);
   return rows.map(normalizeExclusionRow);
 }
 

@@ -201,6 +201,10 @@ impl ActivityTracker {
 
     /// Caller (`AgentController::start_tracker`) always stops any prior tracker and builds
     /// a fresh instance before calling this, so there's no existing loop to guard against
+    pub fn gate(&self) -> &crate::capture::capture_gate::CaptureGate {
+        &self.events.gate
+    }
+
     pub fn start(self: &Arc<Self>) {
         self.stop.store(false, Ordering::SeqCst);
         self.activity.start();
@@ -368,6 +372,11 @@ impl ActivityTracker {
                 .apply_scoring_settings(settings.saturation_events, settings.window_ms);
             self.events
                 .apply_screenshot_cadence(settings.screenshot_min_delay_sec, settings.screenshot_max_delay_sec);
+            self.events.apply_capture_policy(
+                settings.blur_default,
+                settings.outside_work_hours,
+                settings.break_until_ms,
+            );
             self.apply_idle_thresholds(settings.idle_threshold_sec);
         }
     }
