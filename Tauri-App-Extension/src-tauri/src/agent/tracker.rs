@@ -376,16 +376,7 @@ impl ActivityTracker {
             state.last_tick_at = Instant::now();
             return;
         }
-        let idle_now = self.tick_progress(
-            &state.task_id,
-            &mut state.last_tick_at,
-            &state.active_baseline,
-            &mut state.active_elapsed,
-            &state.idle_baseline,
-            &mut state.idle_elapsed,
-            state.idle_time_disabled,
-            state.idle_threshold_sec_for_project,
-        );
+        let idle_now = self.tick_progress(state);
         let _ = idle_now;
 
         // Idle escalation must not wait on a poll either: it is the thing that stops a
@@ -407,16 +398,128 @@ impl ActivityTracker {
             state.was_active = false;
             state.current_session = String::new();
             *self.session_id.lock() = None;
-            self.reset_task_progress(
-                &mut state.task_id,
-                &mut state.last_tick_at,
-                &mut state.active_baseline,
-                &mut state.active_elapsed,
-                &mut state.idle_baseline,
-                &mut state.idle_elapsed,
-                &mut state.idle_time_disabled,
-                &mut state.idle_threshold_sec_for_project,
+            self.reset_task_progress(state);
+        }
+    }
+
+    /// Re-baseline the tracked totals against the server's own figures.
+    ///
+    /// Runs when the tracked task changes under an open session (a resume onto a
+    fn rebaseline_for_task(
+        &self,
+        state: &mut TickState,
+        session: &serde_json::Value,
+        session_id: &str,
+        session_task_id: &str,
+        task_changed: bool,
+    ) {
+        let tracking = if session_task_id.is_empty() {
+            None
+        } else {
+            self.api.lock().fetch_task_time_tracking(&session_task_id).ok()
+        };
+        // Task-less (calling project) sessions have no per-task totals to re-baseline
+        // from, so the session's own accumulated seconds are the cumulative figure -
+        let session_seconds = |key: &str| {
+            session.get(key).and_then(|v| v.as_u64()).unwrap_or(0)
+        };
+        if task_changed {
+            state.task_id = session_task_id.to_string();
+            state.active_elapsed = 0;
+            state.idle_elapsed = 0;
+            state.active_baseline = tracking
+                .as_ref()
+                .map(|t| t.active_seconds)
+                .unwrap_or_else(|| session_seconds("activeSeconds"));
+            state.idle_baseline = tracking
+                .as_ref()
+                .map(|t| t.idle_seconds)
+                .unwrap_or_else(|| session_seconds("idleSeconds"));
+        }
+
+        // Task-anchored sessions get this from the same fetch_task_time_tracking call
+        // above (task-time-tracking.js attaches the owning project's settings to every
+        state.idle_time_disabled = tracking
+            .as_ref()
+            .map(|t| t.disable_idle_time)
+            .unwrap_or_else(|| {
+                session.get("disableIdleTime").and_then(|v| v.as_bool()).unwrap_or(false)
+            });
+        let reported_threshold = tracking
+            .as_ref()
+            .map(|t| t.idle_time_seconds)
+            .unwrap_or_else(|| {
+                session
+                    .get("idleTimeSeconds")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or_else(|| self.idle_threshold_sec.load(Ordering::Relaxed))
+            });
+        // The org-wide poll has always been validated (apply_idle_thresholds), but the
+        // per-project value went straight in unchecked - and nothing upstream
+        state.idle_threshold_sec_for_project = if valid_idle_threshold(reported_threshold) {
+            reported_threshold
+        } else {
+            let fallback = self.idle_threshold_sec.load(Ordering::Relaxed);
+            log::warn!(
+                "Project reported an unusable idle allowance ({reported_threshold}s) - falling back to the org-wide {fallback}s"
             );
+            fallback
+        };
+        state.idle_settings_stale = false;
+
+        // an unclean exit (crash/kill/reboot) between two `sync` calls loses
+        // whatever PS-1's on-disk mirror hadn't reached the server yet - reconcile
+        // against it here, same GREATEST-style rule TC-4 already applies
+        // server-side for `sync`, so a restart never displays less than what was
+        // last actually shown. Scoped to the exact same session+task on purpose: a
+        // leftover file from an already-closed session must never bleed into a new
+        // one.
+        let persisted_task_id = if session_task_id.is_empty() {
+            None
+        } else {
+            Some(session_task_id.to_string())
+        };
+        if let Some(persisted) = self.progress.load() {
+            if persisted.session_id == session_id && persisted.task_id == persisted_task_id {
+                state.active_baseline = state.active_baseline.max(persisted.active_seconds);
+                state.idle_baseline = state.idle_baseline.max(persisted.idle_seconds);
+            }
+        }
+
+        state.next_sync_at = Instant::now();
+    }
+
+    /// The session is over: forget the task, the totals and the session id.
+    fn end_session(&self, state: &mut TickState) {
+        self.reset_task_progress(state);
+        state.was_active = false;
+        state.current_session = String::new();
+        *self.session_id.lock() = None;
+    }
+
+    /// The session poll failed. Keep crediting time and capturing against the last known
+    /// session so an outage costs the member nothing.
+    fn tick_offline(&self, state: &mut TickState) {
+        state.failed_session_fetches = state.failed_session_fetches.saturating_add(1);
+        if state.failed_session_fetches == DEGRADED_TICKS {
+            self.emit_status("Offline — still counting, not yet synced");
+        }
+        if !state.was_active || state.current_session.is_empty() {
+            return;
+        }
+        let window = get_foreground_window();
+        let session_id = state.current_session.clone();
+        let now = Instant::now();
+        let idle_now = self.tick_progress(state);
+        // No screenshots while idle - see tick_progress's doc comment.
+        if !idle_now && now >= state.next_screenshot_at {
+            self.upload_screenshot(&session_id, &window);
+            state.next_screenshot_at =
+                now + Duration::from_secs(self.events.random_screenshot_delay_sec());
+        }
+        if now.duration_since(state.last_app_log_at).as_secs() >= APP_LOG_INTERVAL_SEC {
+            self.upload_app_slice(&session_id, &window);
+            state.last_app_log_at = now;
         }
     }
 
@@ -464,37 +567,7 @@ impl ActivityTracker {
                 session
             }
             Err(_) => {
-                state.failed_session_fetches = state.failed_session_fetches.saturating_add(1);
-                // Past a minute of silence, say so.
-                if state.failed_session_fetches == DEGRADED_TICKS {
-                    self.emit_status("Offline — still counting, not yet synced");
-                }
-                // Backend unreachable.
-                if state.was_active && !state.current_session.is_empty() {
-                    let window = get_foreground_window();
-                    let session_id = state.current_session.clone();
-                    let now = Instant::now();
-                    let idle_now = self.tick_progress(
-                        &state.task_id,
-                        &mut state.last_tick_at,
-                        &state.active_baseline,
-                        &mut state.active_elapsed,
-                        &state.idle_baseline,
-                        &mut state.idle_elapsed,
-                        state.idle_time_disabled,
-                        state.idle_threshold_sec_for_project,
-                    );
-                    // No screenshots while idle - see tick_progress's doc comment.
-                    if !idle_now && now >= state.next_screenshot_at {
-                        self.upload_screenshot(&session_id, &window);
-                        state.next_screenshot_at =
-                            now + Duration::from_secs(self.events.random_screenshot_delay_sec());
-                    }
-                    if now.duration_since(state.last_app_log_at).as_secs() >= APP_LOG_INTERVAL_SEC {
-                        self.upload_app_slice(&session_id, &window);
-                        state.last_app_log_at = now;
-                    }
-                }
+                self.tick_offline(state);
                 return;
             }
         };
@@ -507,19 +580,7 @@ impl ActivityTracker {
             if state.was_active {
                 self.emit_status("Signed in — waiting for timer");
             }
-            self.reset_task_progress(
-                &mut state.task_id,
-                &mut state.last_tick_at,
-                &mut state.active_baseline,
-                &mut state.active_elapsed,
-                &mut state.idle_baseline,
-                &mut state.idle_elapsed,
-                &mut state.idle_time_disabled,
-                &mut state.idle_threshold_sec_for_project,
-            );
-            state.was_active = false;
-            state.current_session = String::new();
-            *self.session_id.lock() = None;
+            self.end_session(state);
             return;
         };
 
@@ -542,19 +603,7 @@ impl ActivityTracker {
             } else if state.was_active {
                 self.emit_status("Signed in — waiting for timer");
             }
-            self.reset_task_progress(
-                &mut state.task_id,
-                &mut state.last_tick_at,
-                &mut state.active_baseline,
-                &mut state.active_elapsed,
-                &mut state.idle_baseline,
-                &mut state.idle_elapsed,
-                &mut state.idle_time_disabled,
-                &mut state.idle_threshold_sec_for_project,
-            );
-            state.was_active = false;
-            state.current_session = String::new();
-            *self.session_id.lock() = None;
+            self.end_session(state);
             return;
         }
 
@@ -589,80 +638,7 @@ impl ActivityTracker {
         let task_changed = state.task_id.as_str() != session_task_id;
         // Settings follow *either* identity.
         if task_changed || state.idle_settings_stale {
-            let tracking = if session_task_id.is_empty() {
-                None
-            } else {
-                self.api.lock().fetch_task_time_tracking(&session_task_id).ok()
-            };
-            // Task-less (calling project) sessions have no per-task totals to re-baseline
-            // from, so the session's own accumulated seconds are the cumulative figure -
-            let session_seconds = |key: &str| {
-                session.get(key).and_then(|v| v.as_u64()).unwrap_or(0)
-            };
-            if task_changed {
-                state.task_id = session_task_id.clone();
-                state.active_elapsed = 0;
-                state.idle_elapsed = 0;
-                state.active_baseline = tracking
-                    .as_ref()
-                    .map(|t| t.active_seconds)
-                    .unwrap_or_else(|| session_seconds("activeSeconds"));
-                state.idle_baseline = tracking
-                    .as_ref()
-                    .map(|t| t.idle_seconds)
-                    .unwrap_or_else(|| session_seconds("idleSeconds"));
-            }
-
-            // Task-anchored sessions get this from the same fetch_task_time_tracking call
-            // above (task-time-tracking.js attaches the owning project's settings to every
-            state.idle_time_disabled = tracking
-                .as_ref()
-                .map(|t| t.disable_idle_time)
-                .unwrap_or_else(|| {
-                    session.get("disableIdleTime").and_then(|v| v.as_bool()).unwrap_or(false)
-                });
-            let reported_threshold = tracking
-                .as_ref()
-                .map(|t| t.idle_time_seconds)
-                .unwrap_or_else(|| {
-                    session
-                        .get("idleTimeSeconds")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or_else(|| self.idle_threshold_sec.load(Ordering::Relaxed))
-                });
-            // The org-wide poll has always been validated (apply_idle_thresholds), but the
-            // per-project value went straight in unchecked - and nothing upstream
-            state.idle_threshold_sec_for_project = if valid_idle_threshold(reported_threshold) {
-                reported_threshold
-            } else {
-                let fallback = self.idle_threshold_sec.load(Ordering::Relaxed);
-                log::warn!(
-                    "Project reported an unusable idle allowance ({reported_threshold}s) - falling back to the org-wide {fallback}s"
-                );
-                fallback
-            };
-            state.idle_settings_stale = false;
-
-            // an unclean exit (crash/kill/reboot) between two `sync` calls loses
-            // whatever PS-1's on-disk mirror hadn't reached the server yet - reconcile
-            // against it here, same GREATEST-style rule TC-4 already applies
-            // server-side for `sync`, so a restart never displays less than what was
-            // last actually shown. Scoped to the exact same session+task on purpose: a
-            // leftover file from an already-closed session must never bleed into a new
-            // one.
-            let persisted_task_id = if session_task_id.is_empty() {
-                None
-            } else {
-                Some(session_task_id.clone())
-            };
-            if let Some(persisted) = self.progress.load() {
-                if persisted.session_id == session_id && persisted.task_id == persisted_task_id {
-                    state.active_baseline = state.active_baseline.max(persisted.active_seconds);
-                    state.idle_baseline = state.idle_baseline.max(persisted.idle_seconds);
-                }
-            }
-
-            state.next_sync_at = Instant::now();
+            self.rebaseline_for_task(state, &session, &session_id, &session_task_id, task_changed);
         }
 
         if !state.was_active {
@@ -672,16 +648,7 @@ impl ActivityTracker {
         state.was_active = true;
 
         let now = Instant::now();
-        let idle_now = self.tick_progress(
-            &state.task_id,
-            &mut state.last_tick_at,
-            &state.active_baseline,
-            &mut state.active_elapsed,
-            &state.idle_baseline,
-            &mut state.idle_elapsed,
-            state.idle_time_disabled,
-            state.idle_threshold_sec_for_project,
-        );
+        let idle_now = self.tick_progress(state);
         self.maybe_flag_synthetic_input();
 
         // Calling-project sessions have no task, so they sync on project id instead -
@@ -712,16 +679,7 @@ impl ActivityTracker {
             state.was_active = false;
             state.current_session = String::new();
             *self.session_id.lock() = None;
-            self.reset_task_progress(
-                &mut state.task_id,
-                &mut state.last_tick_at,
-                &mut state.active_baseline,
-                &mut state.active_elapsed,
-                &mut state.idle_baseline,
-                &mut state.idle_elapsed,
-                &mut state.idle_time_disabled,
-                &mut state.idle_threshold_sec_for_project,
-            );
+            self.reset_task_progress(state);
             return;
         }
 
@@ -779,16 +737,7 @@ impl ActivityTracker {
                 state.was_active = false;
                 state.current_session = String::new();
                 *self.session_id.lock() = None;
-                self.reset_task_progress(
-                    &mut state.task_id,
-                    &mut state.last_tick_at,
-                    &mut state.active_baseline,
-                    &mut state.active_elapsed,
-                    &mut state.idle_baseline,
-                    &mut state.idle_elapsed,
-                    &mut state.idle_time_disabled,
-                    &mut state.idle_threshold_sec_for_project,
-                );
+                self.reset_task_progress(state);
                 self.emit_status(message);
             }
         }
@@ -935,17 +884,15 @@ impl ActivityTracker {
     #[allow(clippy::too_many_arguments)]
     /// Returns whether this tick's delta was credited to idle rather than active - callers
     /// use it to skip screenshot/app-slice capture while the user is idle (a screenshot of
-    fn tick_progress(
-        &self,
-        task_id: &str,
-        last_tick_at: &mut Instant,
-        active_baseline: &u64,
-        active_elapsed: &mut u64,
-        idle_baseline: &u64,
-        idle_elapsed: &mut u64,
-        idle_time_disabled: bool,
-        idle_threshold_sec: u64,
-    ) -> bool {
+    fn tick_progress(&self, state: &mut TickState) -> bool {
+        let task_id = &state.task_id.clone();
+        let idle_time_disabled = state.idle_time_disabled;
+        let idle_threshold_sec = state.idle_threshold_sec_for_project;
+        let active_baseline = &state.active_baseline.clone();
+        let idle_baseline = &state.idle_baseline.clone();
+        let last_tick_at = &mut state.last_tick_at;
+        let active_elapsed = &mut state.active_elapsed;
+        let idle_elapsed = &mut state.idle_elapsed;
         let now = Instant::now();
         let elapsed = now.duration_since(*last_tick_at);
         let delta = Self::credited_seconds(elapsed);
@@ -1074,17 +1021,15 @@ impl ActivityTracker {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn reset_task_progress(
-        &self,
-        task_id: &mut String,
-        last_tick_at: &mut Instant,
-        active_baseline: &mut u64,
-        active_elapsed: &mut u64,
-        idle_baseline: &mut u64,
-        idle_elapsed: &mut u64,
-        idle_time_disabled: &mut bool,
-        idle_threshold_sec: &mut u64,
-    ) {
+    fn reset_task_progress(&self, state: &mut TickState) {
+        let task_id = &mut state.task_id;
+        let last_tick_at = &mut state.last_tick_at;
+        let active_baseline = &mut state.active_baseline;
+        let active_elapsed = &mut state.active_elapsed;
+        let idle_baseline = &mut state.idle_baseline;
+        let idle_elapsed = &mut state.idle_elapsed;
+        let idle_time_disabled = &mut state.idle_time_disabled;
+        let idle_threshold_sec = &mut state.idle_threshold_sec_for_project;
         task_id.clear();
         *active_baseline = 0;
         *active_elapsed = 0;

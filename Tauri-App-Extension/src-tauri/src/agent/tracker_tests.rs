@@ -556,21 +556,13 @@ fn an_exact_whole_second_tick_owes_nothing() {
 fn tick_progress_reports_idle_once_the_threshold_is_crossed() {
     let base_url = fake_server(|_| (200, "{}".to_string()));
     let tracker = test_tracker(base_url);
-    let mut last_tick_at = Instant::now();
-    let mut active_elapsed = 0u64;
-    let mut idle_elapsed = 0u64;
+    let mut state = TickState::new();
+    state.task_id = "task-1".to_string();
+    state.idle_threshold_sec_for_project = 1; // cleared by the sleep below
 
     thread::sleep(Duration::from_millis(1_100));
-    let credited_idle = tracker.tick_progress(
-        "task-1",
-        &mut last_tick_at,
-        &0,
-        &mut active_elapsed,
-        &0,
-        &mut idle_elapsed,
-        false,
-        1, // 1-second threshold, cleared by the sleep above
-    );
+    let credited_idle = tracker.tick_progress(&mut state);
+    let (active_elapsed, idle_elapsed) = (state.active_elapsed, state.idle_elapsed);
 
     if ActivityMeter::HOOKS_SUPPORTED {
         // Real hooks: ActivityMeter's last-input clock was set at construction and
@@ -593,21 +585,14 @@ fn tick_progress_reports_idle_once_the_threshold_is_crossed() {
 fn tick_progress_never_reports_idle_when_the_projects_idle_time_is_disabled() {
     let base_url = fake_server(|_| (200, "{}".to_string()));
     let tracker = test_tracker(base_url);
-    let mut last_tick_at = Instant::now();
-    let mut active_elapsed = 0u64;
-    let mut idle_elapsed = 0u64;
+    let mut state = TickState::new();
+    state.task_id = "task-1".to_string();
+    state.idle_threshold_sec_for_project = 1;
+    state.idle_time_disabled = true;
 
     thread::sleep(Duration::from_millis(1_100));
-    let credited_idle = tracker.tick_progress(
-        "task-1",
-        &mut last_tick_at,
-        &0,
-        &mut active_elapsed,
-        &0,
-        &mut idle_elapsed,
-        true,
-        1,
-    );
+    let credited_idle = tracker.tick_progress(&mut state);
+    let (active_elapsed, idle_elapsed) = (state.active_elapsed, state.idle_elapsed);
 
     assert!(!credited_idle, "idle time disabled must mean screenshots never stop for idleness");
     assert!(active_elapsed >= 1);
