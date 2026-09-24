@@ -91,6 +91,10 @@ pub struct FirebaseTokenService {
     auth_url: String,
     client: Client,
     api_key: Option<String>,
+    /// Google's securetoken host, overridable only in tests so a fake server
+    /// can count how many refreshes actually leave the process - which is the
+    /// only way to prove a refresh was skipped rather than merely failed.
+    token_host: String,
 }
 
 impl FirebaseTokenService {
@@ -100,7 +104,14 @@ impl FirebaseTokenService {
             auth_url,
             client,
             api_key: None,
+            token_host: "https://securetoken.googleapis.com".to_string(),
         }
+    }
+
+    #[cfg(test)]
+    pub fn point_at_fake_for_tests(&mut self, base: &str, api_key: &str) {
+        self.token_host = base.to_string();
+        self.api_key = Some(api_key.to_string());
     }
 
     fn firebase_api_key(&mut self) -> Option<String> {
@@ -157,7 +168,7 @@ impl FirebaseTokenService {
         let Some(api_key) = self.firebase_api_key() else {
             return (RefreshOutcome::Unreachable, None);
         };
-        let url = format!("https://securetoken.googleapis.com/v1/token?key={api_key}");
+        let url = format!("{}/v1/token?key={api_key}", self.token_host);
         let res = match self
             .client
             .post(url)

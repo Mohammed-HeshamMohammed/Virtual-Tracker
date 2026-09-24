@@ -59,6 +59,13 @@ pub struct ApiClient {
     /// Result of the most recent refresh attempt, so callers can tell a flaky network apart
     /// from a credential that will never work again.
     pub last_refresh: RefreshOutcome,
+    /// The refresh token Firebase has already refused. A 4xx from
+    /// securetoken means the credential is expired, revoked or belongs to a
+    /// disabled user - none of which a retry can change - so presenting the
+    /// same token again is a guaranteed round trip to a guaranteed failure.
+    /// Remembering it is what stops the storm described on
+    /// refresh_token_if_needed.
+    rejected_refresh_token: Option<String>,
     pub on_tokens_refreshed: Option<Box<dyn Fn(String, String) + Send>>,
 }
 
@@ -90,6 +97,7 @@ impl ApiClient {
             device_id: None,
             agent_secret: None,
             last_refresh: RefreshOutcome::Ok,
+            rejected_refresh_token: None,
             on_tokens_refreshed: None,
         })
     }
@@ -133,6 +141,13 @@ impl ApiClient {
         self.auth_headers()
     }
 
+    /// Every authenticated request calls this first, so anything it does on a
+    /// failure it does once per request. When a refresh token is rejected
+    /// there is nothing to back off from and nothing to fix, and without the
+    /// memory below each of the tracker's several pollers re-attempted the
+    /// same dead token: a real agent log shows 3,475 rejected refreshes,
+    /// fifteen of them inside four seconds, each a network round trip to
+    /// Google that could only ever fail.
     pub fn refresh_token_if_needed(&mut self) -> bool {
         let Some(id_token) = self.id_token.clone() else {
             self.last_refresh = RefreshOutcome::Rejected;
@@ -155,8 +170,18 @@ impl ApiClient {
             self.last_refresh = RefreshOutcome::Rejected;
             return self.fall_back_to_device_reauth();
         };
+        // Already refused once: skip the request and go straight to the
+        // device credential, which is the only thing that can still recover.
+        if self.rejected_refresh_token.as_deref() == Some(refresh.as_str()) {
+            self.last_refresh = RefreshOutcome::Rejected;
+            return self.fall_back_to_device_reauth();
+        }
+
         let (outcome, tokens) = self.firebase.refresh(&refresh);
         self.last_refresh = outcome;
+        if outcome == RefreshOutcome::Rejected {
+            self.rejected_refresh_token = Some(refresh.clone());
+        }
         match tokens {
             Some((id, next_refresh)) => {
                 self.apply_fresh_tokens(id, next_refresh);
@@ -178,6 +203,9 @@ impl ApiClient {
         self.id_token = Some(id_token.clone());
         self.refresh_token = Some(refresh_token.clone());
         self.last_refresh = RefreshOutcome::Ok;
+        // A new sign-in or a device reauth issues a different token, so the
+        // refusal recorded against the old one no longer applies to anything.
+        self.rejected_refresh_token = None;
         if let Some(cb) = &self.on_tokens_refreshed {
             cb(id_token, refresh_token);
         }
@@ -458,6 +486,91 @@ mod tests {
 
     use super::*;
     use crate::test_support::{fake_jwt, fake_server};
+
+    // A rejected refresh token is permanently dead: securetoken answers 4xx
+    // for expired, revoked and disabled-user alike, and none of those change
+    // on a retry. Every authenticated request runs refresh_token_if_needed
+    // first, so without a memory of the refusal each of the tracker's pollers
+    // re-attempted the same dead token - a real agent log carries 3,475 of
+    // them, fifteen inside four seconds.
+    fn rejecting_client() -> (ApiClient, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = std::sync::Arc::clone(&hits);
+        let token_url = fake_server(move |_req| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            (403, "{\"error\":{\"message\":\"TOKEN_EXPIRED\"}}".to_string())
+        });
+        let mut api = ApiClient::new("http://127.0.0.1:1".into(), "http://127.0.0.1:1".into())
+            .expect("HTTP client builds in a test environment");
+        api.firebase.point_at_fake_for_tests(&token_url, "fake-api-key-long-enough");
+        // Already expired, so every call is forced down the refresh path.
+        api.set_tokens(&fake_jwt(-3600), "dead-refresh-token");
+        (api, hits)
+    }
+
+    #[test]
+    fn a_rejected_refresh_token_is_only_ever_sent_once() {
+        let (mut api, hits) = rejecting_client();
+
+        for _ in 0..25 {
+            assert!(!api.refresh_token_if_needed(), "a dead token can never authorize");
+        }
+
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the token must be presented once; the other 24 calls are known-dead round trips"
+        );
+        assert_eq!(api.last_refresh, RefreshOutcome::Rejected, "and the caller still sees why");
+    }
+
+    #[test]
+    fn a_new_refresh_token_is_tried_even_after_one_was_rejected() {
+        // The memory is keyed on the token, not on the client: signing in
+        // again must not inherit the previous credential's refusal.
+        let (mut api, hits) = rejecting_client();
+        assert!(!api.refresh_token_if_needed());
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        api.set_tokens(&fake_jwt(-3600), "a-different-refresh-token");
+        assert!(!api.refresh_token_if_needed());
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "a token that has never been refused deserves its own attempt"
+        );
+    }
+
+    #[test]
+    fn an_unreachable_endpoint_is_retried_rather_than_written_off() {
+        // The distinction the whole thing rests on. A 5xx or a dropped
+        // connection says nothing about the credential, so caching that as a
+        // refusal would strand an agent whose network merely blipped.
+        let hits = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = std::sync::Arc::clone(&hits);
+        let token_url = fake_server(move |_req| {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            (503, "{}".to_string())
+        });
+        let mut api = ApiClient::new("http://127.0.0.1:1".into(), "http://127.0.0.1:1".into())
+            .expect("HTTP client builds in a test environment");
+        api.firebase.point_at_fake_for_tests(&token_url, "fake-api-key-long-enough");
+        api.set_tokens(&fake_jwt(-3600), "refresh-token");
+
+        for _ in 0..4 {
+            assert!(!api.refresh_token_if_needed());
+        }
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 4, "every attempt must go out");
+        assert_eq!(api.last_refresh, RefreshOutcome::Unreachable);
+    }
+
+    #[test]
+    fn a_still_valid_token_never_reaches_the_network_at_all() {
+        let (mut api, hits) = rejecting_client();
+        api.set_tokens(&fake_jwt(3600), "dead-refresh-token");
+        assert!(api.refresh_token_if_needed());
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
 
     fn authed_client(api_url: String) -> ApiClient {
         let mut api = ApiClient::new(api_url, "http://127.0.0.1:1".into())
