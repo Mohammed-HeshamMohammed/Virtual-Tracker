@@ -17,10 +17,12 @@ on:
     branches: [main]
     paths:
       - "Dashboard-Backend/**"
+      - "Tauri-App-Extension/src-tauri/**"
       - ".github/workflows/tests.yml"
   pull_request:
     paths:
       - "Dashboard-Backend/**"
+      - "Tauri-App-Extension/src-tauri/**"
       - ".github/workflows/tests.yml"
   workflow_dispatch:
 
@@ -54,3 +56,42 @@ jobs:
       - name: test
         working-directory: Dashboard-Backend
         run: npm test
+
+  # The agent's macOS branches were only ever compiled by the release
+  # workflow, which means a break in them surfaced at the moment of shipping
+  # rather than at the commit that caused it - and nobody working on this
+  # codebase has a Mac to catch it earlier. `cargo check` per platform is
+  # cheap compared with a full `tauri build` and catches the whole class:
+  # a cfg(target_os) block that references a moved module, a renamed type,
+  # or an API that only exists on the other platform.
+  #
+  # macOS runners bill at 10x, so this checks rather than builds, and only
+  # when src-tauri actually changed.
+  agent-cross-platform:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: Tauri-App-Extension/src-tauri
+
+      # Tauri links against webkit2gtk/libsoup on Linux; without these the
+      # check fails on a missing pkg-config file rather than on any code.
+      - name: linux build deps
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev
+
+      # --all-targets so the test modules are checked too: they are the part
+      # most likely to reference something a refactor moved.
+      - name: cargo check
+        working-directory: Tauri-App-Extension/src-tauri
+        run: cargo check --all-targets --locked
