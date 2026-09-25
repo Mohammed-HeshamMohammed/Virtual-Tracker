@@ -19,7 +19,8 @@ import { recordScreenshotAccess } from "../compliance/data-retention.js";
 import { getActivityScoringSettings, setActivityScoringSettings } from "./scoring-settings.js";
 import { recordNotice, listRecordNotices, getDataHealth } from "./record-notices.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
-import { enabledCapabilities, eventAllowed } from "../compliance/capability-gate.js";
+import { enabledCapabilities, eventAllowed, capabilityForEvent } from "../compliance/capability-gate.js";
+import { recordPolicyDrops } from "../compliance/policy-health.js";
 import {
   getEffectiveCaptureSettings,
   mayAccessMemberCaptureSettings,
@@ -1022,13 +1023,18 @@ export async function routeActivity(req, res, url, origin) {
         enabledCapabilities(),
       ]);
 
+      const policyDrops = {};
       for (const ev of events.slice(0, 50)) {
         if (!ev || typeof ev !== "object") continue;
         const type = typeof ev.type === "string" ? ev.type : "";
         // Enforced here rather than in the agent: this is the point the data
         // would be stored, and an agent's copy of the policy can be stale or
         // simply not sent at all.
-        if (!eventAllowed(type, capabilities)) continue;
+        if (!eventAllowed(type, capabilities)) {
+          const governing = capabilityForEvent(type);
+          policyDrops[governing] = (policyDrops[governing] ?? 0) + 1;
+          continue;
+        }
         const id = crypto.randomUUID();
 
         if (type === "screenshot") {
@@ -1164,6 +1170,13 @@ export async function routeActivity(req, res, url, origin) {
       }
 
       if (screenshotWrites.length) await Promise.all(screenshotWrites);
+
+      // Not awaited: counting what was discarded must never slow or fail an upload.
+      if (Object.keys(policyDrops).length) {
+        void recordPolicyDrops(member.memberId, policyDrops).catch((err) =>
+          logSafeWarn("[activity events] could not record policy drops", err),
+        );
+      }
 
       const hadScreenshot = events.some((ev) => ev && typeof ev === "object" && ev.type === "screenshot");
       const hadAppOnly = events.some((ev) => ev && typeof ev === "object" && ev.type === "app");
