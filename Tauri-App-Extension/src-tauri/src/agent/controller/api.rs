@@ -23,26 +23,48 @@ impl AgentController {
             .map_err(|error| error.to_string())
     }
 
-    /// Stops capture immediately, then records it. The local gate is set
-    /// first so a failed request cannot leave the member still captured
-    /// after they asked not to be.
+    /// Stops (or resumes) capture immediately, then records it. The ordering lives in
+    /// CaptureGate::run_break so it can be tested without a controller.
     pub fn set_private_break(&self, minutes: Option<u32>, reason: &str) -> Result<i64, String> {
-        let until = self
-            .api
-            .lock()
-            .set_private_break(minutes, reason)
-            .map_err(|error| error.to_string());
-        // Nothing is capturing without a running tracker, and a fresh one
-        // picks the break up from the server on its first settings poll.
-        if let Some(tracker) = self.tracker.lock().as_ref() {
-            tracker.gate().set_break(match (minutes, &until) {
-                (None, _) => 0,
-                (Some(_), Ok(ms)) => *ms,
-                // The request failed, but the member still asked to stop.
-                (Some(m), Err(_)) => crate::capture::capture_gate::now_plus_minutes_ms(m),
-            });
+        let record = || self.api.lock().set_private_break(minutes, reason).map_err(|e| e.to_string());
+        // Cloned out of its lock so the request below does not run while it is held.
+        // Nothing is capturing without a running tracker, and a fresh one picks the
+        // break up from the server on its first settings poll.
+        let tracker = self.tracker.lock().clone();
+        match tracker {
+            Some(tracker) => tracker.gate().run_break(minutes, record),
+            None => record(),
         }
-        until
+    }
+
+    pub fn list_own_exclusions(&self) -> Result<Vec<crate::types::OwnExclusion>, String> {
+        self.api.lock().list_own_exclusions().map_err(|e| e.to_string())
+    }
+
+    pub fn add_own_exclusion(&self, match_type: &str, pattern: &str) -> Result<crate::types::OwnExclusion, String> {
+        let added = self.api.lock().add_own_exclusion(match_type, pattern).map_err(|e| e.to_string())?;
+        self.apply_exclusions_now();
+        Ok(added)
+    }
+
+    pub fn remove_own_exclusion(&self, id: &str) -> Result<(), String> {
+        self.api.lock().remove_own_exclusion(id).map_err(|e| e.to_string())?;
+        self.apply_exclusions_now();
+        Ok(())
+    }
+
+    pub fn get_capture_summary(&self, time_zone: &str) -> Result<crate::types::CaptureSummary, String> {
+        self.api.lock().fetch_capture_summary(time_zone).map_err(|e| e.to_string())
+    }
+
+    /// The tracker handle is cloned out of its lock first: refreshing takes the API
+    /// lock, and holding the tracker lock across that is how two threads end up
+    /// waiting on each other.
+    fn apply_exclusions_now(&self) {
+        let tracker = self.tracker.lock().clone();
+        if let Some(tracker) = tracker {
+            tracker.refresh_capture_exclusions_now();
+        }
     }
 
     pub fn capture_status(&self) -> crate::types::CaptureStatus {

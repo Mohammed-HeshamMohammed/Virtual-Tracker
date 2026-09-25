@@ -437,16 +437,28 @@ impl ApiClient {
 
     /// Authorized POST. `Ok(body)` on success, the server's own message on refusal.
     pub(crate) fn post_json(&mut self, path: &str, body: &Value) -> Result<Value, ApiError> {
+        self.request_json(reqwest::Method::POST, path, Some(body))
+    }
+
+    /// Authorized request with a body and the server's own message on refusal.
+    /// `get_json` collapses every failure to a network error, which is right for
+    /// polling but hides a message like "you can exclude up to 100 items".
+    pub(crate) fn request_json(
+        &mut self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<&Value>,
+    ) -> Result<Value, ApiError> {
         let auth = self.authorized().ok_or(ApiError::Unauthorized)?;
-        let res = self
+        let mut request = self
             .client
-            .post(format!("{}{}", self.api_url, path))
+            .request(method, format!("{}{}", self.api_url, path))
             .header("Authorization", auth)
-            .header("Content-Type", "application/json")
-            .json(body)
-            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC))
-            .send()
-            .map_err(|_| ApiError::Network)?;
+            .timeout(Duration::from_secs(HTTP_TIMEOUT_SEC));
+        if let Some(body) = body {
+            request = request.header("Content-Type", "application/json").json(body);
+        }
+        let res = request.send().map_err(|_| ApiError::Network)?;
         if !res.status().is_success() {
             return Err(status_error(res));
         }

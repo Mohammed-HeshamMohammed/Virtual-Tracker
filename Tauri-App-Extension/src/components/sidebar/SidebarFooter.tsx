@@ -17,6 +17,7 @@ type SidebarFooterProps = {
   paused: boolean;
   onViewProfile: () => void;
   onViewSettings: () => void;
+  onViewPrivacy: () => void;
 };
 
 export function SidebarFooter({
@@ -34,6 +35,7 @@ export function SidebarFooter({
   paused,
   onViewProfile,
   onViewSettings,
+  onViewPrivacy,
 }: SidebarFooterProps) {
   return (
     <div className="side-footer">
@@ -84,6 +86,15 @@ export function SidebarFooter({
           {signedIn && footerEmail ? <span className="side-footer-email">{footerEmail}</span> : null}
           {signedIn && footerRole ? <span className="badge neutral side-footer-badge">{footerRole}</span> : null}
         </span>
+      </button>
+      <button
+        className="icon-btn side-footer-settings"
+        type="button"
+        title="Privacy"
+        aria-label="Privacy"
+        onClick={onViewPrivacy}
+      >
+        <Icon name="lock" />
       </button>
       <button
         className="icon-btn side-footer-settings"

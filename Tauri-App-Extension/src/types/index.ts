@@ -371,3 +371,27 @@ export type DropdownOption = {
   label: string;
   disabled?: boolean;
 };
+
+/** Whether capture is on and, if not, why. A local read, never a network call. */
+export type CaptureStatus = {
+  blocked: boolean;
+  reason: string;
+  /** Unix ms the current break ends; 0 when none is running. */
+  breakUntilMs: number;
+};
+
+/** One of the member's own never-capture rules. */
+export type OwnExclusion = {
+  id: string;
+  matchType: string;
+  pattern: string;
+};
+
+export type CaptureSummary = {
+  timezone: string;
+  screenshots: number;
+  appEvents: number;
+  apps: number;
+  domains: number;
+  activeSeconds: number;
+};

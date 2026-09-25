@@ -5721,3 +5721,43 @@ select.modal-input {
     animation: none;
   }
 }
+
+/* Two banners can stack; the second must not repeat the first's clearance from the title bar. */
+.tracker-update-banner + .capture-banner {
+  margin-top: 6px;
+}
+
+.privacy-add {
+  display: grid;
+  grid-template-columns: 96px 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.privacy-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.privacy-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.privacy-kind {
+  margin-right: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+

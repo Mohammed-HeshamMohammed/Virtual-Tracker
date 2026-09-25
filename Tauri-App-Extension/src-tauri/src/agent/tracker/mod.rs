@@ -364,6 +364,13 @@ impl ActivityTracker {
         }
         // Same schedule, same best-effort contract: a failed fetch keeps the exclusions
         // already in force rather than clearing them, so a network blip can never start
+        self.refresh_capture_exclusions_now();
+    }
+
+    /// Also called the moment a member edits their own list. The schedule above is
+    /// thirty minutes, which is far too long for a privacy control: someone who adds
+    /// their bank would stay captured until it next ran.
+    pub fn refresh_capture_exclusions_now(&self) {
         if let Ok(patterns) = self.api.lock().fetch_capture_exclusions() {
             self.events.apply_capture_exclusions(patterns);
         }
@@ -385,6 +392,14 @@ impl ActivityTracker {
                 settings.outside_work_hours,
                 settings.break_until_ms,
             );
+            // Ask again when the work-window answer is due to change rather than
+            // half an hour later, or a shift ending at 18:00 keeps capturing until
+            // the next scheduled poll. A couple of seconds of slack so the server
+            // has certainly crossed the boundary by the time we ask.
+            if let Some(seconds) = settings.recheck_in_sec {
+                let wait = seconds.saturating_add(2).clamp(15, ACTIVITY_SCORING_REFRESH_INTERVAL_SEC);
+                *next_refresh_at = Instant::now() + Duration::from_secs(wait);
+            }
             self.apply_idle_thresholds(settings.idle_threshold_sec);
         }
     }

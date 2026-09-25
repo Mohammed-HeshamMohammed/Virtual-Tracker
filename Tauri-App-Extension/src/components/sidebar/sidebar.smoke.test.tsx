@@ -426,6 +426,7 @@ describe("SidebarFooter", () => {
         paused={false}
         onViewProfile={noop}
         onViewSettings={noop}
+        onViewPrivacy={noop}
       />,
     );
     expect(html).toContain("Signed out");
@@ -449,6 +450,7 @@ describe("SidebarFooter", () => {
         paused={false}
         onViewProfile={noop}
         onViewSettings={noop}
+        onViewPrivacy={noop}
       />,
     );
     expect(html).toContain("Mohammed Hesham");
@@ -473,6 +475,7 @@ describe("SidebarFooter", () => {
         paused={false}
         onViewProfile={noop}
         onViewSettings={noop}
+        onViewPrivacy={noop}
       />,
     );
     expect(html).not.toContain("<img");

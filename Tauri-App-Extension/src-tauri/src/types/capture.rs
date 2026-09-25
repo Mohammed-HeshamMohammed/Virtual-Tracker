@@ -107,3 +107,30 @@ pub struct CaptureStatus {
     pub reason: String,
     pub break_until_ms: i64,
 }
+
+/// One of the member's own never-capture rules.
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnExclusion {
+    pub id: String,
+    pub match_type: String,
+    pub pattern: String,
+}
+
+/// What has been collected about the member today.
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureSummary {
+    #[serde(default)]
+    pub timezone: String,
+    #[serde(default)]
+    pub screenshots: u64,
+    #[serde(default)]
+    pub app_events: u64,
+    #[serde(default)]
+    pub apps: u64,
+    #[serde(default)]
+    pub domains: u64,
+    #[serde(default)]
+    pub active_seconds: u64,
+}

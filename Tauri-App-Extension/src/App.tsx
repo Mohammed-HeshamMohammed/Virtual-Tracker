@@ -79,6 +79,9 @@ import { SettingsPanel } from "./components/views/SettingsPanel";
 import { ProfilePanel } from "./components/views/ProfilePanel";
 import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
 import { MonitoringNoticePanel } from "./components/views/MonitoringNoticePanel";
+import { PrivacyPanel } from "./components/views/PrivacyPanel";
+import { CaptureBanner } from "./components/common/CaptureBanner";
+import { useCaptureStatus } from "./hooks/useCaptureStatus";
 import { SignInPanel } from "./components/views/SignInPanel";
 import { EMPTY_IMAGE_CACHE, putImage, type ImageCache } from "./utils/image-cache";
 
@@ -145,7 +148,7 @@ function usePolling(enabled: boolean, intervalMs: number, fn: () => Promise<void
 }
 
 function MainApp() {
-  const [view, setView] = useState<"home" | "settings" | "profile">("home");
+  const [view, setView] = useState<"home" | "settings" | "profile" | "privacy">("home");
   const [signingOut, setSigningOut] = useState(false);
   const [memberLimits, setMemberLimits] = useState<MemberLimits | null>(null);
   const [projectBudget, setProjectBudget] = useState<ProjectBudgetStatus | null>(null);
@@ -432,6 +435,19 @@ function MainApp() {
   );
 
   const signedIn = Boolean(profile?.signedIn);
+  const { status: captureStatus, refresh: refreshCaptureStatus } = useCaptureStatus(signedIn);
+  const [endingBreak, setEndingBreak] = useState(false);
+  const endBreak = useCallback(async () => {
+    setEndingBreak(true);
+    try {
+      await invoke("set_private_break", { minutes: null, reason: "" });
+    } catch (error) {
+      toast.error(typeof error === "string" ? error : "Could not end the break.");
+    } finally {
+      await refreshCaptureStatus();
+      setEndingBreak(false);
+    }
+  }, [refreshCaptureStatus]);
 
   // Ids already announced to Windows, so the 5s poll re-reading the same
   // unread message does not toast it again.
@@ -2178,7 +2194,7 @@ function MainApp() {
     );
   }
 
-  const isPanelView = view === "settings" || view === "profile";
+  const isPanelView = view === "settings" || view === "profile" || view === "privacy";
 
   return (
     <main className={`agent-tray layout-${layoutKind}${layoutHasSideColumn ? "" : " no-side-column"}`}>
@@ -2271,6 +2287,15 @@ function MainApp() {
         </div>
       ) : null}
 
+      {signedIn ? (
+        <CaptureBanner
+          status={captureStatus}
+          busy={endingBreak}
+          onEndBreak={() => void endBreak()}
+          onOpenPrivacy={() => setView("privacy")}
+        />
+      ) : null}
+
       <div
         ref={agentViewRef}
         key={isPanelView ? "panel" : "home"}
@@ -2281,6 +2306,13 @@ function MainApp() {
           onBack={() => setView("home")}
           onLayoutChanged={handleLayoutChanged}
           onShowInsightsChanged={setShowInsights}
+        />
+      ) : view === "privacy" ? (
+        <PrivacyPanel
+          status={captureStatus}
+          timeZone={displayTimezone}
+          onStatusChanged={() => void refreshCaptureStatus()}
+          onBack={() => setView("home")}
         />
       ) : view === "profile" ? (
         <ProfilePanel
@@ -2392,6 +2424,7 @@ function MainApp() {
                 paused={paused}
                 onViewProfile={() => setView("profile")}
                 onViewSettings={() => setView("settings")}
+                onViewPrivacy={() => setView("privacy")}
               />
             </>
           )}

@@ -69,3 +69,36 @@ pub async fn set_private_break(
 pub fn capture_status(state: tauri::State<'_, AppState>) -> crate::types::CaptureStatus {
     state.controller.capture_status()
 }
+
+#[tauri::command]
+pub async fn get_my_capture_summary(
+    state: tauri::State<'_, AppState>,
+    time_zone: String,
+) -> Result<crate::types::CaptureSummary, String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.get_capture_summary(&time_zone)).await
+}
+
+#[tauri::command]
+pub async fn list_my_exclusions(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<crate::types::OwnExclusion>, String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.list_own_exclusions()).await
+}
+
+#[tauri::command]
+pub async fn add_my_exclusion(
+    state: tauri::State<'_, AppState>,
+    match_type: String,
+    pattern: String,
+) -> Result<crate::types::OwnExclusion, String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.add_own_exclusion(&match_type, &pattern)).await
+}
+
+#[tauri::command]
+pub async fn remove_my_exclusion(state: tauri::State<'_, AppState>, id: String) -> Result<(), String> {
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.remove_own_exclusion(&id)).await
+}
