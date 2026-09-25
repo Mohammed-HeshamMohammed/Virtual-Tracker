@@ -30,6 +30,8 @@ import {
   listMembersEnrichedPg,
   updateMemberPg,
 } from "../../lib/postgres/members-postgres.service.js";
+import { listMeta } from "../../http/list-truncation.js";
+import { query as pgQuery } from "../../lib/postgres/client.js";
 import { resolveEffectivePresence } from "../members/services/presence-status.js";
 import { normalizeDoc } from "../schema/services/schema-crud.service.js";
 import { assertEmailCanUseMemberInviteOrPreprovision } from "../members/services/eligibility.js";
@@ -545,7 +547,16 @@ export async function routeCompatibility(req, res, url, db, origin) {
 
       if (isPostgresConfigured()) {
         const visibleIds = await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
-        const enrichedRows = await listMembersEnrichedPg({ viewer, limit: pageLimit ?? 500, visibleIds });
+        // limit + 1 is how the Firestore branch below decides hasMore; this
+        // branch decoded the cursor and then ignored it, so the client's paging
+        // loop saw no nextCursor, stopped after one page, and an organization
+        // past the page size simply never saw the rest.
+        const enrichedRows = await listMembersEnrichedPg({
+          viewer,
+          limit: paginate ? pageLimit + 1 : 500,
+          visibleIds,
+          cursorId,
+        });
         let members = enrichedRows.map((row) => normalizeDoc(row));
         if (needsPresence) {
           const { enrichMembersWithPresenceBatch } = await import("../members/services/member-presence.service.js");
@@ -557,7 +568,29 @@ export async function routeCompatibility(req, res, url, db, origin) {
         if (roleFilter.length > 0 || projectFilter.length > 0) {
           members = filterMembersByRoleAndProject(members, roleFilter, projectFilter);
         }
-        sendJson(res, origin, 200, { success: true, data: members, members });
+        const enrichedHasMore = paginate && enrichedRows.length > pageLimit;
+        if (enrichedHasMore) enrichedRows.length = pageLimit;
+        const meta = await listMeta(enrichedRows, pageLimit ?? 500, async () => {
+          const [row] = await pgQuery(
+            visibleIds === null
+              ? "SELECT count(*)::int AS n FROM v_members_enriched WHERE status != 'banned'"
+              : "SELECT count(*)::int AS n FROM v_members_enriched WHERE status != 'banned' AND id = ANY($1::uuid[])",
+            visibleIds === null ? [] : [visibleIds],
+          );
+          return row?.n ?? 0;
+        });
+        const enrichedNextCursor =
+          enrichedHasMore && members.length > 0
+            ? encodeMemberPageCursor(String(members[members.length - 1].id))
+            : null;
+        sendJson(res, origin, 200, {
+          success: true,
+          data: members,
+          members,
+          meta,
+          nextCursor: enrichedNextCursor,
+          hasMore: enrichedHasMore,
+        });
         return true;
       }
 

@@ -159,23 +159,34 @@ const MEMBER_LIST_COLUMNS = [
   "projects",
 ].join(", ");
 
-export async function listMembersEnrichedPg({ viewer, limit = 500, visibleIds = null }) {
+/**
+ * `cursorId` continues from a previous page. The sort is (date_added, id) so
+ * the keyset is unique - date_added alone repeats often enough that rows would
+ * be skipped or repeated across pages.
+ */
+export async function listMembersEnrichedPg({ viewer, limit = 500, visibleIds = null, cursorId = null }) {
   const safeLimit = Math.min(Math.max(limit, 1), 2000);
   const isSuper = typeof viewer?.hierarchyLevel === "number" && viewer.hierarchyLevel >= 80;
+  const cursor = cursorId ? await getMemberByIdPg(cursorId) : null;
+  const after = cursor ? "AND (date_added, id) < ($CURSOR$)" : "";
 
   if (isSuper || visibleIds === null) {
+    const params = cursor ? [safeLimit, cursor.date_added, cursor.id] : [safeLimit];
     return query(
-      `SELECT ${MEMBER_LIST_COLUMNS} FROM v_members_enriched WHERE status != 'banned' ORDER BY date_added DESC LIMIT $1`,
-      [safeLimit],
+      `SELECT ${MEMBER_LIST_COLUMNS} FROM v_members_enriched
+       WHERE status != 'banned' ${after.replace("$CURSOR$", "$2, $3")}
+       ORDER BY date_added DESC, id DESC LIMIT $1`,
+      params,
     );
   }
 
   if (!Array.isArray(visibleIds) || visibleIds.length === 0) return [];
+  const params = cursor ? [visibleIds, safeLimit, cursor.date_added, cursor.id] : [visibleIds, safeLimit];
   return query(
     `SELECT ${MEMBER_LIST_COLUMNS} FROM v_members_enriched
-     WHERE id = ANY($1::uuid[]) AND status != 'banned'
-     ORDER BY date_added DESC LIMIT $2`,
-    [visibleIds, safeLimit]
+     WHERE id = ANY($1::uuid[]) AND status != 'banned' ${after.replace("$CURSOR$", "$3, $4")}
+     ORDER BY date_added DESC, id DESC LIMIT $2`,
+    params,
   );
 }
 
