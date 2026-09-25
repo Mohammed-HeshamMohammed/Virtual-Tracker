@@ -196,6 +196,13 @@ export function CompliancePage() {
               {busy === "setup" ? "Turning on…" : `Turn on ${chosen.length || ""} selected`.replace("  ", " ")}
             </button>
           </div>
+          {chosen.length ? (
+            <p className={cn("mt-2", hint)}>
+              {chosen.some((c) => c.discarding)
+                ? "Turning something on changes what your monitoring notice says, so members will be asked to acknowledge it before their next timer."
+                : "Recording a basis does not change the notice, so nobody is asked to acknowledge anything again."}
+            </p>
+          ) : null}
         </section>
       ) : null}
 
