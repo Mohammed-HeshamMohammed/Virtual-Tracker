@@ -16,8 +16,10 @@ const COPY = {
   },
   session_reaped: {
     title: "A timer was stopped for you",
+    // The tracker resumes a session the server closed, carrying its own count
+    // forward, so "check for missing time" would be wrong for the common case.
     body: () =>
-      "Your tracker stopped reporting while a timer was running, so the session was closed automatically. Check today's total and log any missing time.",
+      "Your tracker stopped reporting for several minutes while a timer was running, so the server closed the session. If the tracker was still running it picks up again on its own with the time it counted; if not, check today's total and log any missing time.",
   },
   totals_mismatch: {
     title: "Today's total does not match what your tracker recorded",
