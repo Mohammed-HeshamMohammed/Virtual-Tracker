@@ -468,7 +468,7 @@ function MemberTreeScopeView({
       <div
         className={cn(
           "mt-4 flex min-h-0 flex-1 flex-col",
-          viewMode === "connections" ? "overflow-hidden" : "overflow-y-auto scrollbar-hide",
+          viewMode === "connections" ? "overflow-hidden" : "overflow-y-auto page-custom-scrollbar",
         )}
       >
         {isLoading && nodes.length === 0 ? (

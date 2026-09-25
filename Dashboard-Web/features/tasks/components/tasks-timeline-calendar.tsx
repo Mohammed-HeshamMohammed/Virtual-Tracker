@@ -541,7 +541,7 @@ export function TasksTimelineCalendar({
                 })}
           </div>
 
-          <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto">
+          <div className="page-custom-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto">
             <AnimatePresence mode="wait">
               {mode === "month" ? (
                 <motion.div
@@ -656,7 +656,7 @@ export function TasksTimelineCalendar({
                     No tasks due this week — use the arrows to find weeks with scheduled tasks.
                   </div>
                 )}
-                <div className="scrollbar-hide min-h-0 flex-1 overflow-x-auto overflow-y-auto sm:overflow-x-hidden">
+                <div className="page-custom-scrollbar min-h-0 flex-1 overflow-x-auto overflow-y-auto sm:overflow-x-hidden">
                 <motion.div
                   className={cn(
                     "grid h-full min-h-72 min-w-xl grid-cols-7 gap-px p-px",
@@ -758,7 +758,7 @@ export function TasksTimelineCalendar({
             </div>
           </div>
 
-          <div className="scrollbar-hide flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
+          <div className="page-custom-scrollbar flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3">
             {selectedDay && selectedTasks.length === 0 && (
               <div className={cn("rounded-lg border border-dashed px-3 py-8 text-center text-sm", t.tableBorder, t.tableCellMuted)}>
                 No tasks due on this day

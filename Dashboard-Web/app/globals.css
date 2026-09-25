@@ -140,22 +140,27 @@
 .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
 .dark .custom-scrollbar { scrollbar-color: #475569 #1e293b; }
 
-/* Page scrollbar: slim floating thumb, no native arrow buttons. */
-.page-custom-scrollbar { scrollbar-width: thin; scrollbar-color: #94a3b8 transparent; }
+/* Page scrollbar: a slim rounded thumb floating over the content, no track and
+   no arrow buttons. Translucent rather than a fixed grey so it reads correctly
+   over whatever surface the page puts behind it. */
+.page-custom-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(15, 23, 42, 0.25) transparent; }
 .page-custom-scrollbar::-webkit-scrollbar { width: 10px; }
 .page-custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .page-custom-scrollbar::-webkit-scrollbar-thumb {
   min-height: 40px;
-  border: 3px solid transparent;
+  /* The border is the inset: 10px channel less 2px each side leaves a 6px pill
+     that does not touch the edge of the pane. */
+  border: 2px solid transparent;
   border-radius: 999px;
-  background: #94a3b8;
+  background-color: rgba(15, 23, 42, 0.25);
   background-clip: content-box;
 }
-.page-custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #3b82f6; }
+.page-custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(15, 23, 42, 0.4); }
 .page-custom-scrollbar::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
-.dark .page-custom-scrollbar { scrollbar-color: #64748b transparent; }
-.dark .page-custom-scrollbar::-webkit-scrollbar-thumb { background-color: #64748b; }
-.dark .page-custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #60a5fa; }
+.page-custom-scrollbar::-webkit-scrollbar-corner { background: transparent; }
+.dark .page-custom-scrollbar { scrollbar-color: rgba(255, 255, 255, 0.28) transparent; }
+.dark .page-custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.28); }
+.dark .page-custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.45); }
 
 /* Horizontal variant - a chart/table that only ever scrolls sideways past
    its own too-many-columns floor, not the OS's thick default bar sitting

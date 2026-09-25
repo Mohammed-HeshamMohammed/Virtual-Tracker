@@ -40,7 +40,7 @@ export function PoliciesSettingsPage() {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0 scrollbar-hide pt-6">
+      <div className="flex-1 overflow-y-auto min-h-0 page-custom-scrollbar pt-6">
         <AnimatePresence mode="wait">
           <motion.div
             key={tab}

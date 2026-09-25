@@ -195,7 +195,7 @@ function ActivityShellStickyBar({ onNavigate }: { onNavigate?: (pageId: string) 
 
 function ActivityShellBody({ pageId, children }: { pageId: ActivitySubPage; children: ReactNode }) {
   return (
-    <div className="scrollbar-hide min-h-0 flex-1 overflow-y-auto">
+    <div className="page-custom-scrollbar min-h-0 flex-1 overflow-y-auto">
       <ActivitySummarySlot />
       <AnimatePresence mode="wait" initial={false}>
         <motion.div

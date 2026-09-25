@@ -311,7 +311,7 @@ export function BoardView({
   }, [visibleColumns])
 
   return (
-    <div className={`scrollbar-hide grid min-h-0 flex-1 ${gridCols} gap-3 overflow-auto pb-2`}>
+    <div className={`page-custom-scrollbar grid min-h-0 flex-1 ${gridCols} gap-3 overflow-auto pb-2`}>
       {BOARD_COLUMNS.map((status) => {
         if (!showCompleted && status === "done") return null
         const cfg = STATUS_CONFIG[status]
