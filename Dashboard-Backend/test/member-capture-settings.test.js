@@ -33,6 +33,7 @@ const {
   isOutsideWorkWindow,
   secondsUntilWindowChange,
   mayAccessMemberCaptureSettings,
+  enforcedWorkDays,
 } = await import(
   "../src/modules/activity/member-capture-settings.js"
 );
@@ -135,16 +136,56 @@ test("an equal start and end means no window rather than a zero-length one", asy
   assert.equal((await getEffectiveCaptureSettings("m1")).captureBlocked, false);
 });
 
-test("a day off blocks capture even inside the hours", async () => {
-  const today = (new Date().getUTCDay() + 6) % 7;
+const todayIndex = () => (new Date().getUTCDay() + 6) % 7;
+const otherDays = () => [0, 1, 2, 3, 4, 5, 6].filter((d) => d !== todayIndex());
+
+test("a day off blocks capture once the organization has opted in", async () => {
   memberRow = { work_start_min: 0, work_end_min: 1439 };
-  timeSettingsRow = { work_days: [0, 1, 2, 3, 4, 5, 6].filter((d) => d !== today) };
+  timeSettingsRow = { work_days: otherDays(), disable_tracking_specific_days: true };
   const s = await getEffectiveCaptureSettings("m1");
   assert.equal(s.captureBlocked, true);
   assert.equal(s.captureBlockReason, "outside_work_hours");
 
-  timeSettingsRow = { work_days: [today] };
+  timeSettingsRow = { work_days: [todayIndex()], disable_tracking_specific_days: true };
   assert.equal((await getEffectiveCaptureSettings("m1")).captureBlocked, false);
+});
+
+test("a day off does NOT block capture by default, however the default days fall", async () => {
+  // work_days defaults to Monday-Friday for everyone and the opt-in flag defaults
+  // to false. Reading the days without the flag stopped every member being
+  // captured on Saturday and Sunday for a setting nobody had chosen.
+  memberRow = {};
+  timeSettingsRow = { work_days: otherDays() };
+  assert.equal((await getEffectiveCaptureSettings("m1")).captureBlocked, false);
+  timeSettingsRow = { work_days: otherDays(), disable_tracking_specific_days: false };
+  assert.equal((await getEffectiveCaptureSettings("m1")).captureBlocked, false);
+});
+
+test("a make-up day is worked even when the weekday is otherwise off", async () => {
+  memberRow = {};
+  timeSettingsRow = {
+    work_days: otherDays(),
+    makeup_days: [todayIndex()],
+    disable_tracking_specific_days: true,
+  };
+  assert.equal((await getEffectiveCaptureSettings("m1")).captureBlocked, false);
+});
+
+test("a member scheduled by shifts is never blocked by work days", async () => {
+  memberRow = {};
+  timeSettingsRow = { work_days: otherDays(), disable_tracking_specific_days: true, use_shifts_for_limits: true };
+  assert.equal((await getEffectiveCaptureSettings("m1")).captureBlocked, false);
+});
+
+test("enforcedWorkDays returns null unless days off are actually enforced", () => {
+  assert.equal(enforcedWorkDays(undefined), null);
+  assert.equal(enforcedWorkDays({ work_days: [0, 1] }), null);
+  assert.equal(enforcedWorkDays({ work_days: [0, 1], disable_tracking_specific_days: false }), null);
+  assert.deepEqual(
+    enforcedWorkDays({ work_days: [0, 1], makeup_days: [5], disable_tracking_specific_days: true }).sort(),
+    [0, 1, 5],
+  );
+  assert.equal(enforcedWorkDays({ work_days: [0], disable_tracking_specific_days: true, use_shifts_for_limits: true }), null);
 });
 
 test("an empty work_days list does not read as every day being off", async () => {

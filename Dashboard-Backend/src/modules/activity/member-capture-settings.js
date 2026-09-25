@@ -62,6 +62,26 @@ export function isOutsideWorkWindow(row, workDays, now, timeZone) {
   return start <= end ? minute < start || minute >= end : minute < start && minute >= end;
 }
 
+/**
+ * The weekdays capture is allowed on, or null when days off do not block capture.
+ *
+ * work_days defaults to Monday-Friday for everyone, and the flag that makes days
+ * off actually stop tracking - disable_tracking_specific_days - defaults to
+ * false. Reading work_days without it turned a default nobody chose into a rule:
+ * every member with a settings row stopped being captured on Saturday and
+ * Sunday. Nothing else in the product blocks anything on a day off (workingToday
+ * only drives a prompt), so this must not either unless an organization opted in.
+ * Members scheduled by shifts have no fixed work days at all, and a make-up day
+ * is a day off that has been worked in lieu.
+ */
+export function enforcedWorkDays(settings) {
+  if (!settings || settings.disable_tracking_specific_days !== true) return null;
+  if (settings.use_shifts_for_limits === true) return null;
+  const days = Array.isArray(settings.work_days) ? settings.work_days : [];
+  const makeup = Array.isArray(settings.makeup_days) ? settings.makeup_days : [];
+  return [...new Set([...days, ...makeup])];
+}
+
 const MAX_RECHECK_SEC = 30 * 60;
 
 /**
@@ -85,7 +105,11 @@ export async function getEffectiveCaptureSettings(memberId) {
   const [org, row, scheduleRows, timeZone] = await Promise.all([
     getActivityScoringSettings(),
     memberRow(memberId),
-    query("SELECT work_days FROM time_settings WHERE member_id = $1", [memberId]),
+    query(
+      `SELECT work_days, makeup_days, disable_tracking_specific_days, use_shifts_for_limits
+         FROM time_settings WHERE member_id = $1`,
+      [memberId],
+    ),
     getMemberTimezone(memberId).catch(() => "UTC"),
   ]);
 
@@ -93,7 +117,7 @@ export async function getEffectiveCaptureSettings(memberId) {
   const breakUntil = row.break_until ? new Date(row.break_until) : null;
   const onBreak = Boolean(breakUntil && breakUntil.getTime() > now.getTime());
   const zone = timeZone || "UTC";
-  const workDays = scheduleRows[0]?.work_days;
+  const workDays = enforcedWorkDays(scheduleRows[0]);
   // Independent of the break: when the break ends the agent still needs to know
   // whether the schedule blocks capture, and it would have to wait for the next
   // poll to learn that if the two were folded together.
