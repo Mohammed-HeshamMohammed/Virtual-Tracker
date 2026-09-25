@@ -21,6 +21,7 @@ import { recordNotice, listRecordNotices, getDataHealth } from "./record-notices
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { enabledCapabilities, eventAllowed, capabilityForEvent } from "../compliance/capability-gate.js";
 import { recordPolicyDrops } from "../compliance/policy-health.js";
+import { planScreenshotAlerts } from "./screenshot-alert-plan.js";
 import {
   getEffectiveCaptureSettings,
   mayAccessMemberCaptureSettings,
@@ -1178,15 +1179,11 @@ export async function routeActivity(req, res, url, origin) {
         );
       }
 
-      const hadScreenshot = events.some((ev) => ev && typeof ev === "object" && ev.type === "screenshot");
-      const hadAppOnly = events.some((ev) => ev && typeof ev === "object" && ev.type === "app");
-      if (hadScreenshot) {
-        for (const ev of events) {
-          if (ev?.type === "screenshot" && typeof ev.activityLevel === "number") {
-            void maybeAlertLowActivity(db, member.memberId, sessionId, ev.activityLevel).catch(() => {});
-          }
-        }
-      } else if (hadAppOnly) {
+      const alerts = planScreenshotAlerts(events, capabilities.has("screenshots"));
+      for (const level of alerts.lowActivityLevels) {
+        void maybeAlertLowActivity(db, member.memberId, sessionId, level).catch(() => {});
+      }
+      if (alerts.missingScreenshot) {
         void maybeAlertMissingScreenshot(db, member.memberId, sessionId).catch(() => {});
       }
 

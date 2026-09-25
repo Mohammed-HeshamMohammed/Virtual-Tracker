@@ -194,8 +194,17 @@ export async function composeMonitoringNotice() {
   const policy = await getMonitoringPolicy();
   const enabledCapabilities = policy.filter((c) => c.enabled);
 
+  // The version is what a member acknowledged, so it has to track exactly what the
+  // notice tells them - the enabled capabilities - and nothing else. The lawful
+  // basis is a record for the organization and appears nowhere in the text, yet it
+  // used to be part of this hash, so recording one for a capability that was
+  // already on made every member re-acknowledge an identical notice.
+  //
+  // The trailing colon is what the basis slot used to occupy. It stays, empty, so
+  // the hash for a capability with no basis on record is unchanged and consent
+  // members have already given remains valid rather than being asked for again.
   const versionInput = enabledCapabilities
-    .map((c) => `${c.capability}:${c.enabled}:${c.lawfulBasis ?? ""}`)
+    .map((c) => `${c.capability}:${c.enabled}:`)
     .sort()
     .join("|");
   const version = crypto.createHash("sha256").update(versionInput).digest("hex").slice(0, 16);
