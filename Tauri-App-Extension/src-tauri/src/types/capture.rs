@@ -106,6 +106,8 @@ pub struct CaptureStatus {
     pub blocked: bool,
     pub reason: String,
     pub break_until_ms: i64,
+    /// Set when capture is meant to be running but is failing. Empty otherwise.
+    pub issue: String,
 }
 
 /// One of the member's own never-capture rules.

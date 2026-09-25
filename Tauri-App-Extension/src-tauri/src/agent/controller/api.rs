@@ -77,6 +77,11 @@ impl AgentController {
             blocked: state != crate::capture::capture_gate::CaptureBlock::Allowed,
             reason: state.message().unwrap_or_default().to_string(),
             break_until_ms: gate.break_until_ms(),
+            issue: if gate.screenshot_trouble() {
+                crate::capture::capture_gate::SCREENSHOT_TROUBLE_MESSAGE.to_string()
+            } else {
+                String::new()
+            },
         }
     }
 

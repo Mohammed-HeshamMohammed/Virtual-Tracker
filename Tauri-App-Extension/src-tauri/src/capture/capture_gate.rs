@@ -5,7 +5,7 @@
 //! the member presses the button in this app and it has to take effect before
 //! the next poll rather than after it.
 
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,8 +25,18 @@ impl CaptureBlock {
     }
 }
 
+/// Consecutive failed screenshots before it is worth telling the member. One is a
+/// glitch (a display waking up); at the usual cadence three is several minutes of
+/// nothing being captured while the timer runs.
+const SCREENSHOT_FAILURE_LIMIT: u32 = 3;
+
+pub const SCREENSHOT_TROUBLE_MESSAGE: &str = "Screenshots keep failing on this device, so nothing is being captured. Check that the display is on and unlocked, or restart the tracker.";
+
 #[derive(Default)]
 pub struct CaptureGate {
+    /// Consecutive screenshots that failed for a reason that is a fault. A locked
+    /// screen is not one, and neither resets nor adds to it.
+    screenshot_failures: AtomicU32,
     outside_work_hours: AtomicBool,
     /// Unix ms, 0 when no break is running.
     break_until_ms: AtomicI64,
@@ -76,6 +86,25 @@ impl CaptureGate {
 
     pub fn set_break(&self, until_ms: i64) {
         self.break_until_ms.store(until_ms.max(0), Ordering::Relaxed);
+        // Nothing was being attempted during a break, so failures counted before it
+        // say nothing about the screen afterwards; the next attempt decides afresh.
+        if until_ms > 0 {
+            self.screenshot_failures.store(0, Ordering::Relaxed);
+        }
+    }
+
+    pub fn note_screenshot(&self, succeeded: bool) {
+        if succeeded {
+            self.screenshot_failures.store(0, Ordering::Relaxed);
+        } else {
+            self.screenshot_failures.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Set only while capture is otherwise meant to be running: while blocked the
+    /// screen is not being tried, so a fault is not the reason nothing is captured.
+    pub fn screenshot_trouble(&self) -> bool {
+        !self.blocked() && self.screenshot_failures.load(Ordering::Relaxed) >= SCREENSHOT_FAILURE_LIMIT
     }
 
     pub fn state(&self) -> CaptureBlock {
@@ -207,6 +236,49 @@ mod tests {
         gate.set_break(now_ms() + 60_000);
         gate.apply(false, now_ms() + 600_000);
         assert!(gate.break_until_ms() > now_ms() + 300_000);
+    }
+
+    #[test]
+    fn a_few_failed_screenshots_in_a_row_raise_a_fault_and_one_success_clears_it() {
+        let gate = CaptureGate::default();
+        gate.note_screenshot(false);
+        gate.note_screenshot(false);
+        assert!(!gate.screenshot_trouble(), "two is a glitch, not a fault");
+        gate.note_screenshot(false);
+        assert!(gate.screenshot_trouble());
+        gate.note_screenshot(true);
+        assert!(!gate.screenshot_trouble(), "a working screenshot proves it recovered");
+    }
+
+    #[test]
+    fn failures_must_be_consecutive_to_count() {
+        let gate = CaptureGate::default();
+        for _ in 0..10 {
+            gate.note_screenshot(false);
+            gate.note_screenshot(true);
+        }
+        assert!(!gate.screenshot_trouble());
+    }
+
+    #[test]
+    fn a_fault_is_not_reported_while_capture_is_blocked_anyway() {
+        let gate = CaptureGate::default();
+        for _ in 0..5 {
+            gate.note_screenshot(false);
+        }
+        gate.apply(true, 0);
+        assert!(!gate.screenshot_trouble(), "outside hours the screen is not being tried");
+    }
+
+    #[test]
+    fn starting_a_break_forgets_earlier_failures() {
+        let gate = CaptureGate::default();
+        for _ in 0..5 {
+            gate.note_screenshot(false);
+        }
+        gate.set_break(now_ms() + 60_000);
+        gate.set_break(0);
+        assert!(!gate.screenshot_trouble(), "nothing was attempted during the break");
     }
 
     #[test]

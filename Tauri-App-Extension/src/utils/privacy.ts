@@ -1,6 +1,6 @@
 import type { CaptureStatus, CaptureSummary } from "../types";
 
-export const EMPTY_CAPTURE_STATUS: CaptureStatus = { blocked: false, reason: "", breakUntilMs: 0 };
+export const EMPTY_CAPTURE_STATUS: CaptureStatus = { blocked: false, reason: "", breakUntilMs: 0, issue: "" };
 
 export const BREAK_OPTIONS = [
   { minutes: 15, label: "15 min" },
@@ -11,7 +11,9 @@ export const BREAK_OPTIONS = [
 /** Polled every few seconds, so an unchanged answer must not become a new
  *  object or the whole app re-renders on each poll for nothing. */
 export function sameCaptureStatus(a: CaptureStatus, b: CaptureStatus): boolean {
-  return a.blocked === b.blocked && a.reason === b.reason && a.breakUntilMs === b.breakUntilMs;
+  return (
+    a.blocked === b.blocked && a.reason === b.reason && a.breakUntilMs === b.breakUntilMs && a.issue === b.issue
+  );
 }
 
 export function isOnBreak(status: CaptureStatus, nowMs: number = Date.now()): boolean {

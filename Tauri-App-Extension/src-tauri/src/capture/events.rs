@@ -10,7 +10,7 @@ use rand::Rng;
 
 use crate::capture::activity::ActivityMeter;
 use crate::capture::app_icon::read_app_icon;
-use crate::capture::screen::ScreenCapture;
+use crate::capture::screen::{ScreenCapture, ScreenSkip};
 use crate::capture::classification_cache;
 use crate::capture::window::{read_browser_url, ForegroundWindow};
 use crate::constants::{
@@ -243,7 +243,19 @@ impl EventBuilder {
             self.url_for_blur(window).as_deref(),
             Some(window.title.as_str()),
         );
-        let image_data = self.screen.capture_jpeg_data_url(blur)?;
+        let image_data = match self.screen.capture_jpeg_data_url(blur) {
+            Ok(data) => {
+                self.gate.note_screenshot(true);
+                data
+            }
+            // Someone stepping away is not a fault and says nothing about whether
+            // capture works, so it is neither counted nor allowed to clear a run of them.
+            Err(ScreenSkip::Locked) => return None,
+            Err(ScreenSkip::Failed) => {
+                self.gate.note_screenshot(false);
+                return None;
+            }
+        };
         Some(ActivityEvent::Screenshot {
             image_data,
             app_name: truncate(&self.resolve_app_name(window), MAX_APP_NAME_LEN),

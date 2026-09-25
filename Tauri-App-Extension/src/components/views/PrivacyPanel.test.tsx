@@ -16,8 +16,8 @@ import { PrivacyPanel } from "./PrivacyPanel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const NOT_ON_BREAK: CaptureStatus = { blocked: false, reason: "", breakUntilMs: 0 };
-const ON_BREAK: CaptureStatus = { blocked: true, reason: "Private break - nothing is being captured.", breakUntilMs: Date.now() + 10 * 60_000 };
+const NOT_ON_BREAK: CaptureStatus = { blocked: false, reason: "", breakUntilMs: 0, issue: "" };
+const ON_BREAK: CaptureStatus = { blocked: true, reason: "Private break - nothing is being captured.", breakUntilMs: Date.now() + 10 * 60_000, issue: "" };
 
 const SUMMARY = { timezone: "UTC", screenshots: 4, appEvents: 9, apps: 3, domains: 2, activeSeconds: 3600 };
 const RULE = { id: "e1", matchType: "domain", pattern: "mybank.com" };

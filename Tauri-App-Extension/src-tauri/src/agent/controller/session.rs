@@ -39,7 +39,7 @@ impl AgentController {
         let tracker = self.tracker.lock();
         match tracker.as_ref() {
             Some(tracker) if !tracker.flush_pending_stop() => {
-                Some("Still finishing the previous idle stop — try starting again in a moment.".into())
+                Some("Still finishing the previous idle stop. That needs a connection, so check yours and try again.".into())
             }
             _ => None,
         }

@@ -8,6 +8,15 @@ use crate::constants::{JPEG_QUALITY, MAX_SCREENSHOT_WIDTH};
 /// isn't worth it, not a full redaction.
 const SENSITIVE_BLUR_SIGMA: f32 = 2.5;
 
+/// Why no screenshot was produced. A locked screen is someone stepping away - nothing
+/// is wrong - while a failure is a real fault that will repeat until something changes,
+/// and only that kind is worth telling the member about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScreenSkip {
+    Locked,
+    Failed,
+}
+
 pub struct ScreenCapture;
 
 impl ScreenCapture {
@@ -17,20 +26,20 @@ impl ScreenCapture {
 
     /// `blur` obscures the image for a personal messaging app/site
     /// (capture/sensitive_apps.rs) - the screenshot is still taken and uploaded, so time
-    pub fn capture_jpeg_data_url(&self, blur: bool) -> Option<String> {
+    pub fn capture_jpeg_data_url(&self, blur: bool) -> Result<String, ScreenSkip> {
         if is_session_locked() {
             log::info!("Screenshot skipped: session is locked");
-            return None;
+            return Err(ScreenSkip::Locked);
         }
         let Some(monitor) = active_monitor() else {
             log::warn!("Screenshot skipped: no monitors detected");
-            return None;
+            return Err(ScreenSkip::Failed);
         };
         let image = match monitor.capture_image() {
             Ok(img) => img,
             Err(err) => {
                 log::warn!("Screenshot skipped: capture_image failed: {err}");
-                return None;
+                return Err(ScreenSkip::Failed);
             }
         };
 
@@ -66,11 +75,11 @@ impl ScreenCapture {
                 ColorType::Rgb8.into(),
             ) {
                 log::warn!("Screenshot skipped: JPEG encode failed: {err}");
-                return None;
+                return Err(ScreenSkip::Failed);
             }
         }
         let encoded = base64::engine::general_purpose::STANDARD.encode(&jpeg);
-        Some(format!("data:image/jpeg;base64,{encoded}"))
+        Ok(format!("data:image/jpeg;base64,{encoded}"))
     }
 }
 

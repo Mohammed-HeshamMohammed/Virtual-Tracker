@@ -23,7 +23,19 @@ export function CaptureBanner({ status, busy = false, onEndBreak, onOpenPrivacy 
     return () => clearInterval(timer);
   }, [status.blocked]);
 
-  if (!status.blocked) return null;
+  // A fault is shown only when capture is otherwise meant to be running - while it is
+  // blocked on purpose the screen is not being tried, so it would be the wrong reason.
+  if (!status.blocked) {
+    if (!status.issue) return null;
+    return (
+      <div className="tracker-update-banner state-error capture-banner" role="alert">
+        <div>
+          <strong>Screenshots are failing</strong>
+          <span>{status.issue}</span>
+        </div>
+      </div>
+    );
+  }
 
   const onBreak = isOnBreak(status, now);
   const remaining = onBreak ? formatRemaining(status.breakUntilMs, now) : "";

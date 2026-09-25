@@ -378,6 +378,8 @@ export type CaptureStatus = {
   reason: string;
   /** Unix ms the current break ends; 0 when none is running. */
   breakUntilMs: number;
+  /** Set when capture is meant to be running but is failing; empty otherwise. */
+  issue: string;
 };
 
 /** One of the member's own never-capture rules. */
