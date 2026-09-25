@@ -42,7 +42,7 @@ export default function MembersSettings({ onNavigate }: { onNavigate: (id: strin
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto pt-6 min-h-0 scrollbar-hide">
+      <div className="flex-1 overflow-y-auto pt-6 min-h-0 page-custom-scrollbar">
         <AnimatePresence mode="wait">
           <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
             {tab === "custom" && <CustomFields />}

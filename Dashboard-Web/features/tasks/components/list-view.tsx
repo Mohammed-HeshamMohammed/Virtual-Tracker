@@ -626,7 +626,7 @@ export function ListView({
   }
 
   return (
-    <div className="scrollbar-hide min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 pb-4">
+    <div className="page-custom-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 pb-4">
       {(Object.entries(groups) as [TaskStatus, Task[]][]).map(([status, items]) => {
         if (!showCompleted && status === "done") return null
         const cfg = STATUS_CONFIG[status]
