@@ -5,6 +5,7 @@
 // is never captured", "Every change writes an immutable audit record").
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 
 /** @type {Map<string, any>} */
 let capabilityRows;
@@ -223,6 +224,50 @@ test("the notice version is stable when nothing that appears in the text has cha
   const first = await composeMonitoringNotice();
   const second = await composeMonitoringNotice();
   assert.equal(first.version, second.version);
+});
+
+test("recording or changing a lawful basis does not change the notice version", async () => {
+  // The basis is the organization's record and appears nowhere in what members are
+  // shown, so asking them to re-acknowledge an identical notice is pure friction.
+  reset();
+  await setMonitoringCapability({ capability: "screenshots", enabled: true, lawfulBasis: "consent" }, ADMIN);
+  const withConsent = await composeMonitoringNotice();
+  await setMonitoringCapability({ capability: "screenshots", enabled: true, lawfulBasis: "contract" }, ADMIN);
+  const withContract = await composeMonitoringNotice();
+  assert.equal(withConsent.version, withContract.version);
+  assert.equal(withConsent.text, withContract.text);
+});
+
+test("consent already given stays valid when a basis is recorded afterwards", async () => {
+  reset();
+  await setMonitoringCapability({ capability: "screenshots", enabled: true, lawfulBasis: "consent" }, ADMIN);
+  const shown = await composeMonitoringNotice();
+  await recordMemberDisclosure("member-1", shown.version);
+  await recordMemberConsent("member-1", shown.version);
+
+  await setMonitoringCapability({ capability: "screenshots", enabled: true, lawfulBasis: "legitimate_interest" }, ADMIN);
+  const after = await composeMonitoringNotice();
+  assert.equal(await hasCurrentConsent("member-1", after.version), true, "nothing they were told has changed");
+});
+
+test("the version is unchanged for a capability with no basis, so earlier consent is not invalidated by this change", async () => {
+  // Backfilled capabilities were enabled without a basis. The hash input for that
+  // state must be exactly what was hashed before the basis left it, or every member
+  // would be asked to acknowledge again for a notice that did not change.
+  reset();
+  await setMonitoringCapability({ capability: "screenshots", enabled: true, lawfulBasis: "consent" }, ADMIN);
+  const notice = await composeMonitoringNotice();
+  const legacy = crypto.createHash("sha256").update("screenshots:true:").digest("hex").slice(0, 16);
+  assert.equal(notice.version, legacy);
+});
+
+test("disabling a capability changes the version, since the text now says less", async () => {
+  reset();
+  await setMonitoringCapability({ capability: "screenshots", enabled: true, lawfulBasis: "consent" }, ADMIN);
+  const on = await composeMonitoringNotice();
+  await setMonitoringCapability({ capability: "screenshots", enabled: false }, ADMIN);
+  const off = await composeMonitoringNotice();
+  assert.notEqual(on.version, off.version);
 });
 
 test("consent recorded against an old notice version does not satisfy a changed notice", async () => {
