@@ -7,6 +7,9 @@ import { useTheme } from "@/shared/providers/app"
 import { Toggle } from "@/shared/ui/forms/toggle"
 import {
   addCaptureExclusion,
+  getActiveDevices,
+  getTenantIsolation,
+  revokeDevice,
   getCaptureExclusions,
   getMonitoringPolicy,
   getRetentionSettings,
@@ -17,6 +20,8 @@ import {
   type CaptureExclusion,
   type MonitoringCapability,
   type RetentionSetting,
+  type AgentDevice,
+  type IsolationReport,
   type ScreenshotAccessEntry,
 } from "@/features/settings/api/compliance-api"
 
@@ -56,6 +61,8 @@ export function CompliancePage() {
   const [accessLog, setAccessLog] = useState<ScreenshotAccessEntry[]>([])
   const [error, setError] = useState("")
   const [busy, setBusy] = useState("")
+  const [devices, setDevices] = useState<AgentDevice[]>([])
+  const [isolation, setIsolation] = useState<IsolationReport | null>(null)
   const [newPattern, setNewPattern] = useState("")
   const [newType, setNewType] = useState("app")
 
@@ -66,7 +73,11 @@ export function CompliancePage() {
       getRetentionSettings(),
       getCaptureExclusions(),
       getScreenshotAccessLog(),
-    ]).then(([policy, ret, excl, log]) => {
+      getActiveDevices(),
+      getTenantIsolation(),
+    ]).then(([policy, ret, excl, log, devs, iso]) => {
+      if (devs.status === "fulfilled") setDevices(devs.value)
+      if (iso.status === "fulfilled") setIsolation(iso.value)
       if (policy.status === "fulfilled") setCapabilities(policy.value)
       if (ret.status === "fulfilled") setRetention(ret.value)
       if (excl.status === "fulfilled") setExclusions(excl.value)
@@ -252,6 +263,56 @@ export function CompliancePage() {
           {!exclusions.length ? <li className={hint}>Nothing excluded.</li> : null}
         </ul>
       </section>
+
+      <section className={card}>
+        <h3 className={heading}>Linked devices</h3>
+        <p className={cn("mt-1 mb-3", hint)}>
+          Every tracker still linked to an account. Archiving or banning a member already revokes theirs — this is for a
+          machine that was lost while its owner is still with you. Revoking is not permanent: they can link again.
+        </p>
+        {devices.length ? (
+          <ul className="space-y-1">
+            {devices.map((d) => (
+              <li key={d.device_id} className="flex items-center justify-between gap-3 text-sm">
+                <span className={isDark ? "text-slate-200" : "text-slate-700"}>
+                  {d.member_name || d.member_id}
+                  <span className={cn("ml-2", hint)}>
+                    {d.ownership && d.ownership !== "unspecified" ? `${d.ownership} · ` : ""}
+                    last seen {formatDate(d.last_seen_at) || "never"}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  disabled={busy === d.device_id}
+                  onClick={() => void run(d.device_id, () => revokeDevice(d.device_id))}
+                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:bg-rose-50 hover:text-rose-700 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-rose-950/40"
+                >
+                  Revoke
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className={hint}>No linked devices.</p>
+        )}
+      </section>
+
+      {isolation ? (
+        <section className={card}>
+          <h3 className={heading}>Tenant isolation</h3>
+          <p className={cn("mt-1 mb-2", hint)}>{isolation.summary}</p>
+          {isolation.status !== "enforced" ? (
+            <ul className="space-y-1">
+              {isolation.reasons.map((r, i) => (
+                <li key={i} className={cn("flex items-start gap-2 text-xs", isolation.critical ? "text-rose-600 dark:text-rose-400" : hint)}>
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {r}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className={card}>
         <h3 className={heading}>Who viewed screenshots</h3>

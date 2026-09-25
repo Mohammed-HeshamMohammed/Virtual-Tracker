@@ -98,3 +98,37 @@ export function removeCaptureExclusion(id: string) {
     "Could not remove the exclusion.",
   )
 }
+
+export type AgentDevice = {
+  device_id: string
+  member_id: string
+  member_name?: string
+  agent_source?: string
+  ownership?: string
+  last_seen_at?: string | null
+  created_at?: string | null
+}
+
+export function getActiveDevices() {
+  return call<AgentDevice[]>("/api/compliance/devices/all", undefined, "Could not load linked devices.")
+}
+
+export function revokeDevice(deviceId: string) {
+  return call<unknown>(
+    `/api/compliance/devices/${encodeURIComponent(deviceId)}`,
+    { method: "DELETE" },
+    "Could not revoke the device.",
+  )
+}
+
+export type IsolationReport = {
+  status: "enforced" | "not-enforced" | "unknown"
+  critical: boolean
+  summary: string
+  reasons: string[]
+  customerTenants: number
+}
+
+export function getTenantIsolation() {
+  return call<IsolationReport>("/api/customer-accounts/isolation", undefined, "Could not check tenant isolation.")
+}
