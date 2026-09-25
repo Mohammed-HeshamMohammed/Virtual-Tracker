@@ -729,6 +729,18 @@ const MEMBER_DATA_DDL = [
   UNIQUE (member_id, kind, day)
 )`,
   `CREATE INDEX IF NOT EXISTS idx_record_notices_day ON record_notices (day DESC, kind)`,
+  // What the monitoring policy discarded at ingest, so switching a capability off
+  // is visible as a number instead of as data that quietly never arrives. Keyed by
+  // member as well as capability and day so the key is unique across tenants.
+  `CREATE TABLE IF NOT EXISTS capture_policy_drops (
+  member_id  UUID NOT NULL,
+  capability VARCHAR(40) NOT NULL,
+  day        DATE NOT NULL DEFAULT CURRENT_DATE,
+  dropped    INT NOT NULL DEFAULT 0 CHECK (dropped >= 0),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (member_id, capability, day)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_capture_policy_drops_day ON capture_policy_drops (day DESC, capability)`,
   `CREATE INDEX IF NOT EXISTS idx_notif_recipient_unread ON notifications (recipient_id, read) WHERE read = false`,
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_version VARCHAR(32)",
   "ALTER TABLE members ADD COLUMN IF NOT EXISTS agent_platform VARCHAR(32)",

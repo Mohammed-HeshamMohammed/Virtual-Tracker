@@ -63,9 +63,14 @@ export function __resetCapabilityCacheForTests() {
   cache = null;
 }
 
+/** The capability that governs an event type, or undefined when none does. */
+export function capabilityForEvent(eventType) {
+  return CAPABILITY_FOR_EVENT[eventType];
+}
+
 /** True when an event of this type may be stored under the current policy. */
 export function eventAllowed(eventType, enabled) {
-  const capability = CAPABILITY_FOR_EVENT[eventType];
+  const capability = capabilityForEvent(eventType);
   if (!capability) return true;
   return enabled.has(capability);
 }

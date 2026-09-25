@@ -24,6 +24,7 @@ import {
   addOwnCaptureExclusion,
   removeOwnCaptureExclusion,
 } from "./capture-minimization.js";
+import { getPolicyHealth } from "./policy-health.js";
 import {
   getRetentionSettings,
   setRetentionDays,
@@ -77,6 +78,28 @@ export async function routeCompliance(req, res, url, origin) {
     } catch (e) {
       logSafeError("[compliance/monitoring-policy GET]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load monitoring policy." });
+    }
+    return true;
+  }
+
+  // What is being discarded because a capability is off, and what still has no
+  // lawful basis on record. Management only: it describes gaps in the org's
+  // data, and only management can act on it.
+  if (pn === "/api/compliance/policy-health" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    if (!isManagementRole(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: "Only management may view policy health." });
+      return true;
+    }
+    try {
+      sendJson(res, origin, 200, {
+        success: true,
+        data: await getPolicyHealth({ days: Number(url.searchParams.get("days")) || 7 }),
+      });
+    } catch (e) {
+      logSafeError("[compliance/policy-health GET]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load policy health." });
     }
     return true;
   }

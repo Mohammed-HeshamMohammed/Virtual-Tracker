@@ -123,6 +123,7 @@ export const TENANT_SCOPED_TABLES = [
   "report_schedules",
   "notifications",
   "record_notices",
+  "capture_policy_drops",
 
   // Cross-cutting: populated generically by fn_audit_log_trigger() from
   // whichever row triggered it going forward (see §14.3) - existing rows are
