@@ -178,6 +178,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { label: "Activity & tracking",   id: "settings-activity"            },
       { label: "Integrations",          id: "settings-integrations"        },
       { label: "Policies",              id: "settings-policies"            },
+      { label: "Compliance",            id: "settings-compliance"          },
       { label: "Enterprise Security",   id: "settings-enterprise-security" },
       { label: "Billing",               id: "settings-billing"             },
       { label: "Subscription Plans",    id: "settings-billing-plans"       },
