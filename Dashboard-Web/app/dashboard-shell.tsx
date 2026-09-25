@@ -12,6 +12,7 @@ import { BACKEND_RECONNECTING_HINT, BACKEND_UNAVAILABLE_MESSAGE } from "@/infras
 import { cn } from "@/shared/utils/utils"
 import { Sidebar, Topbar, PageSearchProvider } from "@/shared/ui/layout"
 import { HierarchyAssignmentBanner } from "@/shared/ui/layout/hierarchy-assignment-banner"
+import { PolicyHealthBanner } from "@/shared/ui/layout/policy-health-banner"
 import { configureTimerStorageScope, clearAllTaskTimerStateForScope } from "@/features/activity/utils/timer-task-storage"
 import { PageContent } from "@/app/page-content"
 import { isFullBleedPage } from "@/app/page-layout"
@@ -108,6 +109,7 @@ export function DashboardShell() {
             isCollapsed={!isSidebarCollapsed}
           />
           <HierarchyAssignmentBanner />
+          <PolicyHealthBanner activeItem={activeItem} onNavigate={setActiveItem} />
           <main
             className={cn(
               "dashboard-shell-main w-full flex-1 overflow-hidden",
