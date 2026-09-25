@@ -30,6 +30,8 @@ import {
 } from "./data-retention.js";
 import {
   listAgentDevicesForMember,
+  listActiveAgentDevices,
+  revokeAgentDevice,
   setAgentDeviceOwnership,
   getAgentDevice,
 } from "../activity/agent-devices.service.js";
@@ -451,6 +453,42 @@ export async function routeCompliance(req, res, url, origin) {
     } catch (e) {
       logSafeError("[compliance/screenshot-access-log GET]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to load screenshot access log." });
+    }
+    return true;
+  }
+
+  // Every live device, for the machine that was lost while its owner is still
+  // employed - archiving or banning a member already revokes theirs.
+  if (pn === "/api/compliance/devices/all" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    if (!isManagementRole(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: "Only management may list devices." });
+      return true;
+    }
+    try {
+      sendJson(res, origin, 200, { success: true, data: await listActiveAgentDevices() });
+    } catch (e) {
+      logSafeError("[compliance/devices all GET]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load devices." });
+    }
+    return true;
+  }
+
+  if (pn.startsWith("/api/compliance/devices/") && req.method === "DELETE") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    if (!isManagementRole(viewer.roleName)) {
+      sendJson(res, origin, 403, { success: false, error: "Only management may revoke a device." });
+      return true;
+    }
+    const deviceId = pn.slice("/api/compliance/devices/".length).split("/")[0];
+    try {
+      await revokeAgentDevice(deviceId);
+      sendJson(res, origin, 200, { success: true, data: { deviceId, revoked: true } });
+    } catch (e) {
+      logSafeError("[compliance/devices DELETE]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to revoke the device." });
     }
     return true;
   }

@@ -64,6 +64,7 @@ import { getMemberLimitHours } from "../tasks/task-workload-validation.js";
 import { PROJECT_TYPES, projectTypeDef, projectTypeForcesHours } from "./project-types.js";
 import { listSubProjectIdsPg, setSubProjectsPg } from "./management-rollup.service.js";
 import { validateIdleTimeSeconds } from "./idle-time.js";
+import { listMeta } from "../../http/list-truncation.js";
 import { resolveIdleTimeLimit } from "./idle-time-limit.service.js";
 import { resolveProjectTimezoneInput, canSetProjectTimezone } from "./project-timezone.js";
 
@@ -700,7 +701,11 @@ export async function routeProjects(req, res, url, db, origin) {
           };
         }),
       );
-      sendJson(res, origin, 200, { success: true, data: withDerived });
+      const meta = await listMeta(rows, 500, async () => {
+        const [row] = await pgQuery("SELECT count(*)::int AS n FROM projects");
+        return row?.n ?? 0;
+      });
+      sendJson(res, origin, 200, { success: true, data: withDerived, meta });
     } catch (e) {
       logSafeError("[projects GET]", e);
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Failed to load projects" });

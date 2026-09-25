@@ -116,6 +116,22 @@ export async function listAgentDevicesForMember(memberId) {
   );
 }
 
+/** Every live device across the organization, for the admin view. Revoking is
+ *  already automatic when a member is archived or banned, so what this is for
+ *  is the machine that was lost while its owner is still employed. */
+export async function listActiveAgentDevices(limit = 500) {
+  return query(
+    `SELECT d.device_id, d.member_id, d.agent_source, d.ownership, d.last_seen_at, d.created_at,
+            COALESCE(NULLIF(TRIM(CONCAT_WS(' ', m.first_name, m.last_name)), ''), m.display_name, m.work_email, '') AS member_name
+       FROM agent_devices d
+       LEFT JOIN members m ON m.id = d.member_id
+      WHERE d.revoked_at IS NULL
+      ORDER BY d.last_seen_at DESC NULLS LAST, d.created_at DESC
+      LIMIT $1`,
+    [Math.min(Math.max(Number(limit) || 500, 1), 2000)],
+  );
+}
+
 export async function setAgentDeviceOwnership(deviceId, ownership, setBy) {
   if (!["company", "personal", "unspecified"].includes(ownership)) {
     const err = new Error(`Unknown ownership value: ${ownership}`);
