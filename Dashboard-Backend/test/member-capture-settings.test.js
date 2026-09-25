@@ -28,7 +28,12 @@ mock.module("../src/modules/reports/member-timezones.js", {
   namedExports: { getMemberTimezone: async () => "UTC" },
 });
 
-const { getEffectiveCaptureSettings, isOutsideWorkWindow } = await import(
+const {
+  getEffectiveCaptureSettings,
+  isOutsideWorkWindow,
+  secondsUntilWindowChange,
+  mayAccessMemberCaptureSettings,
+} = await import(
   "../src/modules/activity/member-capture-settings.js"
 );
 
@@ -158,4 +163,87 @@ test("a break outranks the schedule", async () => {
   };
   const s = await getEffectiveCaptureSettings("m1");
   assert.equal(s.captureBlockReason, "break");
+});
+
+// ---- when the answer next changes ------------------------------------------
+
+test("the agent is told to re-ask at the minute a shift ends, not thirty minutes later", () => {
+  const shift = { work_start_min: 9 * 60, work_end_min: 17 * 60 };
+  const at = (h, m) => new Date(Date.UTC(2026, 0, 15, h, m));
+  // 16:50 is inside the window, so the answer flips to "outside" at 17:00.
+  assert.equal(secondsUntilWindowChange(shift, null, at(16, 50), "UTC", false), 10 * 60);
+});
+
+test("the agent is told to re-ask at the minute a shift starts", () => {
+  const shift = { work_start_min: 9 * 60, work_end_min: 17 * 60 };
+  const at = (h, m) => new Date(Date.UTC(2026, 0, 15, h, m));
+  assert.equal(secondsUntilWindowChange(shift, null, at(8, 55), "UTC", true), 5 * 60);
+});
+
+test("with nothing changing soon the answer is capped at the agent's own poll interval", () => {
+  const shift = { work_start_min: 9 * 60, work_end_min: 17 * 60 };
+  const noon = new Date(Date.UTC(2026, 0, 15, 12, 0));
+  assert.equal(secondsUntilWindowChange(shift, null, noon, "UTC", false), 30 * 60);
+});
+
+test("with no window configured there is never anything to re-ask about", () => {
+  assert.equal(secondsUntilWindowChange({}, null, new Date(), "UTC", false), 30 * 60);
+});
+
+test("a day that starts as a day off flips when the next workday begins", () => {
+  // 23:50 on a Thursday with Friday off... use Sunday->Monday: Monday is index 0.
+  const monToFri = [0, 1, 2, 3, 4];
+  const sundayLate = new Date(Date.UTC(2026, 0, 18, 23, 45)); // Sunday
+  assert.equal(secondsUntilWindowChange({}, monToFri, sundayLate, "UTC", true), 15 * 60);
+});
+
+test("the schedule is reported on its own while a break is running", async () => {
+  const minute = minutesNowUtc();
+  memberRow = {
+    work_start_min: (minute + 10) % 1440,
+    work_end_min: (minute + 20) % 1440,
+    break_until: new Date(Date.now() + 10 * MINUTE),
+    break_reason: "lunch",
+  };
+  timeSettingsRow = {};
+  const s = await getEffectiveCaptureSettings("m1");
+  assert.equal(s.captureBlockReason, "break", "the break is what the member is shown");
+  assert.equal(s.outsideWorkHours, true, "but the agent must still know the schedule blocks capture");
+});
+
+// ---- who may read or change a member's settings ------------------------------
+
+const viewer = (memberId, roleName) => ({ memberId, roleName });
+
+test("a member can read their own settings", () => {
+  assert.equal(mayAccessMemberCaptureSettings(viewer("a", "Employee"), "a", null), true);
+});
+
+test("a member cannot read a colleague's settings, which carry their hours and break reason", () => {
+  assert.equal(mayAccessMemberCaptureSettings(viewer("a", "Employee"), "b", null), false);
+  assert.equal(mayAccessMemberCaptureSettings(viewer("a", "Team Lead"), "b", ["b"]), false, "not management");
+});
+
+test("a member cannot change their own settings; only the break is theirs", () => {
+  assert.equal(mayAccessMemberCaptureSettings(viewer("a", "Employee"), "a", null, { write: true }), false);
+});
+
+test("management reaches someone inside their scope and no one outside it", () => {
+  const manager = viewer("m", "Manager");
+  assert.equal(mayAccessMemberCaptureSettings(manager, "b", ["b", "c"]), true);
+  assert.equal(mayAccessMemberCaptureSettings(manager, "z", ["b", "c"]), false, "another branch");
+  assert.equal(mayAccessMemberCaptureSettings(manager, "z", ["b", "c"], { write: true }), false);
+});
+
+test("a role that reaches everyone is not limited by a member list", () => {
+  assert.equal(mayAccessMemberCaptureSettings(viewer("o", "Owner"), "anyone", null, { write: true }), true);
+});
+
+test("an empty reach list denies rather than allowing everyone", () => {
+  assert.equal(mayAccessMemberCaptureSettings(viewer("m", "Manager"), "b", []), false);
+});
+
+test("a missing viewer or target is denied", () => {
+  assert.equal(mayAccessMemberCaptureSettings(null, "b", null), false);
+  assert.equal(mayAccessMemberCaptureSettings(viewer("m", "Owner"), "", null), false);
 });

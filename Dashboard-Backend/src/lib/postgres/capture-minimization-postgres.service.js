@@ -29,8 +29,31 @@ export async function addCaptureExclusionPg(input) {
   return rows[0] ?? null;
 }
 
-export async function removeCaptureExclusionPg(id) {
-  await query(`DELETE FROM capture_exclusions WHERE id = $1`, [id]);
+/**
+ * `memberId` scopes the delete to that member's own rows; null scopes it to the
+ * org-wide ones. Deleting by id alone would let the org route remove a
+ * member's personal exclusion, which is theirs to keep, and the member route
+ * remove an org rule. Returns whether a row was actually removed.
+ */
+export async function removeCaptureExclusionPg(id, memberId = null) {
+  const rows = await query(
+    `DELETE FROM capture_exclusions WHERE id = $1 AND member_id IS NOT DISTINCT FROM $2::uuid RETURNING id`,
+    [id, memberId],
+  );
+  return rows.length > 0;
+}
+
+export async function getOwnCaptureExclusionsPg(memberId) {
+  return query(
+    `SELECT id, match_type, pattern, note, created_by, created_at, member_id
+       FROM capture_exclusions WHERE member_id = $1 ORDER BY created_at DESC`,
+    [memberId],
+  );
+}
+
+export async function countOwnCaptureExclusionsPg(memberId) {
+  const rows = await query(`SELECT count(*)::int AS n FROM capture_exclusions WHERE member_id = $1`, [memberId]);
+  return rows[0]?.n ?? 0;
 }
 
 export async function getCaptureMinimizationSettingsPg() {

@@ -18,9 +18,11 @@ import { getSingleByMemberId } from "../../lib/postgres/member-data-store.js";
 import { recordScreenshotAccess } from "../compliance/data-retention.js";
 import { getActivityScoringSettings, setActivityScoringSettings } from "./scoring-settings.js";
 import { recordNotice, listRecordNotices, getDataHealth } from "./record-notices.js";
+import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { enabledCapabilities, eventAllowed } from "../compliance/capability-gate.js";
 import {
   getEffectiveCaptureSettings,
+  mayAccessMemberCaptureSettings,
   setMemberCaptureSettings,
   startPrivateBreak,
   endPrivateBreak,
@@ -1013,7 +1015,10 @@ export async function routeActivity(req, res, url, origin) {
 
       const [minimizationSettings, exclusions, capabilities] = await Promise.all([
         getCaptureMinimizationSettings(),
-        getCaptureExclusions(),
+        // The sender's own exclusions apply here too: the agent only reads
+        // app names from the effective list, so a member's domain rule would
+        // otherwise be stored and then do nothing.
+        getCaptureExclusions(member.memberId),
         enabledCapabilities(),
       ]);
 
@@ -2208,6 +2213,16 @@ export async function routeActivity(req, res, url, origin) {
     }
     const targetId = captureSettingsMatch[1];
     try {
+      // Reach is only looked up when it can matter: reading your own needs none.
+      const write = req.method !== "GET";
+      const visibleIds =
+        targetId === viewer.memberId && !write
+          ? null
+          : await getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
+      if (!mayAccessMemberCaptureSettings(viewer, targetId, visibleIds, { write })) {
+        sendJson(res, origin, 403, { success: false, error: "You cannot view or change this member's capture settings." });
+        return true;
+      }
       let data;
       if (req.method === "GET") {
         data = await getEffectiveCaptureSettings(targetId);

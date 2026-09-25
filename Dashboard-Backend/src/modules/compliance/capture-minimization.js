@@ -1,6 +1,8 @@
 import { isManagementRole } from "../../http/auth-context.js";
 import {
   getCaptureExclusionsPg,
+  getOwnCaptureExclusionsPg,
+  countOwnCaptureExclusionsPg,
   addCaptureExclusionPg,
   removeCaptureExclusionPg,
   getCaptureMinimizationSettingsPg,
@@ -20,6 +22,31 @@ function normalizePattern(pattern) {
   return String(pattern ?? "").trim().toLowerCase().replace(/\.exe$/, "");
 }
 
+/**
+ * A domain rule is typed as whatever the person had in front of them - a full
+ * address, "www.bank.com", a bare host - while ingest compares against
+ * parseDomain's hostname-without-www. Reduce every spelling to that form when
+ * the rule is stored, or "https://www.bank.com/login" is saved and never
+ * matches anything.
+ */
+function normalizeDomain(pattern) {
+  const raw = String(pattern ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  let host;
+  try {
+    host = new URL(raw.includes("://") ? raw : `https://${raw}`).hostname;
+  } catch {
+    host = raw.split(/[/?#]/)[0];
+  }
+  return host.replace(/^www\./, "").replace(/\.$/, "");
+}
+
+function normalizeFor(matchType, pattern) {
+  return matchType === "domain" ? normalizeDomain(pattern) : normalizePattern(pattern);
+}
+
+const MAX_MEMBER_EXCLUSIONS = 100;
+
 function normalizeExclusionRow(row) {
   return {
     id: row.id,
@@ -28,6 +55,7 @@ function normalizeExclusionRow(row) {
     note: row.note ?? null,
     createdBy: row.created_by ?? null,
     createdAt: row.created_at,
+    memberId: row.member_id ?? null,
   };
 }
 
@@ -42,7 +70,7 @@ export async function addCaptureExclusion(input, actor) {
     err.code = "INVALID_MATCH_TYPE";
     throw err;
   }
-  const pattern = normalizePattern(input.pattern);
+  const pattern = normalizeFor(input.matchType, input.pattern);
   if (!pattern) {
     const err = new Error("pattern is required");
     err.code = "PATTERN_REQUIRED";
@@ -71,10 +99,61 @@ export async function removeCaptureExclusion(id, actor) {
   await removeCaptureExclusionPg(id);
 }
 
+function invalid(message, code) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
+/** A member's own list - never the org-wide one, never anyone else's. */
+export async function listOwnCaptureExclusions(memberId) {
+  if (!memberId) return [];
+  return (await getOwnCaptureExclusionsPg(memberId)).map(normalizeExclusionRow);
+}
+
+/**
+ * Anyone may exclude things from their own capture; no management role is
+ * needed and none would be right, since the point is that it is theirs. It can
+ * only ever narrow what is collected about them, never widen it, so there is
+ * nothing here for an approver to gate.
+ */
+export async function addOwnCaptureExclusion(input, memberId) {
+  if (!memberId) throw invalid("Sign in to manage your exclusions.", "FORBIDDEN");
+  if (!["app", "domain"].includes(input.matchType)) {
+    throw invalid(`matchType must be 'app' or 'domain', got '${input.matchType}'`, "INVALID_MATCH_TYPE");
+  }
+  const pattern = normalizeFor(input.matchType, input.pattern);
+  if (!pattern) throw invalid("pattern is required", "PATTERN_REQUIRED");
+  if (pattern.length > 255) throw invalid("pattern is too long", "PATTERN_TOO_LONG");
+  if ((await countOwnCaptureExclusionsPg(memberId)) >= MAX_MEMBER_EXCLUSIONS) {
+    throw invalid(`You can exclude up to ${MAX_MEMBER_EXCLUSIONS} items.`, "EXCLUSION_LIMIT");
+  }
+  const row = await addCaptureExclusionPg({
+    matchType: input.matchType,
+    pattern,
+    createdBy: memberId,
+    memberId,
+  });
+  return row ? normalizeExclusionRow(row) : null;
+}
+
+export async function removeOwnCaptureExclusion(id, memberId) {
+  if (!memberId) throw invalid("Sign in to manage your exclusions.", "FORBIDDEN");
+  return removeCaptureExclusionPg(id, memberId);
+}
+
 export function matchesExclusion(exclusions, matchType, name) {
-  const needle = normalizePattern(name);
+  const needle = normalizeFor(matchType, name);
   if (!needle) return false;
-  return exclusions.some((e) => e.matchType === matchType && normalizePattern(e.pattern) === needle);
+  return exclusions.some((e) => {
+    if (e.matchType !== matchType) return false;
+    const rule = normalizeFor(matchType, e.pattern);
+    if (rule === needle) return true;
+    // Excluding a domain excludes its subdomains: "bank.com" has to cover
+    // "online.bank.com", or the rule stops protecting the moment the site
+    // serves the login page from a different host.
+    return matchType === "domain" && Boolean(rule) && needle.endsWith(`.${rule}`);
+  });
 }
 
 export async function isCaptureExcluded(matchType, name) {
