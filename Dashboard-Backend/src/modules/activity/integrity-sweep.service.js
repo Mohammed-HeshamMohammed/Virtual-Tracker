@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { categorize } from "../classification/activity-categories.js";
+import { enabledCapabilities } from "../compliance/capability-gate.js";
 import {
   detectScreenshotStaleness,
   detectCategoryConflict,
@@ -30,6 +31,9 @@ export function scheduleIntegritySweep() {
 }
 
 export async function runIntegrityChecks() {
+  // All three checks below write flags, so the policy is read once here rather
+  // than in one of them.
+  if (!(await enabledCapabilities()).has("integrity_signals")) return;
   const since = new Date(Date.now() - LOOKBACK_MINUTES * 60 * 1000);
   const screenshotRows = await fetchRecentScreenshotsPg(since);
   await Promise.all([

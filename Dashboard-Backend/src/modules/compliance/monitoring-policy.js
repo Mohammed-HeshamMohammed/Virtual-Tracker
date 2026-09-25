@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { isManagementRole } from "../../http/auth-context.js";
+import { isEnforcedCapability } from "./capability-gate.js";
 import {
   getAllMonitoringCapabilitiesPg,
   getMonitoringCapabilityPg,
@@ -50,6 +51,10 @@ function normalizeCapabilityRow(row) {
   return {
     capability: row.capability,
     enabled: row.enabled === true,
+    // Whether switching this off actually stops anything being collected. A
+    // toggle that does nothing is worse than an absent one, so the console is
+    // told which is which rather than left to assume.
+    enforced: isEnforcedCapability(row.capability),
     jurisdictionProfile: row.jurisdiction_profile,
     lawfulBasis: row.lawful_basis ?? null,
     enabledBy: row.enabled_by ?? null,
@@ -74,6 +79,7 @@ export async function getMonitoringPolicy() {
       : {
           capability,
           enabled: false,
+          enforced: isEnforcedCapability(capability),
           jurisdictionProfile: null,
           lawfulBasis: null,
           enabledBy: null,

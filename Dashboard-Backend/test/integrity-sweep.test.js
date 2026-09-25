@@ -11,6 +11,14 @@ let urlRows = [];
 let insertedFlags = [];
 let categoryMap = {};
 
+// The sweep's job is detection; whether the org permits integrity signals is
+// policy, covered in capability-gate.test.js.
+let integritySignalsEnabled = true;
+mock.module("../src/modules/compliance/capability-gate.js", {
+  namedExports: {
+    enabledCapabilities: async () => new Set(integritySignalsEnabled ? ["integrity_signals"] : []),
+  },
+});
 mock.module("../src/lib/postgres/integrity-postgres.service.js", {
   namedExports: {
     fetchRecentScreenshotsPg: async () => screenshots,
