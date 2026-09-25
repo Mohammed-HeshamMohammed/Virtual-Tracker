@@ -20,6 +20,9 @@ import {
   removeCaptureExclusion,
   getCaptureMinimizationSettings,
   setCaptureMinimizationSettings,
+  listOwnCaptureExclusions,
+  addOwnCaptureExclusion,
+  removeOwnCaptureExclusion,
 } from "./capture-minimization.js";
 import {
   getRetentionSettings,
@@ -41,6 +44,8 @@ const ERROR_STATUS = {
   UNKNOWN_JURISDICTION_PROFILE: 400,
   LAWFUL_BASIS_REQUIRED: 400,
   INVALID_MATCH_TYPE: 400,
+  PATTERN_TOO_LONG: 400,
+  EXCLUSION_LIMIT: 409,
   PATTERN_REQUIRED: 400,
   FORBIDDEN: 403,
   CAPABILITY_NOT_OFFERABLE_IN_JURISDICTION: 403,
@@ -251,6 +256,45 @@ export async function routeCompliance(req, res, url, origin) {
       sendJson(res, origin, 500, { success: false, error: "Failed to load capture exclusions." });
     }
     return true;
+  }
+
+  // A member's own never-capture list. Separate from the org-wide routes on
+  // purpose: those are management-only and act on org rules, these are for
+  // everyone and can only ever touch the caller's own rows.
+  if ((pn === "/api/compliance/my-capture-exclusions" || pn.startsWith("/api/compliance/my-capture-exclusions/"))) {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    try {
+      if (pn === "/api/compliance/my-capture-exclusions" && req.method === "GET") {
+        sendJson(res, origin, 200, { success: true, data: await listOwnCaptureExclusions(viewer.memberId) });
+        return true;
+      }
+      if (pn === "/api/compliance/my-capture-exclusions" && req.method === "POST") {
+        const body = await readJsonBody(req);
+        const created = await addOwnCaptureExclusion(
+          { matchType: body.matchType, pattern: body.pattern },
+          viewer.memberId,
+        );
+        sendJson(res, origin, 200, { success: true, data: created });
+        return true;
+      }
+      if (req.method === "DELETE") {
+        const id = pn.slice("/api/compliance/my-capture-exclusions/".length).split("/")[0];
+        const removed = await removeOwnCaptureExclusion(id, viewer.memberId);
+        sendJson(res, origin, removed ? 200 : 404, removed
+          ? { success: true, data: null }
+          : { success: false, error: "That exclusion was not found." });
+        return true;
+      }
+    } catch (e) {
+      const status = (e && ERROR_STATUS[/** @type {{code?:string}} */ (e).code]) || 500;
+      if (status === 500) logSafeError("[compliance/my-capture-exclusions]", e);
+      sendJson(res, origin, status, {
+        success: false,
+        error: status === 500 ? "Failed to update your exclusions." : e.message,
+      });
+      return true;
+    }
   }
 
   if (pn === "/api/compliance/capture-exclusions" && req.method === "POST") {

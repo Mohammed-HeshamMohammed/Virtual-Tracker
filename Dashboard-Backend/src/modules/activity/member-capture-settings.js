@@ -62,6 +62,24 @@ export function isOutsideWorkWindow(row, workDays, now, timeZone) {
   return start <= end ? minute < start || minute >= end : minute < start && minute >= end;
 }
 
+const MAX_RECHECK_SEC = 30 * 60;
+
+/**
+ * How long until the work-window answer next flips, capped at the agent's own
+ * poll interval. The agent re-reads its policy every thirty minutes, so without
+ * this a shift ending at 18:00 kept capturing until the next poll - up to half
+ * an hour of someone's evening - and one starting at 09:00 began late. Telling
+ * the agent when to ask again fixes the edge without polling faster all day,
+ * and keeps the timezone maths here rather than teaching the agent about DST.
+ */
+export function secondsUntilWindowChange(row, workDays, now, timeZone, currentlyOutside) {
+  for (let minutes = 1; minutes <= MAX_RECHECK_SEC / 60; minutes++) {
+    const later = new Date(now.getTime() + minutes * 60_000);
+    if (isOutsideWorkWindow(row, workDays, later, timeZone) !== currentlyOutside) return minutes * 60;
+  }
+  return MAX_RECHECK_SEC;
+}
+
 /** The one payload the agent polls. Member overrides win; NULL inherits. */
 export async function getEffectiveCaptureSettings(memberId) {
   const [org, row, scheduleRows, timeZone] = await Promise.all([
@@ -74,7 +92,12 @@ export async function getEffectiveCaptureSettings(memberId) {
   const now = new Date();
   const breakUntil = row.break_until ? new Date(row.break_until) : null;
   const onBreak = Boolean(breakUntil && breakUntil.getTime() > now.getTime());
-  const outsideHours = !onBreak && isOutsideWorkWindow(row, scheduleRows[0]?.work_days, now, timeZone || "UTC");
+  const zone = timeZone || "UTC";
+  const workDays = scheduleRows[0]?.work_days;
+  // Independent of the break: when the break ends the agent still needs to know
+  // whether the schedule blocks capture, and it would have to wait for the next
+  // poll to learn that if the two were folded together.
+  const outsideHours = isOutsideWorkWindow(row, workDays, now, zone);
 
   return {
     ...org,
@@ -85,9 +108,29 @@ export async function getEffectiveCaptureSettings(memberId) {
     workEndMin: row.work_end_min ?? null,
     captureBlocked: onBreak || outsideHours,
     captureBlockReason: onBreak ? "break" : outsideHours ? "outside_work_hours" : null,
+    outsideWorkHours: outsideHours,
+    recheckInSec: secondsUntilWindowChange(row, workDays, now, zone, outsideHours),
     breakUntilMs: onBreak ? breakUntil.getTime() : 0,
     breakReason: onBreak ? row.break_reason ?? null : null,
   };
+}
+
+/**
+ * Who may read or change a member's capture settings.
+ *
+ * These carry a person's working hours and, while one is running, the reason
+ * they gave for a private break - so being signed in is not enough. A member
+ * reads their own; management reads and changes those inside their reach,
+ * where `visibleIds` is null for a role that reaches everyone. Changing is
+ * never self-service: cadence, blur and hours are the organization's to set,
+ * and only the break is the member's own.
+ */
+export function mayAccessMemberCaptureSettings(viewer, targetMemberId, visibleIds, { write = false } = {}) {
+  if (!viewer?.memberId || !targetMemberId) return false;
+  const isSelf = viewer.memberId === targetMemberId;
+  if (isSelf && !write) return true;
+  if (!isManagementRole(viewer.roleName)) return false;
+  return visibleIds === null || (Array.isArray(visibleIds) && visibleIds.includes(targetMemberId));
 }
 
 export async function setMemberCaptureSettings(memberId, input, actor) {

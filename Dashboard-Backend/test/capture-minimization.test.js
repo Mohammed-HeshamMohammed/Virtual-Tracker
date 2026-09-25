@@ -13,23 +13,32 @@ let settingsRow;
 
 mock.module("../src/lib/postgres/capture-minimization-postgres.service.js", {
   namedExports: {
-    getCaptureExclusionsPg: async () => [...exclusionRows],
+    // Mirrors the real query: org-wide rows plus the asking member's own.
+    getCaptureExclusionsPg: async (memberId = null) =>
+      exclusionRows.filter((r) => !r.member_id || r.member_id === memberId),
+    getOwnCaptureExclusionsPg: async (memberId) => exclusionRows.filter((r) => r.member_id === memberId),
+    countOwnCaptureExclusionsPg: async (memberId) => exclusionRows.filter((r) => r.member_id === memberId).length,
     addCaptureExclusionPg: async (input) => {
-      const key = `${input.matchType}:${input.pattern.toLowerCase()}`;
-      if (exclusionRows.some((r) => `${r.match_type}:${r.pattern.toLowerCase()}` === key)) return null;
+      const scope = input.memberId ?? "org";
+      const key = `${scope}:${input.matchType}:${input.pattern.toLowerCase()}`;
+      if (exclusionRows.some((r) => `${r.member_id ?? "org"}:${r.match_type}:${r.pattern.toLowerCase()}` === key)) return null;
       const row = {
         id: `excl-${exclusionRows.length + 1}`,
         match_type: input.matchType,
         pattern: input.pattern,
         note: input.note ?? null,
         created_by: input.createdBy ?? null,
+        member_id: input.memberId ?? null,
         created_at: new Date().toISOString(),
       };
       exclusionRows.push(row);
       return row;
     },
-    removeCaptureExclusionPg: async (id) => {
-      exclusionRows = exclusionRows.filter((r) => r.id !== id);
+    // Scoped like the real DELETE: a null member removes org rows only.
+    removeCaptureExclusionPg: async (id, memberId = null) => {
+      const before = exclusionRows.length;
+      exclusionRows = exclusionRows.filter((r) => !(r.id === id && (r.member_id ?? null) === memberId));
+      return exclusionRows.length < before;
     },
     getCaptureMinimizationSettingsPg: async () => settingsRow,
     setCaptureMinimizationSettingsPg: async (input) => {
@@ -50,6 +59,9 @@ const {
   removeCaptureExclusion,
   isCaptureExcluded,
   matchesExclusion,
+  listOwnCaptureExclusions,
+  addOwnCaptureExclusion,
+  removeOwnCaptureExclusion,
   getCaptureMinimizationSettings,
   setCaptureMinimizationSettings,
 } = await import("../src/modules/compliance/capture-minimization.js");
@@ -171,4 +183,96 @@ test("management can enable domain-only URL mode independent of blur", async () 
   const updated = await setCaptureMinimizationSettings({ urlDomainOnly: true }, ADMIN);
   assert.equal(updated.urlDomainOnly, true);
   assert.equal(updated.screenshotBlurDefault, false, "changing one setting must not flip the other");
+});
+
+// ---- a member's own exclusions -------------------------------------------
+
+test("an employee can exclude something from their own capture", async () => {
+  reset();
+  const row = await addOwnCaptureExclusion({ matchType: "domain", pattern: "mybank.com" }, "employee-1");
+  assert.equal(row.memberId, "employee-1");
+  assert.equal((await listOwnCaptureExclusions("employee-1")).length, 1);
+});
+
+test("someone else's exclusions are neither visible nor applied", async () => {
+  reset();
+  await addOwnCaptureExclusion({ matchType: "domain", pattern: "mybank.com" }, "employee-1");
+  assert.equal((await listOwnCaptureExclusions("employee-2")).length, 0);
+  assert.equal(matchesExclusion(await getCaptureExclusions("employee-2"), "domain", "mybank.com"), false);
+  assert.equal(matchesExclusion(await getCaptureExclusions("employee-1"), "domain", "mybank.com"), true);
+});
+
+test("the org-wide list never includes a member's personal rules", async () => {
+  reset();
+  await addOwnCaptureExclusion({ matchType: "app", pattern: "keepass" }, "employee-1");
+  await addCaptureExclusion({ matchType: "app", pattern: "1password" }, ADMIN);
+  const org = await getCaptureExclusions();
+  assert.deepEqual(org.map((r) => r.pattern), ["1password"]);
+});
+
+test("a member can remove their own rule but not someone else's", async () => {
+  reset();
+  const mine = await addOwnCaptureExclusion({ matchType: "app", pattern: "keepass" }, "employee-1");
+  assert.equal(await removeOwnCaptureExclusion(mine.id, "employee-2"), false, "another member cannot delete it");
+  assert.equal(await removeOwnCaptureExclusion(mine.id, "employee-1"), true);
+});
+
+test("the org route cannot delete a member's personal exclusion", async () => {
+  // Personal rules are the member's to keep. The management delete is scoped
+  // to org rows, so an admin who knows the id still cannot remove one.
+  reset();
+  const mine = await addOwnCaptureExclusion({ matchType: "app", pattern: "keepass" }, "employee-1");
+  await removeCaptureExclusion(mine.id, ADMIN);
+  assert.equal((await listOwnCaptureExclusions("employee-1")).length, 1);
+});
+
+test("a member cannot delete an org-wide rule through their own route", async () => {
+  reset();
+  const org = await addCaptureExclusion({ matchType: "app", pattern: "1password" }, ADMIN);
+  assert.equal(await removeOwnCaptureExclusion(org.id, "employee-1"), false);
+  assert.equal((await getCaptureExclusions()).length, 1);
+});
+
+test("a full address is reduced to the host, so what people type actually matches", async () => {
+  reset();
+  await addOwnCaptureExclusion({ matchType: "domain", pattern: "https://www.MyBank.com/login?x=1" }, "employee-1");
+  const [row] = await listOwnCaptureExclusions("employee-1");
+  assert.equal(row.pattern, "mybank.com");
+  assert.equal(matchesExclusion(await getCaptureExclusions("employee-1"), "domain", "mybank.com"), true);
+});
+
+test("excluding a domain also excludes its subdomains, but not lookalikes", async () => {
+  reset();
+  await addOwnCaptureExclusion({ matchType: "domain", pattern: "bank.com" }, "employee-1");
+  const rules = await getCaptureExclusions("employee-1");
+  assert.equal(matchesExclusion(rules, "domain", "online.bank.com"), true);
+  assert.equal(matchesExclusion(rules, "domain", "a.b.bank.com"), true);
+  assert.equal(matchesExclusion(rules, "domain", "notbank.com"), false, "suffix without a dot boundary");
+  assert.equal(matchesExclusion(rules, "domain", "bank.com.evil.io"), false);
+});
+
+test("subdomain matching does not apply to app names", async () => {
+  reset();
+  await addOwnCaptureExclusion({ matchType: "app", pattern: "chat" }, "employee-1");
+  assert.equal(matchesExclusion(await getCaptureExclusions("employee-1"), "app", "team.chat"), false);
+});
+
+test("an unknown match type, an empty pattern and an over-long one are refused", async () => {
+  reset();
+  await assert.rejects(() => addOwnCaptureExclusion({ matchType: "regex", pattern: "x" }, "employee-1"), /matchType/);
+  await assert.rejects(() => addOwnCaptureExclusion({ matchType: "app", pattern: "   " }, "employee-1"), /pattern is required/);
+  await assert.rejects(() => addOwnCaptureExclusion({ matchType: "app", pattern: "a".repeat(300) }, "employee-1"), /too long/);
+});
+
+test("a member is capped so the list cannot grow without bound", async () => {
+  reset();
+  for (let i = 0; i < 100; i++) await addOwnCaptureExclusion({ matchType: "app", pattern: `app${i}` }, "employee-1");
+  await assert.rejects(() => addOwnCaptureExclusion({ matchType: "app", pattern: "one-more" }, "employee-1"), /up to 100/);
+});
+
+test("without a signed-in member nothing can be added or removed", async () => {
+  reset();
+  await assert.rejects(() => addOwnCaptureExclusion({ matchType: "app", pattern: "x" }, ""), /Sign in/);
+  await assert.rejects(() => removeOwnCaptureExclusion("excl-1", ""), /Sign in/);
+  assert.deepEqual(await listOwnCaptureExclusions(""), []);
 });
