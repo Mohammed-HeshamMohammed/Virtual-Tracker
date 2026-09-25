@@ -3,6 +3,7 @@ import { getPostgresPool, isPostgresConfigured } from "./client.js";
 import { markPostgresLookupReady, resetPostgresLookupReadyCache } from "./lookup-availability.js";
 import { markPostgresMemberDataReady, resetPostgresMemberDataReadyCache } from "./member-data-availability.js";
 import { isActivityScreenshotsEnabled } from "../../config/activity.js";
+import { applyStatementsWithRetry, describeFailures } from "./apply-statements.js";
 
 function cascadeOnDelete(table, column, parentTable, { nullable = true } = {}) {
   const constraintName = `${table}_${column}_fkey`;
@@ -1961,9 +1962,10 @@ export async function ensurePostgresLookupSchema() {
   resetPostgresMemberDataReadyCache();
   const client = await pool.connect();
   try {
-    for (const statement of [...LOOKUP_DDL, ...MEMBER_DATA_DDL]) {
-      await client.query(statement);
-    }
+    // Retried until nothing more gets through: some statements read tables a
+    // later one creates, which only matters on a database with nothing in it.
+    const schemaFailures = await applyStatementsWithRetry(client, [...LOOKUP_DDL, ...MEMBER_DATA_DDL]);
+    if (schemaFailures.length) throw new Error(describeFailures(schemaFailures));
 
     await client.query(
       `INSERT INTO monitoring_capabilities (capability, enabled)
