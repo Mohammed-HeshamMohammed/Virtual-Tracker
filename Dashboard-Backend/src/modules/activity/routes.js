@@ -18,6 +18,7 @@ import { getSingleByMemberId } from "../../lib/postgres/member-data-store.js";
 import { recordScreenshotAccess } from "../compliance/data-retention.js";
 import { getActivityScoringSettings, setActivityScoringSettings } from "./scoring-settings.js";
 import { recordNotice, listRecordNotices, getDataHealth } from "./record-notices.js";
+import { enabledCapabilities, eventAllowed } from "../compliance/capability-gate.js";
 import {
   getEffectiveCaptureSettings,
   setMemberCaptureSettings,
@@ -1010,14 +1011,19 @@ export async function routeActivity(req, res, url, origin) {
       let count = 0;
       const screenshotWrites = [];
 
-      const [minimizationSettings, exclusions] = await Promise.all([
+      const [minimizationSettings, exclusions, capabilities] = await Promise.all([
         getCaptureMinimizationSettings(),
         getCaptureExclusions(),
+        enabledCapabilities(),
       ]);
 
       for (const ev of events.slice(0, 50)) {
         if (!ev || typeof ev !== "object") continue;
         const type = typeof ev.type === "string" ? ev.type : "";
+        // Enforced here rather than in the agent: this is the point the data
+        // would be stored, and an agent's copy of the policy can be stale or
+        // simply not sent at all.
+        if (!eventAllowed(type, capabilities)) continue;
         const id = crypto.randomUUID();
 
         if (type === "screenshot") {

@@ -26,6 +26,7 @@ import { ensurePostgresLookupSchema } from "./src/lib/postgres/ensure-lookup-sch
 import { ensureTenancySchema, runHighVolumeTenancyMigrations } from "./src/lib/postgres/ensure-tenancy-schema.js";
 import { ensureTenancyRls } from "./src/lib/postgres/ensure-tenancy-rls.js";
 import { getTenancyIsolationReport } from "./src/lib/postgres/verify-tenancy-isolation.js";
+import { backfillCapabilitiesInUse } from "./src/modules/compliance/capability-gate.js";
 import { backfillMemberAvatarUrls } from "./src/modules/auth/avatar-backfill.js";
 import { backfillMemberDisplayNames } from "./src/modules/members/services/member-name-backfill.js";
 import { cleanupCallingProjectTasks } from "./src/modules/projects/calling-project-task-cleanup.js";
@@ -131,6 +132,16 @@ export async function startServer(port = getEnv().server.port) {
       for (const reason of isolation.reasons) logError(new Error(reason), "tenant-isolation");
     } else {
       console.log(`[tenancy] isolation ${isolation.status}: ${isolation.summary}`);
+    }
+    // Runs before anything can ingest: enforcement is now live and every
+    // capability row defaults to disabled, so this enables the ones the org is
+    // demonstrably already using. Once only - a later boot never re-enables
+    // something an Owner has turned off.
+    const capabilityBackfill = await backfillCapabilitiesInUse();
+    if (capabilityBackfill.ok === false) {
+      logError(new Error(capabilityBackfill.error ?? "capability backfill failed"), "capability-backfill");
+    } else if (capabilityBackfill.enabled?.length) {
+      console.log(`[compliance] enabled capabilities already in use: ${capabilityBackfill.enabled.join(", ")}`);
     }
     backfillMemberAvatarUrls(db).catch((err) => logError(err, "avatar-backfill"));
     backfillMemberDisplayNames().catch((err) => logError(err, "member-name-backfill"));

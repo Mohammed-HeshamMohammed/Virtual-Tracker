@@ -8,6 +8,7 @@ import {
   BillingPage,
   IntegrationsSettingsPage,
   PoliciesSettingsPage,
+  CompliancePage,
   EnterpriseSecuritySettingsPage,
   ActivityTrackingSettingsPage,
   SubscriptionPlans,
@@ -30,6 +31,8 @@ export default function SettingsChunk({ pageId, onNavigate }: PageChunkProps) {
       return <IntegrationsSettingsPage />
     case "settings-policies":
       return <PoliciesSettingsPage />
+    case "settings-compliance":
+      return <CompliancePage />
     case "settings-enterprise-security":
       return <EnterpriseSecuritySettingsPage />
     case "settings-billing-plans":
