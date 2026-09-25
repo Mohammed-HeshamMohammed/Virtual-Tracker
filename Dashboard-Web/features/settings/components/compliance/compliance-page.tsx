@@ -12,6 +12,8 @@ import {
   revokeDevice,
   getCaptureExclusions,
   getMonitoringPolicy,
+  getPolicyHealth,
+  POLICY_CHANGED_EVENT,
   getRetentionSettings,
   getScreenshotAccessLog,
   removeCaptureExclusion,
@@ -22,6 +24,7 @@ import {
   type RetentionSetting,
   type AgentDevice,
   type IsolationReport,
+  type PolicyHealth,
   type ScreenshotAccessEntry,
 } from "@/features/settings/api/compliance-api"
 
@@ -63,6 +66,9 @@ export function CompliancePage() {
   const [busy, setBusy] = useState("")
   const [devices, setDevices] = useState<AgentDevice[]>([])
   const [isolation, setIsolation] = useState<IsolationReport | null>(null)
+  const [health, setHealth] = useState<PolicyHealth | null>(null)
+  const [setupBasis, setSetupBasis] = useState("")
+  const [setupSkip, setSetupSkip] = useState<Record<string, boolean>>({})
   const [newPattern, setNewPattern] = useState("")
   const [newType, setNewType] = useState("app")
 
@@ -75,7 +81,9 @@ export function CompliancePage() {
       getScreenshotAccessLog(),
       getActiveDevices(),
       getTenantIsolation(),
-    ]).then(([policy, ret, excl, log, devs, iso]) => {
+      getPolicyHealth(),
+    ]).then(([policy, ret, excl, log, devs, iso, hlth]) => {
+      if (hlth.status === "fulfilled") setHealth(hlth.value)
       if (devs.status === "fulfilled") setDevices(devs.value)
       if (iso.status === "fulfilled") setIsolation(iso.value)
       if (policy.status === "fulfilled") setCapabilities(policy.value)
@@ -97,6 +105,7 @@ export function CompliancePage() {
     try {
       await fn()
       load()
+      window.dispatchEvent(new Event(POLICY_CHANGED_EVENT))
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "That change could not be saved.")
     } finally {
@@ -113,10 +122,82 @@ export function CompliancePage() {
   )
 
   const anyEnforcedOff = capabilities.some((c) => c.enforced && !c.enabled)
+  const needing = (health?.capabilities ?? []).filter((c) => c.discarding || c.needsBasis)
+  const chosen = needing.filter((c) => !setupSkip[c.capability])
+
+  // One basis for everything chosen: a lawful basis is a recorded decision about
+  // why data is collected, so it is picked once, deliberately, before anything
+  // is switched on - never defaulted.
+  async function enableChosen() {
+    if (!setupBasis || !chosen.length) return
+    await run("setup", async () => {
+      for (const c of chosen) {
+        await setMonitoringCapability({ capability: c.capability, enabled: true, lawfulBasis: setupBasis })
+      }
+    })
+  }
 
   return (
     <div className="space-y-4 p-4">
       {error ? <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p> : null}
+
+      {needing.length ? (
+        <section className={cn(card, health?.discarding ? "border-amber-400 dark:border-amber-700" : "")}>
+          <h3 className={heading}>{health?.discarding ? "Data is being discarded" : "Finish setting up data collection"}</h3>
+          <p className={cn("mt-1 mb-3", hint)}>
+            {health?.discarding
+              ? "Trackers are capturing these, but they are switched off here, so everything that arrives is thrown away."
+              : "These are on, but no lawful basis is recorded for them."}{" "}
+            Pick why the data is collected, then turn on what you want kept. You can change any of it later.
+          </p>
+          <ul className="mb-3 space-y-2">
+            {needing.map((c) => (
+              <li key={c.capability} className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  id={`setup-${c.capability}`}
+                  checked={!setupSkip[c.capability]}
+                  onChange={(e) => setSetupSkip((prev) => ({ ...prev, [c.capability]: !e.target.checked }))}
+                  className="mt-1"
+                />
+                <label htmlFor={`setup-${c.capability}`} className="min-w-0">
+                  <span className={cn("text-sm", isDark ? "text-slate-200" : "text-slate-700")}>
+                    {label(CAPABILITY_LABELS, c.capability)}
+                  </span>
+                  <span className={cn("block", hint)}>
+                    {c.discarding
+                      ? `${c.dropped} item${c.dropped === 1 ? "" : "s"} from ${c.members} ${c.members === 1 ? "person" : "people"} discarded in the last ${health?.days} days`
+                      : "No lawful basis recorded"}
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={setupBasis}
+              onChange={(e) => setSetupBasis(e.target.value)}
+              aria-label="Lawful basis"
+              className={input}
+            >
+              <option value="">Choose a lawful basis…</option>
+              {LAWFUL_BASES.map((b) => (
+                <option key={b} value={b}>
+                  {label({}, b)}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!setupBasis || !chosen.length || busy === "setup"}
+              onClick={() => void enableChosen()}
+              className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50 dark:bg-emerald-600"
+            >
+              {busy === "setup" ? "Turning on…" : `Turn on ${chosen.length || ""} selected`.replace("  ", " ")}
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className={card}>
         <h3 className={heading}>What may be collected</h3>
@@ -169,14 +250,23 @@ export function CompliancePage() {
                     </option>
                   ))}
                 </select>
-                <Toggle
-                  checked={c.enabled}
-                  onChange={(enabled) =>
-                    void run(c.capability, () =>
-                      setMonitoringCapability({ capability: c.capability, enabled, lawfulBasis: c.lawfulBasis }),
-                    )
-                  }
-                />
+                {/* Turning one on needs a basis on record. Without this the switch
+                    looked live and answered with an error, so it stays inert until
+                    one is chosen, and the hint says what to do. */}
+                <fieldset
+                  disabled={!c.enabled && !c.lawfulBasis}
+                  title={!c.enabled && !c.lawfulBasis ? "Choose a lawful basis first" : undefined}
+                  className="m-0 border-0 p-0 disabled:opacity-50"
+                >
+                  <Toggle
+                    checked={c.enabled}
+                    onChange={(enabled) =>
+                      void run(c.capability, () =>
+                        setMonitoringCapability({ capability: c.capability, enabled, lawfulBasis: c.lawfulBasis }),
+                      )
+                    }
+                  />
+                </fieldset>
               </div>
             </li>
           ))}

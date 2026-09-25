@@ -132,3 +132,31 @@ export type IsolationReport = {
 export function getTenantIsolation() {
   return call<IsolationReport>("/api/customer-accounts/isolation", undefined, "Could not check tenant isolation.")
 }
+
+export type CapabilityHealth = {
+  capability: string
+  enabled: boolean
+  lawfulBasis: string | null
+  /** Events thrown away because the capability is off, over the window. */
+  dropped: number
+  members: number
+  discarding: boolean
+  /** On, but no lawful basis was ever recorded. */
+  needsBasis: boolean
+}
+
+export type PolicyHealth = {
+  days: number
+  capabilities: CapabilityHealth[]
+  discarding: boolean
+  needsAttention: boolean
+}
+
+export function getPolicyHealth() {
+  return call<PolicyHealth>("/api/compliance/policy-health", undefined, "Could not check the collection policy.")
+}
+
+/** Fired after a policy change so the dashboard-wide banner refetches at once
+ *  instead of waiting for its next scheduled check. */
+export const POLICY_CHANGED_EVENT = "vt:policy-changed"
+
