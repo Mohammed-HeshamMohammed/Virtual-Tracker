@@ -132,6 +132,73 @@ const MAX_MIN_SPACING_MS = 1000
 const CLEAN_REQUESTS_TO_NARROW = 20
 const MAX_CONCURRENT_REQUESTS = 6
 
+const NETWORK_BACKOFF_DELAYS_MS = [2_000, 5_000, 10_000, 30_000, 60_000] as const
+type NetworkBackoffState = {
+  failures: number
+  retryAt: number
+  probeInFlight: boolean
+}
+const networkBackoffByOrigin = new Map<string, NetworkBackoffState>()
+
+export class BackendCoolingDownError extends Error {
+  readonly retryAt: number
+
+  constructor(retryAt: number) {
+    super("The server is temporarily unreachable. Retrying in the background.")
+    this.name = "BackendCoolingDownError"
+    this.retryAt = retryAt
+  }
+}
+
+function requestOrigin(input: RequestInfo | URL): string {
+  try {
+    return new URL(resolveRequestUrl(input), window.location.href).origin
+  } catch {
+    return resolveRequestUrl(input)
+  }
+}
+
+function isReadRequest(input: RequestInfo | URL, init: RequestInit): boolean {
+  const requestMethod = typeof Request !== "undefined" && input instanceof Request ? input.method : "GET"
+  return (init.method ?? requestMethod).toUpperCase() === "GET"
+}
+
+function acquireNetworkProbe(input: RequestInfo | URL, init: RequestInit): (() => void) | null {
+  if (!isReadRequest(input, init) || typeof window === "undefined") return () => {}
+  const origin = requestOrigin(input)
+  const state = networkBackoffByOrigin.get(origin)
+  if (!state) return () => {}
+  if (state.retryAt > Date.now()) {
+    notifyBackendConnectionLost()
+    throw new BackendCoolingDownError(state.retryAt)
+  }
+  if (state.probeInFlight) {
+    notifyBackendConnectionLost()
+    throw new BackendCoolingDownError(Date.now() + 1_000)
+  }
+  state.probeInFlight = true
+  return () => {
+    state.probeInFlight = false
+  }
+}
+
+function noteNetworkFailure(input: RequestInfo | URL): void {
+  const origin = requestOrigin(input)
+  const state = networkBackoffByOrigin.get(origin) ?? {
+    failures: 0,
+    retryAt: 0,
+    probeInFlight: false,
+  }
+  const delay = NETWORK_BACKOFF_DELAYS_MS[Math.min(state.failures, NETWORK_BACKOFF_DELAYS_MS.length - 1)]
+  state.failures += 1
+  state.retryAt = Date.now() + delay
+  networkBackoffByOrigin.set(origin, state)
+}
+
+function clearNetworkBackoff(input: RequestInfo | URL): void {
+  networkBackoffByOrigin.delete(requestOrigin(input))
+}
+
 let requestGateChain: Promise<void> = Promise.resolve()
 let currentSpacingMs = BASE_MIN_SPACING_MS
 let consecutiveCleanRequests = 0
@@ -199,13 +266,18 @@ async function performApiFetch(
       cache: init.cache ?? "no-store",
     })
     if (res.status === 429) {
+      clearNetworkBackoff(input)
       notifyBackendRateLimited(parseRetryAfterMs(res))
       widenSpacingAfterRateLimit()
     } else if (isApiConnectionFailureStatus(res.status)) {
+      noteNetworkFailure(input)
       notifyBackendConnectionLost(
         res.status === 503 ? BACKEND_TEMPORARILY_UNAVAILABLE_MESSAGE : undefined,
       )
-    } else if (res.ok) {
+    } else {
+      clearNetworkBackoff(input)
+    }
+    if (res.ok) {
       notifyBackendConnectionRestored()
       narrowSpacingAfterSuccess()
     } else {
@@ -214,6 +286,7 @@ async function performApiFetch(
     return res
   } catch (error) {
     if (isApiConnectionNetworkError(error)) {
+      noteNetworkFailure(input)
       notifyBackendConnectionLost()
     }
     throw error
@@ -248,11 +321,17 @@ export async function apiFetch(
   assertSecureFetchUrl(resolveRequestUrl(resolvedInput))
   const requireAuth = options.requireAuth !== false
   const headers = await apiAuthHeaders(init, options)
-  let res = await performApiFetch(resolvedInput, init, headers)
+  const releaseProbe = acquireNetworkProbe(resolvedInput, init)
+  let res: Response
+  try {
+    res = await performApiFetch(resolvedInput, init, headers)
 
-  if (res.status === 401 && requireAuth && options.forceRefresh !== true) {
-    const retryHeaders = await apiAuthHeaders(init, { ...options, forceRefresh: true })
-    res = await performApiFetch(resolvedInput, init, retryHeaders)
+    if (res.status === 401 && requireAuth && options.forceRefresh !== true) {
+      const retryHeaders = await apiAuthHeaders(init, { ...options, forceRefresh: true })
+      res = await performApiFetch(resolvedInput, init, retryHeaders)
+    }
+  } finally {
+    releaseProbe?.()
   }
 
   return res
@@ -275,7 +354,7 @@ export async function fetchJsonWithRetry<T>(
       const json = await readJsonSafe<T>(res)
       return { res, json }
     } catch (error) {
-      if (options.signal?.aborted || attempt >= retries) throw error
+      if (error instanceof BackendCoolingDownError || options.signal?.aborted || attempt >= retries) throw error
       attempt += 1
       await new Promise((resolve) => setTimeout(resolve, 400 * attempt))
     }
