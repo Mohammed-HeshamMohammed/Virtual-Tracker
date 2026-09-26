@@ -25,7 +25,7 @@ For a detailed blueprint of how requests are partitioned and routed across the s
 
 ## API Routes & Controller Map
 
-Dashboard-Backend hosts the core application routes. All endpoints (except `/health` and `/api/readiness`) require client authentication via a valid Firebase ID Token passed in the `Authorization: Bearer <ID_TOKEN>` header (or query param in SSE/WS streams).
+Dashboard-Backend hosts the core application routes. All endpoints (except `/health` and `/api/readiness`) require client authentication. HTTP requests use `Authorization: Bearer <ID_TOKEN>`; browser presence streams use that same header, and browser WebSockets use the HttpOnly `vt_session` cookie. The desktop agent sends its bearer token in the WebSocket handshake header. Credentials must not be placed in URLs.
 
 ### 1. System & Readiness Routes
 | Path | Method | Description | Controller / Handler |

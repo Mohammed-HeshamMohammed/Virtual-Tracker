@@ -6,12 +6,10 @@ import {
   bindPresenceActivityListeners,
   connectPresenceWebSocket,
   disconnectPresenceWebSocket,
-  isPresenceWebSocketConnected,
   sendPresenceActivity,
 } from "@/features/auth/services/presence-ws"
 
 const ACTIVITY_DEBOUNCE_MS = 8_000
-const CONNECT_RETRY_MS = 10_000
 
 export function MemberPresenceReporter() {
   const { isLoggedIn, user, profile, sessionReady } = useAuth()
@@ -28,19 +26,12 @@ export function MemberPresenceReporter() {
   useEffect(() => {
     if (!shouldConnect) return
 
-    let cancelled = false
-
     const ensureConnected = async () => {
       const ok = await connectPresenceWebSocket()
-      if (!cancelled && ok) sendPresenceActivity()
+      if (ok) sendPresenceActivity()
     }
 
     void ensureConnected()
-
-    const retryTimer = setInterval(() => {
-      if (cancelled || isPresenceWebSocketConnected()) return
-      void ensureConnected()
-    }, CONNECT_RETRY_MS)
 
     const unbind = bindPresenceActivityListeners(onActivity)
 
@@ -56,8 +47,6 @@ export function MemberPresenceReporter() {
     document.addEventListener("visibilitychange", onVis)
 
     return () => {
-      cancelled = true
-      clearInterval(retryTimer)
       unbind()
       if (activityTimerRef.current) clearTimeout(activityTimerRef.current)
       window.removeEventListener("mousemove", onActivity)
