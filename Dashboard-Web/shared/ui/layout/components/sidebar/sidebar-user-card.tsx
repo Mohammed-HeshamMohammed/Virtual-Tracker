@@ -71,6 +71,7 @@ export function SidebarUserCard({ isCollapsed, onNavigate }: SidebarUserCardProp
           )}
           {!isCollapsed && (
             <button
+              data-help="Your account menu."
               onClick={() => setUserMenuOpen(v => !v)}
               className={cn("shrink-0 p-1 rounded-md transition-colors cursor-pointer ml-auto", t.textMuted, userMenuOpen ? "opacity-100" : "opacity-60 hover:opacity-100")} type="button"
             >

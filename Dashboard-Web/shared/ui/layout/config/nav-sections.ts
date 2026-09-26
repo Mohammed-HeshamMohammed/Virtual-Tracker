@@ -22,6 +22,8 @@ export interface NavSection {
   id: string
   label: string
   icon: LucideIcon
+  /** What the section is for, shown when the member turns on help mode. */
+  help?: string
   pages?: NavSubItem[]
   subsections?: NavSubSection[]
 }
@@ -30,6 +32,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "dashboard",
     label: "Dashboard",
+    help: "Dashboard: an overview of your projects, time worked, activity and team, and your notifications.",
     icon: LayoutDashboard,
     pages: [
       { label: "Command Center", id: "command-center" },
@@ -43,6 +46,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "timesheets",
     label: "Timesheets",
+    help: "Timesheets: review tracked time by member and day, approve or reject submitted time, and handle manual time requests.",
     icon: Clock,
     pages: [
       { label: "Time & Activity",      id: "timesheets-time-activity"  },
@@ -54,6 +58,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "activity",
     label: "Activity",
+    help: "Activity: the screenshots, apps and websites captured while people track, and requests to remove captured items.",
     icon: Zap,
     pages: [
       { label: "Screenshots", id: "activity-screenshots" },
@@ -66,6 +71,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "project-management",
     label: "Project Management",
+    help: "Project Management: your projects, tasks, clients and time off requests.",
     icon: Folder,
     pages: [
       { label: "Overview",          id: "pm-overview"      },
@@ -78,6 +84,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "reports",
     label: "Reports",
+    help: "Reports: time, work sessions, apps and URLs, limits, budgets, payments, invoices and time off.",
     icon: BarChart3,
     pages: [
       { label: "All reports", id: "reports-all",    hideFromDropdown: true },
@@ -140,6 +147,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "people",
     label: "People",
+    help: "People: the members of your organization, their teams and their reporting tree.",
     icon: Users,
     pages: [
       { label: "Members", id: "people-members" },
@@ -156,6 +164,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "financials",
     label: "Financials",
+    help: "Financials: payroll, payments, invoices and expenses.",
     icon: DollarSign,
     pages: [
       { label: "Overview",        id: "financials-overview" },
@@ -169,6 +178,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     id: "settings",
     label: "Settings",
+    help: "Settings: your organization, members, schedules, activity and tracking rules, integrations, policies, compliance and billing.",
     icon: Settings,
     pages: [
       { label: "All settings",          id: "settings-all", hideFromDropdown: true },

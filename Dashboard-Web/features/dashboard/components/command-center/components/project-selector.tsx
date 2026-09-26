@@ -28,7 +28,7 @@ export function ProjectSelector({
   }, [])
 
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} data-help="Choose which project the Command Center shows, or all of them." className="relative">
       <button
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-2.5 px-4 py-2 bg-white/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 rounded-xl text-sm font-semibold text-slate-800 dark:text-slate-100 hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/80 transition-all shadow-sm backdrop-blur-xl" type="button"

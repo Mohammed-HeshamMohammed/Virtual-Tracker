@@ -13,6 +13,7 @@ import { cn } from "@/shared/utils/utils"
 import { Sidebar, Topbar, PageSearchProvider } from "@/shared/ui/layout"
 import { HierarchyAssignmentBanner } from "@/shared/ui/layout/hierarchy-assignment-banner"
 import { PolicyHealthBanner } from "@/shared/ui/layout/policy-health-banner"
+import { HelpLayer } from "@/shared/ui/help"
 import { configureTimerStorageScope, clearAllTaskTimerStateForScope } from "@/features/activity/utils/timer-task-storage"
 import { PageContent } from "@/app/page-content"
 import { isFullBleedPage } from "@/app/page-layout"
@@ -136,6 +137,7 @@ export function DashboardShell() {
         </div>
       </div>
     </PageSearchProvider>
+      <HelpLayer />
     </ActivityRuntimeProvider>
   )
 }

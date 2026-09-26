@@ -41,6 +41,8 @@ export interface CreateProjectFormPayload {
   clientCanTrack: boolean
   disableIdleTime: boolean
   idleTimeSeconds: number
+  disableBreakLimit: boolean
+  breakTimeSeconds: number
   endDate: string
   timezone: string
   subProjectIds: string[]
@@ -810,6 +812,8 @@ export async function updateProjectWithDetails(
       subProjectIds: payload.subProjectIds,
       disableIdleTime: payload.disableIdleTime,
       idleTimeSeconds: payload.idleTimeSeconds,
+      disableBreakLimit: payload.disableBreakLimit,
+      breakTimeSeconds: payload.breakTimeSeconds,
       endDate: payload.endDate,
       clientId: primaryClientId || "",
       ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
@@ -879,6 +883,8 @@ export async function createProjectWithDetails(
     subProjectIds: payload.subProjectIds,
     disableIdleTime: payload.disableIdleTime,
     idleTimeSeconds: payload.idleTimeSeconds,
+    disableBreakLimit: payload.disableBreakLimit,
+    breakTimeSeconds: payload.breakTimeSeconds,
     endDate: payload.endDate,
     clientId: primaryClientId,
     ...(actorMemberId ? { createdBy: actorMemberId } : {}),

@@ -43,7 +43,7 @@ export function ProductivityTrendsSection({ project }: ProductivityTrendsSection
   }, [activePointIndex, project.weeklyTrend])
 
   return (
-    <SectionCard className="lg:col-span-2">
+    <SectionCard help="Weekly productivity trends: the hours tracked each day this week, split into active and idle time. Select a day to see its detail." className="lg:col-span-2">
       <div className="flex justify-between items-center mb-10">
         <div>
           <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Weekly Productivity Trends</h3>

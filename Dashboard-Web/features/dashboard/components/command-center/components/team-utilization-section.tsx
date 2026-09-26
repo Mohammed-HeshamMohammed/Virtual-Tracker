@@ -13,7 +13,7 @@ interface TeamUtilizationSectionProps {
 export function TeamUtilizationSection({ project, onNavigate }: TeamUtilizationSectionProps) {
   const d = project
   return (
-    <SectionCard className="flex flex-col">
+    <SectionCard help="Team utilization: how much of the team's weekly hour limits has been used so far." className="flex flex-col">
       <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 mb-6 w-full">
         Team Utilization
       </h3>

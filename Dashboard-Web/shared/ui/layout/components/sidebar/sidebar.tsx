@@ -4,7 +4,7 @@ import { useState, useMemo } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import * as ContextMenu from "@radix-ui/react-context-menu"
 import {
-  Star, ChevronLeft, ExternalLink, Eye, EyeOff, Plus,
+  Star, ChevronLeft, ExternalLink, Eye, EyeOff,
 } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
@@ -12,7 +12,7 @@ import { useAuth } from "@/shared/providers/app"
 import { NAV_SECTIONS, type NavSection, type NavSubItem } from "@/shared/ui/layout/config/nav-sections"
 import { SIDEBAR_THEME_DARK as dark, SIDEBAR_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { prefetchChunkForPage } from "@/app"
-import { isManagementRole, visibleNavSections } from "@/features/auth"
+import { visibleNavSections } from "@/features/auth"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { SidebarUserCard } from "@/shared/ui/layout/components/sidebar/sidebar-user-card"
 
@@ -43,8 +43,6 @@ export function Sidebar({
 
   const [hiddenSections, setHiddenSections] = useState<Set<string>>(new Set())
   const [favorites, setFavorites] = useState<Set<string>>(new Set())
-
-  const canAddTask = isManagementRole(memberRole)
 
   const isSectionActive = (s: NavSection) =>
     s.id === activeItem || s.pages?.some((p: NavSubItem) => p.id === activeItem) || false
@@ -84,7 +82,7 @@ export function Sidebar({
             </motion.div>
           )}
         </AnimatePresence>
-        <button onClick={onToggleCollapse} className={cn("w-7 h-7 flex items-center justify-center rounded-lg transition-colors shrink-0", t.collapseBtn, isCollapsed && "mx-auto")} type="button">
+        <button data-help="Collapse the sidebar to icons, or expand it again." onClick={onToggleCollapse} className={cn("w-7 h-7 flex items-center justify-center rounded-lg transition-colors shrink-0", t.collapseBtn, isCollapsed && "mx-auto")} type="button">
           <motion.div animate={{ rotate: isCollapsed ? 180 : 0 }} transition={{ type: "spring", stiffness: 300, damping: 30 }}>
             <ChevronLeft className={cn("w-4 h-4", t.textMuted)} />
           </motion.div>
@@ -111,6 +109,7 @@ export function Sidebar({
                   {isCollapsed ? (
                     <IconTooltip text={section.label} placement="right" className="relative w-full">
                       <button
+                        data-help={section.help}
                         onClick={() => onNavigate(section.pages?.[0]?.id ?? section.id)}
                         onMouseEnter={() => prefetchChunkForPage(section.pages?.[0]?.id ?? section.id)}
                         className={cn(
@@ -126,6 +125,7 @@ export function Sidebar({
                     </IconTooltip>
                   ) : (
                     <button
+                      data-help={section.help}
                       onClick={() => onNavigate(section.pages?.[0]?.id ?? section.id)}
                       onMouseEnter={() => prefetchChunkForPage(section.pages?.[0]?.id ?? section.id)}
                       className={cn(
@@ -194,21 +194,6 @@ export function Sidebar({
         <Divider sep={t.sep} />
 
         <div className="mt-3 space-y-3">
-          {canAddTask ? (
-          <button
-            className={cn("relative w-full flex items-center justify-center py-2.5 rounded-xl text-sm font-bold transition-all duration-200 hover:scale-[1.02] active:scale-95 overflow-hidden group", t.addTaskText)}
-            style={{ background: `linear-gradient(135deg, ${t.addTaskFrom}, ${t.addTaskTo})` }} type="button"
-          >
-            <span className="absolute inset-0 bg-white opacity-0 group-hover:opacity-[0.12] transition-opacity duration-200 rounded-xl pointer-events-none" />
-            <Plus className="w-4 h-4 shrink-0 relative z-10" />
-            {!isCollapsed && (
-              <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }} className="ml-2 whitespace-nowrap relative z-10">
-                Add Task
-              </motion.span>
-            )}
-          </button>
-          ) : null}
-
           <SidebarUserCard
             isCollapsed={isCollapsed}
             onNavigate={onNavigate}

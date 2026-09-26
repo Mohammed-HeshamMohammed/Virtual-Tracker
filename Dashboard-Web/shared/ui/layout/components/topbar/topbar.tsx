@@ -1,6 +1,7 @@
 "use client"
 
 import { HelpCircle } from "lucide-react"
+import { setHelpMode, useHelpMode } from "@/shared/ui/help"
 import { motion } from "framer-motion"
 import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
@@ -24,15 +25,18 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false }: TopbarPr
   const { memberRole } = useAuth()
 
   const isClient = isClientRole(memberRole)
+  const helping = useHelpMode()
 
   return (
     <header className={cn(
       "sticky top-0 z-40 grid grid-cols-3 items-center w-full px-6 backdrop-blur-xl shrink-0 h-16 transition-colors duration-300",
       t.header
     )}>
-      <Breadcrumbs activeItem={activeItem} onNavigate={onNavigate} />
+      <div data-help="Where you are. Use it to move between the pages of this section." className="min-w-0 justify-self-start">
+        <Breadcrumbs activeItem={activeItem} onNavigate={onNavigate} />
+      </div>
 
-      <motion.div layout="position" className="flex items-center justify-center px-4 min-w-0">
+      <motion.div layout="position" data-help="Search: type a page or setting name to jump straight to it." className="flex items-center justify-center px-4 min-w-0">
         <GlobalSearchBar
           onNavigate={onNavigate}
           memberRole={memberRole}
@@ -41,10 +45,18 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false }: TopbarPr
       </motion.div>
 
       <div className="flex items-center gap-1 justify-end">
-        <NotificationsBell onNavigate={onNavigate} />
+        <span data-help="Notifications: messages and requests for you. Open one to go to it." className="inline-flex">
+          <NotificationsBell onNavigate={onNavigate} />
+        </span>
 
         <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-          className={cn("w-10 h-10 flex items-center justify-center rounded-xl transition-colors", t.iconBtn)}
+          type="button"
+          aria-label="Help"
+          aria-pressed={helping}
+          data-help-toggle
+          data-help={helping ? "Leave help mode." : "Help: hover anything to see what it is for."}
+          onClick={() => setHelpMode(!helping)}
+          className={cn("w-10 h-10 flex items-center justify-center rounded-xl transition-colors", t.iconBtn, helping && "bg-blue-600/15 text-blue-600")}
         >
           <HelpCircle className="w-5 h-5" />
         </motion.button>
@@ -52,7 +64,9 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false }: TopbarPr
         <div className={cn("h-8 w-px mx-1", t.divider)} />
 
         {!isClient && (
-          <TimerButton isCollapsed={isCollapsed} onNavigate={onNavigate} />
+          <span data-help="Start Now: opens Tools, where you get My Virtual Tracker to track your time." className="inline-flex">
+            <TimerButton isCollapsed={isCollapsed} onNavigate={onNavigate} />
+          </span>
         )}
       </div>
     </header>
