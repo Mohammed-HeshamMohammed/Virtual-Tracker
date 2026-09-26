@@ -7,7 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
-use tungstenite::Message;
+use tungstenite::{client::IntoClientRequest, Message};
 
 use crate::client::api::ApiClient;
 
@@ -19,8 +19,9 @@ const PING_INTERVAL: Duration = Duration::from_secs(30);
 /// How often a blocked read wakes up to check whether it's time to ping.
 const READ_POLL_TIMEOUT: Duration = Duration::from_secs(10);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
-/// Matches presence-ws.ts's reconnect backoff.
-const RECONNECT_BACKOFF: Duration = Duration::from_secs(5);
+/// Starts quickly, then backs off so an unavailable network is not polled continuously.
+const INITIAL_RECONNECT_BACKOFF: Duration = Duration::from_secs(2);
+const MAX_RECONNECT_BACKOFF: Duration = Duration::from_secs(60);
 const NOT_SIGNED_IN_RETRY: Duration = Duration::from_secs(5);
 
 /// Spawns the subscriber thread. Fire-and-forget: a failure here must never affect the
@@ -34,6 +35,7 @@ pub fn spawn(api_url: String, api: Arc<Mutex<ApiClient>>, on_message: LiveSyncCa
 }
 
 fn run_loop(api_url: &str, api: &Arc<Mutex<ApiClient>>, on_message: &(dyn Fn(String) + Send + Sync)) {
+    let mut reconnect_backoff = INITIAL_RECONNECT_BACKOFF;
     loop {
         let token = api.lock().id_token.clone();
         let Some(token) = token else {
@@ -41,11 +43,17 @@ fn run_loop(api_url: &str, api: &Arc<Mutex<ApiClient>>, on_message: &(dyn Fn(Str
             continue;
         };
 
-        // Always back off before retrying, including a clean server-initiated close (e.g.
-        if let Err(err) = connect_and_pump(api_url, &token, on_message) {
-            log::warn!("[live-sync] {err}");
+        // Always back off before retrying, including a clean server-initiated close.
+        match connect_and_pump(api_url, &token, on_message) {
+            Ok(()) => reconnect_backoff = INITIAL_RECONNECT_BACKOFF,
+            Err(err) => {
+                log::warn!("[live-sync] {err}");
+                thread::sleep(reconnect_backoff);
+                reconnect_backoff = (reconnect_backoff * 2).min(MAX_RECONNECT_BACKOFF);
+                continue;
+            }
         }
-        thread::sleep(RECONNECT_BACKOFF);
+        thread::sleep(reconnect_backoff);
     }
 }
 
@@ -67,9 +75,19 @@ fn connect_and_pump(
         .map_err(|e| format!("set_read_timeout failed: {e}"))?;
 
     let scheme = if tls { "wss" } else { "ws" };
-    let url = format!("{scheme}://{host}:{port}/api/presence/ws?token={}", urlencoding::encode(token));
+    let url = format!("{scheme}://{host}:{port}/api/presence/ws");
+    let mut request = url
+        .into_client_request()
+        .map_err(|e| format!("invalid websocket request: {e}"))?;
+    request.headers_mut().insert(
+        "Authorization",
+        format!("Bearer {token}")
+            .parse()
+            .map_err(|_| "invalid authorization header".to_string())?,
+    );
 
-    let (mut socket, _response) = tungstenite::client_tls(&url, stream).map_err(|e| format!("handshake failed: {e}"))?;
+    let (mut socket, _response) = tungstenite::client_tls(request, stream)
+        .map_err(|e| format!("handshake failed: {e}"))?;
     log::info!("[live-sync] connected");
 
     let mut last_ping = Instant::now();

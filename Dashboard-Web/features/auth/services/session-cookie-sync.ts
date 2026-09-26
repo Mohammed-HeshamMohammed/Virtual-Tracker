@@ -1,6 +1,16 @@
 import { apiFetch } from "@/infrastructure/api/http"
 
+let syncInFlight: Promise<void> | null = null
+
 export async function syncSharedSessionCookie(): Promise<void> {
+  if (syncInFlight) return syncInFlight
+  syncInFlight = syncSessionCookie().finally(() => {
+    syncInFlight = null
+  })
+  return syncInFlight
+}
+
+async function syncSessionCookie(): Promise<void> {
   try {
     await apiFetch("/api/auth/session-cookie", { method: "POST", credentials: "include" })
   } catch {

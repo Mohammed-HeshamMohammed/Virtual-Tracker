@@ -1,8 +1,10 @@
 import { getDashboardApiBaseUrl } from "@/infrastructure/api/url"
 import { VT_AUTH_SESSION_RESTRICTED } from "@/features/auth/services/auth-session-errors"
+import { syncSharedSessionCookie } from "@/features/auth/services/session-cookie-sync"
+import { ReconnectBackoff } from "@/features/auth/services/reconnect-backoff"
 
 const HEARTBEAT_MS = 30_000
-const RECONNECT_MS = 5_000
+const reconnectBackoff = new ReconnectBackoff()
 
 function wsBaseUrl(): string {
   const httpBase = getDashboardApiBaseUrl()
@@ -30,6 +32,7 @@ type PresenceServerMessage =
 type PresenceClientMessage = { type: "ping" } | { type: "activity" }
 
 let socket: WebSocket | null = null
+let connectingPromise: Promise<boolean> | null = null
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 let intentionalClose = false
@@ -63,14 +66,7 @@ function scheduleReconnect(connect: () => void) {
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null
     connect()
-  }, RECONNECT_MS)
-}
-
-async function getIdToken(): Promise<string | null> {
-  const { getFirebaseAuth } = await import("@/infrastructure/firebase/config")
-  const user = getFirebaseAuth().currentUser
-  if (!user) return null
-  return user.getIdToken()
+  }, reconnectBackoff.nextDelay())
 }
 
 export function isPresenceWebSocketConnected(): boolean {
@@ -82,15 +78,19 @@ export async function connectPresenceWebSocket(): Promise<boolean> {
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
     return socket.readyState === WebSocket.OPEN
   }
+  if (connectingPromise) return connectingPromise
 
-  const token = await getIdToken()
-  if (!token) {
-    scheduleReconnect(() => void connectPresenceWebSocket())
-    return false
-  }
+  connectingPromise = connectWithSessionCookie().finally(() => {
+    connectingPromise = null
+  })
+  return connectingPromise
+}
 
+async function connectWithSessionCookie(): Promise<boolean> {
   intentionalClose = false
-  const url = `${wsBaseUrl()}/api/presence/ws?token=${encodeURIComponent(token)}`
+  await syncSharedSessionCookie()
+  if (intentionalClose) return false
+  const url = `${wsBaseUrl()}/api/presence/ws`
 
   return new Promise((resolve) => {
     const ws = new WebSocket(url)
@@ -103,6 +103,7 @@ export async function connectPresenceWebSocket(): Promise<boolean> {
         resolve(true)
       }
       clearTimers()
+      reconnectBackoff.reset()
       heartbeatTimer = setInterval(() => sendMessage({ type: "ping" }), HEARTBEAT_MS)
       if (hasConnectedBefore) {
         void import("@/infrastructure/api/change-events").then(({ dispatchReconnectRefetch }) => {

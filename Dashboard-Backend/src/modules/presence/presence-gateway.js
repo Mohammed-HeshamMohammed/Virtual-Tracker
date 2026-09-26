@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import { logSafeWarn } from "../../http/sanitize-error.js";
+import { readBearerToken } from "../../http/auth-token.js";
+import { readSessionCookie } from "../auth/session-cookie.js";
 
 const WS_PATH = "/api/presence/ws";
 
@@ -44,6 +46,11 @@ export function attachPresenceGateway(httpServer, deps) {
         socket.destroy();
         return;
       }
+      if (url.search) {
+        socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
       wss.handleUpgrade(req, socket, head, (ws) => {
         wss.emit("connection", ws, req, url);
       });
@@ -52,16 +59,24 @@ export function attachPresenceGateway(httpServer, deps) {
     }
   });
 
-  wss.on("connection", (ws, _req, url) => {
+  wss.on("connection", (ws, req) => {
     let memberId = null;
     const connectionId = randomUUID();
     let heartbeatTimer = null;
     let closed = false;
 
     async function authenticate() {
-      const token = url.searchParams.get("token")?.trim();
-      if (!token) throw new Error("missing_token");
-      const decoded = await deps.verifyIdToken(token);
+      const idToken = readBearerToken(req);
+      if (idToken) {
+        const decoded = await deps.verifyIdToken(idToken);
+        memberId = await deps.resolveMemberId(decoded.uid);
+        if (!memberId) throw new Error("member_not_found");
+        return;
+      }
+
+      const sessionCookie = readSessionCookie(req);
+      if (!sessionCookie) throw new Error("missing_session_cookie");
+      const decoded = await deps.verifySessionCookie(sessionCookie);
       memberId = await deps.resolveMemberId(decoded.uid);
       if (!memberId) throw new Error("member_not_found");
     }

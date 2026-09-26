@@ -4,6 +4,16 @@ import { resolveMemberIdForUid } from "../members/services/member-presence.servi
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { subscribePresenceChanges } from "./presence-pubsub.js";
+import { readBearerToken } from "../../http/auth-token.js";
+import { corsHeaders } from "../../http/cors.js";
+
+function sendJson(res, origin, status, payload) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    ...corsHeaders(origin, { credentials: true }),
+  });
+  res.end(JSON.stringify(payload));
+}
 
 export async function routePresenceEvents(req, res, url, origin) {
   if (url.pathname !== "/api/presence/events" && url.pathname !== "/api/v1/presence/events") {
@@ -14,15 +24,13 @@ export async function routePresenceEvents(req, res, url, origin) {
   const auth = getAuthAdmin();
   const db = getDb();
   if (!auth || !db) {
-    res.writeHead(503, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ success: false, error: "Service unavailable." }));
+    sendJson(res, origin, 503, { success: false, error: "Service unavailable." });
     return true;
   }
 
-  const idToken = url.searchParams.get("token")?.trim();
+  const idToken = readBearerToken(req);
   if (!idToken) {
-    res.writeHead(401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ success: false, error: "token query parameter is required." }));
+    sendJson(res, origin, 401, { success: false, error: "Authorization Bearer token is required." });
     return true;
   }
 
@@ -32,15 +40,13 @@ export async function routePresenceEvents(req, res, url, origin) {
     const decoded = await auth.verifyIdToken(idToken);
     viewerMemberId = await resolveMemberIdForUid(db, decoded.uid);
     if (!viewerMemberId) {
-      res.writeHead(404, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ success: false, error: "Member profile not found." }));
+      sendJson(res, origin, 404, { success: false, error: "Member profile not found." });
       return true;
     }
     viewerRole = (await resolveMemberRoleName(db, viewerMemberId)) || "";
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Invalid token";
-    res.writeHead(401, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ success: false, error: msg }));
+    sendJson(res, origin, 401, { success: false, error: msg });
     return true;
   }
 
@@ -48,7 +54,7 @@ export async function routePresenceEvents(req, res, url, origin) {
   const visibleSet = visibleIds === null ? null : new Set(visibleIds);
 
   res.writeHead(200, {
-    "Access-Control-Allow-Origin": origin || "*",
+    ...corsHeaders(origin, { credentials: true }),
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache, no-transform",
     Connection: "keep-alive",

@@ -84,6 +84,7 @@ export function initPresenceGateway(httpServer) {
     presenceManager,
     heartbeatStaleMs: 120_000,
     verifyIdToken: (token) => auth.verifyIdToken(token),
+    verifySessionCookie: (cookie) => auth.verifySessionCookie(cookie, true),
     resolveMemberId: async (uid) => {
       const db = getDb();
       if (!db) return "";
