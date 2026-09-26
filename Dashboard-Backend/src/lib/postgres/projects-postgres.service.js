@@ -9,6 +9,7 @@ import {
   syncManagementProjectMembers,
 } from "../../modules/projects/management-rollup.service.js";
 import { toStoredIdleTimeSeconds } from "../../modules/projects/idle-time.js";
+import { toStoredBreakTimeSeconds } from "../../modules/projects/break-time.js";
 import {
   memberHourlyRateInDisplayCurrency,
   memberHourlyRatesInDisplayCurrency,
@@ -36,10 +37,10 @@ export async function createProjectPg(data) {
   const rows = await query(
     `INSERT INTO projects (
        id, name, status, billable, disable_activity, allow_project_tracking, disable_idle_time,
-       idle_time_seconds, client_id, managers_notes, users_notes, viewers_notes, type, end_date,
+       idle_time_seconds, break_time_seconds, disable_break_limit, client_id, managers_notes, users_notes, viewers_notes, type, end_date,
        require_task_to_track, restrict_task_creation, require_stop_note, client_can_manage, client_can_track,
        timezone, created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$21)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$23)
      RETURNING *`,
     [
       id,
@@ -50,6 +51,8 @@ export async function createProjectPg(data) {
       data.allowProjectTracking ?? true,
       data.disableIdleTime ?? false,
       toStoredIdleTimeSeconds(data.idleTimeSeconds),
+      toStoredBreakTimeSeconds(data.breakTimeSeconds),
+      data.disableBreakLimit === true,
       uuidOrNull(data.clientId),
       data.managersNotes ?? null,
       data.usersNotes ?? null,
@@ -84,6 +87,8 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
     allowProjectTracking: "allow_project_tracking",
     disableIdleTime: "disable_idle_time",
     idleTimeSeconds: "idle_time_seconds",
+    breakTimeSeconds: "break_time_seconds",
+    disableBreakLimit: "disable_break_limit",
     clientId: "client_id",
     managersNotes: "managers_notes",
     usersNotes: "users_notes",
@@ -108,9 +113,11 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
           ? dateOrNull(patch[key])
           : key === "idleTimeSeconds"
             ? toStoredIdleTimeSeconds(patch[key])
-            : key === "clientCanManage" || key === "clientCanTrack"
-              ? patch[key] === true
-              : patch[key],
+            : key === "breakTimeSeconds"
+              ? toStoredBreakTimeSeconds(patch[key])
+              : key === "clientCanManage" || key === "clientCanTrack" || key === "disableBreakLimit"
+                ? patch[key] === true
+                : patch[key],
     );
     sets.push(`${column} = $${params.length}`);
   }

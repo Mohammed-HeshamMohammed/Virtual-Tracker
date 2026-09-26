@@ -130,6 +130,7 @@ import {
 } from "./agent-heartbeat.js";
 import { isWebActionOnAgentSession, normalizeSessionReason } from "./session-reasons.js";
 import { effectiveIdleTimeSeconds } from "../projects/idle-time-limit.service.js";
+import { breakSettingsOf } from "../projects/break-time.js";
 import { resolveTenantGrantCached } from "../customer-accounts/tenant-grant-cache.js";
 
 async function getMemberTodayWorkStatus(db, memberId) {
@@ -275,12 +276,14 @@ export function isOneOpenSessionConflict(err) {
 async function normalizeSession(id, data) {
   let disableIdleTime;
   let idleTimeSeconds;
+  let breakSettings;
   if (!data.task_id && data.project_id) {
     const project = await getProjectPg(data.project_id).catch(() => null);
     disableIdleTime = Boolean(project?.disable_idle_time ?? false);
     // What the agent enforces for this member: the project's setting, held to
     // half the budget and half their own limit on the project.
     idleTimeSeconds = await effectiveIdleTimeSeconds(project, data.member_id ?? null);
+    breakSettings = breakSettingsOf(project);
   }
   return {
     id,
@@ -298,7 +301,7 @@ async function normalizeSession(id, data) {
     source: data.source ?? null,
     pauseReason: data.pause_reason ?? null,
     screenshotsEnabled: isActivityScreenshotsEnabled(),
-    ...(disableIdleTime !== undefined ? { disableIdleTime, idleTimeSeconds } : {}),
+    ...(disableIdleTime !== undefined ? { disableIdleTime, idleTimeSeconds, ...breakSettings } : {}),
   };
 }
 

@@ -15,6 +15,7 @@ import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { computeTimerAllowance, enforceTimerAllowanceOnSync } from "./timer-limit.service.js";
 import { effectiveIdleTimeSeconds } from "../projects/idle-time-limit.service.js";
+import { breakSettingsOf } from "../projects/break-time.js";
 import {
   getTrackingRowPg,
   getTaskTrackingRowsPg,
@@ -264,6 +265,7 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
   // What the agent enforces for this member: the project's setting, held to
   // half the budget and half their own limit on the project.
   const idleTimeSeconds = await effectiveIdleTimeSeconds(project, userId);
+  const breakSettings = breakSettingsOf(project);
 
   let memberContributions = null;
   if (includeMemberBreakdown) {
@@ -306,6 +308,7 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
       timerAllowance,
       disableIdleTime,
       idleTimeSeconds,
+      ...breakSettings,
       sharedBudget,
     };
   }
@@ -339,6 +342,7 @@ export async function getTaskTimeTracking(db, taskId, userId, options = {}) {
     timerAllowance,
     disableIdleTime,
     idleTimeSeconds,
+    ...breakSettings,
     sharedBudget,
   };
 }
