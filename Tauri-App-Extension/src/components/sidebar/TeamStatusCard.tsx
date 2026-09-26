@@ -4,7 +4,7 @@ import type { WorkspaceTeam } from "../../types";
 export function TeamStatusCard({ team }: { team: WorkspaceTeam | null }) {
   if (!team || team.members.length === 0) return null;
   return (
-    <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.035s" }}>
+    <section data-help="Your team: who is tracking right now and who is on a break." className="side-tasklist side-panel-swap" style={{ animationDelay: "0.035s" }}>
       <div className="side-tasklist-head">
         <span className="stat-tile-label">Your team</span>
         <span className="side-tasklist-count">{team.members.length}</span>

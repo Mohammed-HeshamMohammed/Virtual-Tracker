@@ -129,7 +129,7 @@ export function SettingsPanel({
     title: string;
     sub: string;
   }) => (
-    <div className="settings-row">
+    <div className="settings-row" data-help={sub}>
       <div className="settings-row-copy">
         <span className="settings-row-title">
           {title}
@@ -145,6 +145,7 @@ export function SettingsPanel({
         checked={Boolean(prefs?.[field])}
         disabled={saving || !prefs}
         label={title}
+        tip={sub}
         onChange={(next) => void save(field, next)}
       />
     </div>
@@ -155,7 +156,7 @@ export function SettingsPanel({
       <PanelBackHeader title="Settings" onBack={onBack} />
 
       <div className="content settings-content">
-        <section className="settings-card">
+        <section data-help="Appearance: light, dark, or follow your system." className="settings-card">
           <h3 className="settings-section-label">Appearance</h3>
           <div className="settings-row">
             <div className="settings-row-copy">
@@ -169,9 +170,9 @@ export function SettingsPanel({
               </span>
               <span className="settings-row-sub">Matches the dashboard&rsquo;s light and dark themes</span>
             </div>
-            <div className="segmented" role="group" aria-label="Theme">
+            <div className="segmented" role="group" aria-label="Theme" data-help="Choose light or dark, or follow your system.">
               {THEMES.map((t) => (
-                <button
+                <button data-tip={`Use the ${t.label.toLowerCase()} theme`}
                   key={t.id}
                   type="button"
                   className={`segmented-btn${prefs?.theme === t.id ? " active" : ""}`}
@@ -189,7 +190,7 @@ export function SettingsPanel({
           </div>
         </section>
 
-        <section className="settings-card">
+        <section data-help="Window layout: how large the window is and what it shows. Auto picks the best fit for your screen." className="settings-card">
           <h3 className="settings-section-label">Window layout</h3>
           <div className="settings-row-copy">
             <span className="settings-row-title">
@@ -218,7 +219,7 @@ export function SettingsPanel({
             }
           />
 
-          <div className="layout-picker" role="radiogroup" aria-label="Window layout">
+          <div className="layout-picker" role="radiogroup" aria-label="Window layout" data-help="Pick a window size, or let Auto choose the best one for this screen.">
             {LAYOUTS.map((l) => {
               const active = (prefs?.layout ?? "auto") === l.id;
               const insightsOn = prefs?.showInsights ?? false;
@@ -232,7 +233,7 @@ export function SettingsPanel({
                     : "Fits your screen"
                   : layoutSize(previewKind, insightsOn);
               return (
-                <button
+                <button data-tip={`${l.label}: ${l.forScreens}`}
                   key={l.id}
                   type="button"
                   role="radio"
@@ -260,14 +261,14 @@ export function SettingsPanel({
           </div>
         </section>
 
-        <section className="settings-card">
+        <section data-help="Startup: what the app does when you sign in to your computer." className="settings-card">
           <h3 className="settings-section-label">Startup</h3>
           <Toggle field="launchAtLogin" title="Launch at login" sub="Open with Windows" />
           <Toggle field="startHidden" title="Start in tray" sub="Hide the window on launch" />
           <Toggle field="autoSignIn" title="Auto sign-in" sub="Open the browser link when signed out" />
         </section>
 
-        <section className="settings-card">
+        <section data-help="Window: what closing the window does." className="settings-card">
           <h3 className="settings-section-label">Window</h3>
           <Toggle
             field="closeToTray"
@@ -284,11 +285,11 @@ export function SettingsPanel({
           ) : null}
         </section>
 
-        <section className="settings-card">
+        <section data-help="Diagnostics: the log file that support may ask you for." className="settings-card">
           <h3 className="settings-section-label">Diagnostics</h3>
           <span className="settings-row-sub">Log file</span>
           <code className="settings-code">{settings?.logPath || "—"}</code>
-          <button
+          <button data-tip="Open the diagnostic log file"
             className="btn btn-secondary"
             type="button"
             disabled={!settings?.logPath}

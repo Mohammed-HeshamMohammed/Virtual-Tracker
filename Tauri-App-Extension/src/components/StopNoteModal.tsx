@@ -14,7 +14,7 @@ export function StopNoteModal({ open, draft, busy, onDraftChange, onKeepTracking
       <div className="modal-card" role="dialog" aria-modal="true" aria-label="What did you work on?">
         <h3 className="modal-title">What did you work on?</h3>
         <p className="modal-sub">This project asks for a short note before the timer stops.</p>
-        <textarea
+        <textarea data-help="What you got done in this session. This project asks for it before the timer stops."
           className="modal-input"
           autoFocus
           rows={3}
@@ -24,10 +24,10 @@ export function StopNoteModal({ open, draft, busy, onDraftChange, onKeepTracking
           onChange={(e) => onDraftChange(e.target.value)}
         />
         <div className="modal-actions">
-          <button className="btn btn-secondary" type="button" disabled={busy} onClick={onKeepTracking}>
+          <button data-tip="Go back. The timer keeps running" className="btn btn-secondary" type="button" disabled={busy} onClick={onKeepTracking}>
             Keep tracking
           </button>
-          <button className="btn btn-danger" type="button" disabled={busy || !draft.trim()} onClick={onStop}>
+          <button data-tip="Stop the timer and save your time" className="btn btn-danger" type="button" disabled={busy || !draft.trim()} onClick={onStop}>
             {busy ? "Stopping…" : "Stop tracking"}
           </button>
         </div>

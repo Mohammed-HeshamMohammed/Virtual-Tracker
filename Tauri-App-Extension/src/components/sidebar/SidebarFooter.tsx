@@ -38,7 +38,7 @@ export function SidebarFooter({
   onViewPrivacy,
 }: SidebarFooterProps) {
   return (
-    <div className="side-footer">
+    <div data-help="Your profile, Privacy and Settings, and whether the app is connected and tracking." className="side-footer">
       <button
         type="button"
         className="side-footer-profile"
@@ -54,7 +54,7 @@ export function SidebarFooter({
               <span>{signedIn ? initialsFromName(displayName) : "VT"}</span>
             )}
           </span>
-          <i
+          <i data-help="Status: green while tracking, and other colours for a break, being offline, or ready to start."
             className={`side-footer-dot ${
               loadingProfile
                 ? "idle"

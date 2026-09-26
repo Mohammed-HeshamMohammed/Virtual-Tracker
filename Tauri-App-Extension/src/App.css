@@ -5761,3 +5761,112 @@ select.modal-input {
   color: var(--on-surface-variant);
 }
 
+
+/* ── Tooltips and the help guide ───────────────────────────────────────── */
+.vt-tip {
+  position: fixed;
+  z-index: 10000;
+  max-width: 260px;
+  padding: 6px 9px;
+  border: 1px solid var(--outline-variant);
+  border-radius: 7px;
+  background: var(--surface-highest);
+  color: var(--on-surface-bright);
+  font-size: 11.5px;
+  line-height: 1.4;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+  pointer-events: none;
+}
+
+/* The arrow: a rotated square sharing the bubble's fill and border, so it always matches it. */
+.vt-tip::after {
+  content: "";
+  position: absolute;
+  left: var(--arrow-x, 50%);
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  border: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.vt-tip.is-below::after {
+  top: -6px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.vt-tip.is-above::after {
+  bottom: -6px;
+  border-left: 0;
+  border-top: 0;
+}
+
+/* Help mode: a coach-mark. The page dims, the target is lit, and a solid callout points at it. */
+.vt-tip.is-help {
+  max-width: 280px;
+  padding: 12px 15px;
+  border-color: #2563eb;
+  border-radius: 9px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.4);
+}
+
+.vt-spotlight {
+  position: fixed;
+  z-index: 9999;
+  border-radius: 8px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 9999px rgb(4 8 20 / 0.62);
+  pointer-events: none;
+}
+
+.titlebar-help {
+  position: relative;
+  height: 26px;
+}
+
+.titlebar-help .win-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.win-btn.active {
+  background: rgb(var(--c-primary) / 0.18);
+  color: rgb(var(--c-primary));
+}
+
+/* Help mode: everything that explains itself is outlined, so it is clear what can be asked. */
+.help-mode [data-help],
+.help-mode [data-tip],
+.help-mode [title] {
+  outline: 1px dashed rgb(var(--c-primary) / 0.45);
+  outline-offset: 2px;
+  cursor: help;
+}
+
+.help-mode [data-help]:hover,
+.help-mode [data-tip]:hover {
+  outline-color: rgb(var(--c-primary));
+}
+
+.help-mode-pill {
+  position: fixed;
+  left: 50%;
+  bottom: 12px;
+  z-index: 10000;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 24px);
+  padding: 6px 12px;
+  border: 1px solid rgb(var(--c-primary) / 0.5);
+  border-radius: 999px;
+  background: var(--surface-highest);
+  color: var(--on-surface-bright);
+  font-size: 11px;
+  text-align: center;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+  pointer-events: none;
+}

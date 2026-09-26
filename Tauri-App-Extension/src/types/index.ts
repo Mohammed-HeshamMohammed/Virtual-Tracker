@@ -380,6 +380,8 @@ export type CaptureStatus = {
   breakUntilMs: number;
   /** Set when capture is meant to be running but is failing; empty otherwise. */
   issue: string;
+  /** The longest a break may run on the current project, in seconds; 0 when there is no limit. */
+  breakLimitSec: number;
 };
 
 /** One of the member's own never-capture rules. */

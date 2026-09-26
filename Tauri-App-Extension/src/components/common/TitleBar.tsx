@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AgentNotification, ThemePreference } from "../../types";
+import { HelpButton } from "./HelpButton";
 
 const NEXT_THEME: Record<ThemePreference, ThemePreference> = {
   system: "light",
@@ -118,6 +119,7 @@ export function TitleBar({
         ) : null}
       </div>
       <div className="titlebar-controls">
+        <HelpButton />
         {theme && onCycleTheme ? (
           <button
             className="win-btn"
@@ -148,7 +150,7 @@ export function TitleBar({
               <div className="notification-dropdown" role="dialog" aria-label="Tracker notifications">
                 <div className="notification-dropdown-head">
                   <strong>Tracker notifications</strong>
-                  {unreadCount > 0 ? <button type="button" onClick={onMarkAllNotificationsRead}>Mark all read</button> : null}
+                  {unreadCount > 0 ? <button data-tip="Mark every notification as read" type="button" onClick={onMarkAllNotificationsRead}>Mark all read</button> : null}
                 </div>
                 <div className="notification-list">
                   {notifications.length ? notifications.map((notification) => (
@@ -163,7 +165,7 @@ export function TitleBar({
                         {notification.createdAt ? <time>{new Date(notification.createdAt).toLocaleString()}</time> : null}
                       </div>
                       {notification.targetVersion ? (
-                        <button type="button" className="notification-update-btn" onClick={(event) => { event.stopPropagation(); onNotificationUpdate?.(notification); }}>
+                        <button data-tip="Install the version this notification announces" type="button" className="notification-update-btn" onClick={(event) => { event.stopPropagation(); onNotificationUpdate?.(notification); }}>
                           Update now
                         </button>
                       ) : null}
@@ -171,6 +173,7 @@ export function TitleBar({
                         replyingTo === notification.threadId ? (
                           <div className="notification-reply" onClick={(event) => event.stopPropagation()}>
                             <textarea
+                              data-help="Your reply to this message."
                               value={replyText}
                               rows={2}
                               maxLength={2000}
@@ -180,7 +183,7 @@ export function TitleBar({
                             />
                             {replyError ? <p className="notification-reply-error">{replyError}</p> : null}
                             <div className="notification-reply-actions">
-                              <button
+                              <button data-tip="Send your reply"
                                 type="button"
                                 disabled={replyBusy || !replyText.trim()}
                                 onClick={async () => {
@@ -199,13 +202,13 @@ export function TitleBar({
                               >
                                 {replyBusy ? "Sending…" : "Send"}
                               </button>
-                              <button type="button" className="ghost" onClick={() => { setReplyingTo(null); setReplyText(""); setReplyError(""); }}>
+                              <button data-tip="Discard your reply" type="button" className="ghost" onClick={() => { setReplyingTo(null); setReplyText(""); setReplyError(""); }}>
                                 Cancel
                               </button>
                             </div>
                           </div>
                         ) : (
-                          <button
+                          <button data-tip="Write a reply to this message"
                             type="button"
                             className="notification-update-btn"
                             onClick={(event) => {

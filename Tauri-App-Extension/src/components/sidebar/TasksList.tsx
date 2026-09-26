@@ -37,13 +37,13 @@ export function TasksList({
       )
     : assignedTasks;
   return (
-    <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.03s" }}>
+    <section data-help="Your tasks in the selected project. Pick one, then start tracking. You cannot switch task while the timer is running." className="side-tasklist side-panel-swap" style={{ animationDelay: "0.03s" }}>
       <div className="side-tasklist-head">
         <span className="stat-tile-label">Your tasks</span>
         {assignedTasks.length > 0 ? <span className="side-tasklist-count">{assignedTasks.length}</span> : null}
       </div>
       {assignedTasks.length > SEARCH_THRESHOLD ? (
-        <input
+        <input data-help="Type to narrow the list of tasks."
           type="text"
           className="side-tasklist-search"
           placeholder="Filter tasks…"
@@ -57,7 +57,7 @@ export function TasksList({
       ) : assignedTasks.length > 0 ? (
         <div className="side-tasklist-body">
           {visible.map((task) => (
-            <button
+            <button data-tip={sessionOpen ? "Stop the timer to switch to another task" : `Select ${task.title}`}
               key={task.id}
               type="button"
               className={`side-task-row${task.id === selectedTaskId ? " active" : ""}`}

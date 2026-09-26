@@ -10,7 +10,7 @@ type WeekTileProps = {
 export function WeekTile({ loading, weekWorkedLabel, weekOfLabel, weeklyCapSeconds, weekUsedPercent, weekFootLabel }: WeekTileProps) {
   if (loading) {
     return (
-      <div className="stat-tile is-loading" aria-busy="true">
+      <div data-help="This week: what you have worked so far this week, against your weekly limit if you have one." className="stat-tile is-loading" aria-busy="true">
         <div className="stat-tile-head">
           <span className="stat-tile-label">This week</span>
         </div>
@@ -30,7 +30,7 @@ export function WeekTile({ loading, weekWorkedLabel, weekOfLabel, weeklyCapSecon
     );
   }
   return (
-    <div className="stat-tile">
+    <div data-help="This week: what you have worked so far this week, against your weekly limit if you have one." className="stat-tile">
       <div className="stat-tile-head">
         <span className="stat-tile-label">This week</span>
       </div>

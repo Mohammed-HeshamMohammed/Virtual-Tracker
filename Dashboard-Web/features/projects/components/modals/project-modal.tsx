@@ -89,6 +89,8 @@ interface AddProjectFormState {
   subProjectIds: string[]
   disableIdleTime: boolean
   idleTimeMinutes: string
+  disableBreakLimit: boolean
+  breakTimeMinutes: string
   endDate: string
   timezone: string
   clientIds: string[]
@@ -128,6 +130,26 @@ const PROJECT_COLOR_POOL = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6
  * and the save-time floor can't drift apart.
  */
 const DEFAULT_IDLE_TIME_SECONDS = 450
+
+/** Ten minutes, the default of projects.break_time_seconds. The backend holds it to 1 minute - 8 hours. */
+const DEFAULT_BREAK_TIME_SECONDS = 600
+const BREAK_TIME_MIN_MINUTES = 1
+const BREAK_TIME_MAX_MINUTES = 480
+const BREAK_TIME_PRESETS = [5, 10, 15, 30, 60]
+
+function breakTimeMinutesToSeconds(value: string): number {
+  const minutes = Number(value)
+  if (!value.trim() || !Number.isFinite(minutes) || minutes <= 0) return DEFAULT_BREAK_TIME_SECONDS
+  return Math.round(Math.min(BREAK_TIME_MAX_MINUTES, Math.max(BREAK_TIME_MIN_MINUTES, minutes)) * 60)
+}
+
+function validateBreakTimeMinutes(value: string): string | null {
+  const minutes = Number(value)
+  if (!value.trim() || !Number.isFinite(minutes) || minutes < BREAK_TIME_MIN_MINUTES || minutes > BREAK_TIME_MAX_MINUTES) {
+    return "Break time must be between 1 minute and 8 hours."
+  }
+  return null
+}
 
 /** Suggested idle times, in minutes; only those within the project's limit are offered. */
 const IDLE_TIME_PRESETS = [1, 5, 7.5, 10, 15, 30, 60, 120, 240, 480]
@@ -203,6 +225,8 @@ function createDefaultAddForm(): AddProjectFormState {
     subProjectIds: [],
     disableIdleTime: false,
     idleTimeMinutes: String(DEFAULT_IDLE_TIME_SECONDS / 60),
+    disableBreakLimit: false,
+    breakTimeMinutes: String(DEFAULT_BREAK_TIME_SECONDS / 60),
     endDate: "",
     timezone: "",
     clientIds: [],
@@ -256,14 +280,16 @@ function SettingToggleRow({
   checked,
   onChange,
   label,
+  help,
 }: {
   checked: boolean
   onChange: (next: boolean) => void
   label: ReactNode
+  help?: string
 }) {
   const theme = useClientFormTheme()
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div data-help={help} className="flex items-center justify-between gap-3">
       <span className={cn("inline-flex items-center gap-1 text-sm", theme.bodyText)}>{label}</span>
       <Toggle checked={checked} onChange={() => onChange(!checked)} />
     </div>
@@ -348,6 +374,8 @@ function formStateToPayload(
     // session on the first tick, so the project cannot be tracked at all.
     // Never under a minute; the budget limit is checked on save and in tracking.
     idleTimeSeconds: idleTimeMinutesToSeconds(addForm.idleTimeMinutes),
+    disableBreakLimit: addForm.disableBreakLimit,
+    breakTimeSeconds: breakTimeMinutesToSeconds(addForm.breakTimeMinutes),
     endDate: addForm.endDate,
     timezone: addForm.timezone,
     clientIds: addForm.clientIds,
@@ -682,6 +710,8 @@ export function ProjectModal({
           subProjectIds: payload.subProjectIds ?? [],
           disableIdleTime: payload.disableIdleTime,
           idleTimeMinutes: String((payload.idleTimeSeconds || DEFAULT_IDLE_TIME_SECONDS) / 60),
+          disableBreakLimit: payload.disableBreakLimit,
+          breakTimeMinutes: String((payload.breakTimeSeconds || DEFAULT_BREAK_TIME_SECONDS) / 60),
           endDate: payload.endDate || "",
           timezone: payload.timezone || "",
           clientIds: payload.clientIds,
@@ -1019,7 +1049,11 @@ export function ProjectModal({
     if (idleError && addProjectTab !== "general") {
       setAddProjectTab("general")
     }
-    const validationError = namesError ?? idleError ?? budgetError
+    const breakError = addForm.disableBreakLimit ? null : validateBreakTimeMinutes(addForm.breakTimeMinutes)
+    if (breakError && addProjectTab !== "general") {
+      setAddProjectTab("general")
+    }
+    const validationError = namesError ?? idleError ?? breakError ?? budgetError
     if (validationError) {
       setSubmitError(validationError)
       return
@@ -1249,11 +1283,13 @@ export function ProjectModal({
 
               <div className={cn("space-y-3 rounded-xl border p-3", formTheme.card)}>
                 <SettingToggleRow
+                  help="Billable: time on this project can be billed to the client."
                   checked={addForm.billable}
                   onChange={(next) => setAddForm((p) => ({ ...p, billable: next }))}
                   label="Billable"
                 />
                 <SettingToggleRow
+                  help="Disable activity: no screenshots or app and website activity are recorded on this project."
                   checked={addForm.disableActivity}
                   onChange={(next) => setAddForm((p) => ({ ...p, disableActivity: next }))}
                   label={
@@ -1264,6 +1300,7 @@ export function ProjectModal({
                   }
                 />
                 <SettingToggleRow
+                  help="Disable idle time: the timer never stops itself when someone is inactive on this project."
                   checked={addForm.disableIdleTime}
                   onChange={(next) => setAddForm((p) => ({ ...p, disableIdleTime: next }))}
                   label={
@@ -1375,6 +1412,81 @@ export function ProjectModal({
                             </ul>
                           )
                         })()}
+                      </FormField>
+                    )
+                  })()}
+                </ExpandCollapse>
+                <SettingToggleRow
+                  help="Disable break limit: breaks on this project have no time limit. Off, a break ends by itself after the break time."
+                  checked={addForm.disableBreakLimit}
+                  onChange={(next) => setAddForm((p) => ({ ...p, disableBreakLimit: next }))}
+                  label={
+                    <>
+                      Disable break limit
+                      <span title="Off: a break ends by itself after the break time and the timer resumes. On: breaks on this project have no time limit.">
+                        <Info className={cn("h-3.5 w-3.5", formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400")} />
+                      </span>
+                    </>
+                  }
+                />
+                <ExpandCollapse show={!addForm.disableBreakLimit}>
+                  {(() => {
+                    const breakError = validateBreakTimeMinutes(addForm.breakTimeMinutes)
+                    return (
+                      <FormField
+                        label="Break time"
+                        hint="A break ends by itself after this long and the timer resumes"
+                        error={breakError}
+                        className="pt-1"
+                      >
+                        <div className="relative">
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min={BREAK_TIME_MIN_MINUTES}
+                            max={BREAK_TIME_MAX_MINUTES}
+                            step={1}
+                            value={addForm.breakTimeMinutes}
+                            onChange={(e) => setAddForm((p) => ({ ...p, breakTimeMinutes: e.target.value }))}
+                            aria-label="Break time minutes"
+                            aria-invalid={breakError ? true : undefined}
+                            className={cn(formTheme.control, "pr-12", breakError ? "border-red-500 focus:border-red-500" : "")}
+                          />
+                          <span
+                            className={cn(
+                              "absolute right-3 top-1/2 -translate-y-1/2 text-sm",
+                              formTheme.isDark ? "text-[#bccbb9]" : "text-slate-400",
+                            )}
+                          >
+                            min
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Suggested break times">
+                          {BREAK_TIME_PRESETS.map((preset) => {
+                            const selected = Number(addForm.breakTimeMinutes) === preset
+                            return (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => setAddForm((p) => ({ ...p, breakTimeMinutes: String(preset) }))}
+                                aria-pressed={selected}
+                                title={`Set break time to ${formatMinutesAsDuration(preset)}`}
+                                className={cn(
+                                  "rounded-md border px-2 py-0.5 text-xs font-medium transition-colors",
+                                  selected
+                                    ? formTheme.isDark
+                                      ? "border-[#4be277]/60 bg-[#4be277]/10 text-[#4be277]"
+                                      : "border-[#6b38d4]/50 bg-[#6b38d4]/10 text-[#6b38d4]"
+                                    : formTheme.isDark
+                                      ? "border-[#3d4a3d]/60 text-[#bccbb9] hover:bg-white/5"
+                                      : "border-slate-200 text-slate-500 hover:bg-slate-50",
+                                )}
+                              >
+                                {formatMinutesAsDuration(preset)}
+                              </button>
+                            )
+                          })}
+                        </div>
                       </FormField>
                     )
                   })()}

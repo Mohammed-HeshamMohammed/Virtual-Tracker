@@ -40,7 +40,7 @@ export class AppErrorBoundary extends Component<Props, State> {
           recording. Reloading only restarts the display.
         </p>
         <pre>{this.state.error.message}</pre>
-        <button type="button" onClick={() => window.location.reload()}>
+        <button data-tip="Reload the app to recover" type="button" onClick={() => window.location.reload()}>
           Reload
         </button>
       </div>

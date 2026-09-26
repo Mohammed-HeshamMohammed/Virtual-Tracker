@@ -21,7 +21,7 @@ export function WeekChart({ days, todayDay, loading }: WeekChartProps) {
   const empty = !loading && maxSeconds === 0;
 
   return (
-    <section className="stat-panel week-chart page-content-swap" style={{ animationDelay: "0.1s" }} aria-busy={loading}>
+    <section data-help="Your week: one bar per day, showing the time you worked and, stacked on it, your idle time." className="stat-panel week-chart page-content-swap" style={{ animationDelay: "0.1s" }} aria-busy={loading}>
       <div className="week-chart-head">
         <span className="stat-tile-label">Your week</span>
         <span className="week-chart-legend" aria-hidden="true">

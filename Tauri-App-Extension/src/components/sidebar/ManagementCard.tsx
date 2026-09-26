@@ -12,14 +12,14 @@ export function ManagementCard({
 }) {
   if (!approvals && !pulse) return null;
   return (
-    <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.045s" }}>
+    <section data-help="For managers: timesheets for you to approve, and how many people are tracking across the organization." className="side-tasklist side-panel-swap" style={{ animationDelay: "0.045s" }}>
       <div className="side-tasklist-head">
         <span className="stat-tile-label">{pulse ? "Organization" : "Approvals"}</span>
       </div>
 
       {approvals ? (
         approvals.pendingCount > 0 ? (
-          <button type="button" className="side-team-cta" onClick={onOpenDashboard}>
+          <button data-tip="Open the dashboard to review pending timesheets" type="button" className="side-team-cta" onClick={onOpenDashboard}>
             <span className="side-team-cta-count">{approvals.pendingCount}</span>
             <span className="side-team-cta-copy">
               timesheet{approvals.pendingCount === 1 ? "" : "s"} waiting on you

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_CAPTURE_STATUS,
+  breakLabel,
+  breakOptions,
   canStartBreak,
+  defaultBreakMinutes,
   describeCollection,
   exclusionLabel,
   formatRemaining,
@@ -30,26 +33,26 @@ describe("formatRemaining", () => {
 
 describe("isOnBreak", () => {
   it("is true only while the end time is in the future", () => {
-    expect(isOnBreak({ blocked: true, reason: "", breakUntilMs: 10_000, issue: "" }, 5_000)).toBe(true);
-    expect(isOnBreak({ blocked: true, reason: "", breakUntilMs: 10_000, issue: "" }, 10_000)).toBe(false);
+    expect(isOnBreak({ blocked: true, reason: "", breakUntilMs: 10_000, issue: "", breakLimitSec: 0 }, 5_000)).toBe(true);
+    expect(isOnBreak({ blocked: true, reason: "", breakUntilMs: 10_000, issue: "", breakLimitSec: 0 }, 10_000)).toBe(false);
     expect(isOnBreak(EMPTY_CAPTURE_STATUS, 5_000)).toBe(false);
   });
 });
 
 describe("sameCaptureStatus", () => {
   it("treats an unchanged answer as the same so a poll does not re-render the app", () => {
-    const a = { blocked: true, reason: "Private break", breakUntilMs: 42, issue: "" };
+    const a = { blocked: true, reason: "Private break", breakUntilMs: 42, issue: "", breakLimitSec: 0 };
     expect(sameCaptureStatus(a, { ...a })).toBe(true);
   });
 
   it("notices any field changing", () => {
-    const a = { blocked: true, reason: "x", breakUntilMs: 1, issue: "" };
+    const a = { blocked: true, reason: "x", breakUntilMs: 1, issue: "", breakLimitSec: 0 };
     expect(sameCaptureStatus(a, { ...a, blocked: false })).toBe(false);
     expect(sameCaptureStatus(a, { ...a, reason: "y" })).toBe(false);
     expect(sameCaptureStatus(a, { ...a, breakUntilMs: 2 })).toBe(false);
     // A fault appearing changes nothing else, and must still be noticed or the
     // banner would never show.
-    expect(sameCaptureStatus(a, { ...a, issue: "failing" })).toBe(false);
+    expect(sameCaptureStatus(a, { ...a, issue: "failing", breakLimitSec: 0 })).toBe(false);
   });
 });
 
@@ -83,5 +86,41 @@ describe("exclusionLabel", () => {
   it("names a domain rule a website, since members do not think in domains", () => {
     expect(exclusionLabel("domain")).toBe("Website");
     expect(exclusionLabel("app")).toBe("App");
+  });
+});
+
+describe("breakOptions", () => {
+  const minutes = (limitSec: number) => breakOptions(limitSec).map((o) => o.minutes);
+
+  it("offers only the lengths a project's limit allows", () => {
+    expect(minutes(600)).toEqual([5, 10]);
+    expect(minutes(1800)).toEqual([5, 10, 15, 30]);
+  });
+
+  it("offers the limit itself when it falls between the usual lengths", () => {
+    expect(minutes(420)).toEqual([5, 7]);
+    expect(minutes(120)).toEqual([2]);
+  });
+
+  it("offers every usual length when there is no limit", () => {
+    expect(minutes(0)).toEqual([5, 10, 15, 30, 60]);
+  });
+
+  it("never offers nothing, however small the limit", () => {
+    expect(breakOptions(60).length).toBeGreaterThan(0);
+    expect(minutes(60)).toEqual([1]);
+  });
+
+  it("defaults to 15 minutes when offered, otherwise the longest allowed", () => {
+    expect(defaultBreakMinutes(breakOptions(0))).toBe(15);
+    expect(defaultBreakMinutes(breakOptions(600))).toBe(10);
+    expect(defaultBreakMinutes(breakOptions(60))).toBe(1);
+  });
+
+  it("labels whole hours as hours", () => {
+    expect(breakLabel(60)).toBe("1 hour");
+    expect(breakLabel(120)).toBe("2 hours");
+    expect(breakLabel(90)).toBe("90 min");
+    expect(breakLabel(10)).toBe("10 min");
   });
 });

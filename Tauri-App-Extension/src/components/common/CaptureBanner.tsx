@@ -28,7 +28,7 @@ export function CaptureBanner({ status, busy = false, onEndBreak, onOpenPrivacy 
   if (!status.blocked) {
     if (!status.issue) return null;
     return (
-      <div className="tracker-update-banner state-error capture-banner" role="alert">
+      <div data-help="Tells you when nothing is being captured and why: a private break, time outside your work hours, or screenshots failing on this device." className="tracker-update-banner state-error capture-banner" role="alert">
         <div>
           <strong>Screenshots are failing</strong>
           <span>{status.issue}</span>
@@ -41,7 +41,7 @@ export function CaptureBanner({ status, busy = false, onEndBreak, onOpenPrivacy 
   const remaining = onBreak ? formatRemaining(status.breakUntilMs, now) : "";
 
   return (
-    <div className="tracker-update-banner capture-banner" role="status">
+    <div data-help="Tells you when nothing is being captured and why: a private break, time outside your work hours, or screenshots failing on this device." className="tracker-update-banner capture-banner" role="status">
       <div>
         <strong>{onBreak ? "Private break" : "Not capturing"}</strong>
         <span>
@@ -51,11 +51,11 @@ export function CaptureBanner({ status, busy = false, onEndBreak, onOpenPrivacy 
       </div>
       <div className="tracker-update-actions">
         {onBreak ? (
-          <button type="button" disabled={busy} onClick={onEndBreak}>
+          <button data-tip="End your private break. The timer resumes and capture starts again" type="button" disabled={busy} onClick={onEndBreak}>
             End break
           </button>
         ) : (
-          <button type="button" className="ghost" onClick={onOpenPrivacy}>
+          <button data-tip="Open Privacy to see what is collected and to manage breaks" type="button" className="ghost" onClick={onOpenPrivacy}>
             Privacy
           </button>
         )}

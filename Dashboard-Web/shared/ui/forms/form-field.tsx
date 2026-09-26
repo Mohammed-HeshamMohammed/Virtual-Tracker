@@ -8,6 +8,7 @@ export function FormField({
   label,
   required,
   hint,
+  help,
   error,
   className,
   children,
@@ -15,13 +16,15 @@ export function FormField({
   label: string
   required?: boolean
   hint?: string
+  /** Said in help mode; the hint when omitted. */
+  help?: string
   error?: string | null
   className?: string
   children: React.ReactNode
 }) {
   const theme = useClientFormTheme()
   return (
-    <div className={cn(FORM_FIELD, className)}>
+    <div data-help={help ?? hint} className={cn(FORM_FIELD, className)}>
       <FieldLabel required={required}>{label}</FieldLabel>
       {children}
       {error ? <p className="text-sm text-red-500">{error}</p> : null}

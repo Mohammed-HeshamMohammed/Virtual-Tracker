@@ -105,7 +105,7 @@ export function ProfilePanel({
       <PanelBackHeader title="Profile" onBack={onBack} />
 
       <div className="content settings-content">
-        <section className="settings-card">
+        <section data-help="You: your name, email and role as your organization has them, and your timesheet and time off." className="settings-card">
           <div className="profile-identity">
             <div className="avatar-wrap">
               {displayAvatar ? (
@@ -154,7 +154,7 @@ export function ProfilePanel({
           )}
         </section>
 
-        <section className="settings-card">
+        <section data-help="Work-hour limits: the hours you may work each day and each week, and how much you have used." className="settings-card">
           <h3 className="settings-section-label">Work-hour limits</h3>
 
           {memberLimits?.isMakeupDay ? (
@@ -195,7 +195,7 @@ export function ProfilePanel({
         (workspace.self.timeOff.length > 0 ||
           workspace.self.timesheet ||
           workspace.self.earnings.hourlyRate > 0) ? (
-          <section className="settings-card">
+          <section data-help="Your standing: how you are doing against your limits." className="settings-card">
             <h3 className="settings-section-label">Your standing</h3>
 
             {workspace.self.timeOff.length > 0 ? (
@@ -211,7 +211,7 @@ export function ProfilePanel({
                     </div>
                   ))}
                 </div>
-                <button
+                <button data-tip="Ask for time off"
                   className="btn btn-secondary"
                   type="button"
                   style={{ marginTop: 12 }}
@@ -242,7 +242,7 @@ export function ProfilePanel({
             ) : null}
 
             {workspace.self.timesheet && workspace.self.timesheet.status.toLowerCase() === "draft" ? (
-              <button
+              <button data-tip="Send your time for approval"
                 className="btn btn-primary"
                 type="button"
                 style={{ marginTop: 12 }}
@@ -284,7 +284,7 @@ export function ProfilePanel({
           onSelect={onSelectScreenshot}
         />
 
-        <button className="btn btn-danger" type="button" disabled={signingOut} onClick={onSignOut}>
+        <button data-tip="Sign out of this device" className="btn btn-danger" type="button" disabled={signingOut} onClick={onSignOut}>
           {signingOut ? "Signing out…" : "Log out"}
         </button>
       </div>

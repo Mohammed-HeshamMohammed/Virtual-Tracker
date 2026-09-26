@@ -26,7 +26,7 @@ export function AssignedTodayBadge({
     .join(" · ");
 
   return (
-    <div className="assigned-today-badge" title={detail || undefined}>
+    <div data-help="Assigned tasks today: how much of your assigned work is planned for today, and what moves to another day. Hover for the detail." className="assigned-today-badge" title={detail || undefined}>
       <svg viewBox="0 0 24 24" aria-hidden="true" className="vt-icon">
         <path
           fill="currentColor"
@@ -55,7 +55,7 @@ export function AssignedToMeBadge({
 }) {
   if (!assignedTotalLabel) return null;
   return (
-    <div className="assigned-today-badge" title={assignedTotalDetail || undefined}>
+    <div data-help="Assigned to me: the total amount of work assigned to you across your tasks." className="assigned-today-badge" title={assignedTotalDetail || undefined}>
       <svg viewBox="0 0 24 24" aria-hidden="true" className="vt-icon">
         <path
           fill="currentColor"

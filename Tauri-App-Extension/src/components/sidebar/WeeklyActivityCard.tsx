@@ -34,7 +34,7 @@ export function WeeklyActivityCard({
     // Nothing in this card is interactive (no buttons, no clicks) - it's
     // otherwise just dead space in the sidebar, so it doubles as a window
     // drag handle the same way the titlebar does.
-    <section
+    <section data-help="Weekly activity: how active you were this week, from keyboard and mouse use, with your active and idle time."
       className="side-weekly side-panel-swap"
       style={{ animationDelay: "0.01s" }}
       data-tauri-drag-region

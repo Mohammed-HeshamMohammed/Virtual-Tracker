@@ -108,6 +108,8 @@ pub struct CaptureStatus {
     pub break_until_ms: i64,
     /// Set when capture is meant to be running but is failing. Empty otherwise.
     pub issue: String,
+    /// The longest a break may run on the current project; 0 when there is no limit.
+    pub break_limit_sec: u64,
 }
 
 /// One of the member's own never-capture rules.

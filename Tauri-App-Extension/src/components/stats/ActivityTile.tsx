@@ -13,7 +13,7 @@ type ActivityTileProps = {
 export function ActivityTile({ loading, activityDash, activityLabel, activityPercent, activityToday }: ActivityTileProps) {
   if (loading) {
     return (
-      <div className="stat-tile activity-tile is-loading" aria-busy="true">
+      <div data-help="Activity: how active you were today, worked out from keyboard and mouse use, with your active and idle time." className="stat-tile activity-tile is-loading" aria-busy="true">
         <div className="activity-ring">
           <svg viewBox="0 0 60 60" aria-hidden="true">
             <circle
@@ -56,7 +56,7 @@ export function ActivityTile({ loading, activityDash, activityLabel, activityPer
     );
   }
   return (
-    <div className="stat-tile activity-tile">
+    <div data-help="Activity: how active you were today, worked out from keyboard and mouse use, with your active and idle time." className="stat-tile activity-tile">
       <div className="activity-ring">
         <svg viewBox="0 0 60 60" aria-hidden="true">
           <circle

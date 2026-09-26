@@ -45,7 +45,7 @@ export function WelcomeBackPanel({
             )}
           </div>
 
-          <h1 className="reconnect-name">{name}</h1>
+          <h1 className="reconnect-name" data-help="The account this device was last signed in with.">{name}</h1>
           <p className="reconnect-text">
             {message ??
               (needsRelink
@@ -53,7 +53,7 @@ export function WelcomeBackPanel({
                 : "Your session went idle. Reconnect to pick up where you left off.")}
           </p>
 
-          <button
+          <button data-tip="Reconnect this device and carry on"
             className="btn btn-primary reconnect-btn"
             type="button"
             disabled={busy}
@@ -68,7 +68,7 @@ export function WelcomeBackPanel({
                   : "Welcome back"}
           </button>
 
-          <button className="link-btn" type="button" disabled={busy} onClick={onSwitchAccount}>
+          <button data-tip="Sign in as a different person" className="link-btn" type="button" disabled={busy} onClick={onSwitchAccount}>
             Not you? Switch account →
           </button>
         </div>

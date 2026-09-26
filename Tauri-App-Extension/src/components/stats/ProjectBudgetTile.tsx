@@ -11,7 +11,7 @@ type ProjectBudgetTileProps = {
 export function ProjectBudgetTile({ loading, projectBudget, projectBudgetReached, projectBudgetPercent }: ProjectBudgetTileProps) {
   if (loading) {
     return (
-      <div className="stat-tile is-loading" aria-busy="true">
+      <div data-help="Project budget: how much of this project's budget is left. &quot;yours&quot; is a personal budget, &quot;team&quot; is shared." className="stat-tile is-loading" aria-busy="true">
         <div className="stat-tile-head">
           <span className="stat-tile-label">Project budget</span>
           <span className="skeleton-bar" style={{ width: 34, height: 14, borderRadius: 999, display: "inline-block" }} />
@@ -30,7 +30,7 @@ export function ProjectBudgetTile({ loading, projectBudget, projectBudgetReached
   }
   if (!projectBudget) return null;
   return (
-    <div className="stat-tile">
+    <div data-help="Project budget: how much of this project's budget is left. &quot;yours&quot; is a personal budget, &quot;team&quot; is shared." className="stat-tile">
       <div className="stat-tile-head">
         <span className="stat-tile-label">Project budget</span>
         <span className="stat-tile-note">{projectBudget.scope === "per_person" ? "yours" : "team"}</span>

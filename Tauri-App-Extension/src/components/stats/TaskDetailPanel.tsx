@@ -11,7 +11,7 @@ export function taskDetailHasContent(detail: TaskDetail | null, loading?: boolea
 export function TaskDetailPanel({ detail, loading }: { detail: TaskDetail | null; loading?: boolean }) {
   if (loading) {
     return (
-      <section className="stat-panel page-content-swap is-loading" style={{ animationDelay: "0.05s" }} aria-busy="true">
+      <section data-help="This task: its description, priority, due date and subtask checklist." className="stat-panel page-content-swap is-loading" style={{ animationDelay: "0.05s" }} aria-busy="true">
         <div className="stat-panel-head">
           <h3 className="stat-panel-title">This task</h3>
           <span className="skeleton-bar" style={{ width: 50, height: 14, borderRadius: 999 }} />
@@ -43,7 +43,7 @@ export function TaskDetailPanel({ detail, loading }: { detail: TaskDetail | null
   if (!hasBody && !hasMeta) return null;
 
   return (
-    <section className="stat-panel page-content-swap" style={{ animationDelay: "0.05s" }}>
+    <section data-help="This task: its description, priority, due date and subtask checklist." className="stat-panel page-content-swap" style={{ animationDelay: "0.05s" }}>
       <div className="stat-panel-head">
         <h3 className="stat-panel-title">This task</h3>
         {detail.subtasks.length > 0 ? (

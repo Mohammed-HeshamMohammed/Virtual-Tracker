@@ -39,19 +39,19 @@ export function SidebarActions({
     <nav className="actions side-panel-swap" style={{ animationDelay: "0.06s" }}>
       {!showSessionButtons ? null : paused ? (
         <div className="action-pair">
-          <button className="btn btn-primary" type="button" disabled={busy} onClick={onResume}>
+          <button data-tip="Resume the timer after your break" className="btn btn-primary" type="button" disabled={busy} onClick={onResume}>
             Resume tracking
           </button>
-          <button className="btn btn-danger btn-compact" type="button" disabled={busy} onClick={onStopClick}>
+          <button data-tip="Stop the timer and save your time" className="btn btn-danger btn-compact" type="button" disabled={busy} onClick={onStopClick}>
             Stop
           </button>
         </div>
       ) : tracking ? (
         <div className="action-pair">
-          <button className="btn btn-secondary" type="button" disabled={busy} onClick={onPause}>
+          <button data-tip="Pause the timer for a break. It resumes by itself after the project's break time" className="btn btn-secondary" type="button" disabled={busy} onClick={onPause}>
             Pause
           </button>
-          <button className="btn btn-danger btn-compact" type="button" disabled={busy} onClick={onStopClick}>
+          <button data-tip="Stop the timer and save your time" className="btn btn-danger btn-compact" type="button" disabled={busy} onClick={onStopClick}>
             Stop
           </button>
         </div>
@@ -67,12 +67,12 @@ export function SidebarActions({
         </button>
       )}
 
-      <button className="btn btn-secondary" type="button" onClick={onOpenDashboard}>
+      <button data-tip="Open the web dashboard in your browser" className="btn btn-secondary" type="button" onClick={onOpenDashboard}>
         Open dashboard
         <Icon name="external" />
       </button>
 
-      <button className="btn-quiet" type="button" onClick={onSignInAgain}>
+      <button data-tip="Open the browser sign-in page to sign in again" className="btn-quiet" type="button" onClick={onSignInAgain}>
         Sign in again
       </button>
     </nav>

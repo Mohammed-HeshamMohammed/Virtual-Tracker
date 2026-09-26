@@ -2217,7 +2217,7 @@ function MainApp() {
       />
 
       {updateNotice ? (
-        <div className={`tracker-update-banner state-${updateNotice.state}`} role="status">
+        <div data-help="An update for this app: it downloads, then installs when you are not tracking, or when you choose." className={`tracker-update-banner state-${updateNotice.state}`} role="status">
           <div>
             <strong>
               {updateNotice.state === "countdown"
@@ -2251,10 +2251,10 @@ function MainApp() {
           <div className="tracker-update-actions">
             {updateNotice.state === "countdown" && (updateNotice.secondsLeft ?? 0) > 0 ? (
               <>
-                <button type="button" onClick={() => void installStagedUpdate()}>
+                <button data-tip="Restart the app now to finish installing the update" type="button" onClick={() => void installStagedUpdate()}>
                   Restart now
                 </button>
-                <button
+                <button data-tip="Keep working. The update stays ready to install later"
                   type="button"
                   className="ghost"
                   onClick={() => {
@@ -2266,11 +2266,11 @@ function MainApp() {
                 </button>
               </>
             ) : updateNotice.state === "blocked" ? (
-              <button type="button" onClick={() => void installStagedUpdate()}>
+              <button data-tip="Install the update now. The app restarts" type="button" onClick={() => void installStagedUpdate()}>
                 Install now
               </button>
             ) : (
-              <button
+              <button data-tip={updateNotice.state === "error" ? "Try the update again" : sessionOpen ? "Stop the timer first: the app restarts to update" : "Download and install the update now"}
                 type="button"
                 disabled={
                   checkingUpdate ||
@@ -2430,9 +2430,9 @@ function MainApp() {
           )}
 
           {connection === "disconnected" ? (
-            <div className="reconnect-banner">
+            <div data-help="The app lost its connection. Your time keeps counting here and is sent when it reconnects." className="reconnect-banner">
               <span>Connection lost — time is still being counted locally.</span>
-              <button type="button" disabled={reconnecting} onClick={() => void handleReconnect()}>
+              <button data-tip="Try to reconnect to the server. Your time is still being counted here" type="button" disabled={reconnecting} onClick={() => void handleReconnect()}>
                 {reconnecting ? "Reconnecting…" : "Reconnect"}
               </button>
             </div>
@@ -2510,7 +2510,7 @@ function MainApp() {
           <section className="page-area">
             <div className="page-header">
               <div className="page-header-titles">
-                <span className="page-header-clock">
+                <span data-help="The current time and date in the project's timezone, or in yours when the project has none." className="page-header-clock">
                   {fmtWallClock(wallClockNow, projectTimezone || undefined)}
                   <span className="page-header-date">
                     {fmtWallDate(wallClockNow, projectTimezone || undefined)}
@@ -2519,7 +2519,7 @@ function MainApp() {
                 </span>
                 <h2 className="page-title">{trackingLabel || "Time Tracking"}</h2>
               </div>
-              <div className="page-header-actions">
+              <div data-help="Shortcuts: log time you did not track, and reload your projects and tasks." className="page-header-actions">
                 <AssignedTodayBadge
                   memberLimits={memberLimits}
                   assignedTodayLabel={assignedTodayLabel}
@@ -2567,7 +2567,7 @@ function MainApp() {
 
             {signedIn && (selectedTaskId || (taskLessSession && selectedProjectId)) ? (
               <>
-                <div className="page-clock page-content-swap">
+                <div data-help="The timer. It shows the time worked today, or the whole task's time when you switch it with the round button, and it counts while you are tracking." className="page-clock page-content-swap">
                   <span className="page-clock-value">
                     {fmtClock(timerViewMode === "task" ? liveTaskActiveSeconds : liveActiveSeconds)}
                   </span>
@@ -2647,13 +2647,13 @@ function MainApp() {
                 )}
 
                 {idleStage >= 3 ? (
-                  <p className={`page-idle-banner stage-${idleStage}`}>
+                  <p data-help="The timer stopped because you were idle for longer than this project allows. That idle time was taken out of your hours." className={`page-idle-banner stage-${idleStage}`}>
                     Timer stopped after being idle longer than this project allows. The idle time was removed from your hours.
                   </p>
                 ) : null}
 
                 {taskTracking?.limitReached ? (
-                  <p className="page-limit-banner">
+                  <p data-help="You have reached the most work time you are allowed, so a new session cannot start until it resets." className="page-limit-banner">
                     {taskTracking.allowanceMessage || "Maximum allowed work time reached."}
                   </p>
                 ) : null}
@@ -2709,7 +2709,7 @@ function MainApp() {
                 </div>
               </div>
             ) : (
-              <div className="page-empty page-content-swap">
+              <div data-help="Nothing is selected yet. Pick a project and a task in the left column to see it here and start tracking." className="page-empty page-content-swap">
                 <span className="page-empty-title">No task selected</span>
                 <p className="page-empty-text">
                   Pick a project and task on the left, then start tracking to see today's stats here.

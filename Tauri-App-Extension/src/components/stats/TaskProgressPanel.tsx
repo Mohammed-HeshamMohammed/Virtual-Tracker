@@ -31,7 +31,7 @@ export function TaskProgressPanel({
   if (taskLessSession) return null;
   if (loading) {
     return (
-      <section className="stat-panel page-content-swap is-loading" style={{ animationDelay: "0.08s" }} aria-busy="true">
+      <section data-help="This task: how far along it is, when it is due, and how much of its budget is left." className="stat-panel page-content-swap is-loading" style={{ animationDelay: "0.08s" }} aria-busy="true">
         <div className="stat-panel-head">
           <h3 className="stat-panel-title">This task</h3>
           <span className="skeleton-bar" style={{ width: 56, height: 16, borderRadius: 999 }} />
@@ -66,7 +66,7 @@ export function TaskProgressPanel({
     );
   }
   return (
-    <section className="stat-panel page-content-swap" style={{ animationDelay: "0.08s" }}>
+    <section data-help="This task: how far along it is, when it is due, and how much of its budget is left." className="stat-panel page-content-swap" style={{ animationDelay: "0.08s" }}>
       <div className="stat-panel-head">
         <h3 className="stat-panel-title">This task</h3>
         <span className="stat-panel-head-right">

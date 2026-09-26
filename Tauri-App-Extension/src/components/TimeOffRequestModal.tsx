@@ -45,7 +45,7 @@ export function TimeOffRequestModal({
 
         <div className="input-field-group">
           <label className="input-field-label" htmlFor="time-off-policy">Policy</label>
-          <select
+          <select data-help="The kind of leave you are asking for."
             id="time-off-policy"
             className="modal-input"
             value={policyId}
@@ -63,7 +63,7 @@ export function TimeOffRequestModal({
         <div className="modal-field-row">
           <div className="input-field-group">
             <label className="input-field-label" htmlFor="time-off-start">From</label>
-            <input
+            <input data-help="The first day you will be away."
               id="time-off-start"
               className="modal-input"
               type="date"
@@ -73,7 +73,7 @@ export function TimeOffRequestModal({
           </div>
           <div className="input-field-group">
             <label className="input-field-label" htmlFor="time-off-end">To</label>
-            <input
+            <input data-help="The last day you will be away."
               id="time-off-end"
               className="modal-input"
               type="date"
@@ -89,7 +89,7 @@ export function TimeOffRequestModal({
 
         <div className="input-field-group">
           <label className="input-field-label" htmlFor="time-off-note">Note</label>
-          <input
+          <input data-help="Anything your manager should know about this request."
             id="time-off-note"
             className="modal-input"
             type="text"
@@ -115,10 +115,10 @@ export function TimeOffRequestModal({
         ) : null}
 
         <div className="modal-actions">
-          <button className="btn btn-secondary" type="button" disabled={busy} onClick={onCancel}>
+          <button data-tip="Close without sending" className="btn btn-secondary" type="button" disabled={busy} onClick={onCancel}>
             Cancel
           </button>
-          <button className="btn btn-primary" type="button" disabled={!canSubmit} onClick={onSubmit}>
+          <button data-tip="Send the leave request for approval" className="btn btn-primary" type="button" disabled={!canSubmit} onClick={onSubmit}>
             {busy ? "Sending…" : "Send request"}
           </button>
         </div>

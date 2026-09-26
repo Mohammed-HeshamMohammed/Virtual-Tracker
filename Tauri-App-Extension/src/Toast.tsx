@@ -235,14 +235,14 @@ const ToastContainer = () => {
 
                   {t.action && (
                     <div className="vt-toast-actions" style={{ justifyContent: "flex-end", marginTop: 4 }}>
-                      <button
+                      <button data-tip="Close this message"
                         type="button"
                         className="vt-toast-btn vt-toast-btn-secondary"
                         onClick={() => toastStore.remove(t.id)}
                       >
                         Dismiss
                       </button>
-                      <button
+                      <button data-tip="Take the action this message offers"
                         type="button"
                         className="vt-toast-btn vt-toast-btn-primary"
                         onClick={() => {

@@ -5,6 +5,7 @@ import App from "./App";
 import type { AppSettingsView } from "./types";
 import { applyTheme, isThemePreference } from "./utils/theme";
 import { AppErrorBoundary, installGlobalErrorLogging } from "./components/common/AppErrorBoundary";
+import { TooltipLayer } from "./components/common/TooltipLayer";
 
 installGlobalErrorLogging();
 
@@ -21,6 +22,7 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <AppErrorBoundary>
       <App />
+      <TooltipLayer />
     </AppErrorBoundary>
   </React.StrictMode>,
 );

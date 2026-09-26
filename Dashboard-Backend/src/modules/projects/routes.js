@@ -64,6 +64,7 @@ import { getMemberLimitHours } from "../tasks/task-workload-validation.js";
 import { PROJECT_TYPES, projectTypeDef, projectTypeForcesHours } from "./project-types.js";
 import { listSubProjectIdsPg, setSubProjectsPg } from "./management-rollup.service.js";
 import { validateIdleTimeSeconds } from "./idle-time.js";
+import { validateBreakTimeSeconds } from "./break-time.js";
 import { listMeta } from "../../http/list-truncation.js";
 import { resolveIdleTimeLimit } from "./idle-time-limit.service.js";
 import { resolveProjectTimezoneInput, canSetProjectTimezone } from "./project-timezone.js";
@@ -385,6 +386,8 @@ export async function routeProjects(req, res, url, db, origin) {
           ),
           disableIdleTime: Boolean(project.disable_idle_time ?? project.disableIdleTime),
           idleTimeSeconds: Number(project.idle_time_seconds ?? project.idleTimeSeconds ?? 450),
+          disableBreakLimit: Boolean(project.disable_break_limit ?? project.disableBreakLimit),
+          breakTimeSeconds: Number(project.break_time_seconds ?? project.breakTimeSeconds ?? 600),
           requireTaskToTrack: Boolean(project.require_task_to_track ?? project.requireTaskToTrack ?? true),
           restrictTaskCreation: Boolean(project.restrict_task_creation ?? project.restrictTaskCreation ?? true),
           requireStopNote: Boolean(project.require_stop_note ?? project.requireStopNote ?? false),
@@ -725,6 +728,12 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 400, { success: false, error: newIdleTimeError });
         return true;
       }
+      const newBreakTimeSeconds = body.break_time_seconds ?? body.breakTimeSeconds;
+      const newBreakTimeError = newBreakTimeSeconds === undefined ? null : validateBreakTimeSeconds(newBreakTimeSeconds);
+      if (newBreakTimeError) {
+        sendJson(res, origin, 400, { success: false, error: newBreakTimeError });
+        return true;
+      }
       const project = await createProjectPg({
         name: body.name,
         status: body.status,
@@ -733,6 +742,8 @@ export async function routeProjects(req, res, url, db, origin) {
         allowProjectTracking: body.allow_project_tracking ?? body.allowProjectTracking,
         disableIdleTime: body.disable_idle_time ?? body.disableIdleTime,
         idleTimeSeconds: body.idle_time_seconds ?? body.idleTimeSeconds,
+        breakTimeSeconds: body.break_time_seconds ?? body.breakTimeSeconds,
+        disableBreakLimit: body.disable_break_limit ?? body.disableBreakLimit,
         clientId: body.client_id ?? body.clientId,
         managersNotes: body.managers_notes ?? body.managersNotes,
         usersNotes: body.users_notes ?? body.usersNotes,
@@ -826,6 +837,8 @@ export async function routeProjects(req, res, url, db, origin) {
           allowProjectTracking: body.allow_project_tracking ?? body.allowProjectTracking,
           disableIdleTime: body.disable_idle_time ?? body.disableIdleTime,
           idleTimeSeconds: body.idle_time_seconds ?? body.idleTimeSeconds,
+          breakTimeSeconds: body.break_time_seconds ?? body.breakTimeSeconds,
+          disableBreakLimit: body.disable_break_limit ?? body.disableBreakLimit,
           clientId: body.client_id ?? body.clientId,
           managersNotes: body.managers_notes ?? body.managersNotes,
           usersNotes: body.users_notes ?? body.usersNotes,
@@ -846,6 +859,13 @@ export async function routeProjects(req, res, url, db, origin) {
           const idleTimeError = validateIdleTimeSeconds(patch.idleTimeSeconds);
           if (idleTimeError) {
             sendJson(res, origin, 400, { success: false, error: idleTimeError });
+            return true;
+          }
+        }
+        if ("breakTimeSeconds" in patch) {
+          const breakTimeError = validateBreakTimeSeconds(patch.breakTimeSeconds);
+          if (breakTimeError) {
+            sendJson(res, origin, 400, { success: false, error: breakTimeError });
             return true;
           }
         }

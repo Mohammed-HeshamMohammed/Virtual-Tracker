@@ -703,3 +703,139 @@ fn zero_clock_stays_zero() {
     assert_eq!(reversed, 0);
 }
 
+
+// A break is time off the clock that ends by itself: after the project's break time, or -
+// for a private break - when that break ends. These drive tick_paused against a server that
+// records which session actions reached it.
+
+fn action_recording_server(fail_resume: bool) -> (String, std::sync::Arc<Mutex<Vec<String>>>) {
+    let actions = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+    let seen = std::sync::Arc::clone(&actions);
+    let url = fake_server(move |request| {
+        let path = request.url().split('?').next().unwrap_or("").to_string();
+        if (request.method(), path.as_str()) == (&Method::Post, "/api/activity/session") {
+            let mut body = String::new();
+            let _ = request.as_reader().read_to_string(&mut body);
+            let action = ["idle", "resume", "sync", "stop"]
+                .into_iter()
+                .find(|a| body.contains(&format!(r#""action":"{a}""#)))
+                .unwrap_or("other");
+            seen.lock().push(action.to_string());
+            if fail_resume && action == "resume" {
+                return (500, "{}".to_string());
+            }
+            return (200, r#"{"data": {"id": "sess-1", "status": "active"}}"#.to_string());
+        }
+        (404, "{}".to_string())
+    });
+    (url, actions)
+}
+
+fn paused_tracker(api_url: String, limit: Option<u64>) -> (ActivityTracker, TickState) {
+    let tracker = test_tracker(api_url);
+    *tracker.session_id.lock() = Some("sess-1".into());
+    match limit {
+        Some(seconds) => tracker.breaks.set_limit(false, seconds),
+        None => tracker.breaks.set_limit(true, 600),
+    }
+    tracker.pause().expect("pause succeeds against the fake server");
+    let mut state = TickState::new();
+    state.next_sync_at = Instant::now() + Duration::from_secs(3600);
+    (tracker, state)
+}
+
+fn resumes(actions: &std::sync::Arc<Mutex<Vec<String>>>) -> usize {
+    actions.lock().iter().filter(|a| a.as_str() == "resume").count()
+}
+
+#[test]
+fn a_break_ends_by_itself_at_the_projects_break_time() {
+    let (url, actions) = action_recording_server(false);
+    let (tracker, mut state) = paused_tracker(url, Some(600));
+
+    tracker.breaks.backdate(Duration::from_secs(599));
+    tracker.tick_paused(&mut state);
+    assert!(tracker.is_paused(), "one second short of the limit the break carries on");
+
+    tracker.breaks.backdate(Duration::from_secs(600));
+    tracker.tick_paused(&mut state);
+    assert!(!tracker.is_paused(), "at the limit the timer comes back");
+    assert_eq!(resumes(&actions), 1);
+}
+
+#[test]
+fn a_project_with_the_break_limit_switched_off_never_ends_a_break_by_itself() {
+    let (url, actions) = action_recording_server(false);
+    let (tracker, mut state) = paused_tracker(url, None);
+
+    tracker.breaks.backdate(Duration::from_secs(5 * 3600));
+    tracker.tick_paused(&mut state);
+
+    assert!(tracker.is_paused());
+    assert_eq!(resumes(&actions), 0);
+}
+
+#[test]
+fn a_private_break_pauses_the_timer_only_when_a_session_is_open() {
+    let (url, actions) = action_recording_server(false);
+    let tracker = test_tracker(url);
+    tracker.pause_for_private_break().expect("nothing to pause is not an error");
+    assert!(!tracker.is_paused());
+    assert!(actions.lock().is_empty(), "no session, so nothing may be sent to the server");
+
+    *tracker.session_id.lock() = Some("sess-1".into());
+    tracker.pause_for_private_break().expect("pauses");
+    assert!(tracker.is_paused());
+}
+
+#[test]
+fn a_private_break_keeps_the_timer_paused_while_it_runs_and_resumes_when_it_ends() {
+    let (url, actions) = action_recording_server(false);
+    let (tracker, mut state) = paused_tracker(url, Some(3600));
+    tracker.breaks.mark_private();
+
+    tracker.gate().set_break(crate::capture::capture_gate::now_plus_minutes_ms(5));
+    tracker.tick_paused(&mut state);
+    assert!(tracker.is_paused(), "still on the private break");
+
+    tracker.gate().set_break(0);
+    tracker.tick_paused(&mut state);
+    assert!(!tracker.is_paused(), "ending the private break brings the timer back");
+    assert_eq!(resumes(&actions), 1);
+}
+
+#[test]
+fn a_plain_pause_is_not_ended_by_an_unrelated_private_break_ending() {
+    let (url, actions) = action_recording_server(false);
+    let (tracker, mut state) = paused_tracker(url, Some(3600));
+
+    tracker.tick_paused(&mut state);
+
+    assert!(tracker.is_paused());
+    assert_eq!(resumes(&actions), 0);
+}
+
+#[test]
+fn a_break_that_cannot_be_ended_stays_paused_and_is_not_retried_every_tick() {
+    let (url, actions) = action_recording_server(true);
+    let (tracker, mut state) = paused_tracker(url, Some(60));
+    tracker.breaks.backdate(Duration::from_secs(61));
+
+    tracker.tick_paused(&mut state);
+    tracker.tick_paused(&mut state);
+    tracker.tick_paused(&mut state);
+
+    assert!(tracker.is_paused(), "the server never confirmed the resume");
+    assert_eq!(resumes(&actions), 1, "one attempt, then it waits before trying again");
+}
+
+#[test]
+fn stopping_ends_the_break_bookkeeping_too() {
+    let (url, _actions) = action_recording_server(false);
+    let (tracker, _state) = paused_tracker(url, Some(60));
+    tracker.breaks.mark_private();
+
+    tracker.note_stop_requested();
+
+    assert!(!tracker.breaks.is_over(false), "no break is running, so none can be over");
+}

@@ -26,15 +26,27 @@ impl AgentController {
     /// Stops (or resumes) capture immediately, then records it. The ordering lives in
     /// CaptureGate::run_break so it can be tested without a controller.
     pub fn set_private_break(&self, minutes: Option<u32>, reason: &str) -> Result<i64, String> {
-        let record = || self.api.lock().set_private_break(minutes, reason).map_err(|e| e.to_string());
         // Cloned out of its lock so the request below does not run while it is held.
         // Nothing is capturing without a running tracker, and a fresh one picks the
         // break up from the server on its first settings poll.
         let tracker = self.tracker.lock().clone();
-        match tracker {
-            Some(tracker) => tracker.gate().run_break(minutes, record),
-            None => record(),
+        // A break can be no longer than the project allows: the timer stops for it and
+        // the project's limit is what brings the timer back.
+        let minutes = match (&tracker, minutes) {
+            (Some(tracker), Some(minutes)) => Some(tracker.clamp_break_minutes(minutes)),
+            _ => minutes,
+        };
+        let record = || self.api.lock().set_private_break(minutes, reason).map_err(|e| e.to_string());
+        let Some(tracker) = tracker else {
+            return record();
+        };
+        let recorded = tracker.gate().run_break(minutes, record);
+        if minutes.is_some() {
+            if let Err(error) = tracker.pause_for_private_break() {
+                log::warn!("private break started but the timer could not be paused: {error}");
+            }
         }
+        recorded
     }
 
     pub fn list_own_exclusions(&self) -> Result<Vec<crate::types::OwnExclusion>, String> {
@@ -69,9 +81,10 @@ impl AgentController {
 
     pub fn capture_status(&self) -> crate::types::CaptureStatus {
         let guard = self.tracker.lock();
-        let Some(gate) = guard.as_ref().map(|t| t.gate()) else {
+        let Some(tracker) = guard.as_ref() else {
             return crate::types::CaptureStatus::default();
         };
+        let gate = tracker.gate();
         let state = gate.state();
         crate::types::CaptureStatus {
             blocked: state != crate::capture::capture_gate::CaptureBlock::Allowed,
@@ -82,6 +95,7 @@ impl AgentController {
             } else {
                 String::new()
             },
+            break_limit_sec: tracker.break_limit_sec(),
         }
     }
 

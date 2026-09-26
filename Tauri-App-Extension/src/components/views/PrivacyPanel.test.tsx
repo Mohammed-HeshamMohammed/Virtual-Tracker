@@ -16,8 +16,8 @@ import { PrivacyPanel } from "./PrivacyPanel";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const NOT_ON_BREAK: CaptureStatus = { blocked: false, reason: "", breakUntilMs: 0, issue: "" };
-const ON_BREAK: CaptureStatus = { blocked: true, reason: "Private break - nothing is being captured.", breakUntilMs: Date.now() + 10 * 60_000, issue: "" };
+const NOT_ON_BREAK: CaptureStatus = { blocked: false, reason: "", breakUntilMs: 0, issue: "", breakLimitSec: 0 };
+const ON_BREAK: CaptureStatus = { blocked: true, reason: "Private break - nothing is being captured.", breakUntilMs: Date.now() + 10 * 60_000, issue: "", breakLimitSec: 0 };
 
 const SUMMARY = { timezone: "UTC", screenshots: 4, appEvents: 9, apps: 3, domains: 2, activeSeconds: 3600 };
 const RULE = { id: "e1", matchType: "domain", pattern: "mybank.com" };
@@ -222,5 +222,29 @@ describe("the member's own never-capture list", () => {
     await click(container.querySelector('[aria-label="Remove mybank.com"]')!);
     expect(container.textContent).toContain("mybank.com");
     expect(container.querySelector('[role="alert"]')?.textContent).toBe("Not found");
+  });
+
+  it("offers only the break lengths the project allows, and says what the limit is", async () => {
+    respond();
+    await mount({ ...NOT_ON_BREAK, breakLimitSec: 600 });
+    const labels = [...container.querySelectorAll('[aria-label="Break length"] button')].map((b) => b.textContent);
+    expect(labels).toEqual(["5 min", "10 min"]);
+    expect(container.textContent).toContain("This project allows breaks of up to 10 min.");
+  });
+
+  it("starts the longest allowed break by default when 15 minutes is over the limit", async () => {
+    respond();
+    await mount({ ...NOT_ON_BREAK, breakLimitSec: 600 });
+    type(input("break-reason"), "Lunch");
+    await click(button("Start break"));
+    expect(invokeMock).toHaveBeenCalledWith("set_private_break", { minutes: 10, reason: "Lunch" });
+  });
+
+  it("offers every length and mentions no limit when the project has none", async () => {
+    respond();
+    await mount(NOT_ON_BREAK);
+    const labels = [...container.querySelectorAll('[aria-label="Break length"] button')].map((b) => b.textContent);
+    expect(labels).toEqual(["5 min", "10 min", "15 min", "30 min", "1 hour"]);
+    expect(container.textContent).not.toContain("allows breaks");
   });
 });

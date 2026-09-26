@@ -59,7 +59,7 @@ export function ActivityFeedSection({ feed, onNavigate }: ActivityFeedSectionPro
   const rest = feed.filter((item) => !shots.includes(item))
 
   return (
-    <SectionCard className="lg:col-span-2">
+    <SectionCard help="Recent screenshots from the projects you can access. View All Feed opens the Screenshots page." className="lg:col-span-2">
       <div className="flex justify-between items-center mb-8">
         <div>
           <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">Recent Activity Feed</h3>

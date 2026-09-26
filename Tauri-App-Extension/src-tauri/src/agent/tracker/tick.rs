@@ -3,6 +3,9 @@
 
 use super::*;
 
+/// A break that could not be ended (offline) is retried this often, not on every tick.
+const BREAK_END_RETRY_SEC: u64 = 15;
+
 impl ActivityTracker {
     /// The part of a tick that needs no network and no shared lock - crediting elapsed time
     /// and checking idle escalation.
@@ -102,6 +105,19 @@ impl ActivityTracker {
             fallback
         };
         state.idle_settings_stale = false;
+        let (break_limit_disabled, break_limit_seconds) = tracking
+            .as_ref()
+            .map(|t| (t.disable_break_limit, t.break_time_seconds))
+            .unwrap_or_else(|| {
+                (
+                    session.get("disableBreakLimit").and_then(|v| v.as_bool()).unwrap_or(false),
+                    session
+                        .get("breakTimeSeconds")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(super::break_state::DEFAULT_BREAK_LIMIT_SEC),
+                )
+            });
+        self.breaks.set_limit(break_limit_disabled, break_limit_seconds);
 
         // an unclean exit (crash/kill/reboot) between two `sync` calls loses
         // whatever PS-1's on-disk mirror hadn't reached the server yet - reconcile
@@ -128,6 +144,7 @@ impl ActivityTracker {
     /// The session is over: forget the task, the totals and the session id.
     pub(super) fn end_session(&self, state: &mut TickState) {
         self.reset_task_progress(state);
+        self.breaks.clear_limit();
         state.was_active = false;
         state.current_session = String::new();
         *self.session_id.lock() = None;
@@ -497,6 +514,20 @@ impl ActivityTracker {
     /// and periodically re-syncs so the paused session's `updated_at` stays fresh enough to
     pub(super) fn tick_paused(&self, state: &mut TickState) {
         let now = Instant::now();
+        if self.breaks.is_over(self.events.gate.break_until_ms() > 0) && now >= state.next_break_end_attempt_at {
+            match self.resume() {
+                Ok(()) => {
+                    // Counting restarts from now, the same as a manual resume.
+                    state.last_tick_at = now;
+                    self.emit_status("Break ended — timer resumed");
+                    return;
+                }
+                Err(error) => {
+                    log::warn!("could not end the break: {error}");
+                    state.next_break_end_attempt_at = now + Duration::from_secs(BREAK_END_RETRY_SEC);
+                }
+            }
+        }
         // Same carry as tick_progress - a break's seconds are counted the same way worked
         // ones are, so the remainder is owed here too rather than thrown away on every tick
         let elapsed = now.duration_since(state.last_tick_at);

@@ -1,18 +1,38 @@
 import type { CaptureStatus, CaptureSummary } from "../types";
 
-export const EMPTY_CAPTURE_STATUS: CaptureStatus = { blocked: false, reason: "", breakUntilMs: 0, issue: "" };
+export const EMPTY_CAPTURE_STATUS: CaptureStatus = { blocked: false, reason: "", breakUntilMs: 0, issue: "", breakLimitSec: 0 };
 
-export const BREAK_OPTIONS = [
-  { minutes: 15, label: "15 min" },
-  { minutes: 30, label: "30 min" },
-  { minutes: 60, label: "1 hour" },
-] as const;
+const BREAK_MINUTES = [5, 10, 15, 30, 60];
+
+export function breakLabel(minutes: number): string {
+  if (minutes < 60 || minutes % 60 !== 0) return `${minutes} min`;
+  const hours = minutes / 60;
+  return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+}
+
+/** The break lengths the project allows: every usual length up to its limit, and the limit itself
+ *  when it falls between two of them. With no limit (0) they are all offered. */
+export function breakOptions(limitSec: number): { minutes: number; label: string }[] {
+  const limitMinutes = Math.floor(limitSec / 60);
+  const minutes = limitSec > 0 ? BREAK_MINUTES.filter((m) => m <= limitMinutes) : [...BREAK_MINUTES];
+  if (limitMinutes >= 1 && !minutes.includes(limitMinutes)) minutes.push(limitMinutes);
+  return minutes.sort((a, b) => a - b).map((m) => ({ minutes: m, label: breakLabel(m) }));
+}
+
+/** 15 minutes when the project allows it, otherwise the longest it does. */
+export function defaultBreakMinutes(options: { minutes: number }[]): number {
+  return (options.find((o) => o.minutes === 15) ?? options[options.length - 1]).minutes;
+}
 
 /** Polled every few seconds, so an unchanged answer must not become a new
  *  object or the whole app re-renders on each poll for nothing. */
 export function sameCaptureStatus(a: CaptureStatus, b: CaptureStatus): boolean {
   return (
-    a.blocked === b.blocked && a.reason === b.reason && a.breakUntilMs === b.breakUntilMs && a.issue === b.issue
+    a.blocked === b.blocked &&
+    a.reason === b.reason &&
+    a.breakUntilMs === b.breakUntilMs &&
+    a.issue === b.issue &&
+    a.breakLimitSec === b.breakLimitSec
   );
 }
 

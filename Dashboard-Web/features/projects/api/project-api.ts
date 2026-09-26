@@ -23,6 +23,8 @@ function toProject(input: Record<string, unknown>): Project {
     clientCanTrack: Boolean(input.client_can_track ?? input.clientCanTrack ?? false),
     disableIdleTime: Boolean(input.disable_idle_time ?? input.disableIdleTime),
     idleTimeSeconds: Number(input.idle_time_seconds ?? input.idleTimeSeconds ?? 450),
+    disableBreakLimit: Boolean(input.disable_break_limit ?? input.disableBreakLimit),
+    breakTimeSeconds: Number(input.break_time_seconds ?? input.breakTimeSeconds ?? 600),
     endDate: String(input.end_date ?? input.endDate ?? ""),
     timezone: String(input.timezone ?? ""),
     managersNotes: String(input.managers_notes ?? input.managersNotes ?? ""),
@@ -55,6 +57,8 @@ function toProjectPayload(
   if (input.subProjectIds !== undefined) out.sub_project_ids = input.subProjectIds
   if (input.disableIdleTime !== undefined) out.disable_idle_time = input.disableIdleTime
   if (input.idleTimeSeconds !== undefined) out.idle_time_seconds = input.idleTimeSeconds
+  if (input.disableBreakLimit !== undefined) out.disable_break_limit = input.disableBreakLimit
+  if (input.breakTimeSeconds !== undefined) out.break_time_seconds = input.breakTimeSeconds
   if (input.endDate !== undefined) out.end_date = input.endDate || undefined
   // null clears it back to the member's own zone; undefined leaves it alone.
   if (input.timezone !== undefined) out.timezone = input.timezone || null
@@ -99,6 +103,8 @@ export interface Project {
   clientCanTrack: boolean
   disableIdleTime: boolean
   idleTimeSeconds?: number
+  disableBreakLimit: boolean
+  breakTimeSeconds?: number
   endDate: string
   timezone: string
   managersNotes: string
@@ -136,6 +142,8 @@ export interface CreateProjectInput {
   subProjectIds?: string[]
   disableIdleTime?: boolean
   idleTimeSeconds?: number
+  disableBreakLimit?: boolean
+  breakTimeSeconds?: number
   endDate?: string
   /** null clears it back to each member's own zone. */
   timezone?: string | null
@@ -162,6 +170,8 @@ export interface UpdateProjectInput {
   timezone?: string | null
   disableIdleTime?: boolean
   idleTimeSeconds?: number
+  disableBreakLimit?: boolean
+  breakTimeSeconds?: number
   endDate?: string
   clientId?: string
   managersNotes?: string

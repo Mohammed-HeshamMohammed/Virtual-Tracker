@@ -127,6 +127,12 @@ pub struct TaskTimeTracking {
     pub disable_idle_time: bool,
     #[serde(default = "default_idle_time_seconds")]
     pub idle_time_seconds: u64,
+    /// The project's break limit: a break ends by itself after `break_time_seconds`
+    /// unless the project's switch removed the limit.
+    #[serde(default)]
+    pub disable_break_limit: bool,
+    #[serde(default = "default_break_time_seconds")]
+    pub break_time_seconds: u64,
     /// When true, active_seconds/estimated_seconds above are the whole task's pooled total
     /// across every assignee combined, not just this member's own - see the
     #[serde(default)]
@@ -137,6 +143,10 @@ pub struct TaskTimeTracking {
 /// on creation - used here only as a deserialization fallback if a response is ever missing
 fn default_idle_time_seconds() -> u64 {
     450
+}
+
+fn default_break_time_seconds() -> u64 {
+    600
 }
 
 /// A project's Hours-based budget, resolved for the current viewer - GET

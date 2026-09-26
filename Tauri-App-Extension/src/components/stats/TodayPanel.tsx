@@ -27,7 +27,7 @@ export function TodayPanel({
 }: TodayPanelProps) {
   if (loading) {
     return (
-      <section className="stat-panel page-content-swap is-loading" style={{ animationDelay: "0.04s" }} aria-busy="true">
+      <section data-help="Today: what you have worked across every project, and how much of your daily limit is left if you have one." className="stat-panel page-content-swap is-loading" style={{ animationDelay: "0.04s" }} aria-busy="true">
         <div className="stat-panel-head">
           <h3 className="stat-panel-title">Today</h3>
           <span className="skeleton-bar" style={{ width: 64, height: 14, borderRadius: 999 }} />
@@ -58,7 +58,7 @@ export function TodayPanel({
     );
   }
   return (
-    <section className="stat-panel page-content-swap" style={{ animationDelay: "0.04s" }}>
+    <section data-help="Today: what you have worked across every project, and how much of your daily limit is left if you have one." className="stat-panel page-content-swap" style={{ animationDelay: "0.04s" }}>
       <div className="stat-panel-head">
         <h3 className="stat-panel-title">Today</h3>
         {dayHint ? <span className="stat-panel-hint">{dayHint}</span> : null}

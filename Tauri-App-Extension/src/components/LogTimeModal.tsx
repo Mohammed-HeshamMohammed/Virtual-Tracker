@@ -53,7 +53,7 @@ export function LogTimeModal({
         {teammates.length > 0 ? (
           <div className="input-field-group">
             <label className="input-field-label" htmlFor="log-time-member">Member</label>
-            <select
+            <select data-help="Whose time you are logging."
               id="log-time-member"
               className="modal-input"
               value={memberId}
@@ -69,7 +69,7 @@ export function LogTimeModal({
 
         <div className="input-field-group">
           <label className="input-field-label" htmlFor="log-time-project">Project</label>
-          <select
+          <select data-help="The project the time was spent on."
             id="log-time-project"
             className="modal-input"
             value={projectId}
@@ -85,7 +85,7 @@ export function LogTimeModal({
         <div className="modal-field-row">
           <div className="input-field-group">
             <label className="input-field-label" htmlFor="log-time-date">Date</label>
-            <input
+            <input data-help="The day you worked."
               id="log-time-date"
               className="modal-input"
               type="date"
@@ -95,7 +95,7 @@ export function LogTimeModal({
           </div>
           <div className="input-field-group">
             <label className="input-field-label" htmlFor="log-time-hours">Hours</label>
-            <input
+            <input data-help="How many hours you worked."
               id="log-time-hours"
               className="modal-input"
               type="number"
@@ -111,7 +111,7 @@ export function LogTimeModal({
 
         <div className="input-field-group">
           <label className="input-field-label" htmlFor="log-time-note">What was worked on</label>
-          <input
+          <input data-help="A short description of what was worked on."
             id="log-time-note"
             className="modal-input"
             type="text"
@@ -137,10 +137,10 @@ export function LogTimeModal({
         ) : null}
 
         <div className="modal-actions">
-          <button className="btn btn-secondary" type="button" disabled={busy} onClick={onCancel}>
+          <button data-tip="Close without logging any time" className="btn btn-secondary" type="button" disabled={busy} onClick={onCancel}>
             Cancel
           </button>
-          <button className="btn btn-primary" type="button" disabled={!canSave} onClick={onSave}>
+          <button data-tip="Save this time to your timesheet" className="btn btn-primary" type="button" disabled={!canSave} onClick={onSave}>
             {busy ? "Saving…" : "Log time"}
           </button>
         </div>

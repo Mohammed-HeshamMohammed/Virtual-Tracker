@@ -38,7 +38,7 @@ export function ProjectsList({
   if (projects.length === 0) {
     if (!loading) return null;
     return (
-      <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.02s" }}>
+      <section data-help="Your projects. Pick one to see it and its tasks. The + beside a project adds a task to it." className="side-tasklist side-panel-swap" style={{ animationDelay: "0.02s" }}>
         <div className="side-tasklist-head">
           <span className="stat-tile-label">Your projects</span>
         </div>
@@ -57,7 +57,7 @@ export function ProjectsList({
   // other recentProjects-sourced value in this app already has.
   const selectedMemberCount = selectedProjectId ? memberCountById.get(selectedProjectId) : undefined;
   return (
-    <section className="side-tasklist side-panel-swap" style={{ animationDelay: "0.02s" }}>
+    <section data-help="Your projects. Pick one to see it and its tasks. The + beside a project adds a task to it." className="side-tasklist side-panel-swap" style={{ animationDelay: "0.02s" }}>
       <div className="side-tasklist-head">
         <span className="stat-tile-label">Your projects</span>
         {selectedMemberCount != null ? (
@@ -68,7 +68,7 @@ export function ProjectsList({
         <span className="side-tasklist-count">{projects.length}</span>
       </div>
       {projects.length > SEARCH_THRESHOLD ? (
-        <input
+        <input data-help="Type to narrow the list of projects."
           type="text"
           className="side-tasklist-search"
           placeholder="Filter projects…"

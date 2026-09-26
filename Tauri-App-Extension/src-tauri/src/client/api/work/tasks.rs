@@ -241,6 +241,8 @@ impl ApiClient {
                 .map(|s| s.to_string()),
             disable_idle_time: data.get("disableIdleTime").and_then(|v| v.as_bool()).unwrap_or(false),
             idle_time_seconds: data.get("idleTimeSeconds").and_then(|v| v.as_u64()).unwrap_or(450),
+            disable_break_limit: data.get("disableBreakLimit").and_then(|v| v.as_bool()).unwrap_or(false),
+            break_time_seconds: data.get("breakTimeSeconds").and_then(|v| v.as_u64()).unwrap_or(600),
             shared_budget: data.get("sharedBudget").and_then(|v| v.as_bool()).unwrap_or(false),
         })
     }

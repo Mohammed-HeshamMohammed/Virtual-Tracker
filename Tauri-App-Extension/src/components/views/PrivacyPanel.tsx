@@ -5,7 +5,9 @@ import { toast } from "../../Toast";
 import { fmtHours } from "../../utils/formatters";
 import { invokeWithTimeout } from "../../utils/invoke-timeout";
 import {
-  BREAK_OPTIONS,
+  breakLabel,
+  breakOptions,
+  defaultBreakMinutes,
   canStartBreak,
   describeCollection,
   exclusionLabel,
@@ -32,7 +34,7 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
   const [exclusions, setExclusions] = useState<OwnExclusion[] | null>(null);
   const [listFailed, setListFailed] = useState(false);
 
-  const [minutes, setMinutes] = useState<number>(BREAK_OPTIONS[0].minutes);
+  const [chosenMinutes, setMinutes] = useState<number>(defaultBreakMinutes(breakOptions(status.breakLimitSec)));
   const [reason, setReason] = useState("");
   const [breakBusy, setBreakBusy] = useState(false);
 
@@ -108,6 +110,9 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
   }, []);
 
   const onBreak = isOnBreak(status);
+  const options = breakOptions(status.breakLimitSec);
+  // The limit can arrive after the choice was made, or change with the project.
+  const minutes = options.some((o) => o.minutes === chosenMinutes) ? chosenMinutes : defaultBreakMinutes(options);
 
   return (
     <>
@@ -120,14 +125,14 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
           </p>
         ) : null}
 
-        <section className="settings-card">
+        <section data-help="Private break: pauses your timer and stops all capture for the time you choose. Your manager sees that you took a break and your reason." className="settings-card">
           <h3 className="settings-section-label">Private break</h3>
           {onBreak ? (
             <>
               <span className="settings-row-sub">
-                Nothing is being captured. {formatRemaining(status.breakUntilMs)}.
+                Your timer is paused and nothing is being captured. {formatRemaining(status.breakUntilMs)}.
               </span>
-              <button
+              <button data-tip="End your private break. The timer resumes and capture starts again"
                 type="button"
                 className="btn btn-secondary"
                 disabled={breakBusy}
@@ -139,11 +144,14 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
           ) : (
             <>
               <span className="settings-row-sub">
-                Stops all capture for a while. Your manager can see that you took a break and the reason you give.
+                Pauses your timer and stops all capture. Your manager can see that you took a break and the reason you give.
+                {status.breakLimitSec > 0
+                  ? ` This project allows breaks of up to ${breakLabel(Math.floor(status.breakLimitSec / 60))}.`
+                  : ""}
               </span>
-              <div className="segmented" role="group" aria-label="Break length">
-                {BREAK_OPTIONS.map((option) => (
-                  <button
+              <div data-help="How long the break lasts. Only the lengths this project allows are offered." className="segmented" role="group" aria-label="Break length">
+                {options.map((option) => (
+                  <button data-tip={`Take a ${option.label} break`}
                     key={option.minutes}
                     type="button"
                     className={`segmented-btn${minutes === option.minutes ? " active" : ""}`}
@@ -158,7 +166,7 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
                 <label className="input-field-label" htmlFor="break-reason">
                   Reason
                 </label>
-                <input
+                <input data-help="Why you are taking the break. Your manager can see it."
                   id="break-reason"
                   className="text-input"
                   value={reason}
@@ -167,7 +175,7 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
                   onChange={(e) => setReason(e.target.value)}
                 />
               </div>
-              <button
+              <button data-tip="Pause your timer and stop all capture for the chosen time. A reason is required"
                 type="button"
                 className="btn btn-primary"
                 disabled={!canStartBreak(reason, breakBusy)}
@@ -179,7 +187,7 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
           )}
         </section>
 
-        <section className="settings-card">
+        <section data-help="Collected today: exactly what has been collected about you so far today." className="settings-card">
           <h3 className="settings-section-label">Collected today</h3>
           {summary ? (
             <>
@@ -193,13 +201,13 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
           )}
         </section>
 
-        <section className="settings-card">
+        <section data-help="Never capture: apps and websites you add are never captured. This can only reduce what is collected about you." className="settings-card">
           <h3 className="settings-section-label">Never capture</h3>
           <span className="settings-row-sub">
             Apps and websites you add here are never captured. It can only reduce what is collected about you.
           </span>
           <div className="privacy-add">
-            <select
+            <select data-help="Whether the rule is for an app or for a website."
               className="text-input privacy-type"
               value={matchType}
               aria-label="Type"
@@ -208,7 +216,7 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
               <option value="app">App</option>
               <option value="domain">Website</option>
             </select>
-            <input
+            <input data-help="The app or website to never capture, for example mybank.com. A website rule covers its subdomains too."
               className="text-input"
               value={pattern}
               placeholder={matchType === "app" ? "e.g. KeePass" : "e.g. mybank.com"}
@@ -218,7 +226,7 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
                 if (e.key === "Enter") void addExclusion();
               }}
             />
-            <button
+            <button data-tip="Never capture this app or website"
               type="button"
               className="btn btn-secondary"
               disabled={addBusy || !pattern.trim()}
@@ -238,7 +246,7 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
                   <span>
                     <span className="privacy-kind">{exclusionLabel(row.matchType)}</span> {row.pattern}
                   </span>
-                  <button
+                  <button data-tip={`Stop excluding ${row.pattern}`}
                     type="button"
                     className="btn btn-tertiary"
                     aria-label={`Remove ${row.pattern}`}

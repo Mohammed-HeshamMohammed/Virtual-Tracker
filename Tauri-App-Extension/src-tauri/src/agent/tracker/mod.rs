@@ -61,6 +61,7 @@ pub struct ActivityTracker {
     /// so without this the same detection would log every SESSION_POLL_SEC forever instead
     last_synthetic_warning_at: Mutex<Option<Instant>>,
     idle_threshold_sec: AtomicU64,
+    breaks: break_state::BreakState,
 }
 
 /// Everything needed to retry a "stop" action that failed to reach the server, captured at
@@ -102,6 +103,8 @@ struct TickState {
     /// The two fields above were refreshed only when the *task* id changed, which a
     /// task-less (project) session can never trigger - its task id is always `""`, and
     idle_settings_stale: bool,
+    /// Not before this: a resume that fails is retried, but not on every tick.
+    next_break_end_attempt_at: Instant,
     next_sync_at: Instant,
     idle_watch: IdleWatch,
     last_tick_at: Instant,
@@ -133,6 +136,7 @@ impl TickState {
             idle_time_disabled: false,
             idle_threshold_sec_for_project: IDLE_THRESHOLD_SEC,
             idle_settings_stale: true,
+            next_break_end_attempt_at: now,
             next_sync_at: now,
             idle_watch: IdleWatch::default(),
             last_tick_at: now,
@@ -150,6 +154,7 @@ fn valid_idle_threshold(threshold_sec: u64) -> bool {
     threshold_sec > 0
 }
 
+mod break_state;
 mod progress;
 mod tick;
 mod upload;
@@ -185,6 +190,7 @@ impl ActivityTracker {
             pending_stop: Arc::new(Mutex::new(None)),
             last_synthetic_warning_at: Mutex::new(None),
             idle_threshold_sec: AtomicU64::new(IDLE_THRESHOLD_SEC),
+            breaks: Default::default(),
         }
     }
 
@@ -203,6 +209,28 @@ impl ActivityTracker {
     /// a fresh instance before calling this, so there's no existing loop to guard against
     pub fn gate(&self) -> &crate::capture::capture_gate::CaptureGate {
         &self.events.gate
+    }
+
+    /// The project's break limit, for clamping a private break before it starts.
+    pub fn break_limit_sec(&self) -> u64 {
+        self.breaks.limit_sec()
+    }
+
+    pub fn clamp_break_minutes(&self, minutes: u32) -> u32 {
+        self.breaks.clamp_minutes(minutes)
+    }
+
+    /// A private break is time off the clock too. The gate is already set by the time
+    /// this runs, so the first paused tick finds the break still running.
+    pub fn pause_for_private_break(&self) -> Result<(), String> {
+        if self.session_id.lock().is_none() {
+            return Ok(());
+        }
+        if !self.is_paused() {
+            self.pause()?;
+        }
+        self.breaks.mark_private();
+        Ok(())
     }
 
     pub fn start(self: &Arc<Self>) {
@@ -232,6 +260,7 @@ impl ActivityTracker {
     pub fn note_stop_requested(&self) {
         self.expect_stop.store(true, Ordering::SeqCst);
         self.paused.store(false, Ordering::SeqCst);
+        self.breaks.end();
     }
 
     /// The break button: marks the session idle server-side, preserving its accumulated
@@ -250,6 +279,7 @@ impl ActivityTracker {
             Some("member_pause"),
         )?;
         self.paused.store(true, Ordering::SeqCst);
+        self.breaks.begin();
         self.emit_status("Timer paused — on a break");
         Ok(())
     }
@@ -269,6 +299,7 @@ impl ActivityTracker {
             Some("member_resume"),
         )?;
         self.paused.store(false, Ordering::SeqCst);
+        self.breaks.end();
         self.emit_status("Task session active");
         Ok(())
     }

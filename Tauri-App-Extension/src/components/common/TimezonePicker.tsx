@@ -277,6 +277,7 @@ export function TimezonePicker({
               </div>
               <input
                 ref={inputRef}
+                data-help="Search for a city or country to choose its timezone."
                 className="tz-search"
                 type="text"
                 placeholder="Search city, country or offset"
@@ -288,7 +289,7 @@ export function TimezonePicker({
                   <div className="tz-empty">No timezone matches that.</div>
                 ) : (
                   filtered.map((z) => (
-                    <button
+                    <button data-tip={`Use ${z.zone.replace(/_/g, " ")}`}
                       key={z.zone}
                       type="button"
                       role="option"

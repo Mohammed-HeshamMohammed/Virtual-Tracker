@@ -14,7 +14,7 @@ interface MilestonesSectionProps {
 export function MilestonesSection({ project, onNavigate }: MilestonesSectionProps) {
   const d = project
   return (
-    <SectionCard>
+    <SectionCard help="How far along the project's tasks are: the health of every project, or the milestones of the one you chose.">
       <h3 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100 mb-8">
         {d.id === "all" ? "Project Health" : `${d.name} — Milestones`}
       </h3>

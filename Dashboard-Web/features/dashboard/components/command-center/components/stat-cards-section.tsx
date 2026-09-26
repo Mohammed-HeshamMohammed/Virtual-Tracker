@@ -23,28 +23,33 @@ export function StatCardsSection({ project }: StatCardsSectionProps) {
           ? "text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/60 px-2 py-0.5 rounded-full border border-rose-200/60 dark:border-rose-800/60"
           : "text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/60",
       label: "Total Time Worked", value: d.stats.timeWorked,
+      help: "Total time worked, with how it compares to before.",
     },
     personal
       ? {
           Icon: ListChecks, iconBg: "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/80 dark:border-blue-800/80",
           badge: `${personal.assigned} assigned`, badgeColor: "text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full",
           label: "Tasks In Progress", value: `${personal.inProgress}`,
+          help: "How many of the tasks assigned to you are in progress.",
         }
       : {
           Icon: Users,      iconBg: "bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200/80 dark:border-blue-800/80",
           badge: `${d.stats.activeMembers} active`, badgeColor: "text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full",
           label: "Active Members",    value: `${d.stats.activeMembers} / ${d.stats.totalMembers}`,
+          help: "How many members have been active, out of everyone on the project.",
         },
     {
       Icon: CreditCard, iconBg: "bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 border border-amber-200/80 dark:border-amber-800/80",
       badge: d.stats.budgetLabel, badgeColor: "text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full",
       label: "Budget Spent",      value: `${d.stats.budgetPercent}%`,
+      help: "How much of the project budget has been used.",
       barPercent: d.stats.budgetPercent, barColor: "bg-amber-500 dark:bg-amber-400",
     },
     {
       Icon: Zap,        iconBg: "bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 border border-purple-200/80 dark:border-purple-800/80",
       badge: d.stats.activityBadge, badgeColor: "text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/60 px-2 py-0.5 rounded-full border border-purple-200/60 dark:border-purple-800/60",
       label: personal ? "Your Activity" : "Avg Team Activity", value: `${d.stats.activityPercent}%`,
+      help: "How active you were, or the team on average, worked out from keyboard and mouse use.",
       barPercent: d.stats.activityPercent, barColor: "bg-purple-500 dark:bg-purple-400",
     },
   ] as const
@@ -62,6 +67,7 @@ export function StatCardsSection({ project }: StatCardsSectionProps) {
         {statCards.map((card, i) => (
           <motion.div
             key={`${d.id}-${card.label}`}
+            data-help={card.help}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: i * 0.1 }}

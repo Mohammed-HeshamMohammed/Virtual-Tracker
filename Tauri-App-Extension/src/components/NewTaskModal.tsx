@@ -51,7 +51,7 @@ export function NewTaskModal({
       <div className="modal-card" role="dialog" aria-modal="true" aria-label="New task">
         <h3 className="modal-title">New task</h3>
         <p className="modal-sub">Adding a task to {projectName || "this project"}.</p>
-        <input
+        <input data-help="The task's name, as it will appear in your list."
           className="modal-input"
           type="text"
           autoFocus
@@ -68,7 +68,7 @@ export function NewTaskModal({
           <label className="input-field-label" htmlFor="new-task-description">
             Description (optional)
           </label>
-          <textarea
+          <textarea data-help="Optional detail about what the task involves."
             id="new-task-description"
             className="modal-input"
             rows={3}
@@ -84,7 +84,7 @@ export function NewTaskModal({
             <label className="input-field-label" htmlFor="new-task-priority">
               Priority
             </label>
-            <select
+            <select data-help="How urgent the task is."
               id="new-task-priority"
               className="modal-input"
               value={priority}
@@ -99,7 +99,7 @@ export function NewTaskModal({
             <label className="input-field-label" htmlFor="new-task-due-date">
               Due date (optional)
             </label>
-            <input
+            <input data-help="When the task should be finished."
               id="new-task-due-date"
               className="modal-input"
               type="date"
@@ -113,7 +113,7 @@ export function NewTaskModal({
           <label className="input-field-label" htmlFor="new-task-estimate">
             Estimate (hours, optional)
           </label>
-          <input
+          <input data-help="How long you expect the task to take."
             id="new-task-estimate"
             className="modal-input"
             type="number"
@@ -140,10 +140,10 @@ export function NewTaskModal({
           </div>
         ) : null}
         <div className="modal-actions">
-          <button className="btn btn-secondary" type="button" disabled={busy} onClick={onCancel}>
+          <button data-tip="Close without creating a task" className="btn btn-secondary" type="button" disabled={busy} onClick={onCancel}>
             Cancel
           </button>
-          <button className="btn btn-primary" type="button" disabled={!canCreate} onClick={onCreate}>
+          <button data-tip="Create the task in this project" className="btn btn-primary" type="button" disabled={!canCreate} onClick={onCreate}>
             {busy ? "Creating…" : "Create task"}
           </button>
         </div>

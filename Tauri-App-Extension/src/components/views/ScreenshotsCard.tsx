@@ -16,7 +16,7 @@ export function ScreenshotsCard({ screenshots, images, onSelect, selectedId, tim
   const selected = selectedId ? images[selectedId] : "";
 
   return (
-    <section className="settings-card">
+    <section data-help="Screenshots recently taken of your screen while tracking. Select one to look at it larger." className="settings-card">
       <h3 className="settings-section-label">Your recent screenshots</h3>
       <p className="settings-row-sub">
         Captured from this account while tracking. Only you and whoever your organization allows can see these.

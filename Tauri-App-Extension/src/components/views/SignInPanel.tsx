@@ -183,7 +183,7 @@ export function SignInPanel({
                   }}
                 >
                   <div className="auth-back-row">
-                    <button className="link-btn" type="button" onClick={() => onAuthViewChange("signin")}>
+                    <button data-tip="Return to the sign-in form" className="link-btn" type="button" onClick={() => onAuthViewChange("signin")}>
                       ← Back to sign in
                     </button>
                   </div>
@@ -192,7 +192,7 @@ export function SignInPanel({
                     <label className="input-field-label" htmlFor="signup-first-name">
                       First name
                     </label>
-                    <input
+                    <input data-help="Your first name."
                       id="signup-first-name"
                       className="text-input"
                       type="text"
@@ -207,7 +207,7 @@ export function SignInPanel({
                     <label className="input-field-label" htmlFor="signup-last-name">
                       Last name
                     </label>
-                    <input
+                    <input data-help="Your last name."
                       id="signup-last-name"
                       className="text-input"
                       type="text"
@@ -222,7 +222,7 @@ export function SignInPanel({
                     <label className="input-field-label" htmlFor="signup-phone">
                       Phone number
                     </label>
-                    <input
+                    <input data-help="A phone number your organization can reach you on."
                       id="signup-phone"
                       className="text-input"
                       type="tel"
@@ -237,7 +237,7 @@ export function SignInPanel({
                     <label className="input-field-label" htmlFor="signup-email">
                       Email address
                     </label>
-                    <input
+                    <input data-help="The email address for your new account. You will sign in with it."
                       id="signup-email"
                       className="text-input"
                       type="email"
@@ -255,7 +255,7 @@ export function SignInPanel({
                       Password
                     </label>
                     <div className="input-wrapper">
-                      <input
+                      <input data-help="A password for your new account. The eye button shows or hides it."
                         id="signup-password"
                         className="text-input"
                         type={showSignUpPassword ? "text" : "password"}
@@ -291,7 +291,7 @@ export function SignInPanel({
                     <label className="input-field-label" htmlFor="signup-confirm-password">
                       Confirm password
                     </label>
-                    <input
+                    <input data-help="Type the password again to be sure it is what you meant."
                       id="signup-confirm-password"
                       className="text-input"
                       type={showSignUpPassword ? "text" : "password"}
@@ -352,7 +352,7 @@ export function SignInPanel({
                     </div>
                   ) : null}
 
-                  <button
+                  <button data-tip="Create your account"
                     className="btn btn-primary"
                     type="submit"
                     disabled={
@@ -383,7 +383,7 @@ export function SignInPanel({
                   }}
                 >
                   <div className="auth-back-row">
-                    <button className="link-btn" type="button" onClick={() => onAuthViewChange("signin")}>
+                    <button data-tip="Return to the sign-in form" className="link-btn" type="button" onClick={() => onAuthViewChange("signin")}>
                       ← Back to sign in
                     </button>
                   </div>
@@ -392,7 +392,7 @@ export function SignInPanel({
                     <label className="input-field-label" htmlFor="forgot-email">
                       Email address
                     </label>
-                    <input
+                    <input data-help="The email address of your account. The reset link is sent here."
                       id="forgot-email"
                       className="text-input"
                       type="email"
@@ -425,7 +425,7 @@ export function SignInPanel({
                     </div>
                   ) : null}
 
-                  <button className="btn btn-primary" type="submit" disabled={forgot.busy || !forgot.email}>
+                  <button data-tip="Email me a link to reset my password" className="btn btn-primary" type="submit" disabled={forgot.busy || !forgot.email}>
                     {forgot.busy ? "Sending…" : "Send reset link"}
                   </button>
                 </form>
@@ -448,7 +448,7 @@ export function SignInPanel({
                     <label className="input-field-label" htmlFor="signin-email">
                       Email address
                     </label>
-                    <input
+                    <input data-help="The email address of your account."
                       id="signin-email"
                       className="text-input"
                       type="email"
@@ -466,7 +466,7 @@ export function SignInPanel({
                       Password
                     </label>
                     <div className="input-wrapper">
-                      <input
+                      <input data-help="Your account password. The eye button shows or hides it."
                         id="signin-password"
                         className="text-input"
                         type={showPassword ? "text" : "password"}
@@ -509,7 +509,7 @@ export function SignInPanel({
                     </div>
                   ) : null}
 
-                  <button className="btn btn-primary" type="submit" disabled={busy || !signInEmail || !signInPassword}>
+                  <button data-tip="Sign in with your email and password" className="btn btn-primary" type="submit" disabled={busy || !signInEmail || !signInPassword}>
                     {busy ? "Signing in…" : "Sign in"}
                   </button>
 
@@ -553,7 +553,7 @@ export function SignInPanel({
                     </button>
                   </div>
 
-                  <button
+                  <button data-tip="Connect this device using your browser"
                     className="btn btn-secondary"
                     type="button"
                     disabled={busy}
@@ -563,10 +563,10 @@ export function SignInPanel({
                   </button>
 
                   <div className="signin-links">
-                    <button className="link-btn" type="button" onClick={() => onAuthViewChange("signup")}>
+                    <button data-tip="Go to the create-account form" className="link-btn" type="button" onClick={() => onAuthViewChange("signup")}>
                       Create account
                     </button>
-                    <button className="link-btn" type="button" onClick={() => onAuthViewChange("forgot")}>
+                    <button data-tip="Go to the password reset form" className="link-btn" type="button" onClick={() => onAuthViewChange("forgot")}>
                       Forgot password?
                     </button>
                   </div>

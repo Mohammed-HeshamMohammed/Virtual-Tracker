@@ -453,3 +453,85 @@ tr[style*="height"] > td {
     overflow: visible !important;
   }
 }
+
+/* ── Help mode ─────────────────────────────────────────────────────────────
+   The same coach-mark the desktop tracker uses: the page dims, the hovered element is lit,
+   and a solid callout points at it. Nothing here applies until help mode is switched on. */
+.help-mode [data-help],
+.help-mode [data-tip],
+.help-mode button[aria-label],
+.help-mode [title] {
+  outline: 1px dashed rgb(37 99 235 / 0.5);
+  outline-offset: 2px;
+  cursor: help;
+}
+
+.help-mode [data-help]:hover,
+.help-mode [data-tip]:hover {
+  outline-color: rgb(37 99 235);
+}
+
+.help-mode-pill {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  z-index: 100000;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 24px);
+  padding: 7px 14px;
+  border: 1px solid rgb(37 99 235 / 0.6);
+  border-radius: 999px;
+  background: #0f172a;
+  color: #fff;
+  font-size: 12px;
+  text-align: center;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+  pointer-events: none;
+}
+
+.help-spotlight {
+  position: fixed;
+  z-index: 99998;
+  border-radius: 10px;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 9999px rgb(4 8 20 / 0.62);
+  pointer-events: none;
+}
+
+.help-callout {
+  position: fixed;
+  z-index: 99999;
+  max-width: 300px;
+  padding: 13px 16px;
+  border: 1px solid #2563eb;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.45;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.4);
+  pointer-events: none;
+}
+
+.help-callout::after {
+  content: "";
+  position: absolute;
+  left: var(--arrow-x, 50%);
+  width: 10px;
+  height: 10px;
+  background: inherit;
+  border: inherit;
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.help-callout.is-below::after {
+  top: -6px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.help-callout.is-above::after {
+  bottom: -6px;
+  border-left: 0;
+  border-top: 0;
+}
