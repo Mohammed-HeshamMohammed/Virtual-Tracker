@@ -54,7 +54,7 @@ export function Topbar({ activeItem, onNavigate, isCollapsed = false }: TopbarPr
           aria-label="Help"
           aria-pressed={helping}
           data-help-toggle
-          data-help={helping ? "Leave help mode." : "Help: hover anything to see what it is for."}
+          data-help={helping ? "Leave the tour." : "Help: a guided tour of everything on screen."}
           onClick={() => setHelpMode(!helping)}
           className={cn("w-10 h-10 flex items-center justify-center rounded-xl transition-colors", t.iconBtn, helping && "bg-blue-600/15 text-blue-600")}
         >

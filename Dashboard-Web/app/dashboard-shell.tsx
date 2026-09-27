@@ -14,6 +14,8 @@ import { Sidebar, Topbar, PageSearchProvider } from "@/shared/ui/layout"
 import { HierarchyAssignmentBanner } from "@/shared/ui/layout/hierarchy-assignment-banner"
 import { PolicyHealthBanner } from "@/shared/ui/layout/policy-health-banner"
 import { HelpLayer } from "@/shared/ui/help"
+import { useAutoHideScrollbar } from "@/shared/ui/layout/auto-hide-scrollbar"
+import { pageHelp } from "@/shared/ui/help/page-help"
 import { configureTimerStorageScope, clearAllTaskTimerStateForScope } from "@/features/activity/utils/timer-task-storage"
 import { PageContent } from "@/app/page-content"
 import { isFullBleedPage } from "@/app/page-layout"
@@ -23,6 +25,7 @@ import { WidgetErrorBoundary } from "@/shared/ui/widget-error-boundary"
 
 export function DashboardShell() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const pageScrollRef = useAutoHideScrollbar()
   const { isDark } = useTheme()
   const { isLoggedIn, sessionReady, memberRole, sessionStatusMessage, sessionConnectionError, retryConnection, backendReconnecting, initError, memberId } = useAuth()
   const { activeItem, setActiveItem: setActiveItemRaw, shellReady } =
@@ -120,6 +123,9 @@ export function DashboardShell() {
             )}
           >
             <div
+              ref={pageScrollRef}
+              data-page={activeItem}
+              data-help={pageHelp(activeItem) || undefined}
               className={cn(
                 "dashboard-shell-scroll h-full w-full max-w-full rounded-3xl transition-colors duration-300",
                 "page-custom-scrollbar",
