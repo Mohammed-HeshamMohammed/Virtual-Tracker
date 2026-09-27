@@ -27,6 +27,7 @@ export function ScreenshotsCard({ screenshots, images, onSelect, selectedId, tim
           <button
             key={shot.id}
             type="button"
+            data-tour-repeat="shots"
             className={`shot-chip${shot.id === selectedId ? " active" : ""}`}
             onClick={() => onSelect(shot.id)}
             title={fmtCapturedAt(shot.capturedAt, timeZone) || "Screenshot"}

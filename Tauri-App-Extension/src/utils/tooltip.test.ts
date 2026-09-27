@@ -31,6 +31,13 @@ describe("placeTip", () => {
   it("never goes above the window when it fits nowhere", () => {
     expect(placeTip(target(150, 5), TIP, { width: 400, height: 40 }).top).toBeGreaterThanOrEqual(8);
   });
+
+  it("puts the bubble at the foot of the window, with no arrow, when the target is too big to sit beside", () => {
+    const whole = placeTip({ left: 0, top: 0, bottom: 300, width: 400 }, TIP, VIEW);
+    expect(whole.arrow).toBeNull();
+    expect(whole.below).toBe(false);
+    expect(whole.top).toBe(246);
+  });
 });
 
 describe("tipTextOf", () => {

@@ -1,6 +1,6 @@
 import { setHelpMode, useHelpMode } from "../../utils/helpMode";
 
-/** The circled "?" in the title bar. Pressed, everything on screen explains what it is for. */
+/** The circled "?" in the title bar. Pressed, it starts a guided tour of everything on screen. */
 export function HelpButton() {
   const helping = useHelpMode();
   return (
@@ -8,7 +8,7 @@ export function HelpButton() {
       <button
         className={`win-btn${helping ? " active" : ""}`}
         type="button"
-        data-tip={helping ? "Leave help mode" : "Help: hover anything to see what it is for"}
+        data-tip={helping ? "Leave the tour" : "Help: a guided tour of everything on screen"}
         aria-label="Help"
         aria-pressed={helping}
         onClick={() => setHelpMode(!helping)}

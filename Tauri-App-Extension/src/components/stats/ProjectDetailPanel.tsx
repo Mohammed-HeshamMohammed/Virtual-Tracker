@@ -402,6 +402,7 @@ export function ProjectDetailPanel({
                       <button
                         key={shot.id}
                         type="button"
+                        data-tour-repeat="shots"
                         className={`shot-chip${shot.id === selectedScreenshotId ? " active" : ""}`}
                         style={{ "--i": i } as React.CSSProperties}
                         onClick={() => onSelectScreenshot(shot.id)}

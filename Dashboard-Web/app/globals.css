@@ -140,10 +140,14 @@
 .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
 .dark .custom-scrollbar { scrollbar-color: #475569 #1e293b; }
 
-/* Page scrollbar: a slim rounded thumb floating over the content, no track and
-   no arrow buttons. Translucent rather than a fixed grey so it reads correctly
-   over whatever surface the page puts behind it. */
-.page-custom-scrollbar { scrollbar-width: thin; scrollbar-color: rgba(15, 23, 42, 0.25) transparent; }
+/* Page scrollbar: a slim rounded thumb floating over the content - no track, no arrow buttons,
+   and invisible until it is used (see auto-hide-scrollbar.ts, which sets data-scroll-active on
+   scroll or when the pointer goes to the right edge).
+
+   Only the ::-webkit-scrollbar rules style it. Setting the standard scrollbar-width or
+   scrollbar-color on the same element makes current Chrome ignore every ::-webkit-scrollbar rule,
+   arrow-button removal included, and draw the native scrollbar with its arrows - which is what
+   this used to do. Those two are kept only for browsers that have nothing else (Firefox). */
 .page-custom-scrollbar::-webkit-scrollbar { width: 10px; }
 .page-custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
 .page-custom-scrollbar::-webkit-scrollbar-thumb {
@@ -152,15 +156,25 @@
      that does not touch the edge of the pane. */
   border: 2px solid transparent;
   border-radius: 999px;
-  background-color: rgba(15, 23, 42, 0.25);
+  background-color: transparent;
   background-clip: content-box;
+  transition: background-color 0.2s ease;
 }
-.page-custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(15, 23, 42, 0.4); }
-.page-custom-scrollbar::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+.page-custom-scrollbar::-webkit-scrollbar-button,
+.page-custom-scrollbar::-webkit-scrollbar-button:single-button,
+.page-custom-scrollbar::-webkit-scrollbar-button:start:decrement,
+.page-custom-scrollbar::-webkit-scrollbar-button:end:increment { display: none; width: 0; height: 0; }
 .page-custom-scrollbar::-webkit-scrollbar-corner { background: transparent; }
-.dark .page-custom-scrollbar { scrollbar-color: rgba(255, 255, 255, 0.28) transparent; }
-.dark .page-custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.28); }
-.dark .page-custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.45); }
+.page-custom-scrollbar[data-scroll-active="true"]::-webkit-scrollbar-thumb { background-color: rgba(15, 23, 42, 0.28); }
+.page-custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(15, 23, 42, 0.42); }
+.dark .page-custom-scrollbar[data-scroll-active="true"]::-webkit-scrollbar-thumb { background-color: rgba(255, 255, 255, 0.3); }
+.dark .page-custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.46); }
+
+@supports not selector(::-webkit-scrollbar) {
+  .page-custom-scrollbar { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+  .page-custom-scrollbar[data-scroll-active="true"] { scrollbar-color: rgba(15, 23, 42, 0.3) transparent; }
+  .dark .page-custom-scrollbar[data-scroll-active="true"] { scrollbar-color: rgba(255, 255, 255, 0.3) transparent; }
+}
 
 /* Horizontal variant - a chart/table that only ever scrolls sideways past
    its own too-many-columns floor, not the OS's thick default bar sitting
@@ -454,41 +468,10 @@ tr[style*="height"] > td {
   }
 }
 
-/* ── Help mode ─────────────────────────────────────────────────────────────
-   The same coach-mark the desktop tracker uses: the page dims, the hovered element is lit,
-   and a solid callout points at it. Nothing here applies until help mode is switched on. */
-.help-mode [data-help],
-.help-mode [data-tip],
-.help-mode button[aria-label],
-.help-mode [title] {
-  outline: 1px dashed rgb(37 99 235 / 0.5);
-  outline-offset: 2px;
-  cursor: help;
-}
-
-.help-mode [data-help]:hover,
-.help-mode [data-tip]:hover {
-  outline-color: rgb(37 99 235);
-}
-
-.help-mode-pill {
-  position: fixed;
-  left: 50%;
-  bottom: 16px;
-  z-index: 100000;
-  transform: translateX(-50%);
-  max-width: calc(100vw - 24px);
-  padding: 7px 14px;
-  border: 1px solid rgb(37 99 235 / 0.6);
-  border-radius: 999px;
-  background: #0f172a;
-  color: #fff;
-  font-size: 12px;
-  text-align: center;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
-  pointer-events: none;
-}
-
+/* ── Guided tour ───────────────────────────────────────────────────────────
+   The same coach-mark the desktop tracker uses: the page dims, one thing is lit, and a solid
+   callout points at it with Skip, a step count, Back and Next. Nothing here applies until the
+   tour is running. */
 .help-spotlight {
   position: fixed;
   z-index: 99998;
@@ -500,17 +483,17 @@ tr[style*="height"] > td {
 .help-callout {
   position: fixed;
   z-index: 99999;
-  max-width: 300px;
-  padding: 13px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 320px;
+  max-width: calc(100vw - 16px);
+  padding: 15px 18px 13px;
   border: 1px solid #2563eb;
   border-radius: 10px;
   background: #2563eb;
   color: #fff;
-  font-size: 13.5px;
-  font-weight: 600;
-  line-height: 1.45;
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.4);
-  pointer-events: none;
 }
 
 .help-callout::after {
@@ -534,4 +517,60 @@ tr[style*="height"] > td {
   bottom: -6px;
   border-left: 0;
   border-top: 0;
+}
+
+.help-callout.no-arrow::after {
+  display: none;
+}
+
+.help-tour-text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.help-tour-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.help-tour-skip,
+.help-tour-back {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgb(255 255 255 / 0.8);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.help-tour-skip:hover,
+.help-tour-back:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.help-tour-count {
+  margin-left: auto;
+  font-size: 12px;
+  color: rgb(255 255 255 / 0.75);
+}
+
+.help-tour-next {
+  padding: 6px 16px;
+  border: 0;
+  border-radius: 6px;
+  background: #fff;
+  color: #1d4ed8;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.help-tour-next:hover {
+  background: #e0e7ff;
 }

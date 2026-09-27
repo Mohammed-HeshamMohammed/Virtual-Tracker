@@ -39,6 +39,6 @@ describe("HelpButton", () => {
   it("says what pressing it will do", () => {
     expect(button().getAttribute("data-tip")).toMatch(/^Help/);
     act(() => void button().click());
-    expect(button().getAttribute("data-tip")).toBe("Leave help mode");
+    expect(button().getAttribute("data-tip")).toBe("Leave the tour");
   });
 });

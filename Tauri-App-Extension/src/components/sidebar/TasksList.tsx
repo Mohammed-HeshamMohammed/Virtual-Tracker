@@ -60,6 +60,7 @@ export function TasksList({
             <button data-tip={sessionOpen ? "Stop the timer to switch to another task" : `Select ${task.title}`}
               key={task.id}
               type="button"
+              data-tour-repeat="task-rows"
               className={`side-task-row${task.id === selectedTaskId ? " active" : ""}`}
               disabled={busy || sessionOpen}
               onClick={() => onSelectTask(task)}

@@ -95,6 +95,7 @@ export function ProjectsList({
             >
               <button
                 type="button"
+                data-tour-repeat="project-rows"
                 className="side-task-row-select"
                 disabled={rowDisabled}
                 title={project.budgetExhausted ? "This project's hours budget is spent — no timer can start against it." : undefined}
@@ -124,6 +125,7 @@ export function ProjectsList({
               {canAddTask ? (
                 <button
                   type="button"
+                  data-tour-repeat="project-add"
                   className="side-task-row-add"
                   title={`New task in ${project.name}`}
                   aria-label={`New task in ${project.name}`}

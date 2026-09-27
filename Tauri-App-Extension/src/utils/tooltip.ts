@@ -1,6 +1,5 @@
-/** What carries a tooltip normally, and what carries one while help mode is on. */
+/** What carries a tooltip. */
 export const TIP_SELECTOR = "[data-tip], [title]";
-export const HELP_SELECTOR = "[data-help], [data-tip], [title]";
 
 type Box = { left: number; top: number; bottom: number; width: number };
 type Size = { width: number; height: number };
@@ -8,30 +7,34 @@ type Size = { width: number; height: number };
 /** Room for the arrow and the highlight drawn around the target. */
 export const TIP_GAP = 12;
 const ARROW_INSET = 14;
+/** Kept clear at the very bottom, where the app has its own controls. */
+const BOTTOM_MARGIN = 24;
+
+export type Placed = { left: number; top: number; below: boolean; arrow: number | null };
 
 /**
  * Below the target and centred on it, flipped above when there is no room, and never
  * off-screen. `arrow` is how far along the bubble its arrow sits, so it keeps pointing at
  * the target's centre even when the bubble has been pushed sideways to stay in view.
+ * A target too big to sit beside (a whole panel) gets the bubble at the foot of the window
+ * with no arrow, since there is nowhere outside the target for it to point from.
  */
-export function placeTip(
-  target: Box,
-  tip: Size,
-  view: Size,
-  gap = TIP_GAP,
-  edge = 8,
-): { left: number; top: number; below: boolean; arrow: number } {
+export function placeTip(target: Box, tip: Size, view: Size, gap = TIP_GAP, edge = 8): Placed {
   const centre = target.left + target.width / 2;
   const left = Math.min(Math.max(edge, centre - tip.width / 2), Math.max(edge, view.width - tip.width - edge));
   const below = target.bottom + gap;
-  const fitsBelow = below + tip.height + edge <= view.height;
-  const arrow = Math.min(Math.max(centre - left, ARROW_INSET), Math.max(ARROW_INSET, tip.width - ARROW_INSET));
-  return {
-    left,
-    top: fitsBelow ? below : Math.max(edge, target.top - gap - tip.height),
-    below: fitsBelow,
-    arrow,
-  };
+  const above = target.top - gap - tip.height;
+  if (below + tip.height + edge <= view.height) {
+    return { left, top: below, below: true, arrow: arrowAt(centre, left, tip.width) };
+  }
+  if (above >= edge) {
+    return { left, top: above, below: false, arrow: arrowAt(centre, left, tip.width) };
+  }
+  return { left, top: Math.max(edge, view.height - tip.height - BOTTOM_MARGIN), below: false, arrow: null };
+}
+
+function arrowAt(centre: number, left: number, width: number): number {
+  return Math.min(Math.max(centre - left, ARROW_INSET), Math.max(ARROW_INSET, width - ARROW_INSET));
 }
 
 /**
@@ -48,6 +51,6 @@ export function tipTextOf(el: Element, help = false): string {
     el.removeAttribute("title");
   }
   const tip = el.getAttribute("data-tip")?.trim() ?? "";
-  // Help mode explains what a thing is for, in more words than its tooltip has.
+  // The tour explains what a thing is for, in more words than its tooltip has.
   return (help && el.getAttribute("data-help")?.trim()) || tip;
 }
