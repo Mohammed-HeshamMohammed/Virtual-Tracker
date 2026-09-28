@@ -820,7 +820,7 @@ export async function fetchTimeEntriesSinceDate(weekStartKey) {
   const rows = await query(
     `SELECT member_id, project_id, date, duration, billable
      FROM time_entries
-     WHERE date >= $1
+     WHERE date >= $1 AND status = 'approved'
      ORDER BY date DESC
      LIMIT 2000`,
     [weekStartKey],

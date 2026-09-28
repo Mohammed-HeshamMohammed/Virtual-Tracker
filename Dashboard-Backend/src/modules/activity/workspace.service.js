@@ -15,19 +15,42 @@ function monthStart(dayKey) {
 
 const MEMBER_NAME_SQL = `COALESCE(NULLIF(TRIM(m.display_name), ''), NULLIF(TRIM(CONCAT(m.first_name, ' ', m.last_name)), ''), 'Unknown')`;
 
+/**
+ * Approved manual time in a date range, for one member. Earnings-only: this
+ * never touches the daily/weekly hour caps or timer allowance (timer-limit
+ * .service.js/manual-time-entry-limits.js already have their own, deliberately
+ * different rule for those - manual time not yet rejected counts against a
+ * cap even while pending, so it can't be gamed during review). Approved-only
+ * here, matching the Time & Activity Report's own reading of this table.
+ */
+async function sumApprovedManualSeconds(memberId, fromDay, toDay) {
+  const rows = await query(
+    `SELECT COALESCE(SUM(duration), 0) AS secs
+       FROM time_entries
+      WHERE member_id = $1 AND status = 'approved'
+        AND date >= $2::date AND date <= $3::date`,
+    [memberId, fromDay, toDay],
+  );
+  return Math.max(0, Math.floor(Number(rows[0]?.secs) || 0));
+}
+
 async function buildSelfSection(viewer, todayDay, weekStartDay) {
-  const [timeOffRows, timesheetRows, rateRows, weekActivity, monthActivity] = await Promise.all([
-    getTimeOffBalanceRowsPg({ memberIds: [viewer.memberId], asOf: todayDay }),
-    query(
-      `SELECT period_start, period_end, status, total_hours, submitted_at, approved_at
-       FROM timesheets WHERE member_id = $1
-       ORDER BY period_start DESC LIMIT 1`,
-      [viewer.memberId],
-    ),
-    query("SELECT rate, currency FROM pay_rates WHERE member_id = $1 LIMIT 1", [viewer.memberId]),
-    sumMemberActiveIdleSeconds(viewer.memberId, { fromDay: weekStartDay, toDay: todayDay }),
-    sumMemberActiveIdleSeconds(viewer.memberId, { fromDay: monthStart(todayDay), toDay: todayDay }),
-  ]);
+  const monthStartDay = monthStart(todayDay);
+  const [timeOffRows, timesheetRows, rateRows, weekActivity, monthActivity, weekManualSeconds, monthManualSeconds] =
+    await Promise.all([
+      getTimeOffBalanceRowsPg({ memberIds: [viewer.memberId], asOf: todayDay }),
+      query(
+        `SELECT period_start, period_end, status, total_hours, submitted_at, approved_at
+         FROM timesheets WHERE member_id = $1
+         ORDER BY period_start DESC LIMIT 1`,
+        [viewer.memberId],
+      ),
+      query("SELECT rate, currency FROM pay_rates WHERE member_id = $1 LIMIT 1", [viewer.memberId]),
+      sumMemberActiveIdleSeconds(viewer.memberId, { fromDay: weekStartDay, toDay: todayDay }),
+      sumMemberActiveIdleSeconds(viewer.memberId, { fromDay: monthStartDay, toDay: todayDay }),
+      sumApprovedManualSeconds(viewer.memberId, weekStartDay, todayDay),
+      sumApprovedManualSeconds(viewer.memberId, monthStartDay, todayDay),
+    ]);
 
   const latest = timesheetRows[0] ?? null;
   const rate = canViewCompensation(viewer, viewer.memberId) ? Number(rateRows[0]?.rate ?? 0) : 0;
@@ -50,8 +73,12 @@ async function buildSelfSection(viewer, todayDay, weekStartDay) {
     earnings: {
       currency: String(rateRows[0]?.currency ?? "USD"),
       hourlyRate: rate,
-      weekAmount: Math.round((weekActivity.activeSeconds / 3600) * rate * 100) / 100,
-      monthAmount: Math.round((monthActivity.activeSeconds / 3600) * rate * 100) / 100,
+      // Tracked + approved manual, same as the Time & Activity Report's own
+      // totals - a member backfilling a day nothing was tracked previously
+      // saw that time counted on the report but never in their own earnings
+      // estimate here.
+      weekAmount: Math.round(((weekActivity.activeSeconds + weekManualSeconds) / 3600) * rate * 100) / 100,
+      monthAmount: Math.round(((monthActivity.activeSeconds + monthManualSeconds) / 3600) * rate * 100) / 100,
     },
   };
 }

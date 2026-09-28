@@ -14,7 +14,6 @@ import {
   formatMetricDisplayValue,
   formatYTick,
   getMetricNumeric,
-  normalizeSeriesTo01,
 } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityDayRow, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
 import { useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
@@ -117,11 +116,29 @@ export function ReportTimeActivityChart({
   const multiBar = useMemo(() => {
     if (!multi || days.length === 0) return null
     return activeMetrics.map((m) => {
-      const raw  = days.map((d) => getMetricNumeric(m, d))
-      const norm = normalizeSeriesTo01(raw)
-      return { metric: m, raw, norm }
+      const raw = days.map((d) => getMetricNumeric(m, d))
+      // Manually added hours, stacked above tracked - same reasoning as
+      // singleBar above, just repeated once per compared metric instead of
+      // being available only when a single metric is shown.
+      const manual = m === "total_hours" ? days.map((d) => Math.max(0, d.manualHours ?? 0)) : days.map(() => 0)
+      // Each metric gets its OWN real, rounded-up-past-the-max scale
+      // (buildYTicks - the same one singleBar uses) rather than being
+      // normalized to a shared 0-100% that meant nothing across three
+      // different units (hours, %, money): a "50%" tick used to say nothing
+      // about how many hours, dollars, or percent that actually was.
+      const rawMax = Math.max(0, ...raw.map((v, i) => v + (manual[i] ?? 0)))
+      const yTicks = buildYTicks(rawMax, m)
+      const yMax   = Math.max(yTicks[yTicks.length - 1] ?? 1, 1e-6)
+      return { metric: m, raw, manual, yTicks, yMax }
     })
   }, [multi, days, activeMetrics])
+
+  // The left axis can only show one metric's real numbers at a time - the
+  // first one selected (usually Total hours) owns it; the others still draw
+  // proportionally to their own rounded-up max and carry their real value in
+  // the hover card instead of a shared axis that can't honestly label more
+  // than one unit at once.
+  const primaryAxis = multiBar?.find((s) => s.metric === primaryMetric) ?? null
 
   function indexFromClientX(clientX: number): number {
     const el  = svgRef.current
@@ -218,13 +235,13 @@ export function ReportTimeActivityChart({
                   </g>
                 )
               })}
-              {multi && [0, 25, 50, 75, 100].map((pct) => {
-                const yy = padT + plotH - (pct / 100) * plotH
+              {multi && primaryAxis && primaryAxis.yTicks.map((t) => {
+                const yy = padT + plotH - (t / primaryAxis.yMax) * plotH
                 return (
-                  <g key={pct}>
+                  <g key={t}>
                     <line x1={padL} x2={padL + plotW} y1={yy} y2={yy} stroke="#e2e8f0" strokeWidth={0.8} />
                     <text x={padL - 6} y={yy + 4} textAnchor="end" fill="#94a3b8" fontSize={10}>
-                      {pct}%
+                      {formatYTick(primaryMetric, t, currency)}
                     </text>
                   </g>
                 )
@@ -281,7 +298,6 @@ export function ReportTimeActivityChart({
                 const bW     = (gW - (mc - 1) * 3) / mc
                 const groupX = padL + i * slotW + barInset
                 const isHov  = hovered === i
-                const yAtN   = (t: number) => padT + plotH - t * plotH
                 return (
                   <g key={d.date}>
                     {isHov && (
@@ -291,10 +307,34 @@ export function ReportTimeActivityChart({
                         fill="rgba(0,0,0,0.04)"
                       />
                     )}
-                    {multiBar.map(({ metric: m, norm }, mi) => {
-                      const val  = norm[i] ?? 0
-                      const barX = groupX + mi * (bW + 3)
-                      return renderBar(barX, bW, yAtN(val), BAR_COLORS[m], isHov ? 1 : 0.82, m)
+                    {multiBar.map(({ metric: m, raw, manual, yMax }, mi) => {
+                      const val    = raw[i] ?? 0
+                      const man    = manual[i] ?? 0
+                      const barX   = groupX + mi * (bW + 3)
+                      const yAtM   = (t: number) => padT + plotH - (t / yMax) * plotH
+                      const trackedTop = yAtM(val)
+                      const stackedTop = yAtM(val + man)
+                      return (
+                        <g key={m}>
+                          {renderBar(barX, bW, trackedTop, BAR_COLORS[m], isHov ? 1 : 0.82, `${m}-tracked`)}
+                          {man > 0
+                            ? (() => {
+                                const h = trackedTop - stackedTop
+                                return h > 0 ? (
+                                  <rect
+                                    key={`${m}-manual`}
+                                    x={barX}
+                                    y={stackedTop}
+                                    width={bW}
+                                    height={h}
+                                    fill={MANUAL_BAR_COLOR}
+                                    opacity={isHov ? 1 : 0.82}
+                                  />
+                                ) : null
+                              })()
+                            : null}
+                        </g>
+                      )
                     })}
                   </g>
                 )
@@ -335,13 +375,18 @@ export function ReportTimeActivityChart({
                   singleBar.yAt((singleBar.series[hovered] ?? 0) + (singleBar.manualSeries[hovered] ?? 0))
                 : multiBar
                   ? Math.min(
-                      ...multiBar.map(({ norm }) => padT + plotH - (norm[hovered] ?? 0) * plotH),
+                      ...multiBar.map(
+                        ({ raw, manual, yMax }) =>
+                          padT + plotH - (((raw[hovered] ?? 0) + (manual[hovered] ?? 0)) / yMax) * plotH,
+                      ),
                     )
                   : padT + plotH
 
               // Tracked and manual are shown as their own rows when there is
-              // manual time on this day, matching the two stacked segments.
-              const manualHrs = !multi && primaryMetric === "total_hours" ? (d.manualHours ?? 0) : 0
+              // manual time on this day, matching the two stacked segments -
+              // in either mode, as long as Total hours is one of the metrics
+              // being shown.
+              const manualHrs = activeMetrics.includes("total_hours") ? (d.manualHours ?? 0) : 0
               const showManualSplit = manualHrs > 0
 
               // viewBox units map 1:1 to CSS pixels vertically here: the

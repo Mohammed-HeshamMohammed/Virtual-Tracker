@@ -63,7 +63,10 @@ async function fetchFreshBase(db) {
       member_id: row.member_id,
       project_id: row.project_id,
       date: row.date,
-      duration: row.duration,
+      // time_entries.duration is SECONDS (see time-and-activity-report's
+      // manual_seconds reading of the same column) - named for that unit here
+      // so general-dashboard-service.js can't mistake it for minutes again.
+      duration_seconds: row.duration,
       billable: row.billable,
     },
   }));
