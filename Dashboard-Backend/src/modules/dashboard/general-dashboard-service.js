@@ -124,7 +124,7 @@ export function buildViewPayload({
     if (!inMemberScope(entry.memberId, memberIds)) continue;
     const dateKey = entry.date?.slice(0, 10);
     if (!dateKey) continue;
-    const hours = entry.durationMinutes / 60;
+    const hours = entry.durationSeconds / 3600;
     workedByDay.set(dateKey, (workedByDay.get(dateKey) ?? 0) + hours);
     if (entry.billable) {
       spentByDay.set(dateKey, (spentByDay.get(dateKey) ?? 0) + hours);
@@ -418,7 +418,9 @@ export async function getGeneralDashboardPayload(db, viewerMemberId) {
       memberId: str(row, "member_id", "memberId"),
       projectId: str(row, "project_id", "projectId"),
       date: dateKey,
-      durationMinutes: num(row, "duration"),
+      // time_entries.duration is seconds, not minutes - dividing this by 60
+      // below (not 3600) inflated every manual entry 60x on this dashboard.
+      durationSeconds: num(row, "duration_seconds", "duration"),
       billable: row.billable === true,
     });
   }

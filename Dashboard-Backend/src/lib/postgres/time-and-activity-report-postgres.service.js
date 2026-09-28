@@ -96,6 +96,7 @@ export async function getManualTimeEntryRowsPg({ memberIds, fromDay, toDay, proj
        LIMIT 1
      ) team_lookup ON true
      WHERE te.source = 'manual'
+       AND te.status = 'approved'
        AND te.date >= $1::date AND te.date <= $2::date
        AND ($3::uuid[] IS NULL OR te.member_id = ANY($3::uuid[]))
        AND ($4::uuid[] IS NULL OR te.project_id = ANY($4::uuid[]))
