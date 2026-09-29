@@ -14,6 +14,7 @@ import {
   memberHourlyRateInDisplayCurrency,
   memberHourlyRatesInDisplayCurrency,
 } from "../currency/member-rate.js";
+import { canonicalizeTimeZone } from "../time/timezone-utils.js";
 
 function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -345,6 +346,51 @@ export async function isManagerAllowedToTrackPg(projectId, memberId) {
     [projectId, memberId],
   );
   return rows[0]?.manager_can_track === true;
+}
+
+/**
+ * One member's timezone override for this specific project, or clears it back
+ * to inherited (project's own zone, then the member's personal zone - see
+ * resolve-time-zone.js) when `timezone` is empty/null. Applies to any project
+ * member, not only managers - unlike the tracking allow-list above, this is
+ * about which calendar their hours on this project are judged against, which
+ * has nothing to do with their role.
+ *
+ * An unusable zone is rejected rather than silently stored as something that
+ * would resolve to UTC - the caller gets a clear error instead of a member
+ * quietly landing on the wrong calendar with no indication why.
+ */
+export async function setProjectMemberTimeZonePg(projectId, memberId, timezone, actorId) {
+  const raw = typeof timezone === "string" ? timezone.trim() : "";
+  let stored = null;
+  if (raw) {
+    const canonical = canonicalizeTimeZone(raw);
+    if (canonical === "UTC" && raw !== "UTC") {
+      throw new Error(`"${raw}" is not a recognized timezone.`);
+    }
+    stored = canonical;
+  }
+  const rows = await query(
+    `UPDATE project_members
+        SET timezone = $3, updated_by = COALESCE($4, updated_by)
+      WHERE project_id = $1 AND member_id = $2
+      RETURNING id`,
+    [projectId, memberId, stored, uuidOrNull(actorId)],
+  );
+  if (rows.length === 0) {
+    throw new Error("This member is not on this project.");
+  }
+  void publishChange("project-members", projectId, "updated", uuidOrNull(actorId) ?? undefined);
+  return stored;
+}
+
+/** Every member on this project with a timezone override set, keyed by member id - for hydrating the project editor without an extra round trip per member. */
+export async function listProjectMemberTimeZonesPg(projectId) {
+  const rows = await query(
+    `SELECT member_id, timezone FROM project_members WHERE project_id = $1 AND timezone IS NOT NULL`,
+    [projectId],
+  );
+  return Object.fromEntries(rows.map((row) => [row.member_id, row.timezone]));
 }
 
 export async function listProjectIdsForMemberPg(memberId) {

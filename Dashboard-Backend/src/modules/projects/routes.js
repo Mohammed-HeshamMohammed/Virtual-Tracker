@@ -54,6 +54,7 @@ import {
   listTeamIdsForProjectPg,
   listProjectIdsForTeamPg,
   setManagerTrackingAccessPg,
+  setProjectMemberTimeZonePg,
 } from "../../lib/postgres/projects-postgres.service.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
@@ -324,6 +325,10 @@ export async function routeProjects(req, res, url, db, origin) {
       const userIds = [];
       const viewerIds = [];
       const trackingAllowedManagerIds = [];
+      // Only the rare member who has an override on THIS project - not every
+      // member, since inheriting the project's (or their own) zone is the
+      // normal case and needs no entry here at all.
+      const memberTimeZones = {};
 
       const pushUnique = (list, id) => {
         if (id && !list.includes(id)) list.push(id);
@@ -332,6 +337,8 @@ export async function routeProjects(req, res, url, db, origin) {
         const memberId = String(row.member_id || "").trim();
         if (!memberId) continue;
         const role = normalizeProjectRole(row.project_role);
+        const rowTimeZone = typeof row.timezone === "string" ? row.timezone.trim() : "";
+        if (rowTimeZone) memberTimeZones[memberId] = rowTimeZone;
         if (role === "member") continue;
         if (role === "manager") {
           pushUnique(managerIds, memberId);
@@ -412,6 +419,7 @@ export async function routeProjects(req, res, url, db, origin) {
           userIds,
           viewerIds,
           trackingAllowedManagerIds,
+          memberTimeZones,
           memberLimitMemberIds: memberLimits.map((row) => row.memberId),
           memberLimits,
           memberOwnLimits,
@@ -494,6 +502,36 @@ export async function routeProjects(req, res, url, db, origin) {
       sendJson(res, origin, 500, {
         success: false,
         error: e instanceof Error ? e.message : "Failed to save manager tracking access",
+      });
+    }
+    return true;
+  }
+
+  // POST /api/projects/:id/member-timezone - one member's timezone override
+  // for this project (see resolve-time-zone.js's precedence chain). Applies
+  // to any project member, not just managers. An empty/omitted timezone
+  // clears the override back to inherited (the project's own zone, then the
+  // member's personal zone).
+  const memberTimeZoneMatch = /^\/api\/projects\/([^/]+)\/member-timezone$/.exec(pn);
+  if (memberTimeZoneMatch && req.method === "POST") {
+    const timeZoneProjectId = memberTimeZoneMatch[1];
+    try {
+      const body = await readJsonBody(req);
+      const memberId = String(body?.member_id ?? body?.memberId ?? "").trim();
+      if (!memberId) {
+        sendJson(res, origin, 400, { success: false, error: "member_id is required" });
+        return true;
+      }
+      const viewer = await assertProjectDomainWrite(timeZoneProjectId, memberId);
+      if (!viewer) return true;
+      const timezone = String(body?.timezone ?? "").trim();
+      const stored = await setProjectMemberTimeZonePg(timeZoneProjectId, memberId, timezone, viewer.memberId);
+      sendJson(res, origin, 200, { success: true, data: { memberId, timezone: stored } });
+    } catch (e) {
+      logSafeError("[projects/member-timezone]", e);
+      sendJson(res, origin, 400, {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to save this member's timezone",
       });
     }
     return true;
