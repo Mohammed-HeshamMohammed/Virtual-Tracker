@@ -2,18 +2,51 @@ import pg from "pg";
 import { getEnv } from "../../config/env.js";
 import { currentAuditActor, currentTenantId, runWithTenantId, statementMayAudit } from "./audit-actor.js";
 
-let pool = null;
+/**
+ * Keyed by resolved connection-string URL, not by role name. Every identity
+ * (app/admin/readonly-crosstenant) that still resolves to the same
+ * POSTGRES_URL - which is every deployment today, since the admin/readonly
+ * env vars fall back to it (env.js) - shares one physical pg.Pool. A pool
+ * only splits once an operator configures a genuinely different connection
+ * string for one of the identities, at which point that identity gets its
+ * own pool automatically, with no code change here.
+ */
+const poolsByUrl = new Map();
 
-export function getPostgresPool() {
-  const url = getEnv().postgres.url;
+function getOrCreatePool(url) {
   if (!url) return null;
-  if (!pool) {
-    pool = new pg.Pool({ connectionString: url });
-    pool.on("connect", (client) => {
+  let p = poolsByUrl.get(url);
+  if (!p) {
+    p = new pg.Pool({ connectionString: url });
+    p.on("connect", (client) => {
       client.query("SET TIME ZONE 'UTC'").catch(() => {});
     });
+    poolsByUrl.set(url, p);
   }
-  return pool;
+  return p;
+}
+
+export function getPostgresPool() {
+  return getOrCreatePool(getEnv().postgres.url);
+}
+
+/**
+ * Bootstrap/migration/background-sweep identity (BYPASSRLS - see
+ * ensure-tenancy-rls.js). Falls back to the same pool as getPostgresPool()
+ * until POSTGRES_ADMIN_URL is configured separately.
+ */
+export function getAdminPostgresPool() {
+  return getOrCreatePool(getEnv().postgres.adminUrl);
+}
+
+/**
+ * Audited cross-tenant read-only identity - SELECT-only at the grant level
+ * (ensure-tenancy-rls.js), never write-capable regardless of what
+ * application code does. Falls back to the same pool as getPostgresPool()
+ * until POSTGRES_READONLY_CROSSTENANT_URL is configured separately.
+ */
+export function getReadonlyCrossTenantPostgresPool() {
+  return getOrCreatePool(getEnv().postgres.readonlyCrossTenantUrl);
 }
 
 export function isPostgresConfigured() {
@@ -67,15 +100,58 @@ async function publishTenantId(client) {
   client[PUBLISHED_TENANT] = tenant;
 }
 
-export async function query(sql, params = []) {
-  const activePool = getPostgresPool();
+async function queryOnPool(activePool, sql, params) {
   if (!activePool) {
-    throw new Error("POSTGRES_URL is not configured");
+    throw new Error("Postgres pool is not configured");
   }
   const client = await activePool.connect();
   try {
     await publishTenantId(client);
     await publishAuditActor(client, sql);
+    const result = await client.query(sql, params);
+    return result.rows;
+  } finally {
+    client.release();
+  }
+}
+
+export async function query(sql, params = []) {
+  const activePool = getPostgresPool();
+  if (!activePool) {
+    throw new Error("POSTGRES_URL is not configured");
+  }
+  return queryOnPool(activePool, sql, params);
+}
+
+/**
+ * Same as query(), on the vt_admin identity (bootstrap/migrations/
+ * background sweeps - BYPASSRLS once RLS is live). Falls back to the same
+ * pool as query() until POSTGRES_ADMIN_URL is configured separately.
+ */
+export async function queryAsAdmin(sql, params = []) {
+  const activePool = getAdminPostgresPool();
+  if (!activePool) {
+    throw new Error("Postgres is not configured");
+  }
+  return queryOnPool(activePool, sql, params);
+}
+
+/**
+ * Audited read-only access to another tenant's data (§0.2 step 5 - Owner
+ * viewing a customer tenant's business data). Explicitly publishes
+ * targetTenantId rather than the caller's own currentTenantId(), since the
+ * whole point is reading a DIFFERENT tenant than the viewer's own; write
+ * statements are rejected at the grant level by vt_readonly_crosstenant
+ * regardless of what this function does.
+ */
+export async function queryAsReadonlyCrossTenant(targetTenantId, sql, params = []) {
+  const activePool = getReadonlyCrossTenantPostgresPool();
+  if (!activePool) {
+    throw new Error("Postgres is not configured");
+  }
+  const client = await activePool.connect();
+  try {
+    await client.query("SELECT set_config('app.tenant_id', $1, false)", [targetTenantId ?? ""]);
     const result = await client.query(sql, params);
     return result.rows;
   } finally {
@@ -108,10 +184,9 @@ export async function queryRaw(sql, params = []) {
   }
 }
 
-export async function withTransaction(fn) {
-  const activePool = getPostgresPool();
+async function withTransactionOnPool(activePool, fn) {
   if (!activePool) {
-    throw new Error("POSTGRES_URL is not configured");
+    throw new Error("Postgres pool is not configured");
   }
   const client = await activePool.connect();
   try {
@@ -133,6 +208,23 @@ export async function withTransaction(fn) {
   } finally {
     client.release();
   }
+}
+
+export async function withTransaction(fn) {
+  const activePool = getPostgresPool();
+  if (!activePool) {
+    throw new Error("POSTGRES_URL is not configured");
+  }
+  return withTransactionOnPool(activePool, fn);
+}
+
+/** Same as withTransaction(), on the vt_admin identity. */
+export async function withTransactionAsAdmin(fn) {
+  const activePool = getAdminPostgresPool();
+  if (!activePool) {
+    throw new Error("Postgres is not configured");
+  }
+  return withTransactionOnPool(activePool, fn);
 }
 
 /**
@@ -162,8 +254,7 @@ export async function probePostgresReadiness() {
 }
 
 export async function __closePostgresPoolForTests() {
-  if (pool) {
-    await pool.end();
-    pool = null;
-  }
+  const pools = [...poolsByUrl.values()];
+  poolsByUrl.clear();
+  await Promise.all(pools.map((p) => p.end()));
 }
