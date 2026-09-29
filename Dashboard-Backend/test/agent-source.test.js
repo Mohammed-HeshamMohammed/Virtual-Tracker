@@ -8,10 +8,17 @@ const inserts = [];
 
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
-    query: async (sql, params) => {
+    // Pairing records go through the admin identity (agent-link-sessions.js):
+    // an anonymous agent has no tenant to scope them to.
+    queryAsAdmin: async (sql, params) => {
       if (/INSERT INTO agent_link_sessions/.test(sql)) inserts.push(params);
       return [];
     },
+    query: async () => [],
+    withTenant: async (_tenantId, fn) => fn(),
+    getPostgresPool: () => null,
+    getAdminPostgresPool: () => null,
+    isPostgresConfigured: () => false,
   },
 });
 mock.module("../src/modules/activity/agent-devices.service.js", {

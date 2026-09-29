@@ -151,8 +151,18 @@ export function buildEnv(source = process.env) {
       // all three to one physical pg.Pool until an operator configures a
       // genuinely separate connection string for one of them.
       adminUrl: readString(source, "POSTGRES_ADMIN_URL") || readString(source, "POSTGRES_URL"),
-      readonlyCrossTenantUrl:
-        readString(source, "POSTGRES_READONLY_CROSSTENANT_URL") || readString(source, "POSTGRES_URL"),
+      // Explicit overrides only - left unset, client.js derives vt_app /
+      // vt_readonly_crosstenant credentials from POSTGRES_URL once
+      // POSTGRES_TENANCY_ENFORCE is on (see role-credentials.js).
+      appUrl: readString(source, "POSTGRES_APP_URL") || null,
+      readonlyCrossTenantUrl: readString(source, "POSTGRES_READONLY_CROSSTENANT_URL") || null,
+      // The switch that makes the app actually connect as vt_app. Only
+      // honored together with POSTGRES_TENANCY_RLS_ENABLED (which creates
+      // the roles and policies); unset it and redeploy to roll back.
+      tenancyEnforce: readBool(source, "POSTGRES_TENANCY_ENFORCE", false),
+      // Logs every app-pool query that touches tenant data with no tenant
+      // published - the discovery tool run before enforcement.
+      tenancyAudit: readBool(source, "POSTGRES_TENANCY_AUDIT", false),
       // See ensure-tenancy-rls.js's own doc comment: a one-way deploy, off
       // by default, turned on only after a staging soak.
       tenancyRlsEnabled: readBool(source, "POSTGRES_TENANCY_RLS_ENABLED", false),

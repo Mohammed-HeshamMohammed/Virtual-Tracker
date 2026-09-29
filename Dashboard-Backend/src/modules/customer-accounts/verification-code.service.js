@@ -1,5 +1,7 @@
 import { randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
-import { query } from "../../lib/postgres/client.js";
+// verification_codes is control-plane (tenancy-tables.js): code hashes for the
+// Customer Accounts unlock are never tenant data, so vt_app has no grant.
+import { queryAsAdmin as query } from "../../lib/postgres/client.js";
 
 export const UNLOCK_PURPOSE = "customer_accounts_tab";
 export const CODE_TTL_MINUTES = 10;

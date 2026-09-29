@@ -1,6 +1,7 @@
 
 import crypto from "node:crypto";
 import { query } from "./client.js";
+import { withTenantForFirebaseUid } from "./tenant-resolution.js";
 import { publishChange } from "../../modules/realtime/change-bus.js";
 
 function uuidOrNull(value) {
@@ -94,9 +95,15 @@ export async function getMemberByIdPg(id) {
   return rows[0] ?? null;
 }
 
+// Lookups by firebase_uid are how an identity becomes a member, often before
+// any tenant is published (presence, session-cookie, presence-events). They
+// scope themselves to that person's own tenant rather than returning nothing
+// under RLS - see tenant-resolution.js.
 export async function getMemberByFirebaseUidPg(firebaseUid) {
   if (!firebaseUid) return null;
-  const rows = await query("SELECT * FROM members WHERE firebase_uid = $1 LIMIT 1", [firebaseUid]);
+  const rows = await withTenantForFirebaseUid(firebaseUid, () =>
+    query("SELECT * FROM members WHERE firebase_uid = $1 LIMIT 1", [firebaseUid]),
+  );
   return rows[0] ?? null;
 }
 
@@ -120,7 +127,7 @@ export async function getMemberAuthContextPg(firebaseUid) {
     LEFT JOIN roles r ON r.id = m.role_id
     WHERE m.firebase_uid = $1 LIMIT 1
   `;
-  const rows = await query(sql, [firebaseUid]);
+  const rows = await withTenantForFirebaseUid(firebaseUid, () => query(sql, [firebaseUid]));
   return rows[0] ?? null;
 }
 

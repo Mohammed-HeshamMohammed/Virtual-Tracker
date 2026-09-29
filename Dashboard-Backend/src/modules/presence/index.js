@@ -13,15 +13,20 @@ import { createRtdbPresenceStore } from "./presence-store-rtdb.js";
 import { createRedisPresenceStore } from "./presence-store-redis.js";
 import { publishPresenceChange, presenceRecordToChange } from "./presence-pubsub.js";
 import { updateMemberPg } from "../../lib/postgres/members-postgres.service.js";
+import { withTenantForMemberId } from "../../lib/postgres/tenant-resolution.js";
 
 let runtime = null;
 
 async function persistLastSeenAtOnDisconnect(memberId, lastSeenAt) {
   if (!memberId) return;
   try {
-    await updateMemberPg(memberId, {
-      last_seen_at: new Date(lastSeenAt).toISOString(),
-    });
+    // Fired from the websocket close handler, outside any request - no
+    // tenant is published there, and under RLS the update would match 0 rows.
+    await withTenantForMemberId(memberId, () =>
+      updateMemberPg(memberId, {
+        last_seen_at: new Date(lastSeenAt).toISOString(),
+      }),
+    );
   } catch {
     // Member row may not exist in partial test environments.
   }

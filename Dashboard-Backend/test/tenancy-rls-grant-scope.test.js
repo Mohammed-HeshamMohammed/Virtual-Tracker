@@ -19,7 +19,7 @@ test("control-plane tables are a real, non-empty list", () => {
   assert.ok(CONTROL_PLANE_NAMES.length > 0);
   assert.deepEqual(
     [...CONTROL_PLANE_NAMES].sort(),
-    ["customer_account_audit", "tenants", "verification_codes"],
+    ["customer_account_audit", "customer_account_unlock_tokens", "tenants", "verification_codes"],
   );
 });
 

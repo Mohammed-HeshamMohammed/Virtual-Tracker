@@ -38,7 +38,7 @@ import {
   ISOLATION_ENFORCED,
 } from "../../lib/postgres/verify-tenancy-isolation.js";
 import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
-import { usedSeatsSql } from "./seat-usage.service.js";
+import { SEAT_LOCK_SQL, usedSeatsSql } from "./seat-usage.service.js";
 import {
   seedLookupTablePostgresIfEmpty,
   seedOrgFieldOptionsPostgresIfEmpty,
@@ -290,6 +290,9 @@ export async function renewCustomerTenantPeriod(tenantId, periodEnd, actorId) {
 export async function changeCustomerTenantSeats(tenantId, seatLimit, actorId) {
   const validSeatLimit = assertValidSeatLimit(seatLimit);
   return withTransactionAsAdmin(async (client) => {
+    // Same key as the add/invite guard (seat-usage.service.js), so lowering
+    // the limit and taking the last seat cannot interleave.
+    await client.query(SEAT_LOCK_SQL, [tenantId]);
     const tenantRows = await client.query(
       `SELECT id, seat_limit FROM tenants WHERE id = $1 AND type = 'customer' FOR UPDATE`,
       [tenantId],

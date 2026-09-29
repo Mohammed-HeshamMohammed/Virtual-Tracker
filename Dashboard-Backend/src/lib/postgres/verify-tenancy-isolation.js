@@ -1,5 +1,5 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
-import { getPostgresPool, isPostgresConfigured } from "./client.js";
+import { getPostgresPool, isPostgresConfigured, queryAsAdmin } from "./client.js";
 import { isTenancyRlsEnabled } from "./ensure-tenancy-rls.js";
 import { listTenantScopedTableNames } from "./tenancy-tables.js";
 
@@ -210,10 +210,15 @@ export async function verifyTenancyIsolation() {
     const scoped = listTenantScopedTableNames();
     const [role, tables] = await Promise.all([connectedRole(client), tableIsolationState(client, scoped)]);
 
-    const counts = await client.query(
+    // Control-plane facts come from the admin identity: under enforcement
+    // the app pool (vt_app) has no grant on tenants, and "is the probe table
+    // empty for everyone?" is not a question a tenant-scoped role can answer.
+    // The role check and the probe itself stay on the app pool - they are
+    // what is being verified.
+    const counts = await queryAsAdmin(
       "SELECT count(*)::int AS n FROM tenants WHERE type = 'customer' AND lifecycle <> 'removed'",
     );
-    const customerTenants = counts.rows[0]?.n ?? 0;
+    const customerTenants = counts[0]?.n ?? 0;
 
     let probe = null;
     try {
@@ -221,8 +226,8 @@ export async function verifyTenancyIsolation() {
       if (probe.visibleRows === 0) {
         // Zero rows means nothing if the table is empty for everyone. Ask
         // again with no tenant filter in play to tell the two cases apart.
-        const all = await client.query(`SELECT count(*)::int AS n FROM ${PROBE_TABLE}`);
-        if ((all.rows[0]?.n ?? 0) === 0) probe = { ...probe, inconclusive: true };
+        const all = await queryAsAdmin(`SELECT count(*)::int AS n FROM ${PROBE_TABLE}`);
+        if ((all[0]?.n ?? 0) === 0) probe = { ...probe, inconclusive: true };
       }
     } catch (err) {
       logSafeWarn("[postgres] tenant isolation probe failed:", err);

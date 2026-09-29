@@ -14,34 +14,9 @@ import { upsertProfileFromUserRecord } from "./profile-sync.js";
 import { validateSessionAuthorization } from "./session-authorization.js";
 import { getMemberByIdPg } from "../../lib/postgres/members-postgres.service.js";
 import { resolveTenantGrantCached } from "../customer-accounts/tenant-grant-cache.js";
-import { queryAsAdmin, withTenant } from "../../lib/postgres/client.js";
-import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
+import { withTenant } from "../../lib/postgres/client.js";
+import { resolveTenantIdForFirebaseUid } from "../../lib/postgres/tenant-resolution.js";
 
-/**
- * §0.1 blocker 3 / §0.2 step 2: session-bootstrap is the first authenticated
- * call after Firebase sign-in - a public route reachable before any tenant
- * is known, yet everything it does below (ensureMemberLinkedRecordsForUserRecord,
- * alignMemberRoleTables, getMemberByIdPg, ...) reads/writes tenant-scoped
- * tables by memberId, not by tenant. Resolving the tenant here, narrowly
- * (exactly one admin-scoped lookup by firebase_uid, checking both an
- * existing member and a not-yet-promoted pending signup), and running the
- * whole bootstrap inside withTenant() means every one of those existing
- * calls becomes correctly tenant-scoped for free, with no changes needed to
- * any of them individually. Falls back to the main tenant for a genuinely
- * first-ever bootstrap, matching how every other main-org default in this
- * codebase resolves when no tenant_id is found.
- */
-async function resolveBootstrapTenantId(firebaseUid) {
-  const rows = await queryAsAdmin(
-    `SELECT tenant_id FROM members WHERE firebase_uid = $1
-     UNION ALL
-     SELECT tenant_id FROM pending_auth_members WHERE firebase_uid = $1
-     LIMIT 1`,
-    [firebaseUid],
-  );
-  const tenantId = rows[0]?.tenant_id;
-  return typeof tenantId === "string" && tenantId ? tenantId : MAIN_TENANT_ID;
-}
 
 export async function handleSessionBootstrap(req, res, origin, url) {
   const authPath = url.pathname.replace(/^\/api\/v1\/auth\//, "/api/auth/");
@@ -174,7 +149,12 @@ export async function handleSessionBootstrap(req, res, origin, url) {
     };
 
     try {
-      const tenantId = await resolveBootstrapTenantId(decoded.uid);
+      // Session-bootstrap runs before any tenant is known, yet everything in
+      // it (ensureMemberLinkedRecordsForUserRecord, alignMemberRoleTables,
+      // getMemberByIdPg, ...) reads tenant-scoped tables by memberId. Running
+      // the whole bootstrap in the person's own tenant makes every one of
+      // those correctly scoped without touching them individually.
+      const tenantId = await resolveTenantIdForFirebaseUid(decoded.uid);
       try {
         await withTenant(tenantId, bootstrapMemberSession);
       } catch (firstErr) {

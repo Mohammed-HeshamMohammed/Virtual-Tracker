@@ -1,4 +1,5 @@
 import { getDb } from "../../config/firebase.js";
+import { publishTenant, resolveTenantIdForTransferToken } from "../../lib/postgres/tenant-resolution.js";
 import { getAuthContext } from "../../http/auth-context.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
@@ -42,6 +43,9 @@ export async function routeMemberTransferRequests(req, res, url, origin) {
   const publicPreviewMatch = pn.match(/^\/api\/public\/member-transfer-requests\/([^/]+)$/);
   if (publicPreviewMatch && req.method === "GET") {
     try {
+      // Public: the link recipient may not be signed in, so the token is the
+      // only thing that identifies which tenant this transfer belongs to.
+      publishTenant(await resolveTenantIdForTransferToken(publicPreviewMatch[1]));
       const result = await getTransferRequestPreview(db, publicPreviewMatch[1]);
       if (!result.ok) {
         sendJson(res, origin, result.httpStatus || 400, { success: false, error: result.error });

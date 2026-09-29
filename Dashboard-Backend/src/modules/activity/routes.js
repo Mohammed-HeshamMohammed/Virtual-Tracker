@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { publishTenant, resolveTenantIdForAgentDevice, resolveTenantIdForMemberId } from "../../lib/postgres/tenant-resolution.js";
 import sharp from "sharp";
 import { getSignedUrl } from "../../lib/gcs/upload.js";
 import {
@@ -2047,6 +2048,7 @@ export async function routeActivity(req, res, url, origin) {
     }
     const memberId = typeof exchanged.data?.memberId === "string" ? exchanged.data.memberId : "";
     if (memberId) {
+      publishTenant(await resolveTenantIdForMemberId(memberId));
       await updateMemberPg(memberId, {
         desktop_agent_linked_at: new Date(),
         agent_source: normalizeAgentSource(exchanged.data?.agentSource),
@@ -2119,6 +2121,10 @@ export async function routeActivity(req, res, url, origin) {
     }
 
     try {
+      // Public: the device id is the only identity here, so it decides which
+      // tenant the rest of this request (device check, member lookup, grant
+      // check) runs in.
+      publishTenant(await resolveTenantIdForAgentDevice(deviceId));
       const verified = await verifyAgentDevice(deviceId, agentSecret);
       if (!verified.ok) {
         sendJson(res, origin, 401, { success: false, error: "This device is no longer linked." });

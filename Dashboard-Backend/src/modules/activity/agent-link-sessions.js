@@ -1,7 +1,13 @@
 import crypto from "node:crypto";
-import { query } from "../../lib/postgres/client.js";
+import { queryAsAdmin as query } from "../../lib/postgres/client.js";
+import { withTenantForMemberId } from "../../lib/postgres/tenant-resolution.js";
 import { newDeviceId, registerAgentDevice } from "./agent-devices.service.js";
 
+// Pairing records live on the admin identity: a session is created by an
+// agent nobody has identified yet and exchanged by the same anonymous agent,
+// so there is no tenant to scope either step to. Each row is reachable only
+// through its unguessable link token (plus the agent secret to exchange it),
+// which is the access control here, exactly as before.
 const TTL_MS = 15 * 60 * 1000;
 const MAX_INVALID_EXCHANGE_ATTEMPTS = 8;
 
@@ -116,12 +122,16 @@ export async function exchangeAgentLinkSession(linkToken, agentSecret) {
 
   let deviceId = "";
   try {
-    const device = await registerAgentDevice({
-      memberId: session.memberId,
-      deviceId: newDeviceId(),
-      agentSecret: session.agentSecret,
-      agentSource: "tauri",
-    });
+    // The device belongs to the member's own tenant - known now that the
+    // session has been completed by that signed-in member.
+    const device = await withTenantForMemberId(session.memberId, () =>
+      registerAgentDevice({
+        memberId: session.memberId,
+        deviceId: newDeviceId(),
+        agentSecret: session.agentSecret,
+        agentSource: "tauri",
+      }),
+    );
     deviceId = device?.device_id ?? "";
   } catch (err) {
     console.warn("[agent-link] device registration failed:", err?.message ?? err);

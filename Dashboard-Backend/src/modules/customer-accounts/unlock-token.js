@@ -1,72 +1,58 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { queryAsAdmin } from "../../lib/postgres/client.js";
 
 /**
  * The token a verified Owner/Super Admin holds after unlock/verify, bound to
  * every mutating Customer Accounts endpoint (PLAN-customer-accounts-and-
- * tenancy.md §16.3: "not meant to be UI but full system"). Deliberately an
- * in-memory bearer capability, not a JWT or a DB row:
- *   - It needs no signing secret to manage - possession of the raw value
- *     (never persisted, only ever held by the client that received it) IS
- *     the credential, the same shape as an agent device secret.
- *   - It needs no DB round-trip on every mutating call.
- * Same process-local tolerance already accepted by role-cache.js and
- * lookup-cache.js: on a multi-replica deployment a token minted on one
- * instance will not verify on another, which just means an extra
- * unlock/verify - never a security gap, since the token can only ever be
- * *rejected* too eagerly, not accepted wrongly.
+ * tenancy.md §16.3). Possession of the raw value is the credential: only its
+ * SHA-256 is stored, so a leaked table row cannot be replayed.
+ *
+ * Stored in the control-plane table customer_account_unlock_tokens rather
+ * than process memory, so a token minted on one instance verifies on every
+ * other one - an in-memory map made the unlock flow fail at random on any
+ * multi-replica deployment. Control-plane, hence the admin identity: this is
+ * platform bookkeeping, not a tenant's data.
  */
 const TOKEN_TTL_MINUTES = 20;
-const tokens = new Map();
 
 function hash(raw) {
   return createHash("sha256").update(String(raw)).digest("hex");
 }
 
-function sweepExpired() {
-  const now = Date.now();
-  for (const [key, entry] of tokens) {
-    if (entry.expiresAt <= now) tokens.delete(key);
-  }
-}
-
 /** Mints a fresh token for a member, invalidating any token they already
- *  held for this purpose - a member can only ever have one active unlock at
- *  a time, which is also what makes "closing the tab locks it again" true
- *  even if closing the tab merely drops the client's copy without an
- *  explicit revoke call. */
-export function issueUnlockToken(memberId) {
-  sweepExpired();
-  for (const [key, entry] of tokens) {
-    if (entry.memberId === memberId) tokens.delete(key);
-  }
+ *  held - a member only ever has one active unlock, which is also what makes
+ *  "closing the tab locks it again" true even if the client merely drops its
+ *  copy without an explicit revoke. Expired rows are pruned on the way. */
+export async function issueUnlockToken(memberId) {
   const raw = randomBytes(32).toString("hex");
-  tokens.set(hash(raw), { memberId, expiresAt: Date.now() + TOKEN_TTL_MINUTES * 60 * 1000 });
+  await queryAsAdmin(`DELETE FROM customer_account_unlock_tokens WHERE member_id = $1 OR expires_at <= now()`, [
+    memberId,
+  ]);
+  await queryAsAdmin(
+    `INSERT INTO customer_account_unlock_tokens (token_hash, member_id, expires_at)
+     VALUES ($1, $2, now() + make_interval(mins => $3))`,
+    [hash(raw), memberId, TOKEN_TTL_MINUTES],
+  );
   return raw;
 }
 
 /** True only if `token` is live, unexpired, and was issued to exactly this
- *  member - a token minted for one Owner can never unlock the tab for
- *  another, even if both are verified. */
-export function verifyUnlockToken(token, memberId) {
+ *  member - a token minted for one Owner can never unlock another's tab. */
+export async function verifyUnlockToken(token, memberId) {
   const raw = String(token || "");
   if (!raw) return false;
-  const key = hash(raw);
-  const entry = tokens.get(key);
+  const rows = await queryAsAdmin(
+    `SELECT member_id FROM customer_account_unlock_tokens WHERE token_hash = $1 AND expires_at > now() LIMIT 1`,
+    [hash(raw)],
+  );
+  const entry = rows[0];
   if (!entry) return false;
-  if (entry.expiresAt <= Date.now()) {
-    tokens.delete(key);
-    return false;
-  }
-  const expectedMemberIdBuf = Buffer.from(String(memberId || ""));
-  const actualMemberIdBuf = Buffer.from(String(entry.memberId || ""));
-  if (expectedMemberIdBuf.length !== actualMemberIdBuf.length) return false;
-  return timingSafeEqual(expectedMemberIdBuf, actualMemberIdBuf);
+  const expected = Buffer.from(String(memberId || ""));
+  const actual = Buffer.from(String(entry.member_id || ""));
+  if (expected.length !== actual.length) return false;
+  return timingSafeEqual(expected, actual);
 }
 
-export function revokeUnlockToken(token) {
-  tokens.delete(hash(String(token || "")));
-}
-
-export function __clearAllUnlockTokensForTests() {
-  tokens.clear();
+export async function revokeUnlockToken(token) {
+  await queryAsAdmin(`DELETE FROM customer_account_unlock_tokens WHERE token_hash = $1`, [hash(String(token || ""))]);
 }

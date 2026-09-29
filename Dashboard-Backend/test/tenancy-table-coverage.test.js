@@ -16,6 +16,7 @@ import {
   listTenantScopedTableNames,
   listGlobalTableNames,
   SINGLETON_KEY_TABLES,
+  TENANT_SCOPED_VIEWS,
 } from "../src/lib/postgres/tenancy-tables.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -83,4 +84,17 @@ test("every singleton-key table is also tenant-scoped", () => {
   for (const { name } of SINGLETON_KEY_TABLES) {
     assert.equal(scoped.has(name), true, `${name} is a singleton-key table but missing from TENANT_SCOPED_TABLES`);
   }
+});
+
+test("every view the schema creates is listed and runs with the caller's rights", () => {
+  // A view defaults to its OWNER's rights, and the owner is the superuser
+  // that bypasses RLS - an unlisted, owner-rights view is a cross-tenant
+  // read path that no policy covers.
+  const views = [...schemaSource.matchAll(/CREATE OR REPLACE VIEW (\w+)( WITH \(security_invoker = true\))? AS/g)];
+  assert.ok(views.length > 0);
+  assert.deepEqual(views.map((m) => m[1]).sort(), [...TENANT_SCOPED_VIEWS].sort());
+  for (const [, name, invoker] of views) {
+    assert.ok(invoker, `${name} must be created WITH (security_invoker = true)`);
+  }
+  assert.equal(/CREATE (MATERIALIZED )?VIEW (?!IF)/.test(schemaSource.replace(/CREATE OR REPLACE VIEW/g, "")), false);
 });

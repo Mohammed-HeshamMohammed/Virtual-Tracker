@@ -20,6 +20,9 @@ import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 
 const db = new PGlite({ extensions: { pgcrypto } });
+// Only its password matters here: role-credentials.js derives the vt_app /
+// vt_readonly_crosstenant passwords from it.
+const SUPERUSER_URL = "postgres://postgres:harness-superuser-secret@localhost:5432/postgres";
 
 function wrapResult(result) {
   return { rows: result.rows, rowCount: result.affectedRows ?? result.rows.length };
@@ -55,7 +58,7 @@ mock.module("../src/lib/postgres/client.js", {
 mock.module("../src/config/env.js", {
   namedExports: {
     getEnv: () => ({
-      postgres: { tenancyRlsEnabled: true },
+      postgres: { tenancyRlsEnabled: true, url: SUPERUSER_URL, adminUrl: SUPERUSER_URL },
       activity: {
         captureMode: "web",
         webCaptureEnabled: false,
@@ -181,6 +184,71 @@ await check("vt_app has zero privileges on the control-plane tenants table", asy
 await check("vt_readonly_crosstenant has zero privileges on verification_codes (control-plane, not business data)", async () => {
   await assert.rejects(
     () => asRole("vt_readonly_crosstenant", TENANT_A, () => db.query(`SELECT * FROM verification_codes`)),
+    /permission denied/i,
+  );
+});
+
+await check("vt_app and vt_readonly_crosstenant store a SCRAM verifier - never plaintext - with least privilege", async () => {
+  const rows = await db.query(
+    `SELECT rolname, rolpassword, rolcanlogin, rolsuper, rolbypassrls, rolcreaterole
+       FROM pg_authid WHERE rolname IN ('vt_app', 'vt_readonly_crosstenant') ORDER BY rolname`,
+  );
+  assert.equal(rows.rows.length, 2);
+  for (const r of rows.rows) {
+    assert.match(r.rolpassword ?? "", /^SCRAM-SHA-256\$4096:/, `${r.rolname} has a SCRAM verifier`);
+    assert.equal(r.rolcanlogin, true);
+    assert.equal(r.rolsuper, false);
+    assert.equal(r.rolbypassrls, false);
+    assert.equal(r.rolcreaterole, false);
+  }
+});
+
+await check("views apply RLS as the caller: vt_app sees only its own tenant's members through v_members_enriched", async () => {
+  await db.query(
+    `INSERT INTO members (tenant_id, first_name, work_email) VALUES ($1, 'Ann', 'ann@a.test'), ($2, 'Bob', 'bob@b.test')`,
+    [TENANT_A, TENANT_B],
+  );
+  const asA = await asRole("vt_app", TENANT_A, () => db.query(`SELECT work_email FROM v_members_enriched ORDER BY work_email`));
+  assert.deepEqual(asA.rows.map((r) => r.work_email), ["ann@a.test"]);
+  const asNone = await asRole("vt_app", "", () => db.query(`SELECT count(*)::int AS n FROM v_members_enriched`));
+  assert.equal(asNone.rows[0].n, 0, "no tenant published must see nothing through the view either");
+});
+
+await check("tenant_seat_limit() gives vt_app the one number the seat check needs, and nothing else from tenants", async () => {
+  const limit = await asRole("vt_app", TENANT_A, () => db.query(`SELECT tenant_seat_limit($1) AS n`, [TENANT_A]));
+  assert.equal(limit.rows[0].n, 10);
+  await assert.rejects(
+    () => asRole("vt_app", TENANT_A, () => db.query(`SELECT granted_role FROM tenants WHERE id = $1`, [TENANT_A])),
+    /permission denied/i,
+  );
+});
+
+await check("vt_app can take the seat lock and read its limit inside one transaction (no tenants grant needed)", async () => {
+  const { SEAT_LOCK_SQL } = await import("../src/modules/customer-accounts/seat-usage.service.js");
+  await asRole("vt_app", TENANT_A, async () => {
+    await db.query("BEGIN");
+    try {
+      await db.query(SEAT_LOCK_SQL, [TENANT_A]);
+      const r = await db.query(`SELECT tenant_seat_limit($1) AS n`, [TENANT_A]);
+      assert.equal(r.rows[0].n, 10);
+      const held = await db.query(`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND granted`);
+      assert.ok(held.rows[0].n >= 1, "the advisory lock is held for the transaction");
+    } finally {
+      await db.query("COMMIT");
+    }
+    const after = await db.query(`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory'`);
+    assert.equal(after.rows[0].n, 0, "released on commit, like FOR UPDATE");
+  });
+});
+
+await check("unlock tokens round-trip through the real table, and vt_app cannot read it", async () => {
+  const { issueUnlockToken, verifyUnlockToken } = await import("../src/modules/customer-accounts/unlock-token.js");
+  const memberId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const token = await issueUnlockToken(memberId);
+  assert.equal(await verifyUnlockToken(token, memberId), true);
+  assert.equal(await verifyUnlockToken(token, TENANT_A), false);
+  await assert.rejects(
+    () => asRole("vt_app", TENANT_A, () => db.query(`SELECT * FROM customer_account_unlock_tokens`)),
     /permission denied/i,
   );
 });

@@ -146,6 +146,16 @@ export const GLOBAL_TABLES = [
 ];
 
 /**
+ * Views over tenant-scoped tables. Each is created WITH (security_invoker =
+ * true) in ensure-lookup-schema.js - a view otherwise runs with its OWNER's
+ * rights, and the owner is the superuser that bypasses RLS, so vt_app would
+ * read every tenant's rows through it. ensure-tenancy-rls.js grants SELECT
+ * on these to vt_app; the coverage test fails if a view is added to the
+ * schema without being listed here.
+ */
+export const TENANT_SCOPED_VIEWS = ["v_members_enriched", "v_team_rosters", "task_progress_aggregate"];
+
+/**
  * Control-plane tables: not tenant-scoped (a tenant cannot be scoped to
  * itself) and not GLOBAL_TABLES reference data either - these hold the
  * platform's own bookkeeping about tenants (verification secrets, the
@@ -158,6 +168,7 @@ export const CONTROL_PLANE_TABLES = [
   { name: "tenants", reason: "The tenant registry itself - vt_app reading across it would defeat the isolation boundary it defines." },
   { name: "verification_codes", reason: "Unlock-code hashes gating the whole Customer Accounts surface (§16.3) - never business data, never cross-tenant readable." },
   { name: "customer_account_audit", reason: "The commercial audit trail (create/renew/remove/viewed) - platform-level record-keeping, not a tenant's own data." },
+  { name: "customer_account_unlock_tokens", reason: "Hashed bearer tokens for the Customer Accounts unlock - platform access control, not tenant data." },
 ];
 
 export function listControlPlaneTableNames() {

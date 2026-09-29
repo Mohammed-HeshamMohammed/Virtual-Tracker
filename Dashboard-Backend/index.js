@@ -38,6 +38,9 @@ import { scheduleDataRetentionSweep } from "./src/modules/compliance/data-retent
 import { scheduleIntegritySweep } from "./src/modules/activity/integrity-sweep.service.js";
 import { scheduleCounterReconciliationSweep } from "./src/modules/activity/counter-reconciliation-sweep.service.js";
 import { scheduleTenantRemovalResume } from "./src/modules/customer-accounts/tenant.service.js";
+import { MAIN_TENANT_ID } from "./src/lib/postgres/ensure-tenancy-schema.js";
+import { withTenant } from "./src/lib/postgres/client.js";
+import { forEachActiveTenant } from "./src/lib/postgres/active-tenants.js";
 
 let activeServer = null;
 
@@ -138,15 +141,23 @@ export async function startServer(port = getEnv().server.port) {
     // capability row defaults to disabled, so this enables the ones the org is
     // demonstrably already using. Once only - a later boot never re-enables
     // something an Owner has turned off.
-    const capabilityBackfill = await backfillCapabilitiesInUse();
+    // Main organization only: a once-ever migration keyed by a global
+    // system_meta marker; customer tenants get their capability rows seeded
+    // at creation (tenant.service.js).
+    const capabilityBackfill = await withTenant(MAIN_TENANT_ID, () => backfillCapabilitiesInUse());
     if (capabilityBackfill.ok === false) {
       logError(new Error(capabilityBackfill.error ?? "capability backfill failed"), "capability-backfill");
     } else if (capabilityBackfill.enabled?.length) {
       console.log(`[compliance] enabled capabilities already in use: ${capabilityBackfill.enabled.join(", ")}`);
     }
-    backfillMemberAvatarUrls(db).catch((err) => logError(err, "avatar-backfill"));
-    backfillMemberDisplayNames().catch((err) => logError(err, "member-name-backfill"));
-    cleanupCallingProjectTasks().catch((err) => logError(err, "calling-project-task-cleanup"));
+    // Data hygiene over tenant-scoped rows: one pass per tenant, each in its
+    // own withTenant frame (a boot job has no request tenant, and under RLS
+    // an unscoped pass would see nothing).
+    forEachActiveTenant(() => backfillMemberAvatarUrls(db), { label: "avatar-backfill" }).catch((err) => logError(err, "avatar-backfill"));
+    forEachActiveTenant(() => backfillMemberDisplayNames(), { label: "member-name-backfill" }).catch((err) => logError(err, "member-name-backfill"));
+    forEachActiveTenant(() => cleanupCallingProjectTasks(), { label: "calling-project-task-cleanup" }).catch((err) =>
+      logError(err, "calling-project-task-cleanup"),
+    );
     scheduleOrganizationMaintenance(db, "server-startup");
     scheduleTeamWeeklyReports(db);
     scheduleAbandonedSessionSweep();

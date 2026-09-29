@@ -11,11 +11,13 @@ let seatLimit = 5;
 let used = 0;
 let tenantSwitches = [];
 let requestTenant = "tenant-a";
+let adminTransactions = 0;
 
 const client = {
   query: async (sql, params) => {
     calls.push({ sql, params });
     if (/FROM tenants WHERE id = \$1 FOR UPDATE/.test(sql)) return { rows: [{ seat_limit: seatLimit }] };
+    if (/tenant_seat_limit\(\$1\)/.test(sql)) return { rows: [{ seat_limit: seatLimit }] };
     if (/AS used/.test(sql)) return { rows: [{ used }] };
     return { rows: [] };
   },
@@ -24,7 +26,12 @@ const client = {
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
     query: async () => [],
+    queryAsAdmin: async () => [],
     withTransaction: async (fn) => fn(client),
+    withTransactionAsAdmin: async (fn) => {
+      adminTransactions += 1;
+      return fn(client);
+    },
     withTenant: async (tenantId, fn) => {
       tenantSwitches.push(tenantId);
       return fn();
@@ -45,6 +52,7 @@ function reset({ limit = 5, inUse = 0, tenant = "tenant-a" } = {}) {
   seatLimit = limit;
   used = inUse;
   requestTenant = tenant;
+  adminTransactions = 0;
 }
 
 test("an unlimited tenant is never counted - the default setup pays nothing", async () => {
@@ -60,7 +68,30 @@ test("a request that fits is inserted inside the same locked transaction", async
   let insertedWith = null;
   await withSeatsAvailable("tenant-a", 3, { insert: async (c) => { insertedWith = c; } });
   assert.equal(insertedWith, client, "insert must get the transaction's own client");
-  assert.match(calls[0].sql, /FOR UPDATE/, "the tenant row is locked before counting");
+  assert.match(calls[0].sql, /pg_advisory_xact_lock\(hashtextextended\('seats:'/, "the seat lock is taken before counting");
+  assert.deepEqual(calls[0].params, ["tenant-a"]);
+});
+
+test("the guard runs on vt_app without touching the control-plane tenants table", async () => {
+  reset({ limit: 5, inUse: 1 });
+  await withSeatsAvailable("tenant-a", 1, { insert: async () => {} });
+  assert.ok(!calls.some((c) => /FROM tenants/.test(c.sql)), "vt_app has no grant on tenants");
+  assert.ok(calls.some((c) => /tenant_seat_limit\(\$1\)/.test(c.sql)), "the limit comes from the SECURITY DEFINER function");
+  assert.equal(adminTransactions, 0, "the insert must stay on the tenant-scoped connection");
+});
+
+test("an unknown tenant (NULL limit) skips the check, like a missing row did", async () => {
+  reset({ limit: null, inUse: 999 });
+  let inserted = false;
+  await withSeatsAvailable("tenant-x", 1, { insert: async () => { inserted = true; } });
+  assert.equal(inserted, true);
+});
+
+test("setTenantSeatLimit writes on the admin identity under the same seat lock", async () => {
+  reset({ limit: 10, inUse: 3 });
+  await setTenantSeatLimit("main", 8);
+  assert.equal(adminTransactions, 1);
+  assert.match(calls[0].sql, /pg_advisory_xact_lock\(hashtextextended\('seats:'/);
 });
 
 test("a request that does not fit is refused whole, before anything is inserted", async () => {

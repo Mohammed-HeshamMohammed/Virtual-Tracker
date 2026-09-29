@@ -1,4 +1,4 @@
-import { query } from "../../lib/postgres/client.js";
+import { queryAsAdmin } from "../../lib/postgres/client.js";
 
 /**
  * §4.3, §16.4: the one definition of "may this tenant be used right now".
@@ -7,8 +7,10 @@ import { query } from "../../lib/postgres/client.js";
  * cache from inside its own mutations (renew, seats, and critically
  * removal's step 1), and a dependency the other direction would be a cycle.
  */
+// Runs on every authenticated request, from whatever tenant the caller is in;
+// tenants is control-plane (no vt_app grant), so this one-row read is admin.
 export async function getTenantGrant(tenantId) {
-  const rows = await query(
+  const rows = await queryAsAdmin(
     `SELECT id, type, granted_role, seat_limit, period_end, lifecycle
      FROM tenants WHERE id = $1 LIMIT 1`,
     [tenantId],

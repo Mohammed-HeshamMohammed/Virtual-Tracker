@@ -1,4 +1,5 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
+import { forEachActiveTenant } from "../../lib/postgres/active-tenants.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { resolveAppPublicUrl } from "../auth/app-public-url.js";
 import { canBeTeamLead } from "../../http/team-member-assign-policy.js";
@@ -135,7 +136,10 @@ export function scheduleTeamWeeklyReports(db) {
   if (weeklyReportTimer) return;
 
   const run = () => {
-    processDueTeamWeeklyReports(db).catch((err) => {
+    forEachActiveTenant(() => processDueTeamWeeklyReports(db), {
+      includeInactive: false,
+      label: "team-weekly-report",
+    }).catch((err) => {
       logSafeWarn("[team-weekly-report] scheduler run failed:", err);
     });
   };

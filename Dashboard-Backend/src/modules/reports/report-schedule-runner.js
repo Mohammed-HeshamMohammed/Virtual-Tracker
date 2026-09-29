@@ -8,6 +8,7 @@ import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { isEmployeeRole, isViewerRole } from "../../http/role-hierarchy.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { withTenant } from "../../lib/postgres/client.js";
+import { forEachActiveTenant } from "../../lib/postgres/active-tenants.js";
 import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
@@ -81,7 +82,14 @@ async function runReportSchedule(db, schedule, timeZone, audience) {
 }
 
 export async function processDueReportSchedules(db) {
-  const schedules = await listReportSchedulesPg("time-and-activity");
+  // Listed per tenant, not in one unscoped query: under RLS an unscoped list
+  // sees nothing, and an expired or removed tenant gets no report emails.
+  const perTenant = await forEachActiveTenant(
+    async (tenantId) =>
+      (await listReportSchedulesPg("time-and-activity")).map((s) => ({ ...s, tenant_id: s.tenant_id ?? tenantId })),
+    { includeInactive: false, label: "report-schedules" },
+  );
+  const schedules = perTenant.flat();
   const now = new Date();
   let processed = 0;
   let sent = 0;

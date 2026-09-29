@@ -112,7 +112,7 @@ END $$`,
   UNIQUE (role_id, permission_key)
 )`,
   "CREATE INDEX IF NOT EXISTS idx_role_perms_role ON role_permissions (role_id)",
-  `CREATE OR REPLACE VIEW v_members_enriched AS
+  `CREATE OR REPLACE VIEW v_members_enriched WITH (security_invoker = true) AS
 SELECT 
   m.id,
   m.firebase_uid,
@@ -153,7 +153,7 @@ FROM members m
 LEFT JOIN roles r ON r.id = m.role_id
 LEFT JOIN pay_rates p ON p.member_id = m.id
 LEFT JOIN limits l ON l.member_id = m.id`,
-  `CREATE OR REPLACE VIEW v_team_rosters AS
+  `CREATE OR REPLACE VIEW v_team_rosters WITH (security_invoker = true) AS
 SELECT 
   tm.id,
   tm.team_id,
@@ -880,7 +880,7 @@ END$$`,
 )`,
   `CREATE INDEX IF NOT EXISTS idx_tmp_task_id ON task_member_progress (task_id)`,
   `CREATE INDEX IF NOT EXISTS idx_tmp_member_id ON task_member_progress (member_id)`,
-  `CREATE OR REPLACE VIEW task_progress_aggregate AS
+  `CREATE OR REPLACE VIEW task_progress_aggregate WITH (security_invoker = true) AS
 SELECT
   task_id,
   SUM(active_seconds) AS total_active_seconds,

@@ -50,6 +50,15 @@ const CONTROL_PLANE_DDL = [
   SELECT t.lifecycle = 'live' AND now() < t.period_end;
 $$ LANGUAGE sql STABLE`,
 
+  // The seat check (seat-usage.service.js) runs on vt_app, inside the same
+  // transaction as the member/invite insert it guards, but tenants is a
+  // control-plane table vt_app has no grant on. SECURITY DEFINER exposes
+  // exactly this one number and nothing else about the tenant row;
+  // search_path is pinned so the definer body cannot be redirected.
+  `CREATE OR REPLACE FUNCTION tenant_seat_limit(p_tenant uuid) RETURNS integer AS $$
+  SELECT seat_limit FROM public.tenants WHERE id = p_tenant;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp`,
+
   // The main organization, seeded once at a fixed id (see MAIN_TENANT_ID's
   // own comment). period_end = infinity rather than special-casing
   // type = 'main' in every caller of tenant_is_active().
@@ -85,6 +94,16 @@ $$ LANGUAGE sql STABLE`,
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 )`,
   "CREATE INDEX IF NOT EXISTS idx_customer_audit_tenant ON customer_account_audit (tenant_id, created_at DESC)",
+
+  // Customer Accounts unlock tokens (unlock-token.js). Only the SHA-256 of
+  // the bearer value is stored; one live row per member.
+  `CREATE TABLE IF NOT EXISTS customer_account_unlock_tokens (
+  token_hash  CHAR(64)     PRIMARY KEY,
+  member_id   UUID         NOT NULL,
+  expires_at  TIMESTAMPTZ  NOT NULL,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_unlock_tokens_member ON customer_account_unlock_tokens (member_id)",
 ];
 
 /**
