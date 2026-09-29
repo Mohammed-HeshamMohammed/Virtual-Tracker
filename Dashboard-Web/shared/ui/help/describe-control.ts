@@ -112,6 +112,7 @@ function forField(info: ControlInfo): string {
     return "Search: type to narrow what is listed."
   }
   if (!name) return ""
+  // bearer:disable javascript_lang_hardcoded_secret -- labels describe input types; no credential is stored.
   const how: Record<string, string> = {
     date: "pick a date",
     "datetime-local": "pick a date and time",

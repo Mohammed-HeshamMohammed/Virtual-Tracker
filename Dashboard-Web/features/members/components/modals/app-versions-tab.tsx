@@ -6,6 +6,7 @@ import { cn } from "@/shared/utils/utils"
 import {
   getAgentVersions,
   sendAgentInstallEmail,
+  sendManualReinstallEmails,
   sendAgentUpdateReminder,
   sendAgentVersionReminders,
   sendUnknownAgentInstallEmails,
@@ -96,7 +97,7 @@ export function AppVersionsTab() {
 
   async function sendAll(channel: Channel) {
     if (!selected?.version || selected.status !== "outdated") return
-    const eligible = selected.members.filter((member) => channel === "app" ? member.supportsAgentInbox : member.canReceiveEmail).length
+    const eligible = selected.members.filter((member) => !member.needsManualReinstall && (channel === "app" ? member.supportsAgentInbox : member.canReceiveEmail)).length
     if (!eligible || !window.confirm(`Send ${channel === "app" ? "in-app" : "email"} update reminders to ${eligible} member${eligible === 1 ? "" : "s"} using v${selected.version}?`)) return
     setBusyKey(`all:${channel}`)
     setError("")
@@ -123,6 +124,23 @@ export function AppVersionsTab() {
       setResult(`Sent ${summary.sent}. Skipped ${summary.current + summary.duplicate + summary.missingEmail}. Failed ${summary.failed}.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send install instructions")
+    } finally {
+      setBusyKey("")
+    }
+  }
+
+  async function sendAllReinstall() {
+    if (!selected?.members.some((member) => member.needsManualReinstall)) return
+    const eligible = selected.members.filter((member) => member.needsManualReinstall && member.canReceiveEmail).length
+    if (!eligible || !window.confirm(`Email latest-app reinstall instructions to ${eligible} member${eligible === 1 ? "" : "s"} whose tracker cannot self-update?`)) return
+    setBusyKey("all:reinstall")
+    setError("")
+    setResult("")
+    try {
+      const summary = await sendManualReinstallEmails()
+      setResult(`Sent ${summary.sent}. Skipped ${summary.current + summary.duplicate + summary.missingEmail}. Failed ${summary.failed}.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send reinstall instructions")
     } finally {
       setBusyKey("")
     }
@@ -162,7 +180,7 @@ export function AppVersionsTab() {
             <div>
               <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{groupLabel(selected)}</h3>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {selected.status === "latest" ? "Update reminders disabled: members already use latest version." : selected.status === "outdated" ? "Send individually or to all eligible members." : "Update reminders disabled until a valid version is reported."}
+                {selected.status === "latest" ? "Update reminders disabled: members already use latest version." : selected.members.some((member) => member.needsManualReinstall) ? "This version cannot self-update. Send reinstall instructions instead." : selected.status === "outdated" ? "Send individually or to all eligible members." : "Update reminders disabled until a valid version is reported."}
               </p>
             </div>
             <div className="flex gap-2">
@@ -171,10 +189,15 @@ export function AppVersionsTab() {
                   <Send className="h-3.5 w-3.5" /> Email install instructions
                 </button>
               ) : null}
-              <button type="button" disabled={selected.status !== "outdated" || busyKey !== "" || !selected.members.some((member) => member.supportsAgentInbox)} onClick={() => void sendAll("app")} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-emerald-600">
+              {selected.members.some((member) => member.needsManualReinstall) ? (
+                <button type="button" disabled={busyKey !== "" || !selected.members.some((member) => member.needsManualReinstall && member.canReceiveEmail)} onClick={() => void sendAllReinstall()} className="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-amber-700 dark:text-amber-300">
+                  <Send className="h-3.5 w-3.5" /> Email reinstall instructions
+                </button>
+              ) : null}
+              <button type="button" disabled={selected.status !== "outdated" || busyKey !== "" || !selected.members.some((member) => !member.needsManualReinstall && member.supportsAgentInbox)} onClick={() => void sendAll("app")} className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40 dark:bg-emerald-600">
                 <Bell className="h-3.5 w-3.5" /> Notify all in app
               </button>
-              <button type="button" disabled={selected.status !== "outdated" || busyKey !== "" || !selected.members.some((member) => member.canReceiveEmail)} onClick={() => void sendAll("email")} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:text-slate-200">
+              <button type="button" disabled={selected.status !== "outdated" || busyKey !== "" || !selected.members.some((member) => !member.needsManualReinstall && member.canReceiveEmail)} onClick={() => void sendAll("email")} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-40 dark:border-slate-600 dark:text-slate-200">
                 <Mail className="h-3.5 w-3.5" /> Email all
               </button>
             </div>
@@ -188,7 +211,7 @@ export function AppVersionsTab() {
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {selected.members.map((member) => {
-                  const updateAllowed = selected.status === "outdated"
+                  const updateAllowed = selected.status === "outdated" && !member.needsManualReinstall
                   const appDisabled = !updateAllowed || !member.supportsAgentInbox || busyKey !== ""
                   const emailDisabled = !updateAllowed || !member.canReceiveEmail || busyKey !== ""
                   return (
@@ -198,10 +221,10 @@ export function AppVersionsTab() {
                         <span className="block text-xs text-slate-400">{member.email || "No email"}</span>
                         {member.needsManualReinstall ? (
                           <span
-                            title="This tracker is too old to update itself. It receives no updates until it is reinstalled from the download page."
+                            title={member.belowMinimumSupported ? "This predates the in-app notification system (v1.0.25) and must be reinstalled." : "This tracker is too old to update itself. It receives no updates until it is reinstalled from the download page."}
                             className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
                           >
-                            Needs reinstall
+                            {member.belowMinimumSupported ? "No notification inbox" : "Needs reinstall"}
                           </span>
                         ) : null}
                         {/* Shown only alongside a current version: an agent that already
@@ -218,9 +241,9 @@ export function AppVersionsTab() {
                       </td>
                       <td className="px-3 py-3 capitalize">{member.agentPlatform || "—"}</td>
                       <td className="px-3 py-3 text-xs text-slate-500 dark:text-slate-400">{formatOpened(member.agentLastOpenedAt)}</td>
-                      <td className="px-3 py-3 text-center"><button type="button" title={!updateAllowed ? "A valid outdated version is required" : !member.supportsAgentInbox ? "This tracker version cannot receive in-app notifications" : "Send in-app reminder"} disabled={appDisabled} onClick={() => void sendOne(member, "app")} className="rounded-full p-2 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30 dark:text-emerald-400 dark:hover:bg-emerald-950/50"><Bell className="h-4 w-4" /></button></td>
+                      <td className="px-3 py-3 text-center"><button type="button" title={member.needsManualReinstall ? "This tracker needs a reinstall and cannot receive a safe update" : !updateAllowed ? "A valid outdated version is required" : !member.supportsAgentInbox ? "This tracker version cannot receive in-app notifications" : "Send in-app reminder"} disabled={appDisabled} onClick={() => void sendOne(member, "app")} className="rounded-full p-2 text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-30 dark:text-emerald-400 dark:hover:bg-emerald-950/50"><Bell className="h-4 w-4" /></button></td>
                       <td className="px-3 py-3 text-center">
-                        {selected.status === "unknown" ? (
+                        {selected.status === "unknown" || member.needsManualReinstall ? (
                           <button type="button" title="Send latest-app install instructions" disabled={!member.canReceiveEmail || busyKey !== ""} onClick={() => void sendInstall(member)} className="rounded-full p-2 text-amber-600 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-30 dark:text-amber-400 dark:hover:bg-amber-950/50"><Send className="h-4 w-4" /></button>
                         ) : selected.status === "unrecognized" ? (
                           <span className="text-xs text-slate-400" title="Ask the member to reopen or reinstall the tracker">Needs new report</span>

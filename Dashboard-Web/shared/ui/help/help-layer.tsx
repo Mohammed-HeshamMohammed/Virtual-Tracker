@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { setHelpMode, useHelpMode } from "@/shared/ui/help/help-mode"
 import { placeCallout, type Placed } from "@/shared/ui/help/help-geometry"
 import { collectTourSteps, type Step } from "@/shared/ui/help/help-collect"
+import { isShowable } from "@/shared/ui/help/help-tour"
 
 const SPOTLIGHT_PAD = 4
 const OWN_UI = ".help-tour, [data-help-toggle]"
@@ -55,8 +56,9 @@ export function HelpLayer() {
   }, [current])
 
   useEffect(() => {
-    // Something can leave the page while the tour is on (a list refreshing): move on.
-    if (current && !current.isConnected) step(1)
+    // Something can leave the page or finish closing while the tour is on: move on instead
+    // of pointing at a stale position from an invisible popup.
+    if (current && (!current.isConnected || !isShowable(current))) step(1)
   }, [current, step])
 
   useLayoutEffect(() => {

@@ -222,5 +222,5 @@ export async function completeClientSelfSetup(data: ClientFormData): Promise<voi
   })
   const json = await readJsonSafe<ApiEnvelope<unknown>>(res)
   if (!res.ok) throw extractApiError(res.status, "Failed to save your client details", json)
-  if (!json?.success) throw new Error(json?.error || "Failed to save your client details")
+  if (!json?.success) throw new Error("Failed to save your client details")
 }
