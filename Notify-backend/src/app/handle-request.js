@@ -11,21 +11,16 @@ const CORS_HEADERS = {
   "Access-Control-Max-Age": "86400",
 };
 
-function resolveAllowedOrigin(reqOrigin) {
+export function resolveAllowedOrigin(reqOrigin) {
   const env = getEnv();
   const raw = env.cors.corsOrigins || env.cors.frontendOrigin || "";
   const allowed = raw.split(",").map((s) => s.trim()).filter(Boolean);
   if (!allowed.length) {
-    // Nothing configured. Reflecting the caller's origin back is convenient
-    // in development and fail-open in production - the same shape as the TLS
-    // bug fixed in a1bf554, where posture depended on an env var being
-    // present. Not exploitable today (no Access-Control-Allow-Credentials is
-    // ever sent, and these routes are Bearer-authenticated, so a browser
-    // cannot ride a session), but permissive-by-default is the wrong default.
-    if (env.isProduction) return "";
-    return reqOrigin || "*";
+    // Fail closed in every environment. Development callers must configure an
+    // explicit origin instead of training this service to reflect user input.
+    return "";
   }
-  return allowed.includes(reqOrigin) ? reqOrigin : allowed[0];
+  return allowed.includes(reqOrigin) ? reqOrigin : "";
 }
 
 export async function handleRequest(req, res) {
