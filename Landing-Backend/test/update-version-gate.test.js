@@ -6,7 +6,23 @@
 // exists to stop; too high and healthy agents silently stop receiving updates.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { canSelfUpdate, compareVersions, hasNewerVersion, selectPlatformEntry } from "../src/modules/update/update-routes.js";
+import { buildEnv } from "../src/config/env.js";
+import {
+  canSelfUpdate,
+  compareVersions,
+  hasNewerVersion,
+  rolloutBucket,
+  selectPlatformEntry,
+  shouldOfferUpdate,
+  validateUpdateManifest,
+} from "../src/modules/update/update-routes.js";
+
+test("the product minimum starts at the first release with in-app notifications", () => {
+  const env = buildEnv({ SKIP_ENV_VALIDATION: "1" });
+  assert.equal(env.agent.minimumSupportedVersion, "1.0.25");
+  assert.equal(env.agent.forceUpdateBelowVersion, "1.0.25");
+  assert.equal(env.agent.minSelfUpdateVersion, "1.0.27", "installer safety remains an independent boundary");
+});
 
 test("versions compare numerically, not as text", () => {
   // The bug a string compare would produce: "1.0.9" > "1.0.10".
@@ -92,4 +108,54 @@ test("other platforms are untouched by the Windows preference", () => {
 
 test("an absent platform map does not throw", () => {
   assert.equal(selectPlatformEntry(undefined, "windows", "x86_64"), null);
+});
+
+test("percentage rollout is deterministic and does not need identity data", () => {
+  const id = "11111111-2222-4333-8444-555555555555";
+  assert.equal(rolloutBucket(id, "salt"), rolloutBucket(id, "salt"));
+  assert.equal(rolloutBucket("too-short", "salt"), null);
+  const bucket = rolloutBucket(id, "salt");
+  assert.equal(shouldOfferUpdate({ currentVersion: "1.1.0", rolloutId: id, rolloutPercent: bucket, salt: "salt" }), false);
+  assert.equal(shouldOfferUpdate({ currentVersion: "1.1.0", rolloutId: id, rolloutPercent: bucket + 1, salt: "salt" }), true);
+});
+
+test("urgent minimum-version policy bypasses the rollout cohort safely", () => {
+  assert.equal(shouldOfferUpdate({
+    currentVersion: "1.1.0",
+    rolloutId: "missing",
+    rolloutPercent: 0,
+    forceUpdateBelowVersion: "1.1.1",
+    salt: "salt",
+  }), true);
+  assert.equal(shouldOfferUpdate({
+    currentVersion: "1.1.1",
+    rolloutId: "missing",
+    rolloutPercent: 0,
+    forceUpdateBelowVersion: "1.1.1",
+    salt: "salt",
+  }), false);
+  assert.equal(shouldOfferUpdate({
+    currentVersion: "1.0.27",
+    rolloutId: "install_1234567890abcdef",
+    rolloutPercent: 0,
+    forceUpdateBelowVersion: "not-a-version",
+  }), false, "a malformed forced floor must not force every installation");
+});
+
+test("release health requires a signed updater for every supported platform", () => {
+  const manifest = {
+    version: "1.2.0",
+    platforms: {
+      ...WINDOWS_MANIFEST,
+      "linux-x86_64": { url: "https://x/app.AppImage", signature: "linux-sig" },
+      "darwin-aarch64": { url: "https://x/app-arm.tar.gz", signature: "arm-sig" },
+      "darwin-x86_64": { url: "https://x/app-intel.tar.gz", signature: "intel-sig" },
+    },
+  };
+  assert.deepEqual(
+    validateUpdateManifest(manifest, ["windows-x86_64", "linux-x86_64", "darwin-aarch64", "darwin-x86_64"]),
+    { ok: true, error: null, platforms: ["windows-x86_64", "linux-x86_64", "darwin-aarch64", "darwin-x86_64"] },
+  );
+  delete manifest.platforms["darwin-x86_64"];
+  assert.match(validateUpdateManifest(manifest, ["darwin-x86_64"]).error, /darwin-x86_64/);
 });

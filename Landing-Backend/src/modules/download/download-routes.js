@@ -6,13 +6,25 @@ import { getSecurityHeaders } from "../../http/security-headers.js";
 let cachedRelease = null;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
+export function selectLatestAgentRelease(releases) {
+  if (!Array.isArray(releases)) return null;
+  return releases.find((release) =>
+    release &&
+    release.draft !== true &&
+    release.prerelease !== true &&
+    /^agent-v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(String(release.tag_name || "")),
+  ) ?? null;
+}
+
 export async function getLatestRelease(repoOwner, repoName, pat) {
   const now = Date.now();
   if (cachedRelease && now - cachedRelease.fetchedAt < CACHE_TTL_MS) {
     return cachedRelease.data;
   }
 
-  const url = `https://api.github.com/repos/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}/releases/latest`;
+  // `/releases/latest` is repository-wide. A future dashboard/backend release
+  // must never silently replace the agent feed, so select only `agent-v*`.
+  const url = `https://api.github.com/repos/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}/releases?per_page=30`;
   const headers = {
     "User-Agent": "VirtualTracker-LandingBackend",
     "Accept": "application/vnd.github+json",
@@ -27,7 +39,9 @@ export async function getLatestRelease(repoOwner, repoName, pat) {
     throw new Error(`GitHub API error (${res.status}): ${errText || res.statusText}`);
   }
 
-  const data = await res.json();
+  const releases = await res.json();
+  const data = selectLatestAgentRelease(releases);
+  if (!data) throw new Error("GitHub has no published agent-v* release");
   cachedRelease = { data, fetchedAt: now };
   return data;
 }
