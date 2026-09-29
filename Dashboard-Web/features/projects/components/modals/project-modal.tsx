@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState as useComponentState, type Fo
 import { useEntityLiveGuard } from "@/shared/hooks/use-entity-live-guard"
 import { changedEvent } from "@/infrastructure/api/change-events"
 import { AnimatePresence, motion } from "framer-motion"
-import { X, Info, Wallet, Users, Bell, TimerOff, RotateCw } from "lucide-react"
+import { X, Info, Wallet, Users, Bell, TimerOff, RotateCw, ChevronDown } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import {
   fetchProjectForEdit,
@@ -83,6 +83,9 @@ interface AddProjectFormState {
   allowProjectTracking: boolean
   restrictManagerTracking: boolean
   trackingAllowedManagerIds: string[]
+  /** Per-member timezone override for this project, keyed by member id - see
+   *  CreateProjectFormPayload.memberTimeZones. */
+  memberTimeZones: Record<string, string>
   requireTaskToTrack: boolean
   restrictTaskCreation: boolean
   requireStopNote: boolean
@@ -221,6 +224,7 @@ function createDefaultAddForm(): AddProjectFormState {
     allowProjectTracking: true,
     restrictManagerTracking: false,
     trackingAllowedManagerIds: [],
+    memberTimeZones: {},
     requireTaskToTrack: true,
     restrictTaskCreation: true,
     requireStopNote: false,
@@ -368,6 +372,7 @@ function formStateToPayload(
     allowProjectTracking: addForm.allowProjectTracking,
     restrictManagerTracking: addForm.restrictManagerTracking,
     trackingAllowedManagerIds: addForm.trackingAllowedManagerIds,
+    memberTimeZones: addForm.memberTimeZones,
     requireTaskToTrack: addForm.requireTaskToTrack,
     restrictTaskCreation: addForm.restrictTaskCreation,
     requireStopNote: addForm.requireStopNote,
@@ -451,6 +456,7 @@ export function ProjectModal({
   const [editingUpdatedAt, setEditingUpdatedAt] = useComponentState<string | undefined>(undefined)
   const [editingBudgetUpdatedAt, setEditingBudgetUpdatedAt] = useComponentState<string | undefined>(undefined)
   const [addProjectTab, setAddProjectTab] = useComponentState<AddProjectTab>("general")
+  const [showMemberTimeZoneOverrides, setShowMemberTimeZoneOverrides] = useComponentState(false)
   const [addProjectStep, setAddProjectStep] = useComponentState<"type" | "form">(
     isEditMode ? "form" : "type",
   )
@@ -702,6 +708,9 @@ export function ProjectModal({
         setEditingBudgetId(budgetId)
         setEditingUpdatedAt(updatedAt)
         setEditingBudgetUpdatedAt(budgetUpdatedAt)
+        setShowMemberTimeZoneOverrides(
+          Object.values(payload.memberTimeZones ?? {}).some((tz) => tz.trim().length > 0),
+        )
         setAddForm({
           projectNames: payload.name,
           type: payload.type ?? "normal",
@@ -710,6 +719,7 @@ export function ProjectModal({
           allowProjectTracking: payload.allowProjectTracking,
           restrictManagerTracking: payload.restrictManagerTracking,
           trackingAllowedManagerIds: payload.trackingAllowedManagerIds ?? [],
+          memberTimeZones: payload.memberTimeZones ?? {},
           requireTaskToTrack: payload.requireTaskToTrack,
           restrictTaskCreation: payload.restrictTaskCreation,
           requireStopNote: payload.requireStopNote,
@@ -1288,6 +1298,77 @@ export function ProjectModal({
                   />
                 </FormField>
               </div>
+
+              {canSetTimezone ? (() => {
+                const projectMemberIds = [...new Set([...addForm.managers, ...addForm.users, ...addForm.viewers])]
+                const overrideCount = Object.values(addForm.memberTimeZones).filter((tz) => tz.trim()).length
+                return (
+                  <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
+                    <button
+                      type="button"
+                      onClick={() => setShowMemberTimeZoneOverrides((v) => !v)}
+                      className={cn("flex items-center justify-between text-left text-sm font-medium", formTheme.modal.title)}
+                    >
+                      <span>
+                        Per-member timezone overrides
+                        {overrideCount > 0 ? ` (${overrideCount})` : ""}
+                      </span>
+                      <ChevronDown
+                        className={cn("h-4 w-4 shrink-0 transition-transform", formTheme.mutedText, showMemberTimeZoneOverrides && "rotate-180")}
+                      />
+                    </button>
+                    <p className={cn("text-xs", formTheme.mutedText)}>
+                      For the rare member working a different region&apos;s schedule on this project than on
+                      their others. Leave as &quot;Inherit&quot; for everyone else — they already follow this
+                      project&apos;s own time zone above, or their personal one if it has none set.
+                    </p>
+                    <ExpandCollapse show={showMemberTimeZoneOverrides}>
+                      {projectMemberIds.length === 0 ? (
+                        <p className={cn("text-xs italic", formTheme.mutedText)}>
+                          No members on this project yet — add some on the Members tab.
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {projectMemberIds.map((memberId) => {
+                            const value = addForm.memberTimeZones[memberId] ?? ""
+                            return (
+                              <div key={memberId} className="flex items-center gap-2">
+                                <span className={cn("min-w-0 flex-1 truncate text-sm", formTheme.bodyText)}>
+                                  {memberLabelById[memberId] ?? memberId}
+                                </span>
+                                <select
+                                  value={value}
+                                  disabled={readOnly}
+                                  onChange={(e) =>
+                                    setAddForm((p) => ({
+                                      ...p,
+                                      memberTimeZones: { ...p.memberTimeZones, [memberId]: e.target.value },
+                                    }))
+                                  }
+                                  className={cn(formTheme.control, "w-56 shrink-0")}
+                                >
+                                  <option value="">Inherit</option>
+                                  {value && !TIME_ZONES.some((label) => ianaIdFromTimeZoneLabel(label) === value) && (
+                                    <option value={value}>{value}</option>
+                                  )}
+                                  {TIME_ZONES.map((label) => {
+                                    const id = ianaIdFromTimeZoneLabel(label)
+                                    return (
+                                      <option key={id} value={id}>
+                                        {label}
+                                      </option>
+                                    )
+                                  })}
+                                </select>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </ExpandCollapse>
+                  </div>
+                )
+              })() : null}
 
               <div className={cn("space-y-3 rounded-xl border p-3", formTheme.card)}>
                 <SettingToggleRow

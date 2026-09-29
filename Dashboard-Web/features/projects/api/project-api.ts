@@ -411,3 +411,25 @@ export async function setProjectManagerTrackingAccess(
     throw extractApiError(res.status, "Failed to save manager tracking access", json)
   }
 }
+
+/**
+ * One member's timezone override for this project - which calendar their
+ * hours here are judged against, for the rare case they work a different
+ * region's schedule on this project than on their others. An empty string
+ * clears it back to inherited (the project's own zone, then their own).
+ */
+export async function setProjectMemberTimeZone(
+  projectId: string,
+  memberId: string,
+  timezone: string,
+): Promise<void> {
+  const res = await apiFetch(apiPath(`/api/projects/${encodeURIComponent(projectId)}/member-timezone`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ member_id: memberId, timezone }),
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    throw extractApiError(res.status, "Failed to save this member's timezone", json)
+  }
+}

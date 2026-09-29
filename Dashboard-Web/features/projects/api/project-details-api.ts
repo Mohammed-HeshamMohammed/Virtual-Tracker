@@ -13,6 +13,7 @@ import {
   getProjects,
   removeProjectMember,
   setProjectManagerTrackingAccess,
+  setProjectMemberTimeZone,
   updateProject,
   type CreateProjectInput,
   type Project as ApiProject,
@@ -53,6 +54,11 @@ export interface CreateProjectFormPayload {
   managerIds: string[]
   /** Which of managerIds may clock in, when restrictManagerTracking is on. */
   trackingAllowedManagerIds: string[]
+  /** Per-member timezone override for this project, keyed by member id - only
+   *  present for the rare member working a different region's schedule on
+   *  this project than on their others. Missing/empty means inherit (the
+   *  project's own zone, then the member's personal zone). */
+  memberTimeZones: Record<string, string>
   userIds: string[]
   viewerIds: string[]
   memberLimitMemberIds: string[]
@@ -520,6 +526,7 @@ export async function fetchProjectForEdit(projectId: string): Promise<ProjectEdi
     teamIds: (data.teamIds ?? []).filter((id) => id.trim().length > 0),
     managerIds: data.managerIds ?? [],
     trackingAllowedManagerIds: data.trackingAllowedManagerIds ?? [],
+    memberTimeZones: data.memberTimeZones ?? {},
     userIds: data.userIds ?? [],
     viewerIds: data.viewerIds ?? [],
     memberLimitMemberIds: data.memberLimitMemberIds ?? [],
@@ -601,6 +608,25 @@ async function syncManagerTrackingAccess(
   const managerSet = new Set(payload.managerIds.map((id) => id.trim()))
   const allowed = filterValidUuids(payload.trackingAllowedManagerIds).filter((id) => managerSet.has(id))
   await setProjectManagerTrackingAccess(projectId, allowed)
+}
+
+/**
+ * One request per member with an entry in the form's map, not a single
+ * declarative call like the manager allow-list above - the backend endpoint
+ * is per-member (see setProjectMemberTimeZonePg), since this is a value on
+ * that one person's assignment, not a set membership decides in one shot.
+ * Scoped to managers/users/viewers, the only roles this modal actually
+ * manages - a bare "member" row isn't edited through this form at all.
+ */
+async function syncMemberTimeZones(
+  projectId: string,
+  payload: CreateProjectFormPayload,
+): Promise<void> {
+  const memberSet = new Set(
+    [...payload.managerIds, ...payload.userIds, ...payload.viewerIds].map((id) => id.trim()),
+  )
+  const entries = Object.entries(payload.memberTimeZones ?? {}).filter(([memberId]) => memberSet.has(memberId))
+  await Promise.all(entries.map(([memberId, timezone]) => setProjectMemberTimeZone(projectId, memberId, timezone)))
 }
 
 async function linkClientsFast(
@@ -847,6 +873,7 @@ export async function updateProjectWithDetails(
       Promise.all([
         syncProjectMemberLimits(projectId, payload, actorMemberId),
         syncManagerTrackingAccess(projectId, memberPayload),
+        syncMemberTimeZones(projectId, memberPayload),
       ]),
     ),
     syncTeamLinks(projectId, payload.teamIds, actorMemberId),
@@ -933,6 +960,7 @@ export async function createProjectWithDetails(
       Promise.all([
         syncProjectMemberLimits(created.id, payload, actorMemberId),
         syncManagerTrackingAccess(created.id, memberPayload),
+        syncMemberTimeZones(created.id, memberPayload),
       ]),
     ),
     linkTeamsFast(created.id, payload.teamIds, actorMemberId),
