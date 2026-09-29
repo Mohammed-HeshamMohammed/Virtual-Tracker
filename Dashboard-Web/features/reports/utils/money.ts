@@ -27,6 +27,16 @@ function joinNonZero(byCurrency: Map<string, number>): string {
     .join(" + ")
 }
 
+/** Numeric value of a formatted money label, split on "+" first so a joined
+ *  multi-currency string ("$0.00 + EGP 787.54") sums as two numbers instead of
+ *  gluing their digits into one ("0.00787.54") - the same bug sumMoneyStrings
+ *  avoids by splitting before it parses. */
+export function moneyLabelToNumber(label: string): number {
+  return String(label ?? "")
+    .split("+")
+    .reduce((sum, part) => (part.trim() ? sum + (parseMoneyLabel(part).amount || 0) : sum), 0)
+}
+
 export function sumMoneyStrings(amountList: string[]): string {
   const byCurrency = new Map<string, number>()
   for (const label of amountList) {

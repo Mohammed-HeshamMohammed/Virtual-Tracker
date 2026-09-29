@@ -1,20 +1,16 @@
 import type { TimeActivityDayRow } from "@/features/reports/models/time-and-activity"
 
 import { parseTimeToSeconds } from "@/features/reports/utils/time-and-activity/row-aggregate"
+import { moneyLabelToNumber } from "@/features/reports/utils/money"
 
 /** `totalSpent` can be "$0.00" or, for a team paid in more than one currency
  *  with no exchange rate to unify them, "$0.00 + EGP 787.54" (sumMoneyByCurrency).
- *  Stripping non-digits from the whole string ran the two numbers together
- *  into one ("0.00787.54"), a number with no relation to either amount - split
- *  on "+" first so each currency's figure is parsed on its own. Sorting a mixed
- *  currency's face value against another currency's is still an approximation
- *  (there's no rate to convert it properly), but it is at least the right
- *  approximation: today's actual total, not two numbers glued together. */
-function spentUsd(s: string): number {
-  return s
-    .split("+")
-    .reduce((sum, part) => sum + (Number.parseFloat(part.replace(/[^0-9.-]/g, "")) || 0), 0)
-}
+ *  moneyLabelToNumber splits on "+" before parsing so the two amounts sum
+ *  instead of gluing into one ("0.00787.54"). Sorting a mixed currency's face
+ *  value against another currency's is still an approximation (there's no
+ *  rate to convert it properly), but it is at least the right approximation:
+ *  today's actual total, not two numbers glued together. */
+const spentUsd = moneyLabelToNumber
 
 export function comparePeriodRows(
   a: TimeActivityDayRow,

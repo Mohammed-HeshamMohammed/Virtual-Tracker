@@ -12,6 +12,7 @@ import {
   getProjectMembers,
   getProjects,
   removeProjectMember,
+  setProjectManagerTrackingAccess,
   updateProject,
   type CreateProjectInput,
   type Project as ApiProject,
@@ -34,6 +35,7 @@ export interface CreateProjectFormPayload {
   billable: boolean
   disableActivity: boolean
   allowProjectTracking: boolean
+  restrictManagerTracking: boolean
   requireTaskToTrack: boolean
   restrictTaskCreation: boolean
   requireStopNote: boolean
@@ -49,6 +51,8 @@ export interface CreateProjectFormPayload {
   clientIds: string[]
   teamIds: string[]
   managerIds: string[]
+  /** Which of managerIds may clock in, when restrictManagerTracking is on. */
+  trackingAllowedManagerIds: string[]
   userIds: string[]
   viewerIds: string[]
   memberLimitMemberIds: string[]
@@ -515,6 +519,7 @@ export async function fetchProjectForEdit(projectId: string): Promise<ProjectEdi
     clientIds: filterValidUuids(rawClientIds.map((id) => String(id))),
     teamIds: (data.teamIds ?? []).filter((id) => id.trim().length > 0),
     managerIds: data.managerIds ?? [],
+    trackingAllowedManagerIds: data.trackingAllowedManagerIds ?? [],
     userIds: data.userIds ?? [],
     viewerIds: data.viewerIds ?? [],
     memberLimitMemberIds: data.memberLimitMemberIds ?? [],
@@ -582,6 +587,21 @@ async function syncProjectMembers(
   ])
 }
 
+
+/**
+ * The manager clock-in allow-list is only meaningful for members who are
+ * actually managers on this project - chained after syncProjectMembers/
+ * addProjectMembersFast the same way member limits are, since the backend's
+ * own update only ever touches rows already carrying the "manager" role.
+ */
+async function syncManagerTrackingAccess(
+  projectId: string,
+  payload: CreateProjectFormPayload,
+): Promise<void> {
+  const managerSet = new Set(payload.managerIds.map((id) => id.trim()))
+  const allowed = filterValidUuids(payload.trackingAllowedManagerIds).filter((id) => managerSet.has(id))
+  await setProjectManagerTrackingAccess(projectId, allowed)
+}
 
 async function linkClientsFast(
   projectId: string,
@@ -804,6 +824,7 @@ export async function updateProjectWithDetails(
       billable: payload.billable,
       disableActivity: payload.disableActivity,
       allowProjectTracking: payload.allowProjectTracking,
+      restrictManagerTracking: payload.restrictManagerTracking,
       requireTaskToTrack: payload.requireTaskToTrack,
       restrictTaskCreation: payload.restrictTaskCreation,
       requireStopNote: payload.requireStopNote,
@@ -820,10 +841,13 @@ export async function updateProjectWithDetails(
       ...(options?.expectedUpdatedAt ? { expectedUpdatedAt: options.expectedUpdatedAt } : {}),
     }),
     syncClientLinks(projectId, clientIds, actorMemberId),
-    // Member limits are only accepted for members on the project, so they are
-    // saved once the members are.
+    // Member limits and manager tracking access are only accepted for members
+    // on the project, so they are saved once the members are.
     syncProjectMembers(projectId, memberPayload, actorMemberId).then(() =>
-      syncProjectMemberLimits(projectId, payload, actorMemberId),
+      Promise.all([
+        syncProjectMemberLimits(projectId, payload, actorMemberId),
+        syncManagerTrackingAccess(projectId, memberPayload),
+      ]),
     ),
     syncTeamLinks(projectId, payload.teamIds, actorMemberId),
     shouldPersistBudget(payload)
@@ -875,6 +899,7 @@ export async function createProjectWithDetails(
     billable: payload.billable,
     disableActivity: payload.disableActivity,
     allowProjectTracking: payload.allowProjectTracking,
+    restrictManagerTracking: payload.restrictManagerTracking,
     requireTaskToTrack: payload.requireTaskToTrack,
     restrictTaskCreation: payload.restrictTaskCreation,
     requireStopNote: payload.requireStopNote,
@@ -902,10 +927,13 @@ export async function createProjectWithDetails(
         })
       : Promise.resolve(),
     linkClientsFast(created.id, clientIds, actorMemberId),
-    // Member limits are only accepted for members on the project, so they are
-    // saved once the members are.
+    // Member limits and manager tracking access are only accepted for members
+    // on the project, so they are saved once the members are.
     addProjectMembersFast(created.id, memberPayload, actorMemberId).then(() =>
-      syncProjectMemberLimits(created.id, payload, actorMemberId),
+      Promise.all([
+        syncProjectMemberLimits(created.id, payload, actorMemberId),
+        syncManagerTrackingAccess(created.id, memberPayload),
+      ]),
     ),
     linkTeamsFast(created.id, payload.teamIds, actorMemberId),
   ])
