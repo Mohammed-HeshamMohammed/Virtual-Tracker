@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node --use-system-ca index.js",
-    "dev": "node --use-system-ca --env-file-if-exists=.env --watch index.js"
+    "dev": "node --use-system-ca --env-file-if-exists=.env --watch index.js",
+    "test": "node --test test/*.test.js"
   },
   "dependencies": {
     "firebase-admin": "^14.1.0",
