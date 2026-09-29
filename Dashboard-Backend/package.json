@@ -19,6 +19,7 @@
     "archive:screenshots": "node --use-system-ca --env-file-if-exists=.env scripts/archive-screenshots.mjs",
     "rebuild-members": "node --use-system-ca --env-file-if-exists=.env scripts/rebuild-members-from-firebase-auth.mjs",
     "test": "node --experimental-test-module-mocks --test test/*.test.js",
+    "test:tenancy-live": "node --experimental-test-module-mocks test-live/tenancy-rls-live.test.mjs",
     "sync:firebase-local": "node scripts/sync-firebase-local.mjs",
     "sync:firebase-web": "node scripts/sync-firebase-local.mjs"
   },
@@ -42,5 +43,8 @@
     "google-gax": ">=4.6.0",
     "brace-expansion": ">=5.0.9",
     "sharp": "^0.35.4"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
   }
 }
