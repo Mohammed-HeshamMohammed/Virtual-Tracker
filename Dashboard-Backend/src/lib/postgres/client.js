@@ -1,15 +1,13 @@
 import pg from "pg";
 import { getEnv } from "../../config/env.js";
 import { currentAuditActor, currentTenantId, runWithTenantId, statementMayAudit } from "./audit-actor.js";
+import { roleConnectionString } from "./role-credentials.js";
 
 /**
- * Keyed by resolved connection-string URL, not by role name. Every identity
- * (app/admin/readonly-crosstenant) that still resolves to the same
- * POSTGRES_URL - which is every deployment today, since the admin/readonly
- * env vars fall back to it (env.js) - shares one physical pg.Pool. A pool
- * only splits once an operator configures a genuinely different connection
- * string for one of the identities, at which point that identity gets its
- * own pool automatically, with no code change here.
+ * Keyed by resolved connection-string URL, not by role name: identities that
+ * resolve to the same URL (every one of them, until POSTGRES_TENANCY_ENFORCE
+ * is on) share one physical pg.Pool, and each gets its own the moment its
+ * URL genuinely differs.
  */
 const poolsByUrl = new Map();
 
@@ -26,14 +24,43 @@ function getOrCreatePool(url) {
   return p;
 }
 
-export function getPostgresPool() {
-  return getOrCreatePool(getEnv().postgres.url);
+let warnedEnforceWithoutRls = false;
+
+/**
+ * Whether the app connects as the restricted roles. Requires
+ * POSTGRES_TENANCY_RLS_ENABLED too: that flag is what creates the roles and
+ * sets their passwords at boot, so enforcing without it would only produce
+ * a pool that cannot log in.
+ */
+export function isTenancyEnforced() {
+  const pgEnv = getEnv().postgres;
+  if (pgEnv.tenancyEnforce !== true) return false;
+  if (pgEnv.tenancyRlsEnabled !== true) {
+    if (!warnedEnforceWithoutRls) {
+      warnedEnforceWithoutRls = true;
+      console.warn("[postgres] POSTGRES_TENANCY_ENFORCE is ignored: POSTGRES_TENANCY_RLS_ENABLED is not on.");
+    }
+    return false;
+  }
+  return true;
 }
 
 /**
- * Bootstrap/migration/background-sweep identity (BYPASSRLS - see
- * ensure-tenancy-rls.js). Falls back to the same pool as getPostgresPool()
- * until POSTGRES_ADMIN_URL is configured separately.
+ * Ordinary request traffic. Once enforced, logs in as vt_app - a real
+ * LOGIN role whose RLS policies apply and which cannot SET ROLE back to the
+ * superuser. Fails closed: if the credential cannot be derived there is no
+ * pool, rather than a silent fallback to the superuser connection.
+ */
+export function getPostgresPool() {
+  const pgEnv = getEnv().postgres;
+  if (!isTenancyEnforced()) return getOrCreatePool(pgEnv.url);
+  return getOrCreatePool(pgEnv.appUrl || roleConnectionString(pgEnv.url, "vt_app"));
+}
+
+/**
+ * Bootstrap/migration/background-sweep identity. The superuser POSTGRES_URL
+ * unless POSTGRES_ADMIN_URL overrides it - it has to own the tables to run
+ * the schema migrations, and bypass RLS to enumerate every tenant.
  */
 export function getAdminPostgresPool() {
   return getOrCreatePool(getEnv().postgres.adminUrl);
@@ -42,11 +69,13 @@ export function getAdminPostgresPool() {
 /**
  * Audited cross-tenant read-only identity - SELECT-only at the grant level
  * (ensure-tenancy-rls.js), never write-capable regardless of what
- * application code does. Falls back to the same pool as getPostgresPool()
- * until POSTGRES_READONLY_CROSSTENANT_URL is configured separately.
+ * application code does.
  */
 export function getReadonlyCrossTenantPostgresPool() {
-  return getOrCreatePool(getEnv().postgres.readonlyCrossTenantUrl);
+  const pgEnv = getEnv().postgres;
+  if (pgEnv.readonlyCrossTenantUrl) return getOrCreatePool(pgEnv.readonlyCrossTenantUrl);
+  if (!isTenancyEnforced()) return getOrCreatePool(pgEnv.url);
+  return getOrCreatePool(roleConnectionString(pgEnv.url, "vt_readonly_crosstenant"));
 }
 
 export function isPostgresConfigured() {

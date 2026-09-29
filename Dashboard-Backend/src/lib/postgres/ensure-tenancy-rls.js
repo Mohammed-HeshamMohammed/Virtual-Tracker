@@ -1,7 +1,13 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { getAdminPostgresPool, isPostgresConfigured } from "./client.js";
 import { getEnv } from "../../config/env.js";
-import { TENANT_SCOPED_TABLES, listGlobalTableNames, listControlPlaneTableNames } from "./tenancy-tables.js";
+import {
+  TENANT_SCOPED_TABLES,
+  TENANT_SCOPED_VIEWS,
+  listGlobalTableNames,
+  listControlPlaneTableNames,
+} from "./tenancy-tables.js";
+import { deriveRolePassword, scramVerifier } from "./role-credentials.js";
 
 /**
  * PLAN-customer-accounts-and-tenancy.md §3, §12.2 #4: enabling RLS is a
@@ -55,13 +61,13 @@ const ROLE_DDL = [
   `DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vt_app') THEN
-    CREATE ROLE vt_app LOGIN PASSWORD NULL;
+    CREATE ROLE vt_app LOGIN;
   END IF;
 END $$`,
   `DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vt_readonly_crosstenant') THEN
-    CREATE ROLE vt_readonly_crosstenant LOGIN PASSWORD NULL;
+    CREATE ROLE vt_readonly_crosstenant LOGIN;
   END IF;
 END $$`,
   `DO $$
@@ -73,6 +79,11 @@ END $$`,
   // BYPASSRLS is also asserted on every run (not just at creation) in case
   // an operator created the role manually without it.
   "ALTER ROLE vt_admin BYPASSRLS",
+  // The two roles the app actually logs in as (role-credentials.js) are
+  // pinned to the least privilege on every boot: an operator granting one
+  // of them BYPASSRLS or CREATEROLE by hand would silently void isolation.
+  "ALTER ROLE vt_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS",
+  "ALTER ROLE vt_readonly_crosstenant LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS",
   // vt_admin is the bootstrap/migration/background-sweep identity - it
   // legitimately needs everything, including the control-plane tables, so
   // it alone keeps the blanket grant.
@@ -92,6 +103,10 @@ END $$`,
   // expose reference data or platform bookkeeping through a cross-tenant
   // viewing role.
   `GRANT SELECT ON TABLE ${quoted(VT_READONLY_TABLE_NAMES)} TO vt_readonly_crosstenant`,
+  // security_invoker views (see TENANT_SCOPED_VIEWS) - RLS on the tables
+  // underneath applies to vt_app itself, so granting the view grants nothing
+  // the tables don't already.
+  `GRANT SELECT ON TABLE ${quoted(TENANT_SCOPED_VIEWS)} TO vt_app`,
 ];
 
 // Exported for the grant-scope test: which tables actually end up in each
@@ -121,6 +136,21 @@ function policyDdlForTable(table) {
 
 const RLS_POLICY_DDL = TABLE_NAMES.flatMap(policyDdlForTable);
 
+export const APP_LOGIN_ROLES = ["vt_app", "vt_readonly_crosstenant"];
+
+/**
+ * Sets each login role's password to the value client.js will derive, as a
+ * SCRAM verifier - the plaintext is never sent to the server. A fresh salt
+ * each boot is harmless: the password itself does not change, so live
+ * connections and every other instance keep authenticating.
+ */
+export function rolePasswordDdl(superuserUrl = getEnv().postgres.url) {
+  return APP_LOGIN_ROLES.flatMap((role) => {
+    const password = deriveRolePassword(superuserUrl, role);
+    return password ? [`ALTER ROLE ${role} PASSWORD '${scramVerifier(password)}'`] : [];
+  });
+}
+
 export async function ensureTenancyRls() {
   if (!isTenancyRlsEnabled()) {
     return { ok: true, skipped: true, reason: "POSTGRES_TENANCY_RLS_ENABLED is not set" };
@@ -138,7 +168,7 @@ export async function ensureTenancyRls() {
 
   const client = await pool.connect();
   try {
-    for (const statement of [...ROLE_DDL, ...RLS_POLICY_DDL]) {
+    for (const statement of [...ROLE_DDL, ...rolePasswordDdl(), ...RLS_POLICY_DDL]) {
       await client.query(statement);
     }
     return { ok: true, tablesCovered: TABLE_NAMES.length };

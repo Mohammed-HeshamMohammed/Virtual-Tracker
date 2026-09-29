@@ -146,6 +146,16 @@ export const GLOBAL_TABLES = [
 ];
 
 /**
+ * Views over tenant-scoped tables. Each is created WITH (security_invoker =
+ * true) in ensure-lookup-schema.js - a view otherwise runs with its OWNER's
+ * rights, and the owner is the superuser that bypasses RLS, so vt_app would
+ * read every tenant's rows through it. ensure-tenancy-rls.js grants SELECT
+ * on these to vt_app; the coverage test fails if a view is added to the
+ * schema without being listed here.
+ */
+export const TENANT_SCOPED_VIEWS = ["v_members_enriched", "v_team_rosters", "task_progress_aggregate"];
+
+/**
  * Control-plane tables: not tenant-scoped (a tenant cannot be scoped to
  * itself) and not GLOBAL_TABLES reference data either - these hold the
  * platform's own bookkeeping about tenants (verification secrets, the

@@ -56,3 +56,36 @@ test("a missing URL yields no pool", () => {
   assert.equal(getAdminPostgresPool(), null);
   assert.equal(getReadonlyCrossTenantPostgresPool(), null);
 });
+
+test("enforcement off: the app pool is the superuser POSTGRES_URL even if enforce alone is set", () => {
+  env = { postgres: { url: SAME_URL, adminUrl: SAME_URL, tenancyEnforce: true, tenancyRlsEnabled: false } };
+  assert.equal(getPostgresPool(), getAdminPostgresPool(), "enforce without RLS must not switch identities");
+});
+
+test("enforcement on: app and read-only pools log in as their own derived roles, admin stays superuser", async () => {
+  const { deriveRolePassword } = await import("../src/lib/postgres/role-credentials.js");
+  env = { postgres: { url: SAME_URL, adminUrl: SAME_URL, tenancyEnforce: true, tenancyRlsEnabled: true } };
+  const app = getPostgresPool();
+  const admin = getAdminPostgresPool();
+  const readonly = getReadonlyCrossTenantPostgresPool();
+  assert.notEqual(app, admin);
+  assert.notEqual(readonly, admin);
+  assert.notEqual(readonly, app);
+  const creds = (pool) => new URL(pool.options.connectionString);
+  assert.equal(creds(app).username, "vt_app");
+  assert.equal(creds(app).password, deriveRolePassword(SAME_URL, "vt_app"));
+  assert.equal(creds(readonly).username, "vt_readonly_crosstenant");
+  assert.equal(creds(admin).username, "app");
+});
+
+test("enforcement on: an explicit POSTGRES_APP_URL overrides the derived one", () => {
+  const explicit = "postgres://vt_app:managed@localhost:5432/db";
+  env = { postgres: { url: SAME_URL, adminUrl: SAME_URL, appUrl: explicit, tenancyEnforce: true, tenancyRlsEnabled: true } };
+  assert.equal(new URL(getPostgresPool().options.connectionString).password, "managed");
+});
+
+test("enforcement on without a superuser password fails closed - no pool, never a superuser fallback", () => {
+  const noPassword = "postgres://app@localhost:5432/db";
+  env = { postgres: { url: noPassword, adminUrl: noPassword, tenancyEnforce: true, tenancyRlsEnabled: true } };
+  assert.equal(getPostgresPool(), null);
+});

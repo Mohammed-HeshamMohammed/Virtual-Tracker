@@ -99,6 +99,9 @@ const envSourceSchema = z
     POSTGRES_URL: optionalTrimmedString,
     POSTGRES_ADMIN_URL: optionalTrimmedString,
     POSTGRES_READONLY_CROSSTENANT_URL: optionalTrimmedString,
+    POSTGRES_APP_URL: optionalTrimmedString,
+    POSTGRES_TENANCY_ENFORCE: optionalTrimmedString,
+    POSTGRES_TENANCY_AUDIT: optionalTrimmedString,
     REDIS_URL: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {
