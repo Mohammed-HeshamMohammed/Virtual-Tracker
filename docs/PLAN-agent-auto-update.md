@@ -1782,6 +1782,32 @@ contains the rotated public key and a release pipeline that signs against it.
 Future key rotation still requires a two-release transition and measured fleet
 uptake; never replace the trusted key in a single step.
 
+## Release progress (2026-09-29)
+
+The engineering scope below was "100%" complete but had not actually been
+published as a release since `agent-v1.1.2` — the only agent-side commit
+since that tag is `15bbdbee` (the rollout/quarantine/deferral system: a
+persisted 6h check cadence, "Not now" deferral surviving restarts,
+install-failure quarantine after 3 failures, an opaque per-install rollout
+id, and the overlapping-check guard). "Implemented and verified" in code is
+not the same claim as "shipped to installed trackers," so this closes that
+gap:
+
+- Triggered the release workflow (`workflow_dispatch`, `bump=patch`,
+  `require_windows_signing=true`) against `main` at commit `58a86da8` (the
+  agent code itself is unchanged since `15bbdbee`; later commits that day
+  were Dashboard-Backend/Web only and do not affect this release).
+  Run: https://github.com/Mohammed-HeshamMohammed/Virtual-Tracker/actions/runs/36525364301
+- Target version: **`agent-v1.1.3`** (bumped from `1.1.2`).
+- Rollout: **100%**, immediately, to every currently-running tracker —
+  `AGENT_UPDATE_ROLLOUT_PERCENT` was not lowered first. This was a deliberate
+  choice, not an oversight: confirmed with the person who approved the
+  trigger rather than defaulted to.
+- Once this run completes (verify → bump/tag → four-platform build → the
+  `verify-release` job's live-endpoint check), `agent-v1.1.3` is the first
+  release that actually contains this update system, not just the first
+  commit that wrote it.
+
 ## Completion record (2026-09-27)
 
 This record was reconciled with the current repository, later completed plans,
@@ -1795,7 +1821,7 @@ from this uncommitted working tree.
 | Release artifacts, signing, and private feed | Signed artifacts, `latest.json`, key assertion, stable release selection, manifest/asset proxy, NSIS selection, required-platform validation, health monitoring, and post-publish live endpoint/asset assertions are implemented | Publish the next release from the workflow when approved | 100% |
 | Safe update application and UI | Session-safe staging, writable-install guard, progress/countdown, persisted Not-now/pending state, periodic checks, jittered backoff, failed-version quarantine, errors, and post-update confirmation are implemented | Exercise the next installer on representative managed Windows machines | 100% |
 | Fleet visibility and reminders | Version/platform/open and blocker reporting, Agent Versions UI, app/email reminders, and individual/bulk legacy reinstall instructions are implemented | Administrators use those actions for affected machines | 100% |
-| Release process | Manual version bump/tag/build/publish, serialized four-target assembly, existing-tag retry, signing gates, and final reachability verification are implemented | Dispatch only when a release is approved | 100% |
+| Release process | Manual version bump/tag/build/publish, serialized four-target assembly, existing-tag retry, signing gates, and final reachability verification are implemented | `agent-v1.1.3` dispatched 2026-09-29 (see "Release progress" above) - confirm it completes and the live endpoint reflects it | 100% |
 | Legacy deployment | Unsafe pre-1.0.27 agents are protected; frozen agents have an actionable reinstall workflow; unwritable current agents remain running and visible; `perMachine` is an explicit managed-deployment choice | Carry out physical reinstalls where reported | 100% engineering scope |
 | Policy/platform work | Privacy-preserving cohorts, the `1.0.25` notification-capable minimum, separate `1.0.27` installer-safety floor, four updater targets including Intel Mac, Authenticode-required-by-default policy, and OS trust-store assertion are implemented | Configure a different percentage/forced floor only when a staged rollout is wanted | 100% |
 | **Overall required scope** | **The end-to-end updater, safe consumption, resilience, release verification, legacy migration workflow, platform coverage, and rollout controls are implemented** | **Only release/fleet operations remain** | **100%** |
