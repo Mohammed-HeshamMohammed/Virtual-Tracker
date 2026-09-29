@@ -1505,6 +1505,11 @@ GROUP BY task_id`,
   // to only the project_members rows this project has marked manager_can_track.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS restrict_manager_tracking BOOLEAN NOT NULL DEFAULT false`,
   `ALTER TABLE project_members ADD COLUMN IF NOT EXISTS manager_can_track BOOLEAN NOT NULL DEFAULT false`,
+  // NULL = inherit (fall through to the project's own timezone, then the
+  // member's own). Only set for the rare case of one member working a
+  // different region's schedule on this specific project than on their
+  // others - see resolve-time-zone.js for the full precedence chain.
+  `ALTER TABLE project_members ADD COLUMN IF NOT EXISTS timezone VARCHAR(64)`,
   `DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cp_client') THEN

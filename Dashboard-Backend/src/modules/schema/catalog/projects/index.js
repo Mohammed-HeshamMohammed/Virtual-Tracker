@@ -45,6 +45,7 @@ export const projectSchemas = [
       member_id: "uuid",
       project_role: "string",
       manager_can_track: "boolean",
+      timezone: "string",
       assigned_at: "timestamp",
       assigned_by: "uuid",
       updated_by: "uuid",
