@@ -1,5 +1,5 @@
 import { queryAsAdmin, withTenant } from "./client.js";
-import { currentTenantId } from "./audit-actor.js";
+import { currentTenantId, setRequestTenantId } from "./audit-actor.js";
 import { MAIN_TENANT_ID } from "./ensure-tenancy-schema.js";
 
 /**
@@ -69,6 +69,50 @@ export async function resolveTenantIdForMemberId(memberId) {
   if (!tenantId) return MAIN_TENANT_ID;
   remember(byMemberId, memberId, tenantId);
   return tenantId;
+}
+
+/** Every by-token/by-key lookup below reads one tenant_id column from an
+ *  allowlisted table - never a caller-supplied table or column name. */
+async function tenantIdWhere(sql, value) {
+  if (!value) return MAIN_TENANT_ID;
+  const rows = await queryAsAdmin(sql, [value]);
+  return asTenantId(rows[0]?.tenant_id) ?? MAIN_TENANT_ID;
+}
+
+export function resolveTenantIdForEmail(email) {
+  const normalized = typeof email === "string" ? email.trim().toLowerCase() : "";
+  return tenantIdWhere(
+    `SELECT tenant_id FROM members WHERE lower(work_email) = $1 OR lower(personal_email) = $1
+     UNION ALL
+     SELECT tenant_id FROM pending_auth_members WHERE lower(email) = $1
+     LIMIT 1`,
+    normalized,
+  );
+}
+
+export function resolveTenantIdForAgentDevice(deviceId) {
+  return tenantIdWhere(`SELECT tenant_id FROM agent_devices WHERE device_id::text = $1 LIMIT 1`, deviceId);
+}
+
+export function resolveTenantIdForTransferToken(token) {
+  return tenantIdWhere(`SELECT tenant_id FROM member_transfer_requests WHERE token = $1 LIMIT 1`, token);
+}
+
+/**
+ * For request handlers that learn who the caller is part-way through (a
+ * public route verifying an ID token, or keyed by email/device/token):
+ * scopes the REST OF THE CURRENT REQUEST to that tenant. Each HTTP request
+ * already runs in its own async-local frame (create-server.js), so this
+ * affects this request only. Never overrides a tenant already published.
+ */
+export function publishTenant(tenantId) {
+  if (currentTenantId()) return;
+  setRequestTenantId(tenantId || MAIN_TENANT_ID);
+}
+
+export async function publishTenantForFirebaseUid(firebaseUid) {
+  if (currentTenantId()) return;
+  publishTenant(await resolveTenantIdForFirebaseUid(firebaseUid));
 }
 
 /** Runs fn scoped to that person's tenant - unless a tenant is already

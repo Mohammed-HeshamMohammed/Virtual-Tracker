@@ -73,3 +73,25 @@ test("member-id resolution follows the same rules", async () => {
   assert.deepEqual(withTenantCalls, [CUSTOMER]);
   assert.equal(adminCalls, 1, "second resolution is a cache hit");
 });
+
+test("publishTenant scopes the current request frame and never overrides a published tenant", async () => {
+  const { runWithAuditActor, currentTenantId } = await import("../src/lib/postgres/audit-actor.js");
+  await runWithAuditActor(async () => {
+    resolution.publishTenant(CUSTOMER);
+    assert.equal(currentTenantId(), CUSTOMER);
+    resolution.publishTenant(MAIN);
+    assert.equal(currentTenantId(), CUSTOMER, "a later identity lookup must not widen or switch scope");
+  });
+  await runWithAuditActor(async () => {
+    assert.equal(currentTenantId(), null, "each request frame starts unscoped");
+  });
+});
+
+test("publishTenantForFirebaseUid resolves then publishes", async () => {
+  rowsFor = () => [{ tenant_id: CUSTOMER }];
+  const { runWithAuditActor, currentTenantId } = await import("../src/lib/postgres/audit-actor.js");
+  await runWithAuditActor(async () => {
+    await resolution.publishTenantForFirebaseUid("uid-9");
+    assert.equal(currentTenantId(), CUSTOMER);
+  });
+});

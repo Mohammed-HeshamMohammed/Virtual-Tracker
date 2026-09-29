@@ -1,4 +1,6 @@
 import { getAuthAdmin, getDb, readFirebaseWebConfigFromEnv } from "../../config/firebase.js";
+import { publishTenant, publishTenantForFirebaseUid, resolveTenantIdForEmail } from "../../lib/postgres/tenant-resolution.js";
+import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
 import { query as pgQuery, isPostgresConfigured } from "../../lib/postgres/client.js";
 import { getEnv } from "../../config/env.js";
 import { requireManagementRole } from "../../http/auth-context.js";
@@ -95,6 +97,7 @@ export async function routeAuthIdentity(req, res, url, origin) {
     }
     try {
       const decoded = await auth.verifyIdToken(idToken);
+      await publishTenantForFirebaseUid(decoded.uid); // public route: scope the rest of this request (tenant-resolution.js)
       const userRecord = await auth.getUser(decoded.uid);
       const email = typeof userRecord.email === "string" ? userRecord.email.trim().toLowerCase() : "";
       if (!email) {
@@ -185,6 +188,7 @@ export async function routeAuthIdentity(req, res, url, origin) {
     }
     try {
       const decoded = await auth.verifyIdToken(idToken);
+      await publishTenantForFirebaseUid(decoded.uid); // public route: scope the rest of this request (tenant-resolution.js)
       const result = await completeFirstLoginPasswordChange(db, auth, decoded.uid, body);
       sendJson(res, origin, 200, {
         success: true,
@@ -236,6 +240,7 @@ export async function routeAuthIdentity(req, res, url, origin) {
       return true;
     }
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (email) publishTenant(await resolveTenantIdForEmail(email)); // public route keyed by email
     if (email) {
       const { notifyPasswordUpdatedByEmail } = await import("./security-login-alerts.js");
       void notifyPasswordUpdatedByEmail(auth, email, "reset");
@@ -260,6 +265,7 @@ export async function routeAuthIdentity(req, res, url, origin) {
       return true;
     }
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    if (email) publishTenant(await resolveTenantIdForEmail(email)); // public route keyed by email
     if (email) {
       try {
         const { maybeSendRegistrationWelcomeEmail } = await import("./registration-welcome-email.js");
@@ -293,6 +299,7 @@ export async function routeAuthIdentity(req, res, url, origin) {
     }
     try {
       const decoded = await auth.verifyIdToken(idToken);
+      await publishTenantForFirebaseUid(decoded.uid); // public route: scope the rest of this request (tenant-resolution.js)
       const profileSnap = await db.collection("User_profiles").doc(decoded.uid).get();
       const profileData = profileSnap.exists ? profileSnap.data() || {} : {};
       const mustChange =
@@ -614,6 +621,7 @@ export async function routeAuthIdentity(req, res, url, origin) {
     }
     const name = typeof body.name === "string" ? body.name.trim() : "";
     const email = typeof body.email === "string" ? body.email.trim() : "";
+    publishTenant(MAIN_TENANT_ID); // anonymous request to join the main organization
     const phone = typeof body.phone === "string" ? body.phone.trim() : "";
     assertMaxLength(name, 200, "name");
     assertMaxLength(email, 320, "email");
