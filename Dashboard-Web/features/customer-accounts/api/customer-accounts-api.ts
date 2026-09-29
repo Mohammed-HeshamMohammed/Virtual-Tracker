@@ -6,6 +6,10 @@ import type {
   CreateCustomerAccountInput,
   CreateCustomerAccountResult,
   RemovalPreview,
+  CustomerAccountViewSurface,
+  CustomerAccountProjectRow,
+  CustomerAccountEmployeeRow,
+  CustomerAccountActivitySummary,
 } from "@/features/customer-accounts/models/customer-account"
 
 const BASE = "/api/customer-accounts"
@@ -135,6 +139,56 @@ export async function getRemovalPreview(id: string): Promise<RemovalPreview> {
     timeEntries: Number(d.time_entries ?? 0),
     screenshots: Number(d.screenshots ?? 0),
   }
+}
+
+// §0.1 blocker 7 / §0.2 step 5: not gated by the unlock token (same as
+// list/detail above - requireUnlockToken's own comment in routes.js is why:
+// the role check plus the unlock flow together protect the read surface,
+// re-verifying on every GET would make the tab unusable).
+export async function getCustomerAccountProjects(id: string): Promise<CustomerAccountProjectRow[]> {
+  const rows = await fetchCustomerAccountView(id, "projects")
+  return (Array.isArray(rows) ? rows : []).map((row: any) => ({
+    id: row.id,
+    name: row.name ?? "",
+    status: row.status ?? "",
+    billable: row.billable === true,
+    type: row.type ?? "",
+    clientId: row.client_id ?? null,
+    endDate: row.end_date ?? null,
+    createdAt: row.created_at,
+  }))
+}
+
+export async function getCustomerAccountEmployees(id: string): Promise<CustomerAccountEmployeeRow[]> {
+  const rows = await fetchCustomerAccountView(id, "employees")
+  return (Array.isArray(rows) ? rows : []).map((row: any) => ({
+    id: row.id,
+    firstName: row.first_name ?? "",
+    lastName: row.last_name ?? "",
+    displayName: row.display_name ?? "",
+    workEmail: row.work_email ?? "",
+    status: row.status ?? "",
+    createdAt: row.created_at,
+  }))
+}
+
+export async function getCustomerAccountActivitySummary(id: string): Promise<CustomerAccountActivitySummary> {
+  const row = await fetchCustomerAccountView(id, "activity-summary")
+  const d = (row as any) ?? {}
+  return {
+    activeMembers: Number(d.active_members ?? 0),
+    activeProjects: Number(d.active_projects ?? 0),
+    activeSeconds7d: Number(d.active_seconds_7d ?? 0),
+  }
+}
+
+async function fetchCustomerAccountView(id: string, surface: CustomerAccountViewSurface): Promise<unknown> {
+  const res = await apiFetch(apiPath(`${BASE}/${encodeURIComponent(id)}/view/${surface}`))
+  const json = await res.json()
+  if (!res.ok || json.success !== true) {
+    throw extractApiError(res.status, "Could not load this account's data", json)
+  }
+  return json.data
 }
 
 export async function removeCustomerAccount(id: string, confirmEmail: string, unlockToken: string): Promise<void> {

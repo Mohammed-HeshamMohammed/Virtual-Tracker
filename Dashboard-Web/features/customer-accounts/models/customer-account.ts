@@ -43,3 +43,34 @@ export interface RemovalPreview {
   timeEntries: number
   screenshots: number
 }
+
+// §0.1 blocker 7 / §0.2 step 5: the audited read-only cross-tenant view -
+// mirrors Dashboard-Backend's readonly-view.service.js allowlist exactly.
+export type CustomerAccountViewSurface = "projects" | "employees" | "activity-summary"
+
+export interface CustomerAccountProjectRow {
+  id: string
+  name: string
+  status: string
+  billable: boolean
+  type: string
+  clientId: string | null
+  endDate: string | null
+  createdAt: string
+}
+
+export interface CustomerAccountEmployeeRow {
+  id: string
+  firstName: string
+  lastName: string
+  displayName: string
+  workEmail: string
+  status: string
+  createdAt: string
+}
+
+export interface CustomerAccountActivitySummary {
+  activeMembers: number
+  activeProjects: number
+  activeSeconds7d: number
+}
