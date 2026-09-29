@@ -53,6 +53,7 @@ import {
   unlinkTeamProjectPg,
   listTeamIdsForProjectPg,
   listProjectIdsForTeamPg,
+  setManagerTrackingAccessPg,
 } from "../../lib/postgres/projects-postgres.service.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
@@ -322,6 +323,7 @@ export async function routeProjects(req, res, url, db, origin) {
       const managerIds = [];
       const userIds = [];
       const viewerIds = [];
+      const trackingAllowedManagerIds = [];
 
       const pushUnique = (list, id) => {
         if (id && !list.includes(id)) list.push(id);
@@ -331,8 +333,10 @@ export async function routeProjects(req, res, url, db, origin) {
         if (!memberId) continue;
         const role = normalizeProjectRole(row.project_role);
         if (role === "member") continue;
-        if (role === "manager") pushUnique(managerIds, memberId);
-        else if (role === "user") pushUnique(userIds, memberId);
+        if (role === "manager") {
+          pushUnique(managerIds, memberId);
+          if (row.manager_can_track === true) pushUnique(trackingAllowedManagerIds, memberId);
+        } else if (role === "user") pushUnique(userIds, memberId);
         else if (role === "viewer") pushUnique(viewerIds, memberId);
       }
 
@@ -384,6 +388,9 @@ export async function routeProjects(req, res, url, db, origin) {
           allowProjectTracking: Boolean(
             project.allow_project_tracking ?? project.allowProjectTracking ?? true,
           ),
+          restrictManagerTracking: Boolean(
+            project.restrict_manager_tracking ?? project.restrictManagerTracking ?? false,
+          ),
           disableIdleTime: Boolean(project.disable_idle_time ?? project.disableIdleTime),
           idleTimeSeconds: Number(project.idle_time_seconds ?? project.idleTimeSeconds ?? 450),
           disableBreakLimit: Boolean(project.disable_break_limit ?? project.disableBreakLimit),
@@ -404,6 +411,7 @@ export async function routeProjects(req, res, url, db, origin) {
           managerIds,
           userIds,
           viewerIds,
+          trackingAllowedManagerIds,
           memberLimitMemberIds: memberLimits.map((row) => row.memberId),
           memberLimits,
           memberOwnLimits,
@@ -460,6 +468,32 @@ export async function routeProjects(req, res, url, db, origin) {
       sendJson(res, origin, 500, {
         success: false,
         error: e instanceof Error ? e.message : "Failed to load project for edit",
+      });
+    }
+    return true;
+  }
+
+  // POST /api/projects/:id/manager-tracking-access - the project's manager
+  // clock-in allow-list, as a full desired state (memberIds), not an
+  // incremental toggle. Only takes effect once the project's own
+  // restrictManagerTracking switch is on (see isManagerAllowedToTrackPg); it
+  // is saved either way so re-enabling the switch later doesn't lose it.
+  const managerTrackingAccessMatch = /^\/api\/projects\/([^/]+)\/manager-tracking-access$/.exec(pn);
+  if (managerTrackingAccessMatch && req.method === "POST") {
+    const trackingProjectId = managerTrackingAccessMatch[1];
+    try {
+      const viewer = await assertProjectDomainWrite(trackingProjectId, null);
+      if (!viewer) return true;
+      const body = await readJsonBody(req);
+      const memberIds = Array.isArray(body?.member_ids ?? body?.memberIds) ? body.member_ids ?? body.memberIds : [];
+      const cleanIds = memberIds.map((id) => String(id ?? "").trim()).filter(Boolean);
+      await setManagerTrackingAccessPg(trackingProjectId, cleanIds, viewer.memberId);
+      sendJson(res, origin, 200, { success: true, data: { memberIds: cleanIds } });
+    } catch (e) {
+      logSafeError("[projects/manager-tracking-access]", e);
+      sendJson(res, origin, 500, {
+        success: false,
+        error: e instanceof Error ? e.message : "Failed to save manager tracking access",
       });
     }
     return true;
@@ -740,6 +774,7 @@ export async function routeProjects(req, res, url, db, origin) {
         billable: body.billable,
         disableActivity: body.disable_activity ?? body.disableActivity,
         allowProjectTracking: body.allow_project_tracking ?? body.allowProjectTracking,
+        restrictManagerTracking: body.restrict_manager_tracking ?? body.restrictManagerTracking,
         disableIdleTime: body.disable_idle_time ?? body.disableIdleTime,
         idleTimeSeconds: body.idle_time_seconds ?? body.idleTimeSeconds,
         breakTimeSeconds: body.break_time_seconds ?? body.breakTimeSeconds,
@@ -835,6 +870,7 @@ export async function routeProjects(req, res, url, db, origin) {
           billable: body.billable,
           disableActivity: body.disable_activity ?? body.disableActivity,
           allowProjectTracking: body.allow_project_tracking ?? body.allowProjectTracking,
+          restrictManagerTracking: body.restrict_manager_tracking ?? body.restrictManagerTracking,
           disableIdleTime: body.disable_idle_time ?? body.disableIdleTime,
           idleTimeSeconds: body.idle_time_seconds ?? body.idleTimeSeconds,
           breakTimeSeconds: body.break_time_seconds ?? body.breakTimeSeconds,

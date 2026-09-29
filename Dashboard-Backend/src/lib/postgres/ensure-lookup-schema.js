@@ -1283,6 +1283,7 @@ GROUP BY task_id`,
   billable                BOOLEAN NOT NULL DEFAULT true,
   disable_activity        BOOLEAN NOT NULL DEFAULT false,
   allow_project_tracking  BOOLEAN NOT NULL DEFAULT true,
+  restrict_manager_tracking BOOLEAN NOT NULL DEFAULT false,
   disable_idle_time       BOOLEAN NOT NULL DEFAULT false,
   idle_time_seconds       INTEGER NOT NULL DEFAULT 450,
   client_id               UUID,
@@ -1499,6 +1500,11 @@ GROUP BY task_id`,
   `CREATE INDEX IF NOT EXISTS idx_cp_project ON client_projects (project_id)`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_can_manage BOOLEAN NOT NULL DEFAULT false`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_can_track BOOLEAN NOT NULL DEFAULT false`,
+  // Off by default: unchanged for every existing project - allowProjectTracking
+  // alone still governs every manager, exactly as before. On, it narrows that
+  // to only the project_members rows this project has marked manager_can_track.
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS restrict_manager_tracking BOOLEAN NOT NULL DEFAULT false`,
+  `ALTER TABLE project_members ADD COLUMN IF NOT EXISTS manager_can_track BOOLEAN NOT NULL DEFAULT false`,
   `DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_cp_client') THEN
