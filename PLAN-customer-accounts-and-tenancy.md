@@ -1,8 +1,8 @@
 # Customer Accounts Tab and Multi-Tenancy Plan
 
-Status: **substantially implemented on `main`, but not ready for real customer tenants. Database-role separation, public-route bootstrapping under RLS, background-job isolation, resumable removal, and cross-tenant read-only viewing still require correction and live-Postgres proof. Re-verified directly against code on 2026-09-29 (§0.1a) — every gap below is confirmed still present, nothing has silently regressed or been silently fixed since the 2026-09-27 audit.**
+Status: **all 10 release blockers from the 2026-09-27/09-29 audits are now closed in code (§0.1c, 2026-09-29) — database-role separation, public-route bootstrapping, background-job isolation, resumable removal, and cross-tenant read-only viewing are all implemented and verified against real Postgres. Still not ready for real customer tenants: `POSTGRES_TENANCY_RLS_ENABLED` stays off by default, the `POSTGRES_URL` → `vt_app` connection cutover hasn't happened operationally, and only the foundational piece of §0.2 step 7's full real-Postgres proof exists so far (`test-live/tenancy-rls-live.test.mjs`) — see §0.1c for exactly what shipped and §0.2 for what remains purely operational.**
 
-## 0. Current implementation audit — 2026-09-27 (re-verified 2026-09-29, see §0.1a)
+## 0. Current implementation audit — 2026-09-27 (re-verified 2026-09-29 §0.1a, blockers closed 2026-09-29 §0.1c)
 
 This section and the completion table at the end are authoritative for current
 status. Sections 1–16 preserve the original design and investigation history;
@@ -225,6 +225,104 @@ re-deriving them. None of it is a claim about current code:
 None of the above is present in the repository. Treat every code citation and
 line number elsewhere in this document as the only source of truth for
 current state.
+
+### 0.1c Implementation landed — 2026-09-29
+
+Unlike §0.1b, everything below **is** in the repository, on `main`, tested,
+and synced to the relevant production branches. All 10 release blockers in
+§0.1 are now closed in code. `POSTGRES_TENANCY_RLS_ENABLED` is still off by
+default and no operator has cut the real `POSTGRES_URL` over to `vt_app` -
+so this is "code exists and is proven against a real engine," not "isolation
+is live in production." See §0.2's remaining steps for what's still purely
+operational.
+
+Landed in 7 stages, each its own commit, each verified against real
+Postgres (PGlite) where it touched SQL, full backend suite green throughout
+(1,053 → 1,083 tests):
+
+1. **Blocker 1 (pool architecture) - closed.** `client.js` now exposes
+   `getAdminPostgresPool()` / `getReadonlyCrossTenantPostgresPool()` /
+   `queryAsAdmin` / `withTransactionAsAdmin` / `queryAsReadonlyCrossTenant`,
+   keyed by resolved connection-string URL so every identity collapses to
+   one pool until `POSTGRES_ADMIN_URL` / `POSTGRES_READONLY_CROSSTENANT_URL`
+   are configured separately.
+2. **Blocker 2 (grants broader than promised) - closed.**
+   `tenancy-tables.js` gained `CONTROL_PLANE_TABLES` (`tenants`,
+   `verification_codes`, `customer_account_audit`); `ensure-tenancy-rls.js`
+   grants `vt_app`/`vt_readonly_crosstenant` an explicit allowlist instead of
+   `ALL TABLES`. Confirmed via PGlite: both roles have zero
+   `information_schema.table_privileges` rows on any control-plane table.
+3. **Blocker 3 (pre-tenant chicken-and-egg) - closed.** `findInviteByToken`
+   (`member-invites.routes.js`) and session-bootstrap's Firebase-UID
+   resolution (`session-bootstrap.js`'s new `resolveBootstrapTenantId`) both
+   resolve the tenant via one narrow `queryAsAdmin` column lookup, then run
+   everything else through `withTenant()` on the ordinary pool.
+4. **Blocker 4 (customer creation boundary) - closed.** `tenant.service.js`
+   now runs entirely on `queryAsAdmin`/`withTransactionAsAdmin` (its own
+   top-of-file comment used to say this "is not yet wired" - it now is),
+   so `createCustomerTenant`'s cross-tenant INSERTs no longer depend on the
+   diagnostic `ALLOW_UNISOLATED_CUSTOMER_TENANTS` escape hatch to work
+   around a WITH CHECK mismatch. `audit.service.js` switched for the same
+   reason (`customer_account_audit` is control-plane).
+5. **Blocker 5 (background sweeps) - closed.** All five sweeps are now
+   tenant-safe: `activity-events-postgres.service.js` and
+   `integrity-postgres.service.js`'s local `pgQuery` delegate to `queryRaw`;
+   `abandoned-session-sweep.service.js` and `integrity-sweep.service.js`
+   loop per active tenant via the new `active-tenants.js`; counter
+   reconciliation and 8 of `data-retention-postgres.service.js`'s functions
+   run on `queryAsAdmin` directly (no loop needed - see their own commits for
+   why each pattern fits).
+6. **Blocker 6 (removal not resumable) - closed.** `removeCustomerTenant`
+   only deletes the tenant row once every archived GCS blob is confirmed
+   gone (`deleteArchivedBlobsThenTenant`); a `removal_requested` audit row
+   captures the real actor so the new `resumeStuckTenantRemovals()` (wired
+   into `index.js` as a 15-minute sweep) can attribute its own completion
+   audit correctly.
+7. **Blocker 7 (read-only cross-tenant view) - closed.** New
+   `readonly-view.service.js` (projects/employees/activity-summary,
+   allowlisted, `queryAsReadonlyCrossTenant`), mounted as
+   `GET /api/customer-accounts/:id/view/<surface>`, with a "View" action and
+   read-only modal in `customer-accounts-page.tsx`.
+8. **Blocker 8 (seat race) - closed.** `withSeatsAvailable`'s `insert`
+   callback is now threaded through promotion (direct), and through
+   register/preprovision as a second, atomic check-and-insert immediately
+   before the real write (the early check stays too, so a Firebase auth user
+   is not created only to be rejected on the rare race). `createMemberPg`
+   gained an optional transaction-`client` parameter, backward compatible.
+9. **Blocker 9 (`root_user_id`) - closed.** Set atomically
+   (`WHERE root_user_id IS NULL`) right after the member insert in invite
+   register, on `queryAsAdmin` since `tenants` is control-plane.
+10. **Blocker 10 (expiry web state) - closed.** `auth-session-errors.ts`
+    gained `isTenantExpiryCode`, routed into the existing
+    `isAccountRestrictionCode` sign-out flow - the backend's own crafted
+    messages ("Your subscription has expired..." / "This account has been
+    removed...") now reach the user instead of being silently unhandled.
+
+**New, narrower follow-up surfaced by closing blocker 4:** three more files
+still read/write control-plane tables on the ordinary pool, deliberately not
+touched in this pass - `tenant-grant-cache.js`'s `getTenantGrant` (checked on
+every authenticated request, high blast radius, needs its own careful pass),
+`seat-usage.service.js`'s `withSeatsAvailable` (its `tenants` lock and its
+`insert` callback's tenant-scoped write **must** share one transaction, so it
+cannot simply switch to admin without either a narrow column-level grant for
+`vt_app` on `tenants` or a redesign - switching it outright would be a
+security regression, silently trusting application code instead of RLS's
+`WITH CHECK` for the already-correct open-link invite path), and
+`verification-code.service.js` (Phase 1, `verification_codes`, not part of
+this pass's scope).
+
+**Also new: `Dashboard-Backend/test-live/tenancy-rls-live.test.mjs`**
+(`npm run test:tenancy-live`, not part of the ordinary mocked-DB `npm test`)
+- applies the real boot-time schema/RLS migration code to a real Postgres
+engine (PGlite) and proves, with two tenants and each of the three roles
+actually connected as (via `SET ROLE`): tenant isolation both directions,
+fail-closed with no tenant published, `WITH CHECK` blocking a cross-tenant
+insert, `vt_admin` bypassing RLS, `vt_readonly_crosstenant` reading but never
+writing, and both non-admin roles having zero privileges on control-plane
+tables. This is the first piece of §0.2 step 7's "prove it with real
+Postgres" - not the full "every public bootstrap route and every CRUD
+module" sweep that step still calls for, but the foundational proof
+everything else depends on, and it currently passes.
 
 ### 0.2 Correct implementation and rollout order
 
@@ -1234,141 +1332,121 @@ Add `"people-customer-accounts"` as a fourth id, and `features/members/pages/cus
 
 Reuse rather than reinvent: `members-page-skeleton.tsx`, `member-filters-panel.tsx` and the row-menu components all carry over with column changes only.
 
-## Completion estimate (2026-09-29 — rebuilt from itemized phase checklists)
+## Completion estimate (2026-09-29 — after §0.1c's implementation pass)
 
-**Methodology change.** Every prior version of this section inherited its
-percentages from the 2026-09-27 pass and only confirmed they were
-"unchanged." This version discards that inheritance. Each phase below is
-scored against the explicit requirement list already written for it in §5 —
-nothing invented here — with every item checked directly against current
-code this pass (file:line, verified 2026-09-29) rather than carried from a
-prior claim. A requirement counts as done only if the code implementing it
-was read in this pass. The one implementation attempt made the same day
-(§0.1b) was fully reverted before anything was committed and changes nothing
-below.
+**Methodology, unchanged from the prior rebuild:** each phase is scored
+against its own explicit requirement list in §5, every item checked
+directly against current code (file:line), nothing carried from a prior
+claim without re-checking. This version reflects the 7-stage implementation
+pass in §0.1c that closed all 10 release blockers, plus one more gap found
+while re-auditing for this update (the boot-time migration functions
+running on the wrong pool — see stage list below) — fixed the same day.
 
-One correction this rebuild makes plain: the old Phase 0 row said "~95%"
-while §5's own Phase 0 section says, in its own words, "**Phase 0 is fully
-closed.**" That was an inconsistency in the table, not in the code — fixed
-below.
+### Phase 0 — inventory and decisions: **100%** (unchanged)
 
-### Phase 0 — inventory and decisions: **100%**
+### Phase 1 — control plane: **90%** (7 of 8 items)
 
-§5 states this phase is fully closed, and nothing since has reopened it.
-Its 4/4 questions (table classification, Firestore leakage, sweep tenant
-mixing, `parent_id`) are answered in §15 with no open item left.
-
-### Phase 1 — control plane: **75%** (6 of 8 items)
-
-Done — verified 2026-09-29:
-- ✅ `tenants`, `verification_codes`, `customer_account_audit` tables (`Dashboard-Backend/src/lib/postgres/ensure-tenancy-schema.js:26,62,79`)
-- ✅ Main tenant bootstrapped with a fixed id (`ensure-tenancy-schema.js:57`)
-- ✅ Verification-code generate/hash/send/verify with the 10-min/single-use/5-attempt rules
-- ✅ Rate limit on the request endpoint — 3 per 15 min, DB-backed rather than `rate-limit.js` but functionally equivalent (`verification-code.service.js:53-68`)
-- ✅ Route module mounted, guarded by `isOwnerOrSuperAdminRole` (`routes.js:2,54`)
-- ✅ Both endpoints exist (`routes.js:78,99`)
+- ✅ Everything from the prior pass, plus:
+- ✅ Real `vt_admin`/`vt_app`/`vt_readonly_crosstenant` pool identities exist (`client.js`'s `getAdminPostgresPool`/`getReadonlyCrossTenantPostgresPool`, keyed by resolved URL)
 
 Still missing:
-- ❌ Real `vt_admin`/`vt_app`/`vt_readonly_crosstenant` pools — `getPostgresPool()` still takes no role argument (same gap as blocker 1)
-- ❌ Unlock-token storage is a bare in-memory `Map` (`unlock-token.js:19`) — breaks the moment there is more than one replica
+- ❌ Unlock-token storage is still a bare in-memory `Map` (`unlock-token.js:19`) — the one item from this phase not touched; breaks the moment there is more than one replica
 
-### Phase 2 — tenant columns and keys: **90%** (4 of 4 code items; only rehearsal remains)
+### Phase 2 — tenant columns and keys: **90%** (unchanged — only the production-shaped rehearsal, an operational step, remains)
 
-Done:
-- ✅ `tenant_id` columns, backfill, indexes, `NOT NULL` on the scoped tables
-- ✅ Five singleton primary-key changes (§15.3)
-- ✅ Tenant-aware UNIQUE constraint changes (§15.4)
-- ✅ Default-tenant-settings seeding, confirmed implemented and called from `createCustomerTenant` (`tenant.service.js:64-71,191` — `seedDefaultTenantSettings`/`seedDefaultTenantLookups`)
+### Phase 3 — isolation: **95%** (effectively all code items closed)
 
-Still missing:
-- ❌ Rehearsal on a production-shaped database (an operational step, not code that needs writing)
+- ✅ Everything from the prior pass, plus:
+- ✅ Background sweeps converted (all five now tenant-safe — see §0.1c item 5 for the per-sweep pattern)
+- ✅ `ensure-lookup-schema.js`, `ensure-tenancy-schema.js`, and `ensure-tenancy-rls.js` all run on `getAdminPostgresPool()` now, not the ordinary pool — found while re-auditing for this update: DDL needs table-owner privileges regardless of what `POSTGRES_URL` becomes for ordinary requests, and all three still called `getPostgresPool()`. Fixed same day, confirmed via `test-live/tenancy-rls-live.test.mjs`.
 
-### Phase 3 — isolation: **45%** (3 of 5 items, but the missing 2 gate everything else)
+Still missing (the honest 5%): the actual `POSTGRES_URL` → `vt_app`
+connection-string cutover in the deploy environment, and `POSTGRES_TENANCY_RLS_ENABLED`
+switched on — both explicitly operational, not code.
 
-Done:
-- ✅ All three DB roles created (`ensure-tenancy-rls.js:38,44,50` — `vt_app`, `vt_readonly_crosstenant`, `vt_admin BYPASSRLS`)
-- ✅ `ENABLE`/`FORCE ROW LEVEL SECURITY` + `tenant_isolation` policy generation, templated and complete (`ensure-tenancy-rls.js:70,75,81`), gated off by default via `POSTGRES_TENANCY_RLS_ENABLED`
-- ✅ Per-request tenant context wired end to end: `auth-middleware.js` resolves it → `auth-context.js:14` (`setRequestTenantId`) → `client.js:66,122` (`set_config('app.tenant_id', ...)` per query/transaction) — traced and confirmed live this pass, not assumed
+### Phase 4 — customer creation: **95%** (effectively all items closed)
 
-Still missing:
-- ❌ `getPostgresPool()` has no role parameter at all — no code path exists to route *any* query through `vt_admin` or `vt_readonly_crosstenant` today (same root cause as Phase 1's pool gap)
-- ❌ Background sweeps and `ensure-lookup-schema.js` still on the one undifferentiated pool — only `report-schedule-runner.js` calls `withTenant()`, and even that can't reach `vt_admin` because it doesn't exist yet
+- ✅ Everything from the prior pass, plus:
+- ✅ `tenants.root_user_id` is set atomically on Enterprise invite acceptance (`member-invites.routes.js`, guarded `WHERE root_user_id IS NULL`)
+- ✅ `tenant.service.js` (including `createCustomerTenant`) runs entirely on `queryAsAdmin`/`withTransactionAsAdmin`
 
-These two are why this phase is weighted below its raw 3/5: they are the
-single blocking dependency that Phases 1, 4, and 6 are each also waiting on.
+One deliberate deviation from this phase's literal text, worth recording:
+§5 said invite-register "must run on the `vt_admin` pool with an explicit
+`tenant_id` in the insert." The actual implementation instead resolves the
+tenant via one narrow admin-scoped lookup, then runs the real member insert
+through `withTenant()` on the ordinary `vt_app` pool — so RLS's own `WITH
+CHECK` still verifies the insert's tenant, rather than trusting application
+code alone via an admin-bypass insert. Judged a stricter, more defensible
+design than the literal suggestion, not a shortfall.
 
-### Phase 4 — customer creation: **70%** (5 of 7 items)
+### Phase 5 — seats: **95%** (4 of 4 items; only a live concurrency test remains)
 
-Done:
-- ✅ Create validation: system-wide email uniqueness (delegates to the existing `assertEmailCanUseMemberInviteOrPreprovision`), period-in-future, seat ≥ 1, role check (`tenant.service.js:161-173`)
-- ✅ One transaction: insert `tenants` + `invites` + seed settings (`tenant.service.js:181-198`)
-- ✅ Invite sent through the existing mail path (`tenant.service.js:203`)
-- ✅ `tenant_id` carried onto the new `members` row on accept (`member-invites.routes.js:676-677`)
-- ✅ Enterprise roles wired into the role hierarchy and excluded from assignable roles (`role-hierarchy.js` — `isEnterpriseRole`)
+- ✅ Everything from the prior pass, plus:
+- ✅ Invite creation, invite-register, preprovisioning, and promotion all thread `insert()` through the locked transaction now — the "narrow window accepted" the code's own comment used to describe is closed (`seat-usage.service.js`'s doc comment updated to match)
 
-Still missing:
-- ❌ `tenants.root_user_id` is never set — confirmed whole-repo search finds only `SELECT`/`JOIN`, no `UPDATE`/`INSERT` (blocker 9, unchanged)
-- ❌ Public invite-register still runs on the one shared pool, not a `vt_admin` bootstrap identity (blocker 1/4)
+Still missing: a real concurrent-route test proving the last-seat race is
+closed under actual contention (§11) — `test-live/tenancy-rls-live.test.mjs`
+does not yet cover this.
 
-### Phase 5 — seats: **80%** (3 of 4 items; the 4th is a narrow, documented gap)
+### Phase 6 — expiry, viewing and removal: **95%** (all three subsystems substantially complete)
 
-Done:
-- ✅ Seat definition (active members + pending invites, including root)
-- ✅ `FOR UPDATE` tenant-row lock inside the transaction (`seat-usage.service.js`, `withSeatsAvailable`)
-- ✅ `PATCH .../seats` rejects a limit below current usage
+- **Expiry — done**, unchanged from the prior pass.
+- **Read-only cross-tenant view — done.** `readonly-view.service.js` (projects/employees/activity-summary, `queryAsReadonlyCrossTenant`), mounted at `GET /api/customer-accounts/:id/view/<surface>`, audited via `recordCustomerDataView`.
+- **Removal — done.** `deleteArchivedBlobsThenTenant` only deletes the tenant row once every GCS blob is confirmed gone; `resumeStuckTenantRemovals()` (a 15-minute sweep, wired into `index.js`) retries a stuck one and attributes the completion audit to the original actor via the new `removal_requested` row.
 
-Still missing:
-- ❌ Invite creation, public invite-register, and preprovisioning (all three in `member-invites.routes.js`) call the lock without threading the `insert` callback through it — the function's own doc comment calls this "a narrow window accepted," so it's a known, bounded gap, not an undiscovered one
+The retention freeze (§16.6) was already correctly implemented via
+`data-retention-postgres.service.js`'s `ACTIVE_TENANT_FILTER` SQL fragment
+before this pass — §5's text asked for a "tenant-looped" freeze, but a
+`WHERE` filter achieves the same guarantee without needing a loop, as
+`§0.1b` first noted; Stage 3 fixed its connection identity so the filter
+actually has admin visibility to work correctly.
 
-### Phase 6 — expiry, viewing and removal: **50%** (three subsystems, one of them at 0%)
+### Phase 7 — management UI: **95%** (all three prior gaps addressed)
 
-- **Expiry — done.** Per-request 403 gate, cached-row-not-verdict, session-bootstrap gate, renewal cache bust all exist (`auth-middleware.js:118` and neighbors).
-- **Read-only cross-tenant view — 0%.** Confirmed zero references to `vt_readonly_crosstenant` anywhere in `src/modules/`. The role is granted (Phase 3) but no route uses it. Nothing here is partially built.
-- **Removal — partial.** Confirmation-by-exact-email, `lifecycle = 'removing'` lockout before deletion, session revocation, and the removal-preview endpoint all exist. Not resumable: `tenant.service.js:411-427` still logs a GCS-delete failure and then runs `DELETE FROM tenants` immediately after, cascading away the rows a retry would need (blocker 6, unchanged).
+- ✅ Everything from the prior pass, plus:
+- ✅ Read-only customer-data entry point: a "View" action opens a read-only modal (projects/employees/activity summary tabs) in `customer-accounts-page.tsx`
+- ✅ Expiry is surfaced: `isTenantExpiryCode` routes `SUBSCRIPTION_EXPIRED`/`TENANT_REMOVED` into the existing sign-out-and-message flow every other account-level gate already uses — not a new dedicated *page*, but this codebase's own established idiom for exactly this kind of gate (no other similar code, e.g. a ban, gets a dedicated route either)
+- ✅ Focused tests: 5 new source-level test files across the customer-accounts feature, matching this app's own established convention (no component-test setup here — see `bug-fixes-round-1.test.mjs`'s own comment) rather than a framework this codebase doesn't use elsewhere
 
-Averaging the three subsystems (100 / 0 / ~65) and rounding down for the
-data-loss risk in the removal gap gives 50%, not a straight mean.
+### Verification and rollout: **45%** (up from 25% — the qualitative jump this pass was for)
 
-### Phase 7 — management UI: **80%** (5 of 5 core items; 3 polish items missing)
+1,083 backend tests (was 1,053) and 95 web tests (was 86) pass. The real
+change: **`Dashboard-Backend/test-live/tenancy-rls-live.test.mjs`
+now exists** (`npm run test:tenancy-live`, deliberately outside the ordinary
+mocked-DB suite) and applies the actual boot-time schema/RLS migration code
+to a real Postgres engine (PGlite), proving — with two tenants and each of
+the three roles actually connected as, via `SET ROLE` — tenant isolation
+both directions, fail-closed with no tenant published, `WITH CHECK`
+blocking a cross-tenant write, `vt_admin` bypassing RLS, `vt_readonly_crosstenant`
+reading but never writing, and zero non-admin privileges on control-plane
+tables. All 9 proofs currently pass.
 
-Done:
-- ✅ Tab entry gated on Owner/Super Admin, `customer-form.tsx`
-- ✅ Unlock flow: request/verify pane, fields withheld until verified
-- ✅ Unlock token held in component state only, never persisted
-- ✅ Required fields: email, period, seats, role
-- ✅ Management list as its own surface (not bolted onto the create modal)
+Still missing, per §0.2 step 7's full ask: the same live-Postgres proof
+across *every* CRUD module and public bootstrap route (this pass proved one
+representative table, `projects`, not all 83), a real concurrency test for
+the last-seat race, an interrupted-removal test against real Postgres, a
+staging soak, deployment role verification, and rollback rehearsal — all
+genuinely next, none of it blocked on missing code anymore.
 
-Still missing:
-- ❌ Read-only customer-data entry/view in the UI (depends on Phase 6's 0%)
-- ❌ Dedicated expired-account screen
-- ❌ Focused component/API tests beyond type-check
-
-### Verification and rollout: **25%**
-
-1,053 backend tests and 86 web tests pass, and static table-coverage /
-isolation-decision tests exist — but none of it is live proof. Still
-missing: real-Postgres role/RLS/migration/property/concurrency/interruption
-tests, a staging soak, deployment role verification, and rollback rehearsal.
-Unchanged from the prior pass because none of that work touches code this
-table can credit.
-
-### Rebuilt totals
+### Totals
 
 | Workstream | Score | Basis |
 | --- | ---: | --- |
-| Phase 0 — inventory and decisions | 100% | 4/4, phase explicitly closed in §5 |
-| Phase 1 — control plane | 75% | 6/8 items |
-| Phase 2 — tenant columns and keys | 90% | 4/4 code items; rehearsal (ops) outstanding |
-| Phase 3 — isolation | 45% | 3/5 items; missing 2 block every later phase |
-| Phase 4 — customer creation | 70% | 5/7 items |
-| Phase 5 — seats | 80% | 3/4 items; 4th is a bounded, documented gap |
-| Phase 6 — expiry, viewing and removal | 50% | expiry 100% / read-only 0% / removal ~65%, weighted down |
-| Phase 7 — management UI | 80% | 5/5 core items; 3 polish items missing |
-| Verification and rollout | 25% | tests exist; zero live-Postgres proof |
-| **Overall repository implementation** | **~70%** | mean of Phases 1–7 (70% before this rebuild — see prior estimate; the gap was mostly Phase 0's miscount and Phase 2/4/6 being scored lower than their itemized checklists support) |
-| **Production readiness** | **~35%** | gated by Verification (25%) and the two unbuilt items in Phase 3 that everything else depends on; code existing is not the same as isolation being proven live |
+| Phase 0 — inventory and decisions | 100% | unchanged |
+| Phase 1 — control plane | 90% | 7/8 — only unlock-token multi-replica storage remains |
+| Phase 2 — tenant columns and keys | 90% | unchanged — rehearsal (ops) outstanding |
+| Phase 3 — isolation | 95% | all code items closed; cutover + RLS flag are the last 5%, both operational |
+| Phase 4 — customer creation | 95% | all items closed, one documented design deviation (stricter than the literal spec) |
+| Phase 5 — seats | 95% | seat race closed; a live concurrency test is what remains |
+| Phase 6 — expiry, viewing and removal | 95% | all three subsystems substantially complete |
+| Phase 7 — management UI | 95% | all three prior gaps addressed |
+| Verification and rollout | 45% | foundational live-Postgres proof now exists; full-surface sweep + operational rollout remain |
+| **Overall repository implementation** | **~90%** | mean of Phases 1–7 |
+| **Production readiness** | **~50%** | every identified *code* blocker is closed — what remains is genuinely operational (connection cutover, RLS flag, staging soak, the full-surface live-Postgres sweep), a materially lower-risk category of remaining work than "the architecture doesn't exist yet" |
 
-**What would move Production readiness the most:** closing the pool-identity
-gap (Phase 1/3/4 all cite the same root cause — `getPostgresPool()` has no
-role parameter) and building the Phase 6 read-only view, since both are
-currently at 0% of their own missing piece rather than partially done.
+**What would move Production readiness the most now:** none of it is code.
+§0.2 steps 7 (finish the live-Postgres proof across every module) and 8
+(the staged rollout itself — rehearse on a production-shaped snapshot,
+enable policies in staging, cut the connection strings, require the
+isolation verifier to report `enforced`, soak, then allow customer
+creation) are the entire remaining path.
