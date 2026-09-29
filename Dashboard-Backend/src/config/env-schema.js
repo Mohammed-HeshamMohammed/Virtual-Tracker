@@ -97,6 +97,8 @@ const envSourceSchema = z
     AGENT_MIN_SELF_UPDATE_VERSION: optionalTrimmedString,
     GCS_BUCKET_NAME: optionalTrimmedString,
     POSTGRES_URL: optionalTrimmedString,
+    POSTGRES_ADMIN_URL: optionalTrimmedString,
+    POSTGRES_READONLY_CROSSTENANT_URL: optionalTrimmedString,
     REDIS_URL: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {

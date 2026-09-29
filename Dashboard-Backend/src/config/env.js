@@ -146,6 +146,13 @@ export function buildEnv(source = process.env) {
 
     postgres: Object.freeze({
       url: readString(source, "POSTGRES_URL"),
+      // Both fall back to POSTGRES_URL when unset (the only state every
+      // deployment is in today), so client.js's pool-identity cache collapses
+      // all three to one physical pg.Pool until an operator configures a
+      // genuinely separate connection string for one of them.
+      adminUrl: readString(source, "POSTGRES_ADMIN_URL") || readString(source, "POSTGRES_URL"),
+      readonlyCrossTenantUrl:
+        readString(source, "POSTGRES_READONLY_CROSSTENANT_URL") || readString(source, "POSTGRES_URL"),
       // See ensure-tenancy-rls.js's own doc comment: a one-way deploy, off
       // by default, turned on only after a staging soak.
       tenancyRlsEnabled: readBool(source, "POSTGRES_TENANCY_RLS_ENABLED", false),
