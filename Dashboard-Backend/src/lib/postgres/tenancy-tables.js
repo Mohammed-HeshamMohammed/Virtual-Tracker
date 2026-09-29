@@ -145,6 +145,25 @@ export const GLOBAL_TABLES = [
   { name: "device_bans", reason: "assertDeviceNotBanned runs before authentication, before any tenant is known - a device ban is platform-wide by necessity." },
 ];
 
+/**
+ * Control-plane tables: not tenant-scoped (a tenant cannot be scoped to
+ * itself) and not GLOBAL_TABLES reference data either - these hold the
+ * platform's own bookkeeping about tenants (verification secrets, the
+ * commercial audit trail, the tenant registry itself). vt_app and
+ * vt_readonly_crosstenant must never be able to read or write these -
+ * ensure-tenancy-rls.js grants them only to vt_admin. Written only via
+ * queryAsAdmin/withTransactionAsAdmin (client.js), e.g. tenant.service.js.
+ */
+export const CONTROL_PLANE_TABLES = [
+  { name: "tenants", reason: "The tenant registry itself - vt_app reading across it would defeat the isolation boundary it defines." },
+  { name: "verification_codes", reason: "Unlock-code hashes gating the whole Customer Accounts surface (§16.3) - never business data, never cross-tenant readable." },
+  { name: "customer_account_audit", reason: "The commercial audit trail (create/renew/remove/viewed) - platform-level record-keeping, not a tenant's own data." },
+];
+
+export function listControlPlaneTableNames() {
+  return CONTROL_PLANE_TABLES.map((e) => e.name);
+}
+
 /** Tables physically unable to hold more than one row today (§15.3) - a
  *  tenant_id column is not sufficient for these; their primary key changes
  *  in the same migration that adds the column. Also tenant-scoped, also in
