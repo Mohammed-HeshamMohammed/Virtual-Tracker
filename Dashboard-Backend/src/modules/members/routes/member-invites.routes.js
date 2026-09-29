@@ -43,7 +43,7 @@ import { resolveAppPublicUrl } from "../../auth/app-public-url.js";
 import { resolveTenantGrantCached } from "../../customer-accounts/tenant-grant-cache.js";
 import { SeatLimitError, withSeatsAvailable } from "../../customer-accounts/seat-usage.service.js";
 import { MAIN_TENANT_ID } from "../../../lib/postgres/ensure-tenancy-schema.js";
-import { isOwnerOrSuperAdminRole } from "../../../http/role-hierarchy.js";
+import { isEnterpriseRole, isOwnerOrSuperAdminRole } from "../../../http/role-hierarchy.js";
 import {
   assertInviteAvailableForRegistration,
   resolveInviteExpiryMs,
@@ -223,13 +223,16 @@ async function promotePendingMemberCore(db, auth, uid) {
   // This pending row is the seat being converted, so it is not counted
   // against itself. Normally a no-op: the seat was checked when the pending
   // account was created. Throws SeatLimitError if the limit has since been
-  // lowered below what is in use; migrate reports that per person.
+  // lowered below what is in use; migrate reports that per person. The
+  // Firebase user already exists by this point (uid is a parameter, not
+  // created here), so unlike register/preprovision there is no external
+  // call between the check and the write - insert is threaded straight
+  // through in one atomic step (§0.1 blocker 8).
   await withSeatsAvailable(
     typeof p.tenant_id === "string" && p.tenant_id ? p.tenant_id : MAIN_TENANT_ID,
     1,
-    { excludePendingUids: [uid] },
+    { excludePendingUids: [uid], insert: (client) => createMemberPg(memberPayload, client) },
   );
-  await createMemberPg(memberPayload);
   const creatorRoleName = await resolveInviteCreatorRoleName(db, p);
   await syncMemberPrimaryRole(
     db,
@@ -629,16 +632,17 @@ export async function routeMemberInvites(req, res, url, origin) {
       sendJson(res, origin, 400, { success: false, error: preCheck.message, reason: preCheck.reason });
       return true;
     }
+    const inviteTenantId = typeof row.tenant_id === "string" && row.tenant_id ? row.tenant_id : MAIN_TENANT_ID;
     // Before the sign-in account is created, so a refusal leaves nothing
     // behind. This invite's own pending row already holds the seat being
     // taken, so it is excluded - an ordinary email invite always fits; this
     // bites for a reused share link, or a tenant whose limit was lowered.
+    // A soft check: the real, atomic, lock-held check runs again right
+    // before the member row is actually inserted below (§0.1 blocker 8) -
+    // this one exists only to fail fast, before Firebase creates an auth
+    // user that would otherwise need to be cleaned up on a late rejection.
     try {
-      await withSeatsAvailable(
-        typeof row.tenant_id === "string" && row.tenant_id ? row.tenant_id : MAIN_TENANT_ID,
-        1,
-        { excludeInviteIds: [inv.id] },
-      );
+      await withSeatsAvailable(inviteTenantId, 1, { excludeInviteIds: [inv.id] });
     } catch (seatErr) {
       if (seatErr instanceof SeatLimitError) {
         sendJson(res, origin, seatErr.status, {
@@ -696,7 +700,34 @@ export async function routeMemberInvites(req, res, url, origin) {
       if (typeof row.tenant_id === "string" && row.tenant_id) {
         memberPayload.tenant_id = row.tenant_id;
       }
-      await createMemberPg(memberPayload);
+      // §0.1 blocker 8: the authoritative check - locks the tenant row and
+      // inserts the member on the same transaction, so a concurrent
+      // registration for the last seat cannot also pass the check above
+      // before either write lands. The Firebase user above cannot be
+      // created inside this lock (external network call), which is why the
+      // soft check ran first to make hitting this rejection rare, not why
+      // it is skipped here.
+      await withSeatsAvailable(inviteTenantId, 1, {
+        excludeInviteIds: [inv.id],
+        insert: (client) => createMemberPg(memberPayload, client),
+      });
+      // §0.1 blocker 9: the only path that accepts an Enterprise invite,
+      // so it is the only place root_user_id is ever set. tenants is a
+      // control-plane table (queryAsAdmin, not query/withTenant - vt_app
+      // has zero grants on it, see tenancy-tables.js's CONTROL_PLANE_TABLES).
+      // IS NULL makes a second Enterprise invite into the same tenant a
+      // no-op rather than overwriting the real root - verified against real
+      // Postgres to affect 0 rows on that second acceptance.
+      if (isEnterpriseRole(roleName) && inviteTenantId !== MAIN_TENANT_ID) {
+        try {
+          await queryAsAdmin(
+            `UPDATE tenants SET root_user_id = $2, updated_at = now() WHERE id = $1 AND root_user_id IS NULL`,
+            [inviteTenantId, memberId],
+          );
+        } catch (rootErr) {
+          logSafeError("[invite/register] Failed to link tenant root_user_id:", rootErr);
+        }
+      }
       const creatorRoleName = await resolveInviteCreatorRoleName(db, row);
       await syncMemberPrimaryRole(
         db,
@@ -770,6 +801,15 @@ export async function routeMemberInvites(req, res, url, origin) {
         message: "Account created. You can sign in now.",
       });
     } catch (e) {
+      if (e instanceof SeatLimitError) {
+        recordInviteRegisterFailure(req, email);
+        sendJson(res, origin, e.status, {
+          success: false,
+          error: "This organization has no open seats right now. Ask whoever invited you to free one.",
+          code: e.code,
+        });
+        return true;
+      }
       const code = typeof e === "object" && e !== null && "code" in e ? String(/** @type {{ code?: string }} */ (e).code) : "";
       if (code === "auth/email-already-exists") {
         recordInviteRegisterFailure(req, email);
@@ -920,7 +960,11 @@ export async function routeMemberInvites(req, res, url, origin) {
     }
     // The pre-provisioned account takes a seat from now on (it is counted in
     // pending_auth_members), so it has to fit now. Checked before the
-    // sign-in account is created so a refusal leaves nothing behind.
+    // sign-in account is created so a refusal leaves nothing behind. A soft
+    // check: the authoritative, lock-held check runs again right before the
+    // pending_auth_members row is actually inserted below (§0.1 blocker 8) -
+    // this one exists only to fail fast, before Firebase creates an auth
+    // user that would otherwise need to be cleaned up on a late rejection.
     const preprovisionTenantId = viewer?.tenantId || MAIN_TENANT_ID;
     try {
       await withSeatsAvailable(preprovisionTenantId, 1);
@@ -940,17 +984,24 @@ export async function routeMemberInvites(req, res, url, origin) {
       });
       const uid = userRecord.uid;
       const role_id = await resolveRoleIdByName(db, roleName);
-      await query(
-        `INSERT INTO pending_auth_members (firebase_uid, email, display_name, phone_number, role_id, pay_rate, created_by_uid, created_at, tenant_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         ON CONFLICT (firebase_uid) DO UPDATE SET
-           email = EXCLUDED.email, display_name = EXCLUDED.display_name, phone_number = EXCLUDED.phone_number,
-           role_id = EXCLUDED.role_id, pay_rate = EXCLUDED.pay_rate, created_by_uid = EXCLUDED.created_by_uid`,
-        // tenant_id: the creator's own tenant. Left to the column DEFAULT
-        // (main), a customer account's pre-provisioned people were
-        // promoted into the main organization at first sign-in.
-        [uid, email, name, phone || "", role_id, payRate, createdByUid, new Date(), preprovisionTenantId],
-      );
+      // §0.1 blocker 8: the authoritative check - locks the tenant row and
+      // inserts on the same transaction, so a concurrent preprovision for
+      // the last seat cannot also pass the soft check above before either
+      // write lands.
+      await withSeatsAvailable(preprovisionTenantId, 1, {
+        insert: (client) =>
+          client.query(
+            `INSERT INTO pending_auth_members (firebase_uid, email, display_name, phone_number, role_id, pay_rate, created_by_uid, created_at, tenant_id)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+             ON CONFLICT (firebase_uid) DO UPDATE SET
+               email = EXCLUDED.email, display_name = EXCLUDED.display_name, phone_number = EXCLUDED.phone_number,
+               role_id = EXCLUDED.role_id, pay_rate = EXCLUDED.pay_rate, created_by_uid = EXCLUDED.created_by_uid`,
+            // tenant_id: the creator's own tenant. Left to the column DEFAULT
+            // (main), a customer account's pre-provisioned people were
+            // promoted into the main organization at first sign-in.
+            [uid, email, name, phone || "", role_id, payRate, createdByUid, new Date(), preprovisionTenantId],
+          ),
+      });
       await db.collection(USER_PROFILES_COLLECTION).doc(uid).set(
         {
           uid,
@@ -989,6 +1040,10 @@ export async function routeMemberInvites(req, res, url, origin) {
         ...devHint,
       });
     } catch (e) {
+      if (e instanceof SeatLimitError) {
+        sendJson(res, origin, e.status, { success: false, error: e.message, code: e.code });
+        return true;
+      }
       const code = typeof e === "object" && e !== null && "code" in e ? String(/** @type {{ code?: string }} */ (e).code) : "";
       if (code === "auth/email-already-exists") {
         sendJson(res, origin, 409, { success: false, error: "This email is already registered." });
