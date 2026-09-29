@@ -108,7 +108,13 @@ export async function getManualTimeEntryRowsPg({ memberIds, fromDay, toDay, proj
   return rows.map((row) => ({
     member_id: row.member_id,
     project_id: row.project_id,
-    day: String(row.date).slice(0, 10),
+    // pg returns a DATE column as a JS Date, not a string - String(date) formats
+    // it in the server's LOCAL timezone ("Mon Sep 28 2026 ..."), not as
+    // YYYY-MM-DD, so slicing that gave "Mon Sep 28": always greater than any
+    // real ISO day key by plain string comparison, so build-time-and-activity-
+    // rows.js's `row.day > toDay` range check silently dropped every manual
+    // entry, unconditionally. toISOString() first gives the actual UTC day.
+    day: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date).slice(0, 10),
     project_name: row.project_name,
     client_name: row.client_name,
     team_name: row.team_name,
