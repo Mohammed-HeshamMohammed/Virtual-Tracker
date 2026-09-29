@@ -9,7 +9,7 @@ import { sendJson } from "../../../http/response.js";
 import { normalizeDoc } from "../../schema/services/schema-crud.service.js";
 import { USER_PROFILES_COLLECTION } from "../../auth/profile-collection-name.js";
 import { createMemberPg, getMemberByFirebaseUidPg } from "../../../lib/postgres/members-postgres.service.js";
-import { query } from "../../../lib/postgres/client.js";
+import { query, queryAsAdmin, withTenant } from "../../../lib/postgres/client.js";
 import { upsertProfileFromUserRecord } from "../../auth/profile-sync.js";
 import { sendPreprovisionWelcomeEmail } from "../../auth/preprovision-email.js";
 import { isNotifyEmailRoutingConfigured } from "../../../lib/notify/email-client.js";
@@ -130,11 +130,29 @@ function canEditOwnSeatLimit(viewer) {
   return tenantId === MAIN_TENANT_ID && isOwnerOrSuperAdminRole(viewer.roleName);
 }
 
+/**
+ * §0.1 blocker 3 / §0.2 step 2: a public route (invite preview/registration,
+ * both PUBLIC_API_ROUTES per assertInviteTenantActive's own comment above)
+ * cannot know which tenant an opaque token belongs to before it has looked
+ * the token up - and under real RLS, an ordinary vt_app query with no
+ * app.tenant_id published sees nothing, chicken-and-egg. The admin-scoped
+ * lookup here is deliberately narrow: exactly the token->tenant_id column,
+ * nothing else. Once the tenant is known, the real row read and every later
+ * write through ref.update() run tenant-scoped via withTenant() on the
+ * ordinary pool, never on admin - so a bug here can't become a cross-tenant
+ * read of invite/business data, only a failed lookup.
+ */
 async function findInviteByToken(db, token) {
   if (!token || typeof token !== "string" || token.length < 16) return null;
-  const rows = await query("SELECT * FROM invites WHERE invite_token = $1 LIMIT 1", [token]);
-  if (!rows.length) return null;
-  const doc = rows[0];
+  const idRows = await queryAsAdmin("SELECT tenant_id FROM invites WHERE invite_token = $1 LIMIT 1", [token]);
+  if (!idRows.length) return null;
+  const tenantId = typeof idRows[0].tenant_id === "string" ? idRows[0].tenant_id : MAIN_TENANT_ID;
+
+  const doc = await withTenant(tenantId, async () => {
+    const rows = await query("SELECT * FROM invites WHERE invite_token = $1 LIMIT 1", [token]);
+    return rows[0] ?? null;
+  });
+  if (!doc) return null;
   const id = String(doc.id);
   return {
     id,
@@ -142,9 +160,11 @@ async function findInviteByToken(db, token) {
     ref: {
       update: async (patch) => {
         const useCountInc = patch.use_count ? 1 : 0;
-        await query(
-          "UPDATE invites SET status = $1, accepted_at = $2, firebase_uid = $3, use_count = COALESCE(use_count, 0) + $4, updated_at = now() WHERE id = $5",
-          [patch.status ?? doc.status, patch.accepted_at ?? new Date(), patch.firebase_uid ?? "", useCountInc, id],
+        await withTenant(tenantId, () =>
+          query(
+            "UPDATE invites SET status = $1, accepted_at = $2, firebase_uid = $3, use_count = COALESCE(use_count, 0) + $4, updated_at = now() WHERE id = $5",
+            [patch.status ?? doc.status, patch.accepted_at ?? new Date(), patch.firebase_uid ?? "", useCountInc, id],
+          ),
         );
       },
     },
