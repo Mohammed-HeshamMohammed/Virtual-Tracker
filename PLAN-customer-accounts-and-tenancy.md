@@ -1249,6 +1249,13 @@ was sharpened (Phase 3: the RLS policy-generation code itself is complete and
 templated, not partial — the missing 55% is specifically pool wiring,
 call-site auditing, and live proof, not the policy mechanism).
 
+**Reverted-attempt note (2026-09-29):** an implementation pass on Phases 3, 4,
+6, and Verification/rollout (see §0.1b) was built and verified the same day,
+then fully reverted before anything was committed. No percentage below moves
+for it — the repository is unchanged from the row above. §0.1b keeps the
+findings so the next attempt at those specific rows doesn't restart from
+zero.
+
 | Workstream | Already done / not missing | Still missing | Estimated completion |
 | --- | --- | --- | ---: |
 | Phase 0 — inventory and decisions | Core RLS, role, expiry, retention, removal, seat, audit, UI, and agent decisions are documented and mostly still sound | Refresh old counts and assumptions as new tables/features are added; current code classifies 83 scoped + 6 global business tables | ~95% |
