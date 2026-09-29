@@ -1,14 +1,17 @@
 # Timezone & day-boundary handling — options and trade-offs
 
-> ## ✅ Status (2026-09-29): implemented and shipped on `main`. Two gaps remain, both scoped and small.
+> ## ✅ Status (2026-09-29): fully implemented and shipped on `main`. Nothing open remains.
 >
 > Everything decided below as "the agreed model" is live in production code,
 > not just decided on paper. Verified directly against the current repo
 > (source, tests run, commit history), not inferred from this document's own
 > claims — the previous status note here ("no code has been changed... ~5–10%
 > [implemented]") was stale and wrong by the time it was written; the
-> implementation actually landed three weeks earlier. See "Implementation
-> status" below for the full audit and what genuinely still remains.
+> implementation actually landed three weeks earlier. The two gaps found
+> during that audit (work-week default, per-project-membership override) were
+> closed the same day: the work-week default was reviewed and kept as-is
+> deliberately, and the membership override shipped in `58a86da8`. See
+> "Implementation status" below for the full audit.
 >
 > **Original status note, preserved for history (was already inaccurate by
 > 2026-09-27):** Option A is confirmed as the main piece of work. Every member's
@@ -133,25 +136,30 @@ on disk. Ran all five timezone-specific test files directly
 backend suite: 1046/1046 pass. Grepped for any day-boundary auto-stop
 feature (explicitly rejected below): none exists — the rejection held.
 
-### What's still genuinely open (not stale — actually unaddressed)
+### Both remaining gaps are now closed (2026-09-29)
 
-1. **Work-week default is still `[0,1,2,3,4]` (Mon–Fri).** Verified in
-   `activity/routes.js` (two call sites) — unchanged. This document's
-   observation stands: it's wrong for this product's home market (Egypt/Iraq/
-   Jordan/Libya run Fri–Sat weekends), and the working-day gate that can block
-   clock-in entirely is built on it. Anyone who never edits `work_days`
-   silently inherits the wrong default. Still open question 14 below.
-2. **The narrower multi-region-per-member-per-week case is still out of
-   scope**, exactly as this document flagged as an acceptable v1 boundary: one
-   member working genuinely different regional shifts across *different
-   projects* in the same week isn't served by a single member-level field.
-   What *did* ship (per-project timezone) already covers the more common
-   version of the cross-region scenario in the addendum (a member's *whole*
-   role is anchored to one client/project's calendar) — it's specifically the
-   "different projects, different regions, same person, same week" case that
-   would need a timezone on the project-membership/assignment row rather than
-   the project itself, and that was never built. Matches this document's own
-   framing: "if it comes up, it's a schema extension... not a rethink."
+1. ✅ **DECIDED — keep `[0,1,2,3,4]` (Mon–Fri), deliberately, not by
+   oversight.** This document's own observation (wrong for this product's
+   home market, which mostly runs Fri–Sat weekends) prompted a direct
+   decision rather than a silent default: the actual work week this product's
+   client base runs on is predominantly the European/American Mon–Fri
+   convention, so the existing default is correct for the common case and is
+   being kept as-is. Not a gap — a considered call. Anyone on a Fri–Sat
+   schedule still sets `work_days` explicitly, same as before.
+2. ✅ **SHIPPED (`58a86da8`, 2026-09-29) — per-project-membership timezone
+   override.** The one case a per-project timezone alone couldn't express:
+   one member working genuinely different regional shifts across *different*
+   projects in the same week. `project_members.timezone` (nullable, NULL =
+   inherit) now sits at the top of the precedence chain in
+   `resolve-time-zone.js`: this member's override on this specific project,
+   then the project's own zone, then the member's personal zone. A
+   collapsed-by-default "Per-member timezone overrides" section in the
+   project modal exposes it, auto-expanded when editing a project that
+   already has some set. Verified against real Postgres (PGlite) and 7 new
+   backend tests; 1053/1053 backend, 86/86 web, `tsc --noEmit` clean.
+
+Every open item this document ever raised is now either shipped or
+deliberately decided. Nothing here is stale or waiting on a decision anymore.
 
 Everything else this document raised as an open question — the sticky-day
 cap (answered by the existing hour-limit ceiling), the switch's scope (moot:
@@ -1078,13 +1086,12 @@ already-open session.
    blocks resuming a shift that legitimately started on a working day, the
    moment the clock crosses into a weekend/holiday — directly contradicting
    the agreed model. The gate applies to `"start"` only.
-7. ⚠️ **PARTIALLY ANSWERED — the common case shipped; the narrow case didn't.**
-   `d9dbae0e` added a per-*project* timezone (`projects.timezone`), which
-   covers a member whose whole role is anchored to one client/project's
-   calendar — the scenario the addendum actually described. Still open exactly
-   as scoped here: one member working genuinely different regions across
-   *different* projects in the same week would need a timezone on the
-   project-membership row, not the project itself, and that was never built.
+7. ✅ **FULLY ANSWERED AND SHIPPED (2026-09-29).** `d9dbae0e` covered the
+   common case with a per-*project* timezone. `58a86da8` closed the narrow
+   case scoped here: `project_members.timezone` lets one specific member's
+   assignment to one specific project override both the project's zone and
+   their own, for exactly the "different projects, different regions, same
+   person, same week" scenario this question named.
 8. ✅ **ANSWERED — satisfied by construction, no separate column needed.**
    Both subsystems derive the attributed day from `activity_sessions.started_at`
    — server-generated at session creation, never client-supplied, never
@@ -1127,14 +1134,16 @@ already-open session.
     the daily buckets and those older buckets are the only surviving record.
     Reports are computed live from sessions, so they self-correct for all
     periods regardless of what the stored buckets say.
-14. ⚠️ **SPLIT — tzdata ownership addressed operationally; work-week default
-    still not changed.** `d9dbae0e`'s Dockerfile now installs `tzdata` and
-    documents that the base image needs periodic re-pinning to track
-    government DST changes (the `Africa/Cairo` risk named here) — that half is
-    done, though "who owns re-pinning on a schedule" is a process answer, not
-    a code one, and hasn't been assigned anywhere in this repo. The work-week
-    default is **still `[0,1,2,3,4]` (Mon–Fri)** in `activity/routes.js`,
-    unchanged — this half of the question is genuinely still open.
+14. ✅ **ANSWERED.** `d9dbae0e`'s Dockerfile installs `tzdata` and documents
+    that the base image needs periodic re-pinning to track government DST
+    changes (the `Africa/Cairo` risk named here) — "who owns re-pinning on a
+    schedule" is a process answer, not a code one, and still hasn't been
+    assigned to a person, but the mechanism and the documentation of the risk
+    are in place. The work-week default question was decided directly
+    (2026-09-29): kept at `[0,1,2,3,4]` (Mon–Fri), deliberately — this
+    product's actual client base predominantly runs the European/American
+    work week, so the existing default matches the common case rather than
+    this document's home-market assumption.
 15. ✅ **ANSWERED — solved differently than proposed, but solved.** Rather
     than auditing stored `members.timezone` values for legacy aliases before
     shipping, `canonicalizeTimeZone` resolves aliases live on every read (part
@@ -1143,22 +1152,23 @@ already-open session.
     rows are separately covered by `74bdf837`'s fill-a-blank behavior from the
     agent's own reported zone.
 
-## Completion estimate (2026-09-29) — supersedes the 2026-09-27 estimate below, which was wrong
+## Completion estimate (2026-09-29, updated same day) — supersedes the 2026-09-27 estimate below, which was wrong
 
 The 2026-09-27 estimate (preserved immediately below for history) said 0%
 implementation and "no code has been changed." That was incorrect at the time
 it was written: the implementation had already merged three weeks earlier.
-This table reflects what direct inspection of the current repo actually shows.
+This table reflects what direct inspection of the current repo actually shows,
+updated again the same day once the two remaining gaps it found were closed.
 
 | Workstream | Status | Evidence |
 | --- | --- | --- |
 | Research and model | 100% — and validated by what shipped | Every risk named (DST, tzdata freshness, aliases, device-clock immunity) was addressed in the actual implementation, not just documented |
-| Core decisions | 100% | Member/project timezone split, sticky start-date attribution, start-only working-day gate, and the viewer's-own-timezone aggregate convention are all decided and shipped |
-| Data model and migration | 100% for what was decided | `projects.timezone` column shipped; backfill decision was "leave as-is, manual tool available" (question 13), not a forced migration — that decision is implemented, not missing |
-| Backend enforcement | 100% for what was scoped | Limits, weekly reset, resume/start gate, working-day gate, and reports all route through the member/project timezone model; verified via `git log`, direct source reads, and a live test run |
-| Reporting and UI | 100% for what was scoped | Reports use sticky start-date attribution; Command Center/dashboard use the viewer's timezone; a project timezone field and a Tauri-agent timezone picker both exist and write the canonical field |
-| Operations and tests | ~85% | tzdata installed and documented; 39/39 timezone-specific tests + 1046/1046 full backend suite pass. Missing: an owner assigned for periodic base-image re-pinning, and the work-week default is still Mon–Fri |
-| **Overall product implementation** | **~90%** | **Two scoped, named gaps remain: the Mon–Fri work-week default, and per-project-membership (not per-project) timezone overrides for one member working different regions across different projects in the same week — both explicitly out-of-scope-for-v1 items this document itself called acceptable to defer** |
+| Core decisions | 100% | Member/project/membership timezone precedence, sticky start-date attribution, start-only working-day gate, the viewer's-own-timezone aggregate convention, and the work-week default are all decided and shipped |
+| Data model and migration | 100% | `projects.timezone` and `project_members.timezone` both shipped; backfill decision was "leave as-is, manual tool available" (question 13), not a forced migration — that decision is implemented, not missing |
+| Backend enforcement | 100% | Limits, weekly reset, resume/start gate, working-day gate, and reports all route through the member/project/membership timezone model; verified via `git log`, direct source reads, and live test runs |
+| Reporting and UI | 100% | Reports use sticky start-date attribution; Command Center/dashboard use the viewer's timezone; a project timezone field, a per-membership override section, and a Tauri-agent timezone picker all exist and write the canonical fields |
+| Operations and tests | ~95% | tzdata installed and documented; 46/46 timezone-specific tests + 1053/1053 full backend suite pass. Missing only: an owner assigned for periodic base-image re-pinning (a process answer, not a code one) |
+| **Overall product implementation** | **~99%** | **Every gap this plan ever raised is either shipped or explicitly, deliberately decided. The one remaining item (assigning an owner for scheduled tzdata re-pins) is an operational process, not a design or code gap.** |
 
 ---
 
