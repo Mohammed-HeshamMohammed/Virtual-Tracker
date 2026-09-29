@@ -15,21 +15,14 @@ let lastCall = null;
 /** @type {Record<string, unknown>[]} */
 let nextRows = [];
 
-// activity-events-postgres.service.js bypasses client.js's own query() export
-// entirely - it calls getPostgresPool() and drives client.connect()/query()/
-// release() itself, so the pool/client have to be faked at that level, not
-// by mocking a query() this module never calls.
+// activity-events-postgres.service.js's local pgQuery delegates to
+// client.js's queryRaw(), which returns the raw pg result.
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
-    getPostgresPool: () => ({
-      connect: async () => ({
-        query: async (sql, params) => {
-          lastCall = { sql, params };
-          return { rows: nextRows };
-        },
-        release: () => {},
-      }),
-    }),
+    queryRaw: async (sql, params) => {
+      lastCall = { sql, params };
+      return { rows: nextRows };
+    },
     query: async () => [],
     __closePostgresPoolForTests: async () => null,
     isPostgresConfigured: () => true,

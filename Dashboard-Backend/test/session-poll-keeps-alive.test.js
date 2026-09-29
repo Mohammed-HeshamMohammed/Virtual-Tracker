@@ -10,20 +10,15 @@ import assert from "node:assert/strict";
 const calls = { sql: [], params: [] };
 let nextRowCount = 1;
 
-// The service talks to Postgres through a pool it gets from client.js, so the
-// pool is what has to be stubbed - there is no separate query module to mock.
+// activity-events-postgres.service.js's local pgQuery delegates to
+// client.js's queryRaw, which returns the raw pg result.
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
-    getPostgresPool: () => ({
-      connect: async () => ({
-        query: async (sql, params) => {
-          calls.sql.push(sql);
-          calls.params.push(params);
-          return { rowCount: nextRowCount, rows: [] };
-        },
-        release: () => {},
-      }),
-    }),
+    queryRaw: async (sql, params) => {
+      calls.sql.push(sql);
+      calls.params.push(params);
+      return { rowCount: nextRowCount, rows: [] };
+    },
     withTransaction: async (fn) => fn({ query: async () => ({ rows: [] }) }),
     query: async () => [],
   },

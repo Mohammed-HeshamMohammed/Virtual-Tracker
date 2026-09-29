@@ -34,6 +34,15 @@ mock.module("../src/lib/postgres/integrity-postgres.service.js", {
     listIntegrityFlagsForSessionPg: async () => [],
   },
 });
+// runIntegrityChecks now loops per active tenant (§0.1 blocker 5) - a single
+// fake tenant keeps every existing assertion below valid (one iteration,
+// identical behaviour to the previous unscoped run). withTenant() itself is
+// left real (client.js) since it only touches an async-local context, no DB.
+mock.module("../src/lib/postgres/active-tenants.js", {
+  namedExports: {
+    listActiveTenantIds: async () => ["11111111-1111-4111-8111-111111111111"],
+  },
+});
 mock.module("../src/modules/classification/activity-categories.js", {
   namedExports: {
     categorize: async (_matchType, name) => categoryMap[name] ?? "unclassified",

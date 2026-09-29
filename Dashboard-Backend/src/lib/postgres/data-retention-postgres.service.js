@@ -1,4 +1,4 @@
-import { query } from "./client.js";
+import { query, queryAsAdmin } from "./client.js";
 import { MAIN_TENANT_ID } from "./ensure-tenancy-schema.js";
 
 /**
@@ -23,6 +23,14 @@ import { MAIN_TENANT_ID } from "./ensure-tenancy-schema.js";
  */
 const ACTIVE_TENANT_FILTER = `tenant_id IN (SELECT id FROM tenants WHERE lifecycle = 'live' AND now() < period_end)`;
 
+// §0.1 blocker 5: the 8 sweep-only functions below run on queryAsAdmin, not
+// the ordinary query() - once RLS is live, an unscoped sweep with no
+// app.tenant_id published would see nothing under the regular pool, and
+// ACTIVE_TENANT_FILTER above would never even get the chance to run. The 10
+// member-scoped DSAR/erasure functions further down stay on query(): those
+// are request-scoped (a member's own data, viewed through their own
+// session), not the sweep's business.
+
 export async function getRetentionSettingsPg() {
   return query(
     `SELECT data_type, retention_days, updated_by, updated_at FROM data_retention_settings
@@ -42,7 +50,7 @@ export async function setRetentionDaysPg(dataType, retentionDays, updatedBy) {
 }
 
 export async function findExpiredArchivedScreenshotsPg(retentionDays) {
-  return query(
+  return queryAsAdmin(
     `SELECT id, screenshot_url FROM activity_screenshots
      WHERE captured_at < now() - ($1 || ' days')::interval
        AND screenshot_url IS NOT NULL
@@ -53,12 +61,12 @@ export async function findExpiredArchivedScreenshotsPg(retentionDays) {
 
 export async function deleteScreenshotsByIdPg(ids) {
   if (!ids.length) return 0;
-  const result = await query(`DELETE FROM activity_screenshots WHERE id = ANY($1::uuid[]) RETURNING id`, [ids]);
+  const result = await queryAsAdmin(`DELETE FROM activity_screenshots WHERE id = ANY($1::uuid[]) RETURNING id`, [ids]);
   return result.length;
 }
 
 export async function findScreenshotsToArchivePg(archiveDays, limit = 500) {
-  return query(
+  return queryAsAdmin(
     `SELECT id, member_id, image_data, captured_at
      FROM activity_screenshots
      WHERE image_data IS NOT NULL AND captured_at < now() - ($1 || ' days')::interval
@@ -70,11 +78,11 @@ export async function findScreenshotsToArchivePg(archiveDays, limit = 500) {
 }
 
 export async function markScreenshotArchivedPg(id, objectPath) {
-  await query(`UPDATE activity_screenshots SET screenshot_url = $2, image_data = NULL WHERE id = $1`, [id, objectPath]);
+  await queryAsAdmin(`UPDATE activity_screenshots SET screenshot_url = $2, image_data = NULL WHERE id = $1`, [id, objectPath]);
 }
 
 export async function deleteExpiredInlineScreenshotsPg(retentionDays) {
-  const result = await query(
+  const result = await queryAsAdmin(
     `DELETE FROM activity_screenshots
      WHERE captured_at < now() - ($1 || ' days')::interval AND image_data IS NOT NULL
        AND ${ACTIVE_TENANT_FILTER}
@@ -85,7 +93,7 @@ export async function deleteExpiredInlineScreenshotsPg(retentionDays) {
 }
 
 export async function deleteExpiredAppLogsPg(retentionDays) {
-  const result = await query(
+  const result = await queryAsAdmin(
     `DELETE FROM activity_app_logs WHERE started_at < now() - ($1 || ' days')::interval AND ${ACTIVE_TENANT_FILTER} RETURNING id`,
     [retentionDays],
   );
@@ -93,7 +101,7 @@ export async function deleteExpiredAppLogsPg(retentionDays) {
 }
 
 export async function deleteExpiredUrlLogsPg(retentionDays) {
-  const result = await query(
+  const result = await queryAsAdmin(
     `DELETE FROM activity_url_logs WHERE visited_at < now() - ($1 || ' days')::interval AND ${ACTIVE_TENANT_FILTER} RETURNING id`,
     [retentionDays],
   );
@@ -101,7 +109,7 @@ export async function deleteExpiredUrlLogsPg(retentionDays) {
 }
 
 export async function deleteExpiredSessionsPg(retentionDays) {
-  const result = await query(
+  const result = await queryAsAdmin(
     `DELETE FROM activity_sessions
      WHERE ended_at IS NOT NULL AND ended_at < now() - ($1 || ' days')::interval
        AND ${ACTIVE_TENANT_FILTER}

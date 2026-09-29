@@ -24,9 +24,14 @@ function fakeClient() {
 
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
-    // activity-events-postgres.service.js drives its own client.query() via
-    // getPostgresPool().connect() (pgQuery, module-local).
-    getPostgresPool: () => ({ connect: async () => fakeClient() }),
+    // activity-events-postgres.service.js's local pgQuery now delegates to
+    // queryRaw (client.js), which returns the raw pg result like
+    // getPostgresPool().connect().query() used to.
+    queryRaw: async (sql, params) => {
+      calls.push({ sql, params });
+      const next = responses.shift();
+      return next ?? { rows: [] };
+    },
     // task-member-progress.service.js instead calls the higher-level query()
     // helper directly - both exports route through the same fake so one
     // `calls`/`responses` pair backs both files under test.
