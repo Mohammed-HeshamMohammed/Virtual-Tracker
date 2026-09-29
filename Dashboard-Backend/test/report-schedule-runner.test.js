@@ -17,6 +17,14 @@ const stub = {
   loadCalls: [],
 };
 
+// The runner lists schedules per live tenant (active-tenants.js); one tenant
+// keeps every assertion below about a single tenant's schedules.
+mock.module("../src/lib/postgres/active-tenants.js", {
+  namedExports: {
+    forEachActiveTenant: async (fn) => [await fn("00000000-0000-0000-0000-000000000001")],
+    listActiveTenantIds: async () => ["00000000-0000-0000-0000-000000000001"],
+  },
+});
 mock.module("../src/lib/postgres/report-schedules-postgres.service.js", {
   namedExports: {
     listReportSchedulesPg: async () => stub.schedules,

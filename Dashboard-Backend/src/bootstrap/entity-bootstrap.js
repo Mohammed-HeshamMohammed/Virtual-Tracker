@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { withTenant } from "../lib/postgres/client.js";
+import { MAIN_TENANT_ID } from "../lib/postgres/ensure-tenancy-schema.js";
 import { logSafeWarn } from "../http/sanitize-error.js";
 import { isPostgresLookupReady, resetPostgresLookupReadyCache } from "../lib/postgres/lookup-availability.js";
 import {
@@ -70,7 +72,10 @@ async function isOrganizationMaintenanceComplete(db) {
 
 export function scheduleOrganizationMaintenance(db, actor = "system") {
   if (maintenanceInFlight) return maintenanceInFlight;
-  maintenanceInFlight = runOrganizationMaintenance(db, actor)
+  // The legacy one-time bootstrap of the MAIN organization (gated by a single
+  // Firestore flag). Customer tenants are seeded by createCustomerTenant
+  // instead, so this is scoped to main explicitly rather than looped.
+  maintenanceInFlight = withTenant(MAIN_TENANT_ID, () => runOrganizationMaintenance(db, actor))
     .catch((err) => {
       logSafeWarn("[entity-bootstrap] deferred maintenance failed:", err);
       return { created: [], failed: true };
