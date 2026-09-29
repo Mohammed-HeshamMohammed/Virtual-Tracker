@@ -26,6 +26,12 @@ const envSourceSchema = z
     GITHUB_PAT: optionalTrimmedString,
     GITHUB_REPO_OWNER: optionalTrimmedString,
     GITHUB_REPO_NAME: optionalTrimmedString,
+    AGENT_MIN_SELF_UPDATE_VERSION: optionalTrimmedString,
+    AGENT_MIN_SUPPORTED_VERSION: optionalTrimmedString,
+    AGENT_UPDATE_ROLLOUT_PERCENT: optionalTrimmedString,
+    AGENT_UPDATE_ROLLOUT_SALT: optionalTrimmedString,
+    AGENT_FORCE_UPDATE_BELOW_VERSION: optionalTrimmedString,
+    AGENT_UPDATE_REQUIRED_PLATFORMS: optionalTrimmedString,
     SKIP_ENV_VALIDATION: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {

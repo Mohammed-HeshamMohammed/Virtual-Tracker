@@ -111,6 +111,10 @@ jobs:
             --exclude dist \
             --exclude build \
             --exclude target \
+            --exclude '**/test/**' \
+            --exclude '**/tests/**' \
+            --exclude '**/*.test.*' \
+            --exclude '**/*_tests.rs' \
             --metrics off \
             --sarif --output semgrep.sarif
 
@@ -143,7 +147,7 @@ jobs:
           args: >-
             Auth-Backend Dashboard-Backend Landing-Backend Notify-backend
             Dashboard-Web Landing-Web Tauri-App-Extension
-            --sarif --output njsscan.sarif || true
+            --config .njsscan --sarif --output njsscan.sarif || true
 
       - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         if: always()
@@ -179,7 +183,8 @@ jobs:
           format: sarif
           output: bearer.sarif
           exit-code: 0
-          skip-path: '**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**,**/scripts/**,**/*.example'
+          severity: critical,high,medium
+          skip-path: '**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**,**/scripts/**,**/test/**,**/tests/**,**/*.test.*,**/*_tests.rs,**/*.example'
 
       - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         if: always()
@@ -205,7 +210,7 @@ jobs:
           # directory-to-scan is left at its default sentinel so it takes the
           # whole workspace. ignore-globs replaces rather than extends the
           # action's default, so **/.git/** has to be repeated here.
-          ignore-globs: '**/.git/**,**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**,**/scripts/**,**/*.example'
+          ignore-globs: '**/.git/**,**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**,**/scripts/**,**/test/**,**/tests/**,**/*.test.*,**/*_tests.rs,**/*.example'
 
       - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         if: always()

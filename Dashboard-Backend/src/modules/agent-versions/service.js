@@ -48,6 +48,18 @@ export function needsManualReinstall(version) {
   return Boolean(floor && compareAgentVersions(normalizedVersion, floor) < 0);
 }
 
+export function isBelowMinimumSupportedVersion(version) {
+  const normalizedVersion = normalizeAgentVersion(version);
+  const floor = normalizeAgentVersion(getEnv().agent.minimumSupportedVersion);
+  return Boolean(normalizedVersion && floor && compareAgentVersions(normalizedVersion, floor) < 0);
+}
+
+export function agentInstallInstructionEligibility(version) {
+  const normalizedVersion = normalizeAgentVersion(version);
+  if (normalizedVersion) return needsManualReinstall(normalizedVersion) ? "manual-reinstall" : "known";
+  return String(version || "").trim() ? "unrecognized" : "unknown";
+}
+
 export async function reportAgentOpen(memberId, version, platform, updateBlocked, installDir) {
   const normalizedVersion = normalizeAgentVersion(version);
   const normalizedPlatform = normalizeAgentPlatform(platform);
@@ -99,6 +111,8 @@ export async function listAgentVersionMembers(latestVersion, visibleMemberIds = 
       supportsAgentInbox: supportsAgentInbox(version, latestVersion),
       // Frozen: this agent will never be offered an update again.
       needsManualReinstall: needsManualReinstall(row.agent_version),
+      // agent-v1.0.25 is the first published release with the notification inbox.
+      belowMinimumSupported: isBelowMinimumSupportedVersion(row.agent_version),
       // Stuck for the other reason: current enough to be offered updates, but
       // unable to install one because its install directory is not writable
       // by the user running it. null means the agent predates the report.

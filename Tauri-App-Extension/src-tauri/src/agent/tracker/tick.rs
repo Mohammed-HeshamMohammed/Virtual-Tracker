@@ -275,7 +275,7 @@ impl ActivityTracker {
             *self.session_id.lock() = Some(session_id.clone());
             state.last_app_log_at = Instant::now() - Duration::from_secs(APP_LOG_INTERVAL_SEC);
             state.next_screenshot_at = Instant::now() + Duration::from_secs(FIRST_SCREENSHOT_DELAY_SEC);
-            log::info!("Tracking session {session_id}");
+            log::info!("Tracking session started");
             self.upload_app_slice(&session_id, &window);
             state.last_app_log_at = Instant::now();
         }

@@ -78,7 +78,7 @@ impl ActivityTracker {
                 }
             );
         } else {
-            log::warn!("App/URL upload failed for session {session_id}, queued for retry");
+            log::warn!("App/URL upload failed; queued for retry");
         }
     }
 }

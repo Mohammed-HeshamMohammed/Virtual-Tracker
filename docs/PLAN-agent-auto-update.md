@@ -1,31 +1,48 @@
 # PLAN — Agent update publishing, detection, and auto-update
 
-Status: **proposal, nothing implemented.**
-Scope: `Tauri-App-Extension`, `.github/workflows/release.yml`, `Landing-Backend`
-(download endpoint), + one small Dashboard-Backend endpoint in Phase U5.
+Status: **DONE — the updater engineering scope, including the five final work groups, is implemented and verified.**
+Scope: `Tauri-App-Extension`, `.github/workflows/release.yml`, the
+`Landing-Backend` update/download feed, and the Dashboard Backend/Web agent
+version, reminder, and blocker-reporting surfaces.
 
-Goal: a change merged to `main` becomes a signed release that every installed
-agent **detects and applies on its own**, without ever costing someone their
-tracked time.
+Goal: an approved change on `main` can be published through the deliberately
+manual release workflow as a signed release that supported installed agents
+detect and apply without costing anyone tracked time.
 
 There are two halves to that sentence and they fail independently:
 
 | Half | Question it answers | Status today |
 |---|---|---|
-| **Publish** (§A) | Does a push to `main` produce something an agent *can* detect? | 🔴 **Broken — nothing is detectable, ever** |
-| **Consume** (§B) | Given something to detect, does the agent apply it safely? | 🔴 Applies it unsafely — stops the timer |
+| **Publish** (§A) | Does a release produce something an agent can detect? | ✅ **Working.** Tagged releases produce signed updater artifacts and `latest.json`; Landing Backend proxies the private release feed. Releases are manual by design, not triggered by every push to `main`. |
+| **Consume** (§B) | Given something to detect, does the agent apply it safely? | ✅ **Working for agents at or above 1.0.27.** Downloads show progress, active/paused sessions defer installation, unwritable installs stay running with an administrator-required state, and the server withholds updates from older unsafe agents. |
+| **Fleet visibility** | Can operators see versions and update blockers? | ✅ **Working.** Agent version/platform/open time, manual-reinstall status, install directory, and update-blocked state are reported in the Agent Versions UI. |
+| **Legacy installs** | Can every historical install self-update? | ✅ **Handled safely.** Agents below 1.0.27 are never given a dangerous self-update and now have individual and bulk reinstall-instruction actions in Agent Versions; current per-machine installs without write/elevation rights remain visible instead of exiting. |
 
-Both halves must ship for the feature to exist at all. §A is the one that
-turns "no updates" into "updates"; §B is the one that stops updates from
-being harmful. Order: **A1 → B1 → A2 → B2 → …** (§D).
+Both critical halves and the final resilience/policy work have shipped in the
+repository. Reinstalling a physical legacy installation is an operational
+action for its administrator, not unfinished updater engineering; the product
+now identifies those installations and provides the action needed to migrate
+them.
 
-**Before building any of it, work through §F** — eleven things that decide
+> **Current-state note (2026-09-27).** This status block, Part D, H.5.4, and
+> the completion table at the end are authoritative. Parts A–H preserve the
+> investigation and design history that led to the implementation, so older
+> statements such as “nothing is detectable,” the GitHub endpoint, the old
+> signing key, or “version reporting is still open” describe the system at the
+> time of discovery rather than the repository today. Current evidence includes
+> the Landing Backend `/api/agent/update/{target}/{arch}/{current_version}`
+> feed, `createUpdaterArtifacts: true`, the API endpoint compiled into
+> `tauri.conf.json`, the 1.0.25 notification-capable product minimum, the
+> separate 1.0.27 safe-update floor, and tagged releases through
+> `agent-v1.1.2`.
+
+**Historical pre-implementation checklist:** §F records eleven things that decide
 whether this design works at all and that cannot be checked from the
 repository: repo visibility, which keypair is in the signing secret, whether
 the users are local admins, and so on. Four of them are blocking, and each one
 fails silently if it is wrong.
 
-## Answers to §F so far, and what they force
+## Historical answers to §F, and what they forced
 
 | Check | Answer | Consequence |
 |---|---|---|
@@ -72,7 +89,7 @@ much harder to justify than the first.
 
 # PART A — PUBLISHING: making an update exist and be detectable
 
-## A.0 What exists today (verified against CI logs and the live releases, not assumed)
+## A.0 Historical baseline at plan creation (verified at the time)
 
 | Piece | Where | State |
 |---|---|---|
@@ -665,7 +682,7 @@ public**, because that is the window in which the old endpoint still works and
 
 # PART B — CONSUMING: applying an update without costing anyone their time
 
-## B.0 What exists today
+## B.0 Historical consumer baseline at plan creation
 
 | Piece | Where | State |
 |---|---|---|
@@ -932,7 +949,7 @@ cannot read its own predecessor's state loses data silently.
 | Antivirus quarantines the staged installer between download and apply | Re-verify at apply time (already in §5.2) catches the file being gone; then it is a normal failure. Given the agent's own AV profile this is not hypothetical |
 | Roaming profile — `~/.virtualtracker` syncs across machines | Queue and progress files could arrive from a *different* machine's session. Out of scope to solve, but worth knowing before someone reports "duplicate time on two PCs" |
 | Disk full at install (as opposed to download) | Install fails, binary may be partially replaced. Crash-loop guard is the backstop |
-| ⚠️ **Corporate TLS interception** | `reqwest` is configured `default-features = false, features = [… "rustls-tls"]`, which in reqwest 0.12 trusts the **bundled Mozilla root set**, not the Windows certificate store. A corporate MITM proxy whose private root is installed in Windows — and therefore trusted by every browser on the machine — would **not** be trusted by the agent. If that is the case, the agent cannot reach the API *at all*, not merely the update feed, so it would present as "the product does not work here" rather than "updates are broken". **Verify before an enterprise deployment** (F.12): the fix is `rustls-tls-native-roots`, a one-line feature change |
+| ✅ **Corporate TLS interception** | The resolved updater stack uses `reqwest 0.13.4` with `rustls-platform-verifier`, so it uses the operating-system trust decision rather than a private bundled-only root set. The release workflow runs `assert-updater-platform-trust.mjs` and fails if a dependency change removes that property. A deployment still has to install its corporate root correctly in the operating system; that is environment configuration, not an updater code gap. |
 
 
 ## 6. Queue and progress safety
@@ -954,13 +971,14 @@ already cover the two things that could be lost. The only new state is
 
 # PART C — Decisions needed before building
 
-1. **`perMachine` or `currentUser`?** (§2) Auto-update effectively requires
-   `currentUser` unless you ship a privileged updater service. This is the same
-   question as A7 in the AV plan — answer it once, for both. If `currentUser`
-   wins, the changeover release needs a manual push (§2).
-2. **May an update ever stop an active timer?** This plan says **no**, and
-   everything above follows from that. If "yes, after warning" is acceptable,
-   §5.1 collapses to a prompt.
+1. ~~**`perMachine` or `currentUser`?**~~ **Answered: keep `perMachine` for the
+   current managed deployment.** The agent checks writability/elevation before
+   installing and reports blocked installs; it never exits into a known-bad
+   handoff. A future product decision may migrate installs, but it is not part
+   of updater correctness.
+2. ~~**May an update ever stop an active timer?**~~ **Answered: no.** Download
+   may happen, but install/relaunch waits until no active or paused session is
+   open.
 3. ~~**Can `github-actions[bot]` push to `main`?**~~ **Answered (F.4): maybe
    not.** Resolved by not needing it — the tag becomes the source of truth
    (A.9). Remaining sub-question: **are tags protected too?** If so, the
@@ -971,53 +989,37 @@ already cover the two things that could be lost. The only new state is
    sub-question: **backend feed, or a second public releases-only repo?**
    A.8.1 recommends the backend; the second repo is the lower-effort fallback
    if backend work is unwelcome. **This is the one decision that blocks A1.**
-5. **Intel Mac: build it or declare it unsupported?** (A.6) Either is fine;
-   silently never updating those machines is not.
-6. **Is a forced-minimum-version needed?** If not, skip U5 entirely.
-7. **Who does the manual rollout, and when?** A0 (§D) requires reinstalling
-   every agent by hand once. That is a scheduling and comms question, not an
-   engineering one, and it gates every phase after it. Decide the window before
-   building, not after.
+5. ~~**Intel Mac: build it or declare it unsupported?**~~ **Answered: build
+   it.** The release matrix now publishes both Apple Silicon and Intel macOS
+   updater targets and the post-publish verifier requires both.
+6. ~~**Is a forced-minimum-version needed?**~~ **Answered: supported as remote
+   policy.** A valid configured floor bypasses the percentage cohort while all
+   normal session/install safety gates remain in force.
+7. ~~**Who does the manual rollout, and when?**~~ **Engineering answer is
+   complete.** Agent Versions exposes individual and bulk reinstall emails for
+   the frozen pre-1.0.27 cohort. Scheduling physical reinstalls belongs to the
+   administrator operating that fleet.
 
 ---
 
 # PART D — Phasing
 
-The F.1/F.4 answers reorder this. The old plan assumed the installed fleet
-could be reached; it cannot (see the answers table at the top), so everything
-now hangs off one manual rollout — and that rollout must be *complete*, because
-there will not be a second one.
+This section is reconciled to the completed implementation as of 2026-09-27.
+The release workflow remains manual intentionally: a four-target build consumes
+paid private-repository runner minutes, so merging to `main` does not
+automatically publish an agent.
 
-| Phase | Content | Size |
+| Phase | Current status | Remaining work |
 |---|---|---|
-| **A1** | 🟡 **partly shipped (`64ca530`)** — `createUpdaterArtifacts: true`, stale pubkey deleted, key-identity assertion in `verify`. **Remaining:** the keypair decision (blocked on F.2 — see below), Landing-Backend feed + signature inlining + download proxy (A.8), `agent-v*` filter, endpoint reachability assertion. 🔴 **Make updates exist and be fetchable.** `createUpdaterArtifacts: true`; fresh keypair (A.8.4); single committed pubkey; key-identity assertion in `verify`; Landing-Backend feed + signature inlining + anonymous download proxy (A.8); `agent-v*` tag filter (fixes F.9); endpoint reachability assertion, checked unauthenticated, as the last workflow step | ~1½ days (backend included) |
-| **B1** | ✅ **shipped (`64ca530`)** — download and install split; a staged update waits for a closed session and applies on stop/quit; a paused session counts as open. 🔴 **Guard auto-update.** Do not `relaunch()` while a session is open — stage instead, apply on stop/quit. Smallest possible fix to the §1 defect | ~half day |
-| **A0** | 🟢 **off the critical path (F.2 = `8216A44B…`, H.5).** Replaced by the **bridge release** — same payload, delivered by the updater instead of by hand. Still required *only* if F.5 says users are not local admins, in which case a `perMachine` install cannot be written by any update including the bridge (H.5.2), and the install-mode change cannot ride the updater regardless (H.5.3). ~~🔴 **The one manual rollout.**~~ Build one installer carrying A1 + B1 + the new endpoint + the new pubkey + the C.1 install-mode decision, and install it on every machine by hand. **Everything before this is invisible to the fleet; everything after it is automatic.** Not optional, not deferrable, and not repeatable — get every irreversible decision into this build | scheduling, not engineering |
-| **A2** | Tag-driven versioning, no push to `main` (A.9); path-filtered `push: main` trigger with `[skip release]` guard; `cancel-in-progress: false` | ~1 day |
-| **B2** | Checking moves into the tracker loop with interval + backoff and jitter; stage/apply state machine; downgrade refusal; crash-loop guard; unreachable-feed treated as "no update" | ~2 days |
-| **B3** | UI: "restart to finish updating" affordance; manual check reports staged state honestly; install-failure reporting for admins | ~1 day |
-| **A3** | *Optional* — Intel Mac matrix entry (F.8); Authenticode certificate (F.7) | ~half day |
-| **U5** | *Optional* — server-driven minimum version and staged rollout. Cheap now: the backend already owns the feed | ~1 day + backend |
-
-> **Progress (`64ca530`):** B1 is done and the P1 half of A1 is done, shipped
-> together as the ordering requires. What A1 still needs is the *delivery* side
-> — and that is now gated on **F.2**, because H.4.3 showed the keypair decision
-> determines whether A0 is needed at all. **The next action is not code: it is
-> running the release workflow once so the new `verify` assertion prints which
-> key the secret holds.** It fails before the paid matrix build either way, so
-> the answer is cheap.
-
-**A1 → B1 → A0 is the shippable unit and the ordering is not negotiable.** A1
-without B1 would arm §1 on every machine at once; B1 without A1 guards a path
-that cannot execute; and neither reaches anybody without A0. Roughly two days
-of work plus a rollout window, and it turns "we have never shipped an update to
-anyone" into "a merge to `main` reaches the fleet without anyone losing time".
-
-**What to fold into A0 while you have the chance**, because each one otherwise
-costs a second hand-rollout: the install mode (C.1 — `perMachine` vs
-`currentUser`, and F.5 says non-admin users make this urgent), agent version
-reporting (F.6 — without it you cannot tell whether any of this worked), and
-Authenticode signing (F.7) if the certificate is obtainable in time.
+| **A1 — publishable signed artifacts** | ✅ Complete. Updater artifacts are enabled, the workflow checks the signing key before the paid matrix, tagged releases publish `latest.json`, and a final job asserts version, signatures, referenced assets, four platform targets, and the live API endpoint. The duplicated signing assertion was removed. | None. |
+| **A8 — private-repository delivery** | ✅ Complete. The agent uses the Landing Backend API; the backend selects stable `agent-v*` releases, validates signed required platforms, proxies the exact asset, logs feed failures safely, and exposes a no-cache health endpoint consumed by the release smoke test. | None in code. External alert routing may consume the health endpoint if desired. |
+| **B1 — never interrupt tracked time** | ✅ Implemented. Download and install are split; active and paused sessions count as open; installation waits for a safe point. | None for the core safety contract. |
+| **B2 — resilient state machine** | ✅ Complete. The feed prevents downgrades and returns `204` for current/unsupported versions. The client persists the pending version and deferral, checks periodically, uses bounded exponential backoff with jitter, redownloads/reverifies after restart, and quarantines a version for 24 hours after three install failures while retaining a manual retry. | None. |
+| **B3 — visible update and failures** | ✅ Implemented. Download progress, ready/countdown, Restart now, Not now, install error, post-update confirmation, and administrator-required states are visible. | Validate the complete Windows round trip on representative admin and standard-user machines after installer changes. |
+| **Fleet reporting and reminders** | ✅ Complete. Versions, platforms, last-opened time, update blockers, install paths, manual-reinstall status, inbox/email reminders, and individual/bulk legacy reinstall instructions are available. | Physical reinstalls and follow-up are normal fleet operations. |
+| **A0/C2b — legacy install migration** | ✅ Complete for product behavior. Unsafe old agents are server-gated, can be targeted with reinstall instructions, and current unwritable agents stay alive instead of attempting installation. The managed `perMachine` policy is retained explicitly. | An administrator performs the instructed reinstall on each affected machine. |
+| **A2 — release trigger** | ✅ Complete as a deliberate manual `workflow_dispatch`, version bump/tag/build/publish flow. A failed partial release can be retried from an existing tag without inventing another version; concurrency is serialized to protect `latest.json`. | None. Automatic-on-push remains intentionally out of scope because it adds cost without improving release correctness. |
+| **U5 — rollout policy** | ✅ Complete. The backend supports deterministic privacy-preserving percentage cohorts, an urgent forced-below-version policy, a `1.0.25` product minimum (the first published release with the in-app notification system), the separate `1.0.27` self-update safety floor, and observable policy/manifest health. | None. Defaults preserve a 100% rollout until an operator opts into staging. |
 
 # PART E — Tests
 
@@ -1753,23 +1755,61 @@ Whichever way F.5 goes, the install-mode migration is a one-time manual or
 IT-pushed action. What F.2 bought is that it is the **only** thing that has to
 be, and it can happen on its own schedule rather than gating updates.
 
-### H.5.4 Revised order
+### H.5.4 Revised order — implementation outcome
 
-1. ✅ `64ca530` — updater artifacts, timer guard, key assertion.
-2. **Run the release workflow once.** The assertion confirms F.2. Fails cheap
-   in `verify` if this decision is wrong.
-3. Build the A.8 delivery side — Landing-Backend feed, signature inlining,
-   download proxy, `agent-v*` filter. Still needed: the GitHub endpoint dies
-   when the repo goes private (F.1), and H.4.2's public releases-only repo is
-   what keeps the *old* URL alive for agents that have not taken the bridge yet.
-4. **Ship the bridge release** — new endpoint, `createUpdaterArtifacts`, the
-   B1 guard, version reporting (F.6), and the TLS-roots fix if F.12 says so.
-   Signed with `8216A44B8570A492` so the existing fleet accepts it.
-5. Confirm uptake via version reporting before touching anything else.
-6. *Then* decide install mode (F.5) and, separately and later, key rotation.
+1. ✅ Updater artifacts, tracked-time guard, and signing-key assertion shipped.
+2. ✅ The signing-key path was exercised by repeated tagged releases.
+3. ✅ Landing Backend now serves the private update manifest and exact signed
+   artifact through the API endpoint compiled into the agent.
+4. ✅ Version reporting, update reminders, visible progress, install-readiness
+   reporting, and the 1.0.27 server-side safety floor shipped.
+5. ✅ Releases through `agent-v1.1.2` demonstrate that the publishing pipeline
+   continues beyond the bridge/foundation release.
+6. ✅ Agents below 1.0.27 remain protected and Agent Versions now provides
+   individual and bulk reinstall-instruction actions for that exact cohort.
+   The application remains deliberately `perMachine`; the administrator's
+   physical reinstall is operational follow-through, not missing code.
+7. ✅ Periodic checking, persisted deferral/pending state, bounded backoff and
+   failed-version quarantine now cover restart and transient-failure cases.
+8. ✅ The release matrix covers Windows, Linux, Apple Silicon macOS and Intel
+   macOS; Authenticode is required by default, platform TLS trust is asserted,
+   and a post-publish job verifies GitHub assets plus the live update API.
+9. ✅ Percentage cohorts and a forced-below-version floor are available as
+   backend policy without collecting member or machine identity.
 
-**Do not rotate the signing key in the bridge.** Rotating means shipping a new
-pubkey in the release that the old key signs, then signing the *next* release
-with the new key — and if uptake of the bridge is partial, every un-updated
-agent is stranded permanently. Rotate only once version reporting shows the
-fleet has moved.
+The earlier key-rotation warning remains useful history, but the repository now
+contains the rotated public key and a release pipeline that signs against it.
+Future key rotation still requires a two-release transition and measured fleet
+uptake; never replace the trusted key in a single step.
+
+## Completion record (2026-09-27)
+
+This record was reconciled with the current repository, later completed plans,
+and tagged release history. “Done” means the engineering and automated
+verification scope is complete; it does not claim that every offline physical
+machine has already been reinstalled or that a new release has been published
+from this uncommitted working tree.
+
+| Workstream | Done / not missing | Remaining operational action | Completion |
+| --- | --- | --- | ---: |
+| Release artifacts, signing, and private feed | Signed artifacts, `latest.json`, key assertion, stable release selection, manifest/asset proxy, NSIS selection, required-platform validation, health monitoring, and post-publish live endpoint/asset assertions are implemented | Publish the next release from the workflow when approved | 100% |
+| Safe update application and UI | Session-safe staging, writable-install guard, progress/countdown, persisted Not-now/pending state, periodic checks, jittered backoff, failed-version quarantine, errors, and post-update confirmation are implemented | Exercise the next installer on representative managed Windows machines | 100% |
+| Fleet visibility and reminders | Version/platform/open and blocker reporting, Agent Versions UI, app/email reminders, and individual/bulk legacy reinstall instructions are implemented | Administrators use those actions for affected machines | 100% |
+| Release process | Manual version bump/tag/build/publish, serialized four-target assembly, existing-tag retry, signing gates, and final reachability verification are implemented | Dispatch only when a release is approved | 100% |
+| Legacy deployment | Unsafe pre-1.0.27 agents are protected; frozen agents have an actionable reinstall workflow; unwritable current agents remain running and visible; `perMachine` is an explicit managed-deployment choice | Carry out physical reinstalls where reported | 100% engineering scope |
+| Policy/platform work | Privacy-preserving cohorts, the `1.0.25` notification-capable minimum, separate `1.0.27` installer-safety floor, four updater targets including Intel Mac, Authenticode-required-by-default policy, and OS trust-store assertion are implemented | Configure a different percentage/forced floor only when a staged rollout is wanted | 100% |
+| **Overall required scope** | **The end-to-end updater, safe consumption, resilience, release verification, legacy migration workflow, platform coverage, and rollout controls are implemented** | **Only release/fleet operations remain** | **100%** |
+
+## Final verification
+
+- Landing Backend: 18 tests pass, including the notification minimum, stable release selection, rollout
+  bucketing, forced-floor behavior, version gates, platform selection, and
+  signed-manifest validation.
+- Tauri agent: 307 tests pass; the TypeScript/Vite production build succeeds;
+  `cargo check` succeeds.
+- Dashboard Backend: 1,045 tests pass, including the notification minimum, manual-reinstall floor
+  and install-instruction eligibility states.
+- Dashboard Web: TypeScript checking and all 81 tests pass.
+- Release support: both workflow scripts pass syntax checks; the dependency
+  assertion confirms `reqwest 0.13.4` uses `rustls-platform-verifier`; and
+  `git diff --check` reports no whitespace errors.

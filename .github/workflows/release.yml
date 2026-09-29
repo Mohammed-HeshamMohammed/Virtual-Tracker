@@ -6,7 +6,8 @@ name: release
 # metadata cache.
 #
 # Used to also trigger on every qualifying push to main - removed. A release
-# builds all three platforms (Windows 2x / macOS 10x the Linux runner-minute
+# builds four updater targets across three operating systems (Windows 2x /
+# macOS 10x the Linux runner-minute
 # cost), and this repo is private, so every one of those pushes was a real
 # charge against a finite monthly minute quota regardless of whether the
 # change was worth shipping on its own (a single-line CSS tweak or a
@@ -21,20 +22,26 @@ on:
         type: choice
         options: [patch, minor, major]
         default: patch
+      existing_tag:
+        description: Optional existing agent-vX.Y.Z tag to retry without another version bump
+        type: string
+        required: false
+      require_windows_signing:
+        description: Fail instead of publishing an unsigned Windows installer
+        type: boolean
+        default: true
 
 concurrency:
   group: agent-release
-  # No push trigger left to fire concurrently by accident - if this does run
-  # twice in close succession now it's from two manual dispatches, and the
-  # newer one should win rather than queue a second full paid matrix build
-  # behind the first.
-  cancel-in-progress: true
+  # Never cancel after the bump job has pushed a tag: that leaves an incomplete
+  # release and forces manual repair. A second dispatch queues behind the first.
+  cancel-in-progress: false
 
 jobs:
   # Gates bump/release on the checks that were previously only ever run by
   # hand before a push - 81 existing #[test] fns in src-tauri and tsc/vite
   # never ran in CI, so a broken commit could reach bump -> tag -> a signed
-  # 3-platform build before anyone noticed. Runs once on Linux rather than
+  # multi-platform build before anyone noticed. Runs once on Linux rather than
   # per-platform: it's the cheapest runner (1x minute multiplier vs 2x
   # Windows / 10x macOS), and failing fast here skips those expensive
   # matrix builds entirely on a bad commit instead of burning them first.
@@ -70,6 +77,9 @@ jobs:
           npm run test
           npm run build
 
+      - name: assert updater uses the operating-system trust store
+        run: node .github/scripts/assert-updater-platform-trust.mjs
+
       # A.4 step 4 / F.2. The updater only trusts a signature made by the
       # private half of the pubkey compiled into the app. Getting this wrong
       # publishes a latest.json every installed agent rejects - a hard stop
@@ -98,25 +108,6 @@ jobs:
             --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" \
             /tmp/keycheck.txt
           node .github/scripts/assert-updater-key.mjs /tmp/keycheck.txt.sig
-      # comparing raw keynum bytes at a fixed offset in the key/signature
-      # blobs, not a hex string grepped from a comment - minisign does not
-      # zero-pad the displayed id, and a signature's own comment does not
-      # contain a key id at all. An earlier version of this check grepped for
-      # one anyway and could never have passed, matching key or not.
-      - name: assert the signing key matches the shipped pubkey (F.2)
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          set -euo pipefail
-          if [ -z "${TAURI_SIGNING_PRIVATE_KEY}" ]; then
-            echo "::error::TAURI_SIGNING_PRIVATE_KEY is empty - updater artifacts cannot be signed."
-            exit 1
-          fi
-          echo "updater-key-check" > /tmp/keycheck.txt
-          npx --yes @tauri-apps/cli signer sign             --private-key "${TAURI_SIGNING_PRIVATE_KEY}"             --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"             /tmp/keycheck.txt
-          node .github/scripts/assert-updater-key.mjs /tmp/keycheck.txt.sig
-
   bump:
     needs: verify
     runs-on: ubuntu-latest
@@ -136,12 +127,34 @@ jobs:
         id: version
         env:
           BUMP: ${{ github.event.inputs.bump || 'patch' }}
+          EXISTING_TAG: ${{ github.event.inputs.existing_tag || '' }}
         run: |
           set -euo pipefail
           CONF="Tauri-App-Extension/src-tauri/tauri.conf.json"
           PKG="Tauri-App-Extension/package.json"
           CARGO="Tauri-App-Extension/src-tauri/Cargo.toml"
           LOCK="Tauri-App-Extension/src-tauri/Cargo.lock"
+
+          if [ -n "${EXISTING_TAG}" ]; then
+            if ! [[ "${EXISTING_TAG}" =~ ^agent-v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::error::existing_tag must look like agent-v1.2.3"
+              exit 1
+            fi
+            if ! git rev-parse "refs/tags/${EXISTING_TAG}" >/dev/null 2>&1; then
+              echo "::error::Tag ${EXISTING_TAG} does not exist"
+              exit 1
+            fi
+            next="${EXISTING_TAG#agent-v}"
+            tagged_version=$(git show "${EXISTING_TAG}:Tauri-App-Extension/package.json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>process.stdout.write(JSON.parse(s).version))")
+            if [ "${tagged_version}" != "${next}" ]; then
+              echo "::error::Tag ${EXISTING_TAG} contains package version ${tagged_version}"
+              exit 1
+            fi
+            echo "Retrying existing ${EXISTING_TAG}; no commit or tag will be created."
+            echo "version=${next}" >> "$GITHUB_OUTPUT"
+            echo "tag=${EXISTING_TAG}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
 
           current=$(node -p "require('./${PKG}').version")
           IFS=. read -r major minor patch <<<"$current"
@@ -195,23 +208,38 @@ jobs:
     # (ecosystem-wide wry/webkit2gtk gap; tray-icon disabled on Linux).
     strategy:
       fail-fast: false
+      # tauri-action updates latest.json with a delete-and-upload sequence.
+      # Serial jobs prevent platforms racing and publishing a partial manifest.
+      max-parallel: 1
       matrix:
         include:
           - platform: windows-latest
+            args: ""
+            rust_targets: ""
           - platform: macos-latest
+            args: "--target aarch64-apple-darwin"
+            rust_targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+          - platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+            rust_targets: "aarch64-apple-darwin,x86_64-apple-darwin"
           - platform: ubuntu-latest
+            args: ""
+            rust_targets: ""
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write
     env:
       # secrets.* is not allowed inside step `if:` — expose a boolean flag here.
       HAS_WINDOWS_CERT: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
+      REQUIRE_WINDOWS_SIGNING: ${{ github.event.inputs.require_windows_signing != 'false' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.bump.outputs.tag }}
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: ${{ matrix.rust_targets }}
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -226,6 +254,13 @@ jobs:
       - name: install frontend deps
         working-directory: Tauri-App-Extension
         run: npm ci
+
+      - name: enforce Windows signing policy
+        if: matrix.platform == 'windows-latest' && env.REQUIRE_WINDOWS_SIGNING == 'true' && env.HAS_WINDOWS_CERT != 'true'
+        shell: pwsh
+        run: |
+          Write-Error "WINDOWS_CERTIFICATE is not configured. Re-run with require_windows_signing=false only for an explicitly approved unsigned release."
+          exit 1
 
       # Authenticode (SmartScreen / Avast). Optional — set WINDOWS_CERTIFICATE
       # (base64 PFX) + WINDOWS_CERTIFICATE_PASSWORD to enable.
@@ -276,3 +311,28 @@ jobs:
           # never by this prefix, so it needs no change for this.
           assetNamePattern: "My-Virtual-Tracker_v[version]_[platform]_[arch][ext]"
           includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
+
+  verify-release:
+    needs: [bump, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: lts/*
+
+      - name: verify published manifest and live update endpoint
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.bump.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.bump.outputs.version }}
+          UPDATE_BASE_URL: https://api.myvirtualtracker.com
+          REQUIRED_UPDATE_PLATFORMS: windows-x86_64,linux-x86_64,darwin-aarch64,darwin-x86_64
+        run: node .github/scripts/verify-updater-release.mjs

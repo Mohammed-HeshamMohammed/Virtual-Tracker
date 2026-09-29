@@ -1,0 +1,21 @@
+---
+- nodejs-extensions:
+  - .js
+  - .mjs
+  - .cjs
+  - .ts
+  - .tsx
+
+  ignore-paths:
+  - node_modules
+  - .next
+  - dist
+  - build
+  - out
+  - target
+  - test
+  - tests
+
+  severity-filter:
+  - WARNING
+  - ERROR

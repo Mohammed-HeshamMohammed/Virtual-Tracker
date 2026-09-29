@@ -84,6 +84,20 @@ import { CaptureBanner } from "./components/common/CaptureBanner";
 import { useCaptureStatus } from "./hooks/useCaptureStatus";
 import { SignInPanel } from "./components/views/SignInPanel";
 import { EMPTY_IMAGE_CACHE, putImage, type ImageCache } from "./utils/image-cache";
+import {
+  clearUpdateDeferral,
+  clearUpdateStateAfterInstall,
+  deferUpdate,
+  getOrCreateUpdateRolloutId,
+  isUpdateDeferred,
+  isUpdateQuarantined,
+  loadUpdateRuntimeState,
+  recordInstallFailure,
+  recordPendingUpdate,
+  recordUpdateCheckFailure,
+  recordUpdateCheckSuccess,
+  shouldRunAutomaticUpdateCheck,
+} from "./utils/update-state";
 
 /** Stable empty value, so a reset never hands the panel a fresh object and
  *  re-renders the chart for no change. */
@@ -163,11 +177,12 @@ function MainApp() {
     version: string;
     // "countdown" is the indicator that replaces the app simply vanishing;
     // "blocked" is an update that would need an administrator (C2a).
-    state: "downloading" | "ready" | "countdown" | "blocked" | "error";
+    state: "downloading" | "ready" | "countdown" | "blocked" | "error" | "quarantined";
     /** 0-100 while downloading, when the server sends a content length. */
     progress?: number;
     secondsLeft?: number;
     installDir?: string;
+    quarantinedUntil?: number;
   } | null>(null);
   const [agentNotifications, setAgentNotifications] = useState<AgentNotification[]>([]);
   const [agentNotificationUnreadCount, setAgentNotificationUnreadCount] = useState(0);
@@ -317,6 +332,7 @@ function MainApp() {
   // the timer stops - including the stop that happens when the user quits.
   const pendingUpdateRef = useRef<Update | null>(null);
   const sessionOpenRef = useRef(false);
+  const updateCheckInFlightRef = useRef(false);
 
   // Read through a ref rather than a dependency: this is consulted from
   // callbacks that must see the *current* session, not the value captured when
@@ -342,8 +358,18 @@ function MainApp() {
       await relaunch();
     } catch (err) {
       console.error("update install failed", err);
-      setUpdateNotice({ version: staged.version, state: "error" });
-      toast.error("The update could not be installed. You can retry without interrupting tracking.");
+      const failure = recordInstallFailure(staged.version);
+      if (failure.quarantinedUntil > Date.now()) {
+        setUpdateNotice({
+          version: staged.version,
+          state: "quarantined",
+          quarantinedUntil: failure.quarantinedUntil,
+        });
+        toast.error("This update failed repeatedly, so automatic retries are paused for 24 hours.");
+      } else {
+        setUpdateNotice({ version: staged.version, state: "error" });
+        toast.error("The update could not be installed. You can retry without interrupting tracking.");
+      }
     }
   }, []);
 
@@ -382,20 +408,42 @@ function MainApp() {
 
   const checkForUpdate = useCallback(
     async (manual = false) => {
+      if (updateCheckInFlightRef.current) return;
+      updateCheckInFlightRef.current = true;
       setCheckingUpdate(true);
-      if (manual) updateDeferredRef.current = false;
+      if (manual) {
+        updateDeferredRef.current = false;
+        clearUpdateDeferral();
+      }
       try {
-        const update = pendingUpdateRef.current ?? (await check());
+        const update = pendingUpdateRef.current ?? (await check({
+          headers: { "X-Agent-Rollout-Id": getOrCreateUpdateRolloutId() },
+          timeout: 15_000,
+        }));
         if (!update) {
           setUpdateNotice(null);
+          recordUpdateCheckSuccess();
           if (manual) toast.message("You're up to date");
           return;
         }
+        recordPendingUpdate(update.version);
+        if (!manual && isUpdateQuarantined(update.version)) {
+          const state = loadUpdateRuntimeState();
+          setUpdateNotice({
+            version: update.version,
+            state: "quarantined",
+            quarantinedUntil: state.installFailures[update.version]?.quarantinedUntil,
+          });
+          recordUpdateCheckSuccess();
+          return;
+        }
+        updateDeferredRef.current = !manual && isUpdateDeferred(update.version);
         setUpdateNotice({ version: update.version, state: "downloading", progress: 0 });
         // Safe whatever the session state is: this only writes a verified
-        // installer to disk. ponytail: staged in memory, so a restart before a
-        // safe point just re-downloads ~4 MB - persisting it is H.2.4's job,
-        // not U1's.
+        // installer to disk. The persistent state records the version and
+        // deferral/quarantine decisions; after a restart the updater verifies
+        // and downloads the artifact again because plugin Update handles cannot
+        // safely be serialized across processes.
         if (pendingUpdateRef.current !== update) {
           // The progress the updater already reports and the app used to throw
           // away, so a download is visible instead of a frozen "Downloading…".
@@ -417,17 +465,20 @@ function MainApp() {
           pendingUpdateRef.current = update;
         }
         setUpdateNotice({ version: update.version, state: "ready" });
-        if (isSafeToApplyUpdate()) {
+        recordUpdateCheckSuccess();
+        if (isSafeToApplyUpdate() && !updateDeferredRef.current) {
           await applyStagedUpdate();
         } else if (manual) {
           toast.message("Update ready - it will install when you stop the timer");
         }
       } catch (err) {
         console.error("update check failed", err);
+        recordUpdateCheckFailure();
         if (manual) {
           toast.error("Couldn't check for updates. Try again later.");
         }
       } finally {
+        updateCheckInFlightRef.current = false;
         setCheckingUpdate(false);
       }
     },
@@ -577,6 +628,7 @@ function MainApp() {
   // happened is the version in the title bar.
   useEffect(() => {
     if (!version || version === "0.4.0") return;
+    clearUpdateStateAfterInstall(version);
     try {
       const key = "vt:last-running-version";
       const previous = window.localStorage.getItem(key);
@@ -1353,8 +1405,30 @@ function MainApp() {
   }, [tracking, liveActiveSeconds, session?.id]);
 
   useEffect(() => {
-    void checkForUpdate();
-  }, [checkForUpdate]);
+    const runIfDue = () => {
+      const pending = pendingUpdateRef.current;
+      if (pending) {
+        if (updateDeferredRef.current && !isUpdateDeferred(pending.version)) {
+          updateDeferredRef.current = false;
+          void applyStagedUpdate();
+        }
+        return;
+      }
+      if (shouldRunAutomaticUpdateCheck()) void checkForUpdate();
+    };
+    runIfDue();
+    // The persisted next-check timestamp carries the six-hour cadence. This
+    // lightweight timer only wakes to see whether it is due and never overlaps
+    // an in-flight check.
+    const timer = window.setInterval(runIfDue, 15 * 60_000);
+    window.addEventListener("focus", runIfDue);
+    window.addEventListener("online", runIfDue);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", runIfDue);
+      window.removeEventListener("online", runIfDue);
+    };
+  }, [applyStagedUpdate, checkForUpdate]);
 
   useEffect(() => {
     void invoke<AppSettingsView>("get_app_settings")
@@ -2235,8 +2309,10 @@ function MainApp() {
                     : "Installing — the tracker will reopen on its own."
                   : updateNotice.state === "blocked"
                     ? "Ready, but installing needs an administrator. Start it when someone can approve the Windows prompt."
-                    : updateNotice.state === "error"
+                   : updateNotice.state === "error"
                       ? "Installation failed. Your tracker is still usable."
+                      : updateNotice.state === "quarantined"
+                        ? `Automatic retries are paused after repeated failures${updateNotice.quarantinedUntil ? ` until ${new Date(updateNotice.quarantinedUntil).toLocaleString()}` : " for 24 hours"}.`
                       : sessionOpen
                         ? "Ready — installs when tracking stops."
                         : "Ready to install and restart."}
@@ -2259,6 +2335,7 @@ function MainApp() {
                   className="ghost"
                   onClick={() => {
                     updateDeferredRef.current = true;
+                    deferUpdate(updateNotice.version);
                     setUpdateNotice({ version: updateNotice.version, state: "ready" });
                   }}
                 >
@@ -2270,7 +2347,7 @@ function MainApp() {
                 Install now
               </button>
             ) : (
-              <button data-tip={updateNotice.state === "error" ? "Try the update again" : sessionOpen ? "Stop the timer first: the app restarts to update" : "Download and install the update now"}
+              <button data-tip={updateNotice.state === "error" || updateNotice.state === "quarantined" ? "Try the update again manually" : sessionOpen ? "Stop the timer first: the app restarts to update" : "Download and install the update now"}
                 type="button"
                 disabled={
                   checkingUpdate ||
@@ -2280,7 +2357,7 @@ function MainApp() {
                 }
                 onClick={() => void checkForUpdate(true)}
               >
-                {updateNotice.state === "error" ? "Retry" : sessionOpen ? "Waiting for timer" : "Update now"}
+                {updateNotice.state === "error" || updateNotice.state === "quarantined" ? "Retry manually" : sessionOpen ? "Waiting for timer" : "Update now"}
               </button>
             )}
           </div>

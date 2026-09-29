@@ -55,7 +55,7 @@ impl ApiClient {
                 }
                 if data.get("inserted").and_then(|v| v.as_i64()) == Some(0) {
                     log::warn!(
-                        "Server accepted events but inserted 0 rows for session {session_id}"
+                        "Server accepted events but inserted 0 rows for the active session"
                     );
                     return false;
                 }

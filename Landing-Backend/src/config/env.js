@@ -28,6 +28,13 @@ function readPositiveInt(source, key, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function readPercent(source, key, fallback) {
+  const raw = readString(source, key, "");
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed)) : fallback;
+}
+
 function readBool(source, key, defaultWhenUnset) {
   const raw = readString(source, key, "");
   if (!raw) return defaultWhenUnset;
@@ -76,6 +83,9 @@ export function buildEnv(source = process.env) {
     }),
 
     agent: Object.freeze({
+      // agent-v1.0.25 is the first published build containing the in-app
+      // notification inbox. Earlier agents cannot receive owner reminders.
+      minimumSupportedVersion: readString(source, "AGENT_MIN_SUPPORTED_VERSION", "1.0.25"),
       // Agents below this are served no update: their own copy performs the
       // update and, before this version, it exited the process before the
       // installer ran - so a refused elevation left the agent dead with
@@ -83,6 +93,26 @@ export function buildEnv(source = process.env) {
       // (AGENT_MIN_SELF_UPDATE_VERSION) to flag those machines as needing a
       // manual reinstall; change them together.
       minSelfUpdateVersion: readString(source, "AGENT_MIN_SELF_UPDATE_VERSION", "1.0.27"),
+      // Percentage rollouts use an opaque random per-install id supplied by
+      // the tracker. No member id, device credential, IP address, or machine
+      // fingerprint participates in the bucket.
+      updateRolloutPercent: readPercent(source, "AGENT_UPDATE_ROLLOUT_PERCENT", 100),
+      updateRolloutSalt: readString(source, "AGENT_UPDATE_ROLLOUT_SALT", "virtual-tracker-update-v1"),
+      // Urgent safe upgrades can bypass the percentage cohort below this
+      // version. Session safety and install-readiness checks still apply.
+      forceUpdateBelowVersion: readString(
+        source,
+        "AGENT_FORCE_UPDATE_BELOW_VERSION",
+        readString(source, "AGENT_MIN_SUPPORTED_VERSION", "1.0.25"),
+      ),
+      requiredUpdatePlatforms: readString(
+        source,
+        "AGENT_UPDATE_REQUIRED_PLATFORMS",
+        // Keep the live feed compatible with the currently published release.
+        // The release workflow itself requires Intel macOS too, and operators
+        // can raise this gate to four platforms after that release is live.
+        "windows-x86_64,linux-x86_64,darwin-aarch64",
+      ),
     }),
 
     github: Object.freeze({

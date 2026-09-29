@@ -13,12 +13,18 @@ let minSelfUpdateVersion = "1.0.27";
 
 mock.module("../src/config/env.js", {
   namedExports: {
-    getEnv: () => ({ agent: { inboxMinVersion: "1.0.24", minSelfUpdateVersion } }),
+    getEnv: () => ({ agent: { inboxMinVersion: "1.0.25", minimumSupportedVersion: "1.0.25", minSelfUpdateVersion } }),
   },
 });
 mock.module("../src/lib/postgres/client.js", { namedExports: { query: async () => [] } });
 
-const { needsManualReinstall } = await import("../src/modules/agent-versions/service.js");
+const { agentInstallInstructionEligibility, isBelowMinimumSupportedVersion, needsManualReinstall } = await import("../src/modules/agent-versions/service.js");
+
+test("1.0.25 is the first supported release with in-app notifications", () => {
+  assert.equal(isBelowMinimumSupportedVersion("1.0.24"), true);
+  assert.equal(isBelowMinimumSupportedVersion("1.0.25"), false);
+  assert.equal(isBelowMinimumSupportedVersion("1.0.26"), false);
+});
 
 test("agents below the self-update floor are flagged", () => {
   for (const version of ["1.0.0", "1.0.22", "1.0.25", "1.0.26"]) {
@@ -46,4 +52,11 @@ test("the floor follows the env var, so it can move with Landing-Backend's", () 
   assert.equal(needsManualReinstall("1.0.30"), true, "raising the floor widens the frozen set");
   assert.equal(needsManualReinstall("1.1.0"), false);
   minSelfUpdateVersion = "1.0.27";
+});
+
+test("install instructions distinguish frozen, current, unknown, and malformed reports", () => {
+  assert.equal(agentInstallInstructionEligibility("1.0.26"), "manual-reinstall");
+  assert.equal(agentInstallInstructionEligibility("1.0.27"), "known");
+  assert.equal(agentInstallInstructionEligibility(null), "unknown");
+  assert.equal(agentInstallInstructionEligibility("old-build"), "unrecognized");
 });

@@ -9,6 +9,7 @@ import { getLatestAgentRelease } from "./latest-release.js";
 import { compareAgentVersions, normalizeAgentVersion } from "./version.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import {
+  agentInstallInstructionEligibility,
   createAgentUpdateNotification,
   getAgentVersionMember,
   groupAgentVersionMembers,
@@ -16,6 +17,7 @@ import {
   listAgentVersionMembers,
   markAgentNotificationRead,
   markAllAgentNotificationsRead,
+  needsManualReinstall,
   normalizeAgentPlatform,
   reportAgentOpen,
   sendAgentInstallEmail,
@@ -183,6 +185,14 @@ export async function routeAgentVersions(req, res, url, origin) {
         unknownVersion(res, origin);
         return true;
       }
+      if (needsManualReinstall(member.agent_version)) {
+        sendJson(res, origin, 409, {
+          success: false,
+          code: "AGENT_MANUAL_REINSTALL_REQUIRED",
+          error: "This tracker is too old to update itself. Send latest-app reinstall instructions instead.",
+        });
+        return true;
+      }
       if ((compareAgentVersions(member.agent_version, release.version) ?? 0) >= 0) {
         sendJson(res, origin, 409, { success: false, code: "AGENT_ALREADY_CURRENT", error: "This member is already using the latest tracker version." });
         return true;
@@ -214,11 +224,12 @@ export async function routeAgentVersions(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found." });
         return true;
       }
-      if (normalizeAgentVersion(member.agent_version)) {
+      const installEligibility = agentInstallInstructionEligibility(member.agent_version);
+      if (installEligibility === "known") {
         sendJson(res, origin, 409, { success: false, code: "AGENT_VERSION_KNOWN", error: "This member has reported a tracker version. Use an update reminder instead." });
         return true;
       }
-      if (String(member.agent_version || "").trim()) {
+      if (installEligibility === "unrecognized") {
         sendJson(res, origin, 409, { success: false, code: "AGENT_VERSION_UNRECOGNIZED", error: "This member reported an unrecognized tracker version. Ask them to reopen or reinstall the tracker before sending reminders." });
         return true;
       }
@@ -266,6 +277,38 @@ export async function routeAgentVersions(req, res, url, origin) {
     return true;
   }
 
+  if (path === "/api/agent-versions/manual-reinstall/install-email" && req.method === "POST") {
+    if (!assertManagementRole(req, res, origin)) return true;
+    try {
+      const release = await getLatestAgentRelease();
+      const visibleIds = await getManagerVisibleMemberIds(req);
+      const members = await listAgentVersionMembers(release.version, visibleIds);
+      const targets = members.filter((member) => member.needsManualReinstall && member.canReceiveEmail);
+      const summary = { sent: 0, current: 0, duplicate: 0, unsupported: 0, missingEmail: 0, failed: 0 };
+      for (let index = 0; index < targets.length; index += 5) {
+        const batch = targets.slice(index, index + 5);
+        const results = await Promise.all(batch.map(async (item) => {
+          const row = await getAgentVersionMember(item.memberId);
+          if (!row) return { status: "failed" };
+          if (!needsManualReinstall(row.agent_version)) return { status: "current" };
+          return sendAgentInstallEmail(row, release.version);
+        }));
+        for (const result of results) {
+          if (result.sent) summary.sent += 1;
+          else if (result.status === "current") summary.current += 1;
+          else if (result.channel === "skipped") summary.duplicate += 1;
+          else if (result.missingEmail) summary.missingEmail += 1;
+          else summary.failed += 1;
+        }
+      }
+      sendJson(res, origin, 200, { success: true, summary });
+    } catch (error) {
+      logSafeError("[agent-versions/bulk-manual-reinstall-email]", error);
+      sendJson(res, origin, 500, { success: false, error: "Failed to send reinstall instructions." });
+    }
+    return true;
+  }
+
   const bulkReminder = /^\/api\/agent-versions\/([^/]+)\/reminders$/.exec(path);
   if (bulkReminder && req.method === "POST") {
     if (!assertManagementRole(req, res, origin)) return true;
@@ -296,6 +339,7 @@ export async function routeAgentVersions(req, res, url, origin) {
           const row = await getAgentVersionMember(item.memberId);
           if (!row) return { status: "failed" };
           if (normalizeAgentVersion(row.agent_version) !== requestedVersion) return { status: "current" };
+          if (needsManualReinstall(row.agent_version)) return { status: "unsupported" };
           return deliverUpdate(row, body.channel, getAuthContext(req)?.memberId, release);
         }));
         for (const result of results) {

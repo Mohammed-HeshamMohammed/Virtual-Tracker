@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { getEnv } from "../../config/env.js";
 import { applyCors, corsHeaders } from "../../http/cors.js";
 import { getSecurityHeaders } from "../../http/security-headers.js";
+import { logSafeError } from "../../http/sanitize-error.js";
 import { getLatestRelease } from "../download/download-routes.js";
 
 const UPDATE_PATH_RE = /^\/api\/agent\/update\/([^/]+)\/([^/]+)\/([^/]+)$/;
@@ -98,6 +100,59 @@ export function hasNewerVersion(currentVersion, manifestVersion) {
   return compareVersions(manifestVersion, currentVersion) > 0;
 }
 
+export function rolloutBucket(rolloutId, salt = "") {
+  if (!/^[A-Za-z0-9_-]{16,128}$/.test(String(rolloutId || ""))) return null;
+  const digest = createHash("sha256").update(`${salt}:${rolloutId}`).digest();
+  return digest.readUInt32BE(0) % 100;
+}
+
+export function shouldOfferUpdate({ currentVersion, rolloutId, rolloutPercent = 100, forceUpdateBelowVersion = "", salt = "" }) {
+  const validForcedFloor = /^\d+\.\d+\.\d+$/.test(String(forceUpdateBelowVersion || "").trim());
+  const forced = validForcedFloor && compareVersions(currentVersion, forceUpdateBelowVersion) < 0;
+  if (forced) return true;
+  const percent = Math.max(0, Math.min(100, Number(rolloutPercent) || 0));
+  if (percent >= 100) return true;
+  if (percent <= 0) return false;
+  const bucket = rolloutBucket(rolloutId, salt);
+  return bucket != null && bucket < percent;
+}
+
+function requiredPlatforms(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => /^(windows|linux|darwin)-(x86_64|aarch64|i686|armv7)$/.test(item));
+}
+
+export function validateUpdateManifest(manifest, required = []) {
+  if (!manifest || typeof manifest !== "object" || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(String(manifest.version || ""))) {
+    return { ok: false, error: "Manifest version is missing or invalid", platforms: [] };
+  }
+  const verified = [];
+  for (const key of required) {
+    const separator = key.indexOf("-");
+    const target = key.slice(0, separator);
+    const arch = key.slice(separator + 1);
+    const entry = selectPlatformEntry(manifest.platforms, target, arch);
+    if (!entry || typeof entry.url !== "string" || !entry.url || typeof entry.signature !== "string" || !entry.signature) {
+      return { ok: false, error: `Manifest is missing a signed ${key} updater`, platforms: verified };
+    }
+    verified.push(key);
+  }
+  return { ok: true, error: null, platforms: verified };
+}
+
+export function availableSignedPlatforms(manifest) {
+  const candidates = ["windows-x86_64", "linux-x86_64", "darwin-aarch64", "darwin-x86_64"];
+  return candidates.filter((key) => {
+    const separator = key.indexOf("-");
+    const target = key.slice(0, separator);
+    const arch = key.slice(separator + 1);
+    const entry = selectPlatformEntry(manifest?.platforms, target, arch);
+    return Boolean(entry && typeof entry.url === "string" && entry.url && typeof entry.signature === "string" && entry.signature);
+  });
+}
+
 function assetFileName(downloadUrl) {
   const path = new URL(downloadUrl).pathname;
   return decodeURIComponent(path.slice(path.lastIndexOf("/") + 1));
@@ -135,7 +190,8 @@ async function fetchManifest(release, pat) {
 export async function routeUpdateFeed(req, res, url, origin) {
   const match = UPDATE_PATH_RE.exec(url.pathname);
   const isLatestMetadata = url.pathname === "/api/agent/update/latest";
-  if (!match && !isLatestMetadata) return false;
+  const isHealth = url.pathname === "/api/agent/update/health";
+  if (!match && !isLatestMetadata && !isHealth) return false;
 
   if (req.method !== "GET") {
     applyCors(res, origin);
@@ -150,11 +206,41 @@ export async function routeUpdateFeed(req, res, url, origin) {
   try {
     const release = await getLatestRelease(env.github.repoOwner, env.github.repoName, pat);
     const manifest = await fetchManifest(release, pat);
+    const expectedPlatforms = requiredPlatforms(env.agent.requiredUpdatePlatforms);
+    const manifestHealth = validateUpdateManifest(manifest, expectedPlatforms);
+    if (isHealth) {
+      const body = JSON.stringify({
+        ok: manifestHealth.ok,
+        version: manifest.version,
+        releaseTag: release.tag_name,
+        platforms: availableSignedPlatforms(manifest),
+        policy: {
+          minimumSupportedVersion: env.agent.minimumSupportedVersion,
+          minSelfUpdateVersion: minSelfUpdatableVersion(),
+          rolloutPercent: env.agent.updateRolloutPercent,
+          forceUpdateBelowVersion: env.agent.forceUpdateBelowVersion || null,
+        },
+        ...(manifestHealth.error ? { error: manifestHealth.error } : {}),
+      });
+      applyCors(res, origin);
+      res.writeHead(manifestHealth.ok ? 200 : 503, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        ...corsHeaders(origin),
+        ...getSecurityHeaders(req),
+      });
+      res.end(body);
+      return true;
+    }
+    if (!manifestHealth.ok) throw new Error(manifestHealth.error);
     if (isLatestMetadata) {
       const body = JSON.stringify({
         version: manifest.version,
         notes: manifest.notes ?? "",
         pub_date: manifest.pub_date,
+        rollout_percent: env.agent.updateRolloutPercent,
+        minimum_supported_version: env.agent.minimumSupportedVersion,
+        force_update_below_version: env.agent.forceUpdateBelowVersion || null,
       });
       applyCors(res, origin);
       res.writeHead(200, {
@@ -184,6 +270,23 @@ export async function routeUpdateFeed(req, res, url, origin) {
     }
 
     if (!hasNewerVersion(currentVersion, manifest.version)) {
+      applyCors(res, origin);
+      res.writeHead(204, {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        ...corsHeaders(origin),
+        ...getSecurityHeaders(req),
+      });
+      res.end();
+      return true;
+    }
+
+    if (!shouldOfferUpdate({
+      currentVersion,
+      rolloutId: req.headers["x-agent-rollout-id"],
+      rolloutPercent: env.agent.updateRolloutPercent,
+      forceUpdateBelowVersion: env.agent.forceUpdateBelowVersion,
+      salt: env.agent.updateRolloutSalt,
+    })) {
       applyCors(res, origin);
       res.writeHead(204, {
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -225,8 +328,9 @@ export async function routeUpdateFeed(req, res, url, origin) {
     res.end(body);
     return true;
   } catch (err) {
+    logSafeError("[agent-update-feed]", err);
     applyCors(res, origin);
-    res.writeHead(500, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(origin), ...getSecurityHeaders(req) });
+    res.writeHead(503, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(origin), ...getSecurityHeaders(req) });
     res.end(JSON.stringify({ success: false, error: err instanceof Error ? err.message : "Update feed proxy error" }));
     return true;
   }

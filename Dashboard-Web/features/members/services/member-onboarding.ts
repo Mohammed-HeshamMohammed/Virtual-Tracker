@@ -29,6 +29,8 @@ export interface AgentVersionMember {
   /** This tracker is too old to update itself: it is served no updates at
    *  all and stays on this version until someone reinstalls it by hand. */
   needsManualReinstall?: boolean
+  /** Below agent-v1.0.25, the first published release with the notification inbox. */
+  belowMinimumSupported?: boolean
   /** Current enough to be offered updates, but unable to install one: it
    *  cannot write to its own install directory. null means the tracker
    *  predates the report and has not been asked. */
@@ -147,6 +149,19 @@ export async function sendUnknownAgentInstallEmails(): Promise<AgentReminderSumm
   const json = await readJsonSafe<{ success?: boolean; error?: string; summary?: AgentReminderSummary }>(res)
   if (!res.ok || json?.success !== true || !json.summary) {
     throw extractApiError(res.status, "Failed to send install instructions", json)
+  }
+  return json.summary
+}
+
+export async function sendManualReinstallEmails(): Promise<AgentReminderSummary> {
+  const res = await apiFetch(apiPath("/api/agent-versions/manual-reinstall/install-email"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  })
+  const json = await readJsonSafe<{ success?: boolean; error?: string; summary?: AgentReminderSummary }>(res)
+  if (!res.ok || json?.success !== true || !json.summary) {
+    throw extractApiError(res.status, "Failed to send reinstall instructions", json)
   }
   return json.summary
 }

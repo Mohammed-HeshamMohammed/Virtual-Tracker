@@ -93,6 +93,8 @@ const envSourceSchema = z
     AUTH_BACKEND_URL: optionalTrimmedString,
     LANDING_BACKEND_URL: optionalTrimmedString,
     AGENT_INBOX_MIN_VERSION: optionalTrimmedString,
+    AGENT_MIN_SUPPORTED_VERSION: optionalTrimmedString,
+    AGENT_MIN_SELF_UPDATE_VERSION: optionalTrimmedString,
     GCS_BUCKET_NAME: optionalTrimmedString,
     POSTGRES_URL: optionalTrimmedString,
     REDIS_URL: optionalTrimmedString,
