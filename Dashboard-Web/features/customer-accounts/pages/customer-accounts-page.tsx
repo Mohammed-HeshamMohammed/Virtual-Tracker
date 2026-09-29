@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import { AlertTriangle, Building2, RefreshCw, ShieldOff, Users } from "lucide-react"
+import { AlertTriangle, Building2, Eye, RefreshCw, ShieldOff, Users } from "lucide-react"
 import { NotifyToastHost } from "@/shared/ui/layout"
 import type { NotifyAlertTone } from "@/shared/ui/alert-notify"
 import {
@@ -13,8 +13,18 @@ import {
   requestUnlockCode,
   verifyUnlockCode,
   UnlockError,
+  getCustomerAccountProjects,
+  getCustomerAccountEmployees,
+  getCustomerAccountActivitySummary,
 } from "@/features/customer-accounts/api/customer-accounts-api"
-import type { CustomerAccountSummary, RemovalPreview } from "@/features/customer-accounts/models/customer-account"
+import type {
+  CustomerAccountSummary,
+  RemovalPreview,
+  CustomerAccountViewSurface,
+  CustomerAccountProjectRow,
+  CustomerAccountEmployeeRow,
+  CustomerAccountActivitySummary,
+} from "@/features/customer-accounts/models/customer-account"
 
 const inputCls =
   "w-full px-2.5 py-2 border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-lg text-xs text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:border-blue-400 dark:focus:border-emerald-500 focus:ring-1 focus:ring-blue-400 dark:focus:ring-emerald-500 transition-colors"
@@ -50,6 +60,17 @@ export function CustomerAccountsPage() {
   const [formValue, setFormValue] = useState("")
   const [busy, setBusy] = useState(false)
 
+  // §0.1 blocker 7 / §0.2 step 6: the read-only cross-tenant view entry
+  // point. Not gated by the unlock token, same as list/detail above - see
+  // requireUnlockToken's own comment in routes.js.
+  const [viewingRow, setViewingRow] = useState<CustomerAccountSummary | null>(null)
+  const [viewTab, setViewTab] = useState<CustomerAccountViewSurface>("activity-summary")
+  const [viewLoading, setViewLoading] = useState(false)
+  const [viewError, setViewError] = useState<string | null>(null)
+  const [viewProjects, setViewProjects] = useState<CustomerAccountProjectRow[] | null>(null)
+  const [viewEmployees, setViewEmployees] = useState<CustomerAccountEmployeeRow[] | null>(null)
+  const [viewSummary, setViewSummary] = useState<CustomerAccountActivitySummary | null>(null)
+
   const load = useCallback(() => {
     setLoading(true)
     listCustomerAccounts()
@@ -73,6 +94,34 @@ export function CustomerAccountsPage() {
         .catch((e) => setToast({ title: "Customer accounts", tone: "error", message: e instanceof Error ? e.message : "Could not load removal preview." }))
     }
   }
+
+  function openView(row: CustomerAccountSummary) {
+    setViewingRow(row)
+    setViewTab("activity-summary")
+    setViewError(null)
+    setViewProjects(null)
+    setViewEmployees(null)
+    setViewSummary(null)
+  }
+
+  useEffect(() => {
+    if (!viewingRow) return
+    let cancelled = false
+    setViewLoading(true)
+    setViewError(null)
+    const load =
+      viewTab === "projects"
+        ? getCustomerAccountProjects(viewingRow.id).then((rows) => !cancelled && setViewProjects(rows))
+        : viewTab === "employees"
+          ? getCustomerAccountEmployees(viewingRow.id).then((rows) => !cancelled && setViewEmployees(rows))
+          : getCustomerAccountActivitySummary(viewingRow.id).then((s) => !cancelled && setViewSummary(s))
+    load
+      .catch((e) => !cancelled && setViewError(e instanceof Error ? e.message : "Could not load this account's data."))
+      .finally(() => !cancelled && setViewLoading(false))
+    return () => {
+      cancelled = true
+    }
+  }, [viewingRow, viewTab])
 
   async function handleVerifyUnlock() {
     if (unlocking || unlockCode.trim().length !== 6) return
@@ -231,6 +280,9 @@ export function CustomerAccountsPage() {
                   </td>
                   <td className="px-4 py-2.5">
                     <div className="flex justify-end gap-3 text-[11px] font-medium">
+                      <button type="button" onClick={() => openView(row)} className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 hover:underline">
+                        <Eye className="h-3 w-3" /> View
+                      </button>
                       <button type="button" onClick={() => void startAction("renew", row)} className="text-blue-500 dark:text-emerald-400 hover:underline">
                         Renew
                       </button>
@@ -308,6 +360,84 @@ export function CustomerAccountsPage() {
                 }`}
               >
                 {busy ? "Working…" : pendingAction.kind === "remove" ? "Remove permanently" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {viewingRow ? (
+        <div className="fixed inset-0 z-70 flex items-center justify-center bg-black/50 p-6" onClick={() => setViewingRow(null)}>
+          <div
+            className="max-h-[80vh] w-full max-w-lg overflow-hidden rounded-2xl bg-white dark:bg-slate-900 shadow-2xl flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5 pb-0">
+              <h2 className="mb-1 text-sm font-bold text-slate-800 dark:text-slate-100">{viewingRow.email}</h2>
+              <p className="mb-3 text-[11px] text-slate-400">
+                Read-only. This open is recorded in the account's audit trail.
+              </p>
+              <div className="flex gap-1 border-b border-slate-100 dark:border-slate-800">
+                {(["activity-summary", "projects", "employees"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setViewTab(tab)}
+                    className={`px-3 py-1.5 text-[11px] font-semibold capitalize border-b-2 -mb-px ${
+                      viewTab === tab
+                        ? "border-blue-500 dark:border-emerald-500 text-blue-600 dark:text-emerald-400"
+                        : "border-transparent text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                    }`}
+                  >
+                    {tab === "activity-summary" ? "Summary" : tab}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto p-5 pt-3">
+              {viewLoading ? (
+                <p className="py-6 text-center text-xs text-slate-400">Loading…</p>
+              ) : viewError ? (
+                <p className="py-6 text-center text-xs text-red-500">{viewError}</p>
+              ) : viewTab === "activity-summary" ? (
+                <ul className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
+                  <li>{viewSummary?.activeMembers ?? 0} active member(s)</li>
+                  <li>{viewSummary?.activeProjects ?? 0} active project(s)</li>
+                  <li>{Math.round((viewSummary?.activeSeconds7d ?? 0) / 3600)} tracked hour(s) in the last 7 days</li>
+                </ul>
+              ) : viewTab === "projects" ? (
+                !viewProjects || viewProjects.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-slate-400">No projects.</p>
+                ) : (
+                  <ul className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                    {viewProjects.map((p) => (
+                      <li key={p.id} className="flex items-center justify-between py-2">
+                        <span className="font-medium text-slate-700 dark:text-slate-200">{p.name}</span>
+                        <span className="text-slate-400">{p.status}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : !viewEmployees || viewEmployees.length === 0 ? (
+                <p className="py-6 text-center text-xs text-slate-400">No employees.</p>
+              ) : (
+                <ul className="divide-y divide-slate-100 dark:divide-slate-800 text-xs">
+                  {viewEmployees.map((m) => (
+                    <li key={m.id} className="flex items-center justify-between py-2">
+                      <span className="font-medium text-slate-700 dark:text-slate-200">
+                        {m.displayName || `${m.firstName} ${m.lastName}`.trim() || m.workEmail}
+                      </span>
+                      <span className="text-slate-400">{m.status}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="flex justify-end border-t border-slate-100 dark:border-slate-800 p-3">
+              <button type="button" onClick={() => setViewingRow(null)} className="px-3 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+                Close
               </button>
             </div>
           </div>
