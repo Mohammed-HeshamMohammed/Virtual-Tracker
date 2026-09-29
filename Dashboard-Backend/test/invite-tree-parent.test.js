@@ -48,7 +48,23 @@ test("every invite-creating path stamps the inviter's tenant and takes a seat", 
   assert.match(read("src/modules/members/routes/member-migration.routes.js"), /viewer\.tenantId \|\| MAIN_TENANT_ID\]/, "migrate");
 
   // Each path runs the seat guard: 2 in compat, and in member-invites the
-  // open link, register, promotion (covers migrate) and preprovision.
+  // open link, promotion, register, and preprovision. §0.1 blocker 8: the
+  // last two each call it twice now - a soft check before Firebase creates
+  // an auth user (nothing to insert yet), then an atomic check-and-insert
+  // on the same locked transaction as the actual write, closing the race
+  // the soft check alone could not.
   assert.equal((compat.match(/await withSeatsAvailable\(/g) || []).length, 2);
-  assert.equal((invites.match(/await withSeatsAvailable\(/g) || []).length, 4);
+  assert.equal((invites.match(/await withSeatsAvailable\(/g) || []).length, 6);
+});
+
+test("register and preprovision's atomic seat check threads insert through the same transaction as the write", () => {
+  const invites = read("src/modules/members/routes/member-invites.routes.js");
+  assert.match(
+    invites,
+    /withSeatsAvailable\(inviteTenantId, 1, \{\s*excludeInviteIds: \[inv\.id\],\s*insert: \(client\) => createMemberPg\(memberPayload, client\),/,
+  );
+  assert.match(
+    invites,
+    /withSeatsAvailable\(preprovisionTenantId, 1, \{\s*insert: \(client\) =>\s*client\.query\(/,
+  );
 });

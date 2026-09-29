@@ -60,7 +60,15 @@ const WRITABLE_COLUMNS = [
 
 const JSONB_COLUMNS = new Set(["hierarchy_entitlements", "privileges"]);
 
-export async function createMemberPg(data) {
+/**
+ * `client`: an optional transaction client (from withTransaction/
+ * withSeatsAvailable's `insert` callback) - passed by every seat-consuming
+ * caller that must insert the member on the same locked transaction as its
+ * seat check (§0.1 blocker 8), so the check and the write can never be
+ * split by a concurrent request. Omitted, this behaves exactly as before:
+ * its own connection via the ordinary query().
+ */
+export async function createMemberPg(data, client) {
   const id = data.id ? uuidOrNull(data.id) ?? crypto.randomUUID() : crypto.randomUUID();
   const columns = ["id"];
   const placeholders = ["$1"];
@@ -73,10 +81,8 @@ export async function createMemberPg(data) {
     placeholders.push(`$${params.length}`);
   }
 
-  const rows = await query(
-    `INSERT INTO members (${columns.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING *`,
-    params,
-  );
+  const sql = `INSERT INTO members (${columns.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING *`;
+  const rows = client ? (await client.query(sql, params)).rows : await query(sql, params);
   const created = rows[0] ?? null;
   if (created) void publishChange("members", String(created.id), "created", uuidOrNull(data.created_by) ?? undefined);
   return created;
