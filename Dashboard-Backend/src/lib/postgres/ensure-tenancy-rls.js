@@ -1,7 +1,7 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { getPostgresPool, isPostgresConfigured } from "./client.js";
 import { getEnv } from "../../config/env.js";
-import { TENANT_SCOPED_TABLES } from "./tenancy-tables.js";
+import { TENANT_SCOPED_TABLES, listGlobalTableNames, listControlPlaneTableNames } from "./tenancy-tables.js";
 
 /**
  * PLAN-customer-accounts-and-tenancy.md §3, §12.2 #4: enabling RLS is a
@@ -26,6 +26,25 @@ export function isTenancyRlsEnabled() {
 }
 
 const TABLE_NAMES = TENANT_SCOPED_TABLES.map((e) => (typeof e === "string" ? e : e.name));
+const GLOBAL_NAMES = listGlobalTableNames();
+const CONTROL_PLANE_NAMES = listControlPlaneTableNames();
+
+// vt_app's business surface: every scoped + global table, explicitly NOT
+// the control-plane tables (tenants/verification_codes/
+// customer_account_audit) - those are written only via queryAsAdmin
+// (client.js), e.g. tenant.service.js. A previous version of this file
+// granted ALL TABLES, which handed vt_app read/write on verification-code
+// hashes and the tenant registry itself; this list is the fix.
+const VT_APP_TABLE_NAMES = [...TABLE_NAMES, ...GLOBAL_NAMES];
+
+// vt_readonly_crosstenant only ever needs to show an Owner another tenant's
+// own business data (§0.2 step 5) - never global reference data (no reason
+// to expose it cross-tenant) and never control-plane tables.
+const VT_READONLY_TABLE_NAMES = [...TABLE_NAMES];
+
+function quoted(names) {
+  return names.map((n) => `"${n}"`).join(", ");
+}
 
 const ROLE_DDL = [
   // CREATEROLE privilege is assumed on the connection running this (the
@@ -54,16 +73,32 @@ END $$`,
   // BYPASSRLS is also asserted on every run (not just at creation) in case
   // an operator created the role manually without it.
   "ALTER ROLE vt_admin BYPASSRLS",
+  // vt_admin is the bootstrap/migration/background-sweep identity - it
+  // legitimately needs everything, including the control-plane tables, so
+  // it alone keeps the blanket grant.
   "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO vt_admin",
   "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO vt_admin",
   "GRANT USAGE ON SCHEMA public TO vt_app, vt_readonly_crosstenant, vt_admin",
-  "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO vt_app",
+  `GRANT ALL PRIVILEGES ON TABLE ${quoted(VT_APP_TABLE_NAMES)} TO vt_app`,
+  // Sequences don't hold tenant data (they only produce integers for serial/
+  // identity columns), so there is no isolation reason to enumerate them
+  // per table the way the table grants above are - vt_app keeps USAGE on
+  // all of them.
   "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO vt_app",
   // §3.1, §8: no write grant at all, at the database level - a future write
   // feature literally cannot become available to Owners inside a customer
   // tenant through this role, regardless of what application code does.
-  "GRANT SELECT ON ALL TABLES IN SCHEMA public TO vt_readonly_crosstenant",
+  // Explicitly excludes GLOBAL_TABLES and CONTROL_PLANE_TABLES: no reason to
+  // expose reference data or platform bookkeeping through a cross-tenant
+  // viewing role.
+  `GRANT SELECT ON TABLE ${quoted(VT_READONLY_TABLE_NAMES)} TO vt_readonly_crosstenant`,
 ];
+
+// Exported for the grant-scope test: which tables actually end up in each
+// role's GRANT statement, and which ones this migration deliberately keeps
+// off vt_app/vt_readonly_crosstenant.
+export const GRANT_DDL = ROLE_DDL;
+export { VT_APP_TABLE_NAMES, VT_READONLY_TABLE_NAMES, CONTROL_PLANE_NAMES };
 
 function policyDdlForTable(table) {
   return [
