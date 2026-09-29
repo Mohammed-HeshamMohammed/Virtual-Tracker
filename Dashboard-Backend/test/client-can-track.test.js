@@ -22,6 +22,7 @@ mock.module("../src/lib/postgres/client.js", {
     // the transitive chain touches must exist - role-hierarchy.js reaches
     // lookup-availability.js, which needs isPostgresConfigured.
     getPostgresPool: () => null,
+    getAdminPostgresPool: () => null,
     isPostgresConfigured: () => true,
     withTransaction: async (fn) => fn(),
     probePostgresReadiness: async () => true,

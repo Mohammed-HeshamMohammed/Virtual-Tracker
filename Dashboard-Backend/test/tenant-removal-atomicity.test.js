@@ -40,6 +40,7 @@ function seedTenant(overrides = {}) {
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
     getPostgresPool: () => null,
+    getAdminPostgresPool: () => null,
     isPostgresConfigured: () => true,
     withTenant: async (_tenantId, fn) => fn(),
     // Minimal query router: enough SQL shape-matching for tenant.service.js

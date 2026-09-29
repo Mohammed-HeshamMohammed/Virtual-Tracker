@@ -1,5 +1,5 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
-import { getPostgresPool, isPostgresConfigured } from "./client.js";
+import { getAdminPostgresPool, isPostgresConfigured } from "./client.js";
 import {
   TENANT_SCOPED_TABLES,
   SINGLETON_KEY_TABLES,
@@ -385,7 +385,10 @@ export async function ensureTenancySchema() {
   if (!isPostgresConfigured()) {
     return { ok: true, skipped: true };
   }
-  const pool = getPostgresPool();
+  // See ensure-lookup-schema.js's own comment: schema DDL needs table-owner
+  // privileges regardless of what POSTGRES_URL becomes for ordinary app
+  // requests.
+  const pool = getAdminPostgresPool();
   if (!pool) {
     return { ok: false, error: "Postgres pool unavailable" };
   }
@@ -418,7 +421,7 @@ export async function ensureTenancySchema() {
  */
 export async function runHighVolumeTenancyMigrations() {
   if (!isPostgresConfigured()) return;
-  const pool = getPostgresPool();
+  const pool = getAdminPostgresPool();
   if (!pool) return;
 
   for (const table of HIGH_VOLUME_NAMES) {

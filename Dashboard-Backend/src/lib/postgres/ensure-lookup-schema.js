@@ -1,5 +1,5 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
-import { getPostgresPool, isPostgresConfigured } from "./client.js";
+import { getAdminPostgresPool, isPostgresConfigured } from "./client.js";
 import { markPostgresLookupReady, resetPostgresLookupReadyCache } from "./lookup-availability.js";
 import { markPostgresMemberDataReady, resetPostgresMemberDataReadyCache } from "./member-data-availability.js";
 import { isActivityScreenshotsEnabled } from "../../config/activity.js";
@@ -1981,7 +1981,12 @@ export async function ensurePostgresLookupSchema() {
     return { ok: true, skipped: true };
   }
 
-  const pool = getPostgresPool();
+  // §0.2 step 1 / Phase 3: schema DDL needs table-owner privileges
+  // regardless of what POSTGRES_URL becomes for ordinary app requests once
+  // that connection-string cutover happens (vt_app has DML grants only, no
+  // CREATE TABLE / ALTER TABLE rights) - falls back to the same pool as
+  // ordinary requests until POSTGRES_ADMIN_URL is configured separately.
+  const pool = getAdminPostgresPool();
   if (!pool) {
     return { ok: false, error: "Postgres pool unavailable" };
   }

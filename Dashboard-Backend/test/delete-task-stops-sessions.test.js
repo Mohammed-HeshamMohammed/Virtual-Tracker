@@ -14,6 +14,7 @@ mock.module("../src/lib/postgres/client.js", {
       return [];
     },
     getPostgresPool: () => null,
+    getAdminPostgresPool: () => null,
     withTransaction: async (fn) => fn({ query: async () => ({ rows: [] }) }),
   },
 });

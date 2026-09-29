@@ -18,6 +18,7 @@ mock.module("../src/lib/postgres/client.js", {
     },
     __closePostgresPoolForTests: async () => null,
     getPostgresPool: async () => null,
+    getAdminPostgresPool: async () => null,
     isPostgresConfigured: () => true,
     probePostgresReadiness: async () => null,
     withTransaction: async () => null,

@@ -14,6 +14,7 @@ mock.module("../src/lib/postgres/client.js", {
     // mock.module replaces the whole namespace, so every export anything in
     // the transitive import chain touches has to exist here, not just query.
     getPostgresPool: () => null,
+    getAdminPostgresPool: () => null,
     isPostgresConfigured: () => true,
     withTransaction: async (fn) => fn(),
     probePostgresReadiness: async () => true,

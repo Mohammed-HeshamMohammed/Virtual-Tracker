@@ -1,5 +1,5 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
-import { getPostgresPool, isPostgresConfigured } from "./client.js";
+import { getAdminPostgresPool, isPostgresConfigured } from "./client.js";
 import { getEnv } from "../../config/env.js";
 import { TENANT_SCOPED_TABLES, listGlobalTableNames, listControlPlaneTableNames } from "./tenancy-tables.js";
 
@@ -128,7 +128,10 @@ export async function ensureTenancyRls() {
   if (!isPostgresConfigured()) {
     return { ok: true, skipped: true };
   }
-  const pool = getPostgresPool();
+  // CREATE ROLE / GRANT / ALTER TABLE ... ENABLE ROW LEVEL SECURITY all need
+  // elevated privileges regardless of what POSTGRES_URL becomes for
+  // ordinary app requests - see ensure-lookup-schema.js's own comment.
+  const pool = getAdminPostgresPool();
   if (!pool) {
     return { ok: false, error: "Postgres pool unavailable" };
   }
