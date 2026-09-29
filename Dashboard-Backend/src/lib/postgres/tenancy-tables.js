@@ -168,6 +168,7 @@ export const CONTROL_PLANE_TABLES = [
   { name: "tenants", reason: "The tenant registry itself - vt_app reading across it would defeat the isolation boundary it defines." },
   { name: "verification_codes", reason: "Unlock-code hashes gating the whole Customer Accounts surface (§16.3) - never business data, never cross-tenant readable." },
   { name: "customer_account_audit", reason: "The commercial audit trail (create/renew/remove/viewed) - platform-level record-keeping, not a tenant's own data." },
+  { name: "customer_account_unlock_tokens", reason: "Hashed bearer tokens for the Customer Accounts unlock - platform access control, not tenant data." },
 ];
 
 export function listControlPlaneTableNames() {

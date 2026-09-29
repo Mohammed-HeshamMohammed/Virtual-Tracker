@@ -38,11 +38,11 @@ import {
  * unusable - the token protects the write surface, the role check plus the
  * unlock flow together protect the read surface.
  */
-function requireUnlockToken(req, res, origin, memberId) {
+async function requireUnlockToken(req, res, origin, memberId) {
   const token = req.headers["x-customer-accounts-unlock"];
   // bearer:disable javascript_lang_observable_timing -- verifyUnlockToken hashes the
   // random 256-bit token and uses timingSafeEqual for the bound member id.
-  if (typeof token !== "string" || !verifyUnlockToken(token, memberId)) {
+  if (typeof token !== "string" || !(await verifyUnlockToken(token, memberId))) {
     sendJson(res, origin, 403, {
       success: false,
       error: "Verification required. Re-enter the code sent to your email.",
@@ -116,7 +116,7 @@ export async function routeCustomerAccounts(req, res, url, origin) {
         sendJson(res, origin, 401, { success: false, error: result.error, attemptsRemaining: result.attemptsRemaining });
         return true;
       }
-      const token = issueUnlockToken(viewer.memberId);
+      const token = await issueUnlockToken(viewer.memberId);
       sendJson(res, origin, 200, { success: true, data: { unlockToken: token } });
     } catch (e) {
       logSafeError("[customer-accounts/unlock/verify]", e);
@@ -162,7 +162,7 @@ export async function routeCustomerAccounts(req, res, url, origin) {
   }
 
   if (pn === "/api/customer-accounts" && req.method === "POST") {
-    if (!requireUnlockToken(req, res, origin, viewer.memberId)) return true;
+    if (!(await requireUnlockToken(req, res, origin, viewer.memberId))) return true;
     let body;
     try {
       body = await readJsonBody(req);
@@ -209,7 +209,7 @@ export async function routeCustomerAccounts(req, res, url, origin) {
 
   const periodMatch = pn.match(/^\/api\/customer-accounts\/([^/]+)\/period$/);
   if (periodMatch && req.method === "PATCH") {
-    if (!requireUnlockToken(req, res, origin, viewer.memberId)) return true;
+    if (!(await requireUnlockToken(req, res, origin, viewer.memberId))) return true;
     let body;
     try {
       body = await readJsonBody(req);
@@ -231,7 +231,7 @@ export async function routeCustomerAccounts(req, res, url, origin) {
 
   const seatsMatch = pn.match(/^\/api\/customer-accounts\/([^/]+)\/seats$/);
   if (seatsMatch && req.method === "PATCH") {
-    if (!requireUnlockToken(req, res, origin, viewer.memberId)) return true;
+    if (!(await requireUnlockToken(req, res, origin, viewer.memberId))) return true;
     let body;
     try {
       body = await readJsonBody(req);
@@ -290,7 +290,7 @@ export async function routeCustomerAccounts(req, res, url, origin) {
   }
 
   if (detailMatch && req.method === "DELETE") {
-    if (!requireUnlockToken(req, res, origin, viewer.memberId)) return true;
+    if (!(await requireUnlockToken(req, res, origin, viewer.memberId))) return true;
     let body;
     try {
       body = await readJsonBody(req);

@@ -241,5 +241,17 @@ await check("vt_app can take the seat lock and read its limit inside one transac
   });
 });
 
+await check("unlock tokens round-trip through the real table, and vt_app cannot read it", async () => {
+  const { issueUnlockToken, verifyUnlockToken } = await import("../src/modules/customer-accounts/unlock-token.js");
+  const memberId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const token = await issueUnlockToken(memberId);
+  assert.equal(await verifyUnlockToken(token, memberId), true);
+  assert.equal(await verifyUnlockToken(token, TENANT_A), false);
+  await assert.rejects(
+    () => asRole("vt_app", TENANT_A, () => db.query(`SELECT * FROM customer_account_unlock_tokens`)),
+    /permission denied/i,
+  );
+});
+
 console.log(`\n${failures === 0 ? "RESULT: PASS" : `RESULT: FAIL (${failures} proof(s) failed)`}`);
 process.exit(failures === 0 ? 0 : 1);

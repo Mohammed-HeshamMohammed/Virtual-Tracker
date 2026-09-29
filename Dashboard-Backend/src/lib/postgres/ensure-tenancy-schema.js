@@ -94,6 +94,16 @@ $$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp`,
   created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
 )`,
   "CREATE INDEX IF NOT EXISTS idx_customer_audit_tenant ON customer_account_audit (tenant_id, created_at DESC)",
+
+  // Customer Accounts unlock tokens (unlock-token.js). Only the SHA-256 of
+  // the bearer value is stored; one live row per member.
+  `CREATE TABLE IF NOT EXISTS customer_account_unlock_tokens (
+  token_hash  CHAR(64)     PRIMARY KEY,
+  member_id   UUID         NOT NULL,
+  expires_at  TIMESTAMPTZ  NOT NULL,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+)`,
+  "CREATE INDEX IF NOT EXISTS idx_unlock_tokens_member ON customer_account_unlock_tokens (member_id)",
 ];
 
 /**
