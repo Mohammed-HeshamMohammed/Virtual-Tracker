@@ -25,17 +25,27 @@ function wrapResult(result) {
   return { rows: result.rows, rowCount: result.affectedRows ?? result.rows.length };
 }
 
+function makePoolLike() {
+  return {
+    connect: async () => ({
+      query: async (sql, params) => wrapResult(await db.query(sql, params)),
+      release: () => {},
+    }),
+    query: async (sql, params) => wrapResult(await db.query(sql, params)),
+  };
+}
+
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
     isPostgresConfigured: () => true,
-    getPostgresPool: () => ({
-      connect: async () => ({
-        query: async (sql, params) => wrapResult(await db.query(sql, params)),
-        release: () => {},
-      }),
-      query: async (sql, params) => wrapResult(await db.query(sql, params)),
-    }),
+    getPostgresPool: () => makePoolLike(),
+    // Same underlying PGlite instance/connection as the ordinary pool - this
+    // harness proves role separation via SET ROLE (see asRole below), not
+    // via genuinely separate connections, so both identities point at the
+    // one embedded engine.
+    getAdminPostgresPool: () => makePoolLike(),
     query: async (sql, params) => (await db.query(sql, params)).rows,
+    queryAsAdmin: async (sql, params) => (await db.query(sql, params)).rows,
     queryRaw: async (sql, params) => wrapResult(await db.query(sql, params)),
     withTransaction: async (fn) =>
       fn({ query: async (sql, params) => wrapResult(await db.query(sql, params)) }),

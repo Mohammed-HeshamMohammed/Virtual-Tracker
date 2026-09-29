@@ -49,6 +49,7 @@ mock.module("../src/lib/postgres/client.js", {
     },
     __closePostgresPoolForTests: async () => null,
     getPostgresPool: async () => null,
+    getAdminPostgresPool: async () => null,
     // Not exercised by this test's code paths - present only because
     // activity-events-postgres.service.js (transitively imported via
     // timer-limit.service.js) statically imports queryRaw from client.js.

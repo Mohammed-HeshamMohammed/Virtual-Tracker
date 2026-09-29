@@ -44,6 +44,7 @@ const fakeClient = {
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
     getPostgresPool: () => ({}),
+    getAdminPostgresPool: () => null,
     query: async () => [],
     withTransaction: async (fn) => fn(fakeClient),
     // Not exercised by deleteMemberDayActivityWithChildrenPg (it only uses
