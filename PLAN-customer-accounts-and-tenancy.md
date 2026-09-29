@@ -162,6 +162,70 @@ Nothing has silently regressed or been silently fixed. Citations from this pass:
 feature work elsewhere in the repo this session, not tenancy progress, and is
 noted here only so the raw count isn't mistaken for movement on this plan.
 
+### 0.1b Implementation attempt, reverted — 2026-09-29
+
+**Status: none of this shipped. Every blocker in §0.1 remains exactly as
+described there.** An attempt was made the same day to close blockers 1, 5,
+6, and 9 (connection-pool architecture, the four background sweeps, removal
+atomicity, `root_user_id`), fully backward-compatible and verified against
+real Postgres as it was built — then reverted in full, before any commit, at
+explicit request. `git status` and the full backend suite (1,053/1,053) both
+confirm the repository is byte-for-byte back to its pre-attempt state.
+
+This subsection exists only so the next attempt has the findings without
+re-deriving them. None of it is a claim about current code:
+
+- **Blocker 1 (pool architecture)** is buildable in a way that changes
+  nothing until an operator provisions real `POSTGRES_ADMIN_URL`/
+  `POSTGRES_READONLY_CROSSTENANT_URL` values: key pool objects by resolved
+  connection-string URL rather than by role name, so every identity whose
+  URL still falls back to `POSTGRES_URL` (every deployment today) shares one
+  physical pool automatically, and splits only once a URL genuinely differs.
+  Verified with object-identity assertions, no live DB needed for that part.
+- **Blocker 5 (background sweeps) is not one fix, it's (at least) two
+  different correct answers depending on the sweep**, discovered by reading
+  each one rather than assuming a single pattern:
+  - `activity-events-postgres.service.js`'s local `pgQuery` (used by the
+    abandoned-session sweep among others) was a raw `getPostgresPool().connect()`
+    that bypassed `client.js` entirely — already self-flagged in its own
+    comment as safe to fix, blocked only on three test fixtures
+    (`active-seconds-clamp`, `activity-events-project-scoping`,
+    `activity-signal-capture`) that mock `getPostgresPool().connect()`
+    directly. `integrity-postgres.service.js` has the identical gap.
+  - Counter reconciliation and integrity checks are **not** the same shape:
+    counter reconciliation is a genuinely global data-integrity check
+    (already grouped by globally-unique `member_id`, so it cannot "mix"
+    tenants) and belongs on the admin identity outright, no per-tenant loop
+    needed. Integrity checks are tenant-scoped business data mixed in the
+    *same file* as request-scoped functions (contest/list a flag) — those
+    need the per-tenant `withTenant()` loop pattern instead, applied in the
+    sweep orchestrator, not in the shared data-access file (which stays on
+    the ordinary tenant-aware path so it still serves real requests
+    correctly).
+  - `data-retention-postgres.service.js` already has a well-designed,
+    explicit `ACTIVE_TENANT_FILTER` SQL fragment correctly implementing
+    §16.6 (skip inactive tenants) — it does **not** need a per-tenant loop
+    at all. Its actual gap is narrower: it runs on the ordinary app pool, so
+    once RLS is live, RLS's own row policy would hide every row *before*
+    that filter ever ran, for a background sweep with no tenant published.
+    The fix is switching its eight sweep-only functions (not its
+    member-scoped DSAR/erasure functions, which correctly stay tenant-aware)
+    to the admin identity, preserving the filter exactly as designed.
+- **Blocker 6 (removal atomicity)**: `customer_account_audit.actor_id` is
+  `NOT NULL`, which blocks the obvious fix (an automatic resume sweep has no
+  human actor to attribute completion to) unless the original requester's id
+  is captured up front. A `removal_requested` audit action, written at the
+  same step-1 lockout that already exists, is enough to look the actor back
+  up whenever completion actually happens, on whichever pass gets there.
+- **Blocker 9 (`root_user_id`)**: a plain `UPDATE tenants SET root_user_id = $2
+  WHERE id = $1 AND root_user_id IS NULL` is sufficient and was verified
+  against real Postgres to correctly no-op (affecting zero rows) on a second
+  Enterprise invite for the same tenant, rather than overwriting the real root.
+
+None of the above is present in the repository. Treat every code citation and
+line number elsewhere in this document as the only source of truth for
+current state.
+
 ### 0.2 Correct implementation and rollout order
 
 1. **Build the database boundary first.** Add separately configured pools for
