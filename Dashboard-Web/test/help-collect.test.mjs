@@ -9,6 +9,7 @@ import { JSDOM } from "jsdom"
 import { describeControl } from "../shared/ui/help/describe-control.ts"
 import { PAGE_HELP, pageHelp } from "../shared/ui/help/page-help.ts"
 import { collectTourSteps, MAX_STEPS } from "../shared/ui/help/help-collect.ts"
+import { isShowable } from "../shared/ui/help/help-tour.ts"
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url))
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
@@ -182,6 +183,18 @@ test("a row button repeated down a table is visited once", () => {
   assert.equal(texts(page(DASHBOARD)).filter((t) => t === "View: opens it.").length, 1)
 })
 
+test("an explicitly titled row action is visited once, even with only two rows", () => {
+  const rows = [1, 2]
+    .map((n) => `<tr><td>Member ${n}</td><td><button title="Row actions" aria-label="Row actions">...</button></td></tr>`)
+    .join("")
+  assert.deepEqual(texts(page(`<main><table><tbody>${rows}</tbody></table></main>`)), ["Row actions"])
+})
+
+test("matching explicit controls outside table rows remain separate", () => {
+  const doc = page('<main><button data-help="Close this panel.">Close</button><button data-help="Close this panel.">Close</button></main>')
+  assert.equal(texts(doc).length, 2)
+})
+
 test("tabs are explained as a group, not one by one", () => {
   const all = texts(page(DASHBOARD))
   assert.ok(!all.some((t) => t.startsWith("Active:")))
@@ -205,6 +218,20 @@ test("a title is used as it stands", () => {
 test("a dialog on top is the only thing the tour is about", () => {
   const doc = page(`${DASHBOARD}<div role="dialog"><label for="n">Name</label><input id="n" type="text"><button>Save</button></div>`)
   assert.deepEqual(texts(doc), ["Name: type it here.", "Save: saves your changes."])
+})
+
+test("a closed or aria-hidden popup is not treated as the active dialog", () => {
+  const doc = page(`<main><button>Export</button></main>
+    <div role="dialog" data-slot="dialog-content" data-state="closed"><button aria-label="Close"></button></div>
+    <div aria-hidden="true"><form><button>Save</button></form></div>`)
+  assert.deepEqual(texts(doc), ["Export: saves what you are looking at as a file."])
+})
+
+test("controls inside a transparent closed popup are not showable", () => {
+  const doc = page('<main><div style="opacity: 0"><form><button aria-label="Close"></button></form></div></main>')
+  const close = doc.querySelector("button")
+  close.getBoundingClientRect = () => ({ width: 24, height: 24 })
+  assert.equal(isShowable(close), false)
 })
 
 test("the tour's own controls and the help button are never steps", () => {

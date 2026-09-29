@@ -41,7 +41,7 @@ test("a target too big to sit beside gets the callout at the foot of the window,
   assert.equal(whole.top, 246)
 })
 
-const item = (rank, order, group = `g${order}`) => ({ rank, order, group })
+const item = (rank, order, group = `g${order}`, repeat = false) => ({ rank, order, group, repeat })
 
 test("the tour visits the sidebar first, then the top bar, then the page, whatever the page order", () => {
   const shuffled = [item(2, 1), item(1, 2), item(0, 3), item(3, 4), item(2, 5)]
@@ -56,6 +56,11 @@ test("a long run of named rows is shown by its first row only, a short run in fu
   const rows = [1, 2, 3, 4, 5, 6].map((n) => item(0, n, "rows"))
   assert.deepEqual(orderForTour(rows).map((i) => i.order), [1])
   assert.equal(orderForTour([1, 2].map((n) => item(0, n, "pair"))).length, 2)
+})
+
+test("a known repeated table group is collapsed even when only two rows are visible", () => {
+  const rows = [1, 2].map((n) => item(0, n, "table-actions", true))
+  assert.deepEqual(orderForTour(rows).map((i) => i.order), [1])
 })
 
 test("regions are the sidebar, the top bar and the page, in that order", () => {

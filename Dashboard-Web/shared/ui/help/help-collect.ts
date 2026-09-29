@@ -2,7 +2,7 @@
 // Imports only its neighbours, by relative path, so it is tested against a real DOM from Node.
 
 import { describeControl, type ControlInfo } from "./describe-control.ts"
-import { isShowable, orderForTour, rankOf, type Candidate } from "./help-tour.ts"
+import { isHiddenFromTour, isShowable, orderForTour, rankOf, type Candidate } from "./help-tour.ts"
 
 /** Anything that carries its own explanation. */
 const EXPLAINABLE = "[data-help], [data-tip], [title]"
@@ -78,6 +78,21 @@ function explainedByWrapper(el: Element): boolean {
 const explicitText = (el: Element) =>
   clean(el.getAttribute("data-help")) || clean(el.getAttribute("data-tip")) || clean(el.getAttribute("title"))
 
+/** Repeated controls in the same table column are one concept, even when their explicit
+ *  help text makes each DOM node look unique to the generic de-duplicator. */
+function tableRepeatGroup(el: Element, text: string, tableIds: Map<Element, number>): string | null {
+  const row = el.closest("tbody tr") as HTMLTableRowElement | null
+  const table = row?.closest("table")
+  const cell = el.closest("td, th") as HTMLTableCellElement | null
+  if (!row || !table || !cell || cell.closest("tr") !== row) return null
+  let tableId = tableIds.get(table)
+  if (tableId === undefined) {
+    tableId = tableIds.size
+    tableIds.set(table, tableId)
+  }
+  return `table:${tableId}:column:${cell.cellIndex}:${text}`
+}
+
 /**
  * Everything on screen worth explaining, in the order the tour visits it: what was written
  * for it first, and for the rest what its own wording says. A field inside something that
@@ -85,14 +100,18 @@ const explicitText = (el: Element) =>
  */
 export function collectTourSteps(doc: Document = document, showable: (el: Element) => boolean = isShowable): Step[] {
   // A dialog on top of the page is the only thing the member can be asking about.
-  const dialogs = doc.querySelectorAll('[role="dialog"], [aria-modal="true"]')
+  const dialogs = [...doc.querySelectorAll('[role="dialog"], [aria-modal="true"]')].filter(
+    (dialog) => !isHiddenFromTour(dialog) && showable(dialog),
+  )
   const scope: ParentNode = dialogs.length ? dialogs[dialogs.length - 1] : doc
   const items: (Candidate & Step)[] = []
+  const tableIds = new Map<Element, number>()
 
   scope.querySelectorAll(`${EXPLAINABLE}, ${READABLE}`).forEach((el, order) => {
-    if (el.closest(OWN_UI) || !showable(el)) return
+    if (el.closest(OWN_UI) || isHiddenFromTour(el) || !showable(el)) return
     let text = explicitText(el)
     let group = el.getAttribute("data-tour-repeat")
+    let repeat = group !== null
     if (!text) {
       const info = el.matches(READABLE) ? infoOf(el) : null
       text = info ? describeControl(info) : ""
@@ -102,12 +121,18 @@ export function collectTourSteps(doc: Document = document, showable: (el: Elemen
       // The same words over and over are one list of look-alike rows.
       group ??= `auto:${text}`
     }
+    const tableGroup = tableRepeatGroup(el, text, tableIds)
+    if (!repeat && tableGroup) {
+      group = tableGroup
+      repeat = true
+    }
     items.push({
       el,
       text,
       order,
       rank: dialogs.length ? 0 : rankOf(el),
       group: group ?? `solo-${order}`,
+      repeat,
     })
   })
   return orderForTour(items)
