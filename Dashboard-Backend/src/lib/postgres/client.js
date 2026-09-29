@@ -2,6 +2,7 @@ import pg from "pg";
 import { getEnv } from "../../config/env.js";
 import { currentAuditActor, currentTenantId, runWithTenantId, statementMayAudit } from "./audit-actor.js";
 import { roleConnectionString } from "./role-credentials.js";
+import { auditTenantlessQuery } from "./tenancy-audit.js";
 
 /**
  * Keyed by resolved connection-string URL, not by role name: identities that
@@ -145,6 +146,7 @@ async function queryOnPool(activePool, sql, params) {
 }
 
 export async function query(sql, params = []) {
+  auditTenantlessQuery(sql);
   const activePool = getPostgresPool();
   if (!activePool) {
     throw new Error("POSTGRES_URL is not configured");
@@ -201,6 +203,7 @@ export async function queryAsReadonlyCrossTenant(targetTenantId, sql, params = [
  * the publish/cache logic in each of those files).
  */
 export async function queryRaw(sql, params = []) {
+  auditTenantlessQuery(sql);
   const activePool = getPostgresPool();
   if (!activePool) return null;
   const client = await activePool.connect();
@@ -213,7 +216,7 @@ export async function queryRaw(sql, params = []) {
   }
 }
 
-async function withTransactionOnPool(activePool, fn) {
+async function withTransactionOnPool(activePool, fn, { audit = false } = {}) {
   if (!activePool) {
     throw new Error("Postgres pool is not configured");
   }
@@ -228,7 +231,7 @@ async function withTransactionOnPool(activePool, fn) {
     // no longer true once the transaction ends.
     delete client[PUBLISHED_ACTOR];
     delete client[PUBLISHED_TENANT];
-    const result = await fn(client);
+    const result = await fn(audit ? auditingClient(client) : client);
     await client.query("COMMIT");
     return result;
   } catch (err) {
@@ -239,12 +242,29 @@ async function withTransactionOnPool(activePool, fn) {
   }
 }
 
+/** The transaction's own client, with each statement run past the tenancy
+ *  audit first - the app pool only; the admin pool is exempt by design. */
+function auditingClient(client) {
+  return new Proxy(client, {
+    get(target, prop, receiver) {
+      if (prop === "query") {
+        return (sql, ...rest) => {
+          auditTenantlessQuery(typeof sql === "string" ? sql : sql?.text);
+          return target.query(sql, ...rest);
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
+
 export async function withTransaction(fn) {
   const activePool = getPostgresPool();
   if (!activePool) {
     throw new Error("POSTGRES_URL is not configured");
   }
-  return withTransactionOnPool(activePool, fn);
+  return withTransactionOnPool(activePool, fn, { audit: getEnv().postgres?.tenancyAudit === true });
 }
 
 /** Same as withTransaction(), on the vt_admin identity. */
