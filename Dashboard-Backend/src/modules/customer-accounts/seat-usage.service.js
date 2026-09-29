@@ -92,11 +92,14 @@ const USED_SEATS_SQL = `SELECT ${usedSeatsSql("$1", { excludeInvitesParam: "$2",
  *
  * `insert(client)` runs inside the same transaction, while the tenant row is
  * locked FOR UPDATE, so two concurrent invites cannot both read "one seat
- * left" and both take it. Paths that create the member through helpers that
- * use their own connection (migrate, preprovision, invite register) pass no
- * `insert` - for them this is a check under a lock that is released before
- * they write, a narrow window accepted rather than threading a client
- * through every member-creation helper.
+ * left" and both take it. Every seat-consuming path now threads `insert`
+ * (§0.1 blocker 8, closed 2026-09-29) - promotion passes it directly (the
+ * Firebase user already exists by that point, nothing external between the
+ * check and the write); invite-register and preprovision each call this
+ * twice - once as a soft check before Firebase creates an auth user, then
+ * again with `insert` threaded, atomically, immediately before the real
+ * write - since a Postgres row lock cannot usefully span an external
+ * network call.
  *
  * `excludeInviteIds` / `excludePendingUids`: rows being converted into the
  * member rather than added alongside it (see usedSeatsSql).
