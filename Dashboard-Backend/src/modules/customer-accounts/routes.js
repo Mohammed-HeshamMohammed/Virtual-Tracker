@@ -35,6 +35,8 @@ import {
  */
 function requireUnlockToken(req, res, origin, memberId) {
   const token = req.headers["x-customer-accounts-unlock"];
+  // bearer:disable javascript_lang_observable_timing -- verifyUnlockToken hashes the
+  // random 256-bit token and uses timingSafeEqual for the bound member id.
   if (typeof token !== "string" || !verifyUnlockToken(token, memberId)) {
     sendJson(res, origin, 403, {
       success: false,

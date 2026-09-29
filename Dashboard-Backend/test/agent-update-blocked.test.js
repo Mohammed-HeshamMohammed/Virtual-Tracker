@@ -13,7 +13,7 @@ let captured = null;
 
 mock.module("../src/config/env.js", {
   namedExports: {
-    getEnv: () => ({ agent: { inboxMinVersion: "1.0.24", minSelfUpdateVersion: "1.0.27" } }),
+    getEnv: () => ({ agent: { inboxMinVersion: "1.0.25", minimumSupportedVersion: "1.0.25", minSelfUpdateVersion: "1.0.27" } }),
   },
 });
 mock.module("../src/lib/postgres/client.js", {
