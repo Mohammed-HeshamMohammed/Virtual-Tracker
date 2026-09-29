@@ -37,6 +37,7 @@ import { scheduleCurrencyRateRefresh } from "./src/lib/currency/rate-fetcher.js"
 import { scheduleDataRetentionSweep } from "./src/modules/compliance/data-retention-sweep.service.js";
 import { scheduleIntegritySweep } from "./src/modules/activity/integrity-sweep.service.js";
 import { scheduleCounterReconciliationSweep } from "./src/modules/activity/counter-reconciliation-sweep.service.js";
+import { scheduleTenantRemovalResume } from "./src/modules/customer-accounts/tenant.service.js";
 
 let activeServer = null;
 
@@ -154,6 +155,7 @@ export async function startServer(port = getEnv().server.port) {
     scheduleDataRetentionSweep();
     scheduleIntegritySweep();
     scheduleCounterReconciliationSweep();
+    scheduleTenantRemovalResume();
   }
 
   server.listen(port, () => {

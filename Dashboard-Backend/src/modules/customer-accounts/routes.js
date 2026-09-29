@@ -23,6 +23,11 @@ import {
   removeCustomerTenant,
   recordCustomerDataView,
 } from "./tenant.service.js";
+import {
+  listCustomerProjects,
+  listCustomerEmployees,
+  getCustomerActivitySummary,
+} from "./readonly-view.service.js";
 
 /**
  * §16.3: the verification code gates the SYSTEM, not the tab. Every
@@ -254,6 +259,31 @@ export async function routeCustomerAccounts(req, res, url, origin) {
     } catch (e) {
       const { status, code, message } = errorStatus(e);
       if (status === 500) logSafeError("[customer-accounts/removal-preview]", e);
+      sendJson(res, origin, status, { success: false, error: message, code });
+    }
+    return true;
+  }
+
+  // §0.1 blocker 7 / §0.2 step 5: the audited read-only cross-tenant view -
+  // each surface is its own allowlisted endpoint (readonly-view.service.js),
+  // never a generic tenant-switch, and every open writes a 'viewed' audit
+  // row via recordCustomerDataView before returning data (§9).
+  const viewMatch = pn.match(/^\/api\/customer-accounts\/([^/]+)\/view\/(projects|employees|activity-summary)$/);
+  if (viewMatch && req.method === "GET") {
+    const [, tenantId, surface] = viewMatch;
+    try {
+      await getCustomerTenantDetail(tenantId); // 404s if missing
+      const data =
+        surface === "projects"
+          ? await listCustomerProjects(tenantId)
+          : surface === "employees"
+            ? await listCustomerEmployees(tenantId)
+            : await getCustomerActivitySummary(tenantId);
+      await recordCustomerDataView(tenantId, viewer.memberId, surface);
+      sendJson(res, origin, 200, { success: true, data });
+    } catch (e) {
+      const { status, code, message } = errorStatus(e);
+      if (status === 500) logSafeError(`[customer-accounts/view/${surface}]`, e);
       sendJson(res, origin, status, { success: false, error: message, code });
     }
     return true;
