@@ -46,6 +46,10 @@ mock.module("../src/lib/postgres/client.js", {
     getPostgresPool: () => ({}),
     query: async () => [],
     withTransaction: async (fn) => fn(fakeClient),
+    // Not exercised by deleteMemberDayActivityWithChildrenPg (it only uses
+    // withTransaction) - present only because activity-events-postgres.
+    // service.js statically imports queryRaw from client.js.
+    queryRaw: async () => ({ rows: [] }),
   },
 });
 

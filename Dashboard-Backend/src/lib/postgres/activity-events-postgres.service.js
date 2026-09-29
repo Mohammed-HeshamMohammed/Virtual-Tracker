@@ -1,4 +1,4 @@
-import { getPostgresPool, withTransaction } from "./client.js";
+import { withTransaction, queryRaw } from "./client.js";
 import { parseProgressUuid } from "./task-member-progress.service.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { normalizeAppName } from "../../modules/activity/app-name.js";
@@ -14,28 +14,13 @@ function filterMemberIds(memberIds) {
   return memberIds.map((id) => parseProgressUuid(id)).filter(Boolean);
 }
 
-// KNOWN GAP, tracked for the RLS cutover checklist (PLAN-customer-accounts-
-// and-tenancy.md §12.2 #5): this bypasses client.js entirely, so it neither
-// publishes app.tenant_id nor app.actor_id on this connection. Harmless
-// today (no RLS policy is active, actor just goes unattributed in
-// audit_logs), but MUST switch to client.js's queryRaw() before
-// POSTGRES_TENANCY_RLS_ENABLED is ever turned on, or writes here would run
-// under whichever tenant a previous pooled connection last happened to use.
-// Left as its own local helper rather than fixed now because its existing
-// test fixtures (active-seconds-clamp, activity-events-project-scoping,
-// activity-signal-capture) mock getPostgresPool().connect() directly in
-// several different shapes; switching this one call site is safe, but
-// updating all of those fixtures to also stub queryRaw needs its own
-// reviewed pass rather than folding into this change.
+// Delegates to client.js's queryRaw() so every call here publishes
+// app.tenant_id/app.actor_id on the connection like every other query in
+// the app (PLAN-customer-accounts-and-tenancy.md §12.2 #5) - this used to
+// reach past client.js with its own local pool.connect(), which published
+// neither, a real tenant-isolation gap once RLS is live.
 async function pgQuery(sql, params = []) {
-  const pool = getPostgresPool();
-  if (!pool) return null;
-  const client = await pool.connect();
-  try {
-    return await client.query(sql, params);
-  } finally {
-    client.release();
-  }
+  return queryRaw(sql, params);
 }
 
 function normalizeSource(source) {

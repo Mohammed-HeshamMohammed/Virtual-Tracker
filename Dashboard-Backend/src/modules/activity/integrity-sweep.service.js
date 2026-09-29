@@ -16,6 +16,8 @@ import {
   fetchRecentUrlLogDomainsPg,
   insertIntegrityFlagPg,
 } from "../../lib/postgres/integrity-postgres.service.js";
+import { withTenant } from "../../lib/postgres/client.js";
+import { listActiveTenantIds } from "../../lib/postgres/active-tenants.js";
 
 const CHECK_INTERVAL_MS = 5 * 60 * 1000;
 const LOOKBACK_MINUTES = 60;
@@ -30,7 +32,18 @@ export function scheduleIntegritySweep() {
   timer.unref?.();
 }
 
+// §0.1 blocker 5 / §12.2 #6: this used to run one unscoped set of queries
+// across every tenant's sessions. Looping per tenant is safe to add today,
+// before RLS is even live - assertIsolationReadyForNewTenant blocks a
+// second tenant from existing until isolation is proven, so this is a
+// single-iteration loop with identical behaviour until that changes.
 export async function runIntegrityChecks() {
+  for (const tenantId of await listActiveTenantIds()) {
+    await withTenant(tenantId, () => runIntegrityChecksForCurrentTenant());
+  }
+}
+
+async function runIntegrityChecksForCurrentTenant() {
   // All three checks below write flags, so the policy is read once here rather
   // than in one of them.
   if (!(await enabledCapabilities()).has("integrity_signals")) return;

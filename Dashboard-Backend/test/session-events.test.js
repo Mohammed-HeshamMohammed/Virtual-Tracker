@@ -10,18 +10,16 @@ const behaviour = { failInserts: false };
 
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
-    getPostgresPool: () => ({
-      connect: async () => ({
-        query: async (sql, params) => {
-          if (behaviour.failInserts && /INSERT INTO activity_session_events/.test(sql)) {
-            throw new Error('relation "activity_session_events" does not exist');
-          }
-          calls.push({ sql, params });
-          return { rowCount: 1, rows: [] };
-        },
-        release: () => {},
-      }),
-    }),
+    // activity-events-postgres.service.js's local pgQuery delegates to
+    // queryRaw, which returns the raw pg result like
+    // getPostgresPool().connect().query() used to.
+    queryRaw: async (sql, params) => {
+      if (behaviour.failInserts && /INSERT INTO activity_session_events/.test(sql)) {
+        throw new Error('relation "activity_session_events" does not exist');
+      }
+      calls.push({ sql, params });
+      return { rowCount: 1, rows: [] };
+    },
     withTransaction: async (fn) => fn({ query: async () => ({ rows: [] }) }),
     query: async () => [],
   },

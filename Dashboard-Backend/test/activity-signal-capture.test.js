@@ -24,7 +24,10 @@ function fakeClient() {
 
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
-    getPostgresPool: () => ({ connect: async () => fakeClient() }),
+    // activity-events-postgres.service.js's local pgQuery delegates to
+    // queryRaw, which returns the raw pg result like
+    // getPostgresPool().connect().query() used to.
+    queryRaw: async (sql, params) => fakeClient().query(sql, params),
     // task-member-progress.service.js (imported transitively for
     // parseProgressUuid) calls the higher-level query() helper directly.
     query: async () => [],

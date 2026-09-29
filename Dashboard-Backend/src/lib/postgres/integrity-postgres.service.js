@@ -1,18 +1,14 @@
-import { getPostgresPool } from "./client.js";
+import { queryRaw } from "./client.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 
-// Same KNOWN GAP as activity-events-postgres.service.js's own pgQuery - see
-// its comment. Tracked for the RLS cutover checklist, not fixed here to
-// avoid touching its passing test fixtures in this pass.
+// Delegates to client.js's queryRaw() - see activity-events-postgres.
+// service.js's pgQuery for why (PLAN-customer-accounts-and-tenancy.md
+// §12.2 #5). This file mixes sweep-only reads (fetchRecent*) with
+// request-scoped functions (contest/list/get a flag) further down, so
+// queryRaw - which still publishes whatever tenant is current - is the
+// right universal fix here, not queryAsAdmin.
 async function pgQuery(sql, params = []) {
-  const pool = getPostgresPool();
-  if (!pool) return null;
-  const client = await pool.connect();
-  try {
-    return await client.query(sql, params);
-  } finally {
-    client.release();
-  }
+  return queryRaw(sql, params);
 }
 
 export async function fetchRecentScreenshotsPg(since) {
