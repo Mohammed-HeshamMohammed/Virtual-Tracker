@@ -1,6 +1,6 @@
 # PLAN — Browser-aware activity classification + editable screenshot activity
 
-Status: **proposal, nothing implemented yet.**
+Status: **DONE for repository-deliverable scope. Core features, current code hardening, and the guarded release path are implemented and verified; Authenticode credentials plus authenticated fleet/physical-machine validation remain external operational work.**
 Scope: `Dashboard-Backend`, `Dashboard-Web`, `Tauri-App-Extension`.
 
 Three requests, treated as three separate issues because they have different
@@ -29,18 +29,63 @@ blast radii and can ship independently:
 
 ## Progress
 
-> **12 of 13 steps shipped.** The one remaining step needs your authorisation
-> (dismissing alerts), and two items are deliberately held back with reasons
-> below (A4, A7). **Nothing in the agent reaches users until someone triggers
-> the release workflow** — that is not something I do unasked.
+> **Current reconciliation (2026-09-27).** This Progress section, §31, and the
+> completion table at the end are authoritative. Parts I–IV retain the original
+> investigation and design history, including counts and decisions that were
+> true when written but have since changed.
 >
-> **Open questions still unanswered:** §3.4 (does an activity edit move
-> *tracked time*? — built as "no") and §24.3 #2 (install mode → blocks A7).
-> The Notify question is resolved: `notify-Production` exists (capital P) and
-> is synced.
+> The core implementation is no longer waiting for a release. Commit `6b009b5`
+> first appeared in `agent-v0.4.22`, and the current stable release is
+> `agent-v1.1.2`. The latest release workflow completed successfully. The
+> current Dashboard Backend/Web production-branch copies of the activity
+> modules match `main` byte-for-byte.
 >
-> **All alerts are now closed: code scanning 592 → 0, Dependabot 3 → 0.**
-> Triaging the last 240 surfaced **four real findings**, all fixed rather than
+> Both former product decisions are resolved by current behavior and later
+> plans: editing screenshot activity changes the activity measurement/audit
+> record, **not tracked seconds**; and the updater plan explicitly retains
+> `perMachine`, with install-readiness reporting instead of an A7 migration
+> ([`PLAN-agent-auto-update.md`](PLAN-agent-auto-update.md)).
+>
+> **Final repository completion pass (2026-09-27).** The live GitHub query made
+> before this pass reported **88 open code-scanning alerts, 1 Dependabot alert,
+> and 0 secret-scanning alerts**. The actionable current source findings were
+> then remediated locally: the three high CodeQL session identifiers were
+> removed from logs, both test-workflow actions were pinned to immutable SHAs,
+> `rustls` was upgraded from 0.23.43 to 0.23.45, notification CORS now fails
+> closed and has regression tests, server error details are no longer surfaced
+> by the client, and scanner configuration now excludes tests/noise while
+> retaining deployed-code coverage. GitHub's displayed counts remain the
+> pre-fix snapshot until these changes are committed, pushed, and rescanned.
+> The one `glib` Dependabot advisory remains a documented accepted risk because
+> it is transitive through Tauri's Linux GTK stack and is not built for the
+> Windows/macOS shipping targets.
+>
+> Windows installer validation also advanced materially in this pass. Native
+> UI Automation remains the preferred URL source, while the existing browser-
+> history and PowerShell URL/icon fallbacks are intentionally retained so
+> tracking continues during the company's local employee-testing phase. A
+> local NSIS package compiled successfully; updater signing could not finish
+> locally without its private key. The public
+> `agent-v1.1.2` Windows artifact was downloaded and checked directly: Windows
+> reports `NotSigned` (SHA-256
+> `A57910AF6341B13444B6F2760D7FBCB46B4BC122CC000A14F983F67CE14B76A1`).
+> The repository has Tauri updater-signing secrets but no configured Windows
+> Authenticode certificate secrets, so a trusted Windows release cannot be
+> produced without that external credential. During the company-only testing
+> phase, the release workflow can still make an explicitly approved unsigned
+> build with `require_windows_signing=false`; signed publication remains the
+> default, and the tracking fallbacks are unchanged in either build.
+>
+> Verification completed in this pass: Rust `cargo check`; 270 Rust library
+> tests (1 ignored real-desktop UIA test); 307 agent frontend tests and its
+> production build; 1,045 Dashboard Backend tests; the 79-test focused
+> browser/screenshot audit; Dashboard Web type-check and 81 tests; and 2 new
+> notification CORS tests. Public production health endpoints and the updater
+> endpoint returned HTTP 200 and offered `agent-v1.1.2`. Authenticated activity
+> telemetry, fleet uptake, Defender/Avast reputation, and physical Windows
+> behavior cannot be established from this repository or public endpoints.
+>
+> The original triage did surface **four real findings**, all fixed rather than
 > dismissed:
 >
 > 1. 🔴 **Timing side channel on the inter-service secret** —
@@ -66,35 +111,38 @@ blast radii and can ship independently:
 |---|---|---|
 | 1. **#4 S1** §8.1 auth-page XSS/redirect | ✅ **shipped** — main + `DashboardBackend-Prod` + `Auth-Production`. Verified in-browser: `javascript:` → `/`, `https://evil.example/login` → `/login`, legit path preserved. 7 tests, 500/500 suite green | `0c4ca3a` |
 | 2. **#4 S2** §35 stale committed installers | ✅ **shipped** — main + `dashboard-web-production` + `LandingWeb-Prod`. 4 files, ~15 MB, gitignored on both apps. Nothing referenced them; `/api/download` was already the real path | `4a830e0` |
-| 3. **#4 S3** pin Actions + base images | ✅ **shipped** — 13 actions → commit SHAs in both workflows, `node:20-alpine` → digest in all 5 Dockerfiles. No mutable refs left | `48956f7` |
+| 3. **#4 S3** pin Actions + base images | ✅ **complete in the working tree** — the original actions and all five Dockerfile base images were pinned; the later `tests.yml` regression is fixed by pinning `dtolnay/rust-toolchain` and `Swatinem/rust-cache` to immutable SHAs. GitHub alert closure awaits push/rescan | `48956f7` + final pass |
 | 4. **#4 S5** Dockerfile `USER` + §8.4 perms | ✅ **shipped** — 3 backends dropped to `USER node` (both web apps already had `USER nextjs`); `verify` job scoped to `contents: read`. Every job in both workflows now declares permissions | `c21131a` |
-| 5. **#4 S4** dependency bumps | ✅ **partly** — browserslist 4.28.1 → 4.28.8, build verified. **glib cannot be fixed** (§ below). Dependabot now reports **1 vuln, was 3** | `8175353` |
-| 6. **#1** browser→URL resolver | ✅ **shipped, both halves** — backend resolver + 3 feeds + §1.5 M1 cache + M3 index + C4 guard (`34f68d3`); §1.6 M2 export stamp, M3 reclassification notice, "via sites" badge (`c52e71c`). 512/512 tests, build green. Synced to `DashboardBackend-Prod` + `dashboard-web-production` | `34f68d3`, `c52e71c` |
-| 7. **#3** screenshot activity edit | ✅ **shipped** — schema audit columns, run-splitting (14 tests, all §3.3 cases), `PATCH .../activity`, editor UI beside Download, **and the §3.1 integrity fix in the same commit**. 526/526 tests, build green. Synced to both prod branches | `77b8679` |
-| 8. **#4 S6** remaining CodeQL fixes | ✅ **shipped** — §8.2 TLS opt-in, §8.3 email bodies, §8.5 regexes, §8.6 hostname checks. Synced to `DashboardBackend-Prod`, `Auth-Production`, `dashboard-web-production`. **Notify-backend still has no prod branch** | `a1bf554` |
-| 9. **#6** ownership + credits | ✅ **shipped** — owner line + GitHub links in the agent (via `openUrl`, verified) and an About card in web settings; `publisher` set to "Soft Fix / Virtual Callers". Agent 136/136 tests, both builds green. Web synced to `dashboard-web-production`; **agent ships with the batched release** | `c2ee4fa` |
-| 10. **agent code** (A5, #2, #7 + §19.3 guard) | 🟡 **committed, not released** — Rust 102/102, agent frontend 136/136, backend 526/526, no new clippy warnings. Backend half synced to `DashboardBackend-Prod`. **Someone must trigger the release workflow** for any of it to reach users | `6b009b5` |
-| 10b. **A4** UIAutomation, **A7** install mode | ⬜ **deliberately held back** — see below |
-| 11. **A6** transparency doc | ✅ **shipped** — `docs/tauri-app-extension/WHAT-THE-AGENT-DOES.md`. Under the no-certificate constraint this substitutes for the signature: states the AV warning is expected, what is and is not collected, and IT exclusion paths | `75765fe` |
-| 12. **#4 S7** §36 tune `security.yml` | ✅ **shipped** — clippy no longer uploads SARIF (~23), `**/scripts/**` and `**/*.example` excluded (~80). Every scanner kept; coverage unchanged for deployed code | `bba0037` |
-| 13. **#4 S8** triage every alert | ✅ **done — 592 → 0 open, Dependabot 3 → 0.** Every alert individually triaged; four *real* findings were fixed rather than dismissed (below), the rest dismissed with written reasons | see below |
-| 14. Branch cleanup + Notify sync | ✅ **done** — `notify-Production` found and synced (it exists with a capital P); 84 branches deleted, 7 remain. SHAs recorded in [DELETED-BRANCHES.md](docs/branch-trees/DELETED-BRANCHES.md) | `b9d0ae5` |
+| 5. **#4 S4** dependency bumps | ✅ **actionable shipping-target work complete** — browserslist was upgraded and verified; `rustls` is now 0.23.45, resolving the current OSV advisory. The transitive `glib` advisory is documented as accepted pending Tauri's Linux GTK stack upgrade and is not built on the Windows/macOS targets | `8175353` + final pass |
+| 6. **#1** browser→URL resolver | ✅ **shipped, integrated, and reused** — the shared resolver covers screenshots, apps, URL reports, focused-time reports, title/window classification, cached lookups, indexed URL intervals, export provenance, reclassification notices, and the “via sites” badge. Browser rows trigger URL-history work only when needed, and employee Activity scope is self-only. The relevant production-branch source matches `main` | `34f68d3`, `c52e71c` + later integrations |
+| 7. **#3** screenshot activity edit | ✅ **complete** — schema/audit columns, capture-run splitting, `PATCH .../activity`, editor UI, original-value integrity checks, and all boundary cases are implemented. The resolved contract edits activity measurement/audit history, **not tracked seconds**; time corrections remain a separate timesheet/manual-time concern | `77b8679` |
+| 8. **#4 S6** original CodeQL fixes | ✅ **shipped** — §8.2 TLS opt-in, §8.3 email bodies, §8.5 regexes, and §8.6 hostname checks were synced to the relevant production branches. `notify-Production` was subsequently found and synchronized. This does not cover the current later alert set | `a1bf554` |
+| 9. **#6** ownership + credits | ✅ **shipped and released** — owner line + GitHub links in the agent (via `openUrl`) and an About card in web settings; `publisher` is `Soft Fix / Virtual Callers`. Web production source is synchronized and the agent change is present in current releases | `c2ee4fa` |
+| 10. **agent code** (A5, #2, #7 + §19.3 guard) | ✅ **released** — URL-on-capture, local classification cache, and the reduced VM probe first shipped in `agent-v0.4.22`; all are also present in current stable `agent-v1.1.2`. Real-fleet uptake is not observable from this repository | `6b009b5` |
+| 10b. **A4** UIAutomation, **A7** install mode | ✅ **resolved for the current testing phase** — native Windows UI Automation is the preferred URL source, with browser-history and PowerShell fallbacks retained to keep employee-local tracking resilient. The updater plan keeps managed `perMachine` installation and reports install readiness instead of migrating to `currentUser` | `139dfa5` + later releases |
+| 11. **A6** transparency doc | ✅ **shipped** — `docs/tauri-app-extension/WHAT-THE-AGENT-DOES.md` states what is and is not collected and documents IT exclusion paths. It improves transparency but does **not** substitute for Authenticode signing | `75765fe` |
+| 12. **#4 S7** §36 tune `security.yml` | ✅ **complete in the working tree** — clippy no longer uploads SARIF; scripts/examples were already excluded; tests are now excluded from Semgrep, njsscan, Bearer, and DevSkim, and Bearer is limited to meaningful severities. Every scanner remains and deployed-code coverage is retained | `bba0037` + final pass |
+| 13. **#4 S8** triage every alert | ✅ **current queue reviewed and actionable source findings fixed locally** — the displayed **88 code-scanning + 1 Dependabot** count is the pre-push snapshot. High session-log findings, the `rustls` advisory, mutable Actions, CORS, and exception leakage were addressed; false positives/noise were suppressed at source and `glib` is an explicit accepted transitive risk. Closure awaits the normal push/rescan cycle | see below |
+| 14. Branch cleanup + Notify sync | ✅ **cleanup completed; relevant source rechecked** — the production branches for Dashboard activity backend/web and the `Auth-Backend` subtree currently have no content drift from `main`, although `Auth-Production` retains divergent Git history. Runtime deployment was not queried | `b9d0ae5` |
 
-Production branches synced this round: `DashboardBackend-Prod`,
-`Auth-Production`, `LandingWebBackend-Prod`, `dashboard-web-production`,
-`LandingWeb-Prod` — all zero-drift verified.
+Production branches synced during the original execution: `DashboardBackend-Prod`,
+`Auth-Production`, `LandingWebBackend-Prod`, `dashboard-web-production`, and
+`LandingWeb-Prod`. For this reconciliation, the activity backend/web and
+`Auth-Backend` source subtrees were compared again and match `main`; that is a
+source comparison, not proof of the currently running deployment.
 
-**Why A4 and A7 are held back (my call, reversible):**
+**Later outcome for A4 and A7:**
 
-- **A4 (native UIAutomation)** is Windows-only COM I cannot compile or run
-  here. Bundling an unverifiable rewrite with three other agent changes would
-  make a failed release impossible to attribute — if URLs stop appearing, was
-  it A4, the URL cache, or the VM-detect removal? Ship `6b009b5` first,
-  confirm it is stable on real hardware, then do A4 alone.
-- **A7 (install mode)** needs §24.3 #2 answered: `currentUser` removes the UAC
-  prompt entirely for self-service installs, but buys nothing for an
-  IT-pushed Intune/GPO deployment, and D3 makes it effectively one-way for
-  existing installs.
+- **A4 (native UIAutomation) shipped.** `uia_url.rs` now uses in-process
+  Windows UI Automation as the preferred browser URL source, with cached
+  elements/change subscriptions. Browser history and PowerShell remain
+  intentional fallbacks during local employee testing, prioritizing reliable
+  tracking while Authenticode signing is prepared. It first shipped in
+  `agent-v1.0.1`; later releases added navigation reporting and the history
+  fallback. Real Windows/AV coverage is still an external validation item.
+- **A7 (install mode) was decided without a migration.** The completed updater
+  plan retains `perMachine` for managed deployment and exposes blocked-install
+  readiness. There is no outstanding `currentUser` product decision.
 
 **Not done in #7:** encryption at rest. It needs a crypto dependency, and per
 §19.4 it is defence-in-depth on data that §19.2 establishes carries no
@@ -110,15 +158,20 @@ left implied.
 - **The dirty `Cargo.toml` was a phantom.** `git diff --ignore-cr-at-eol`
   shows no content change — it was CRLF noise, now reverted. C3's warning
   about it tangling with the agent release no longer applies.
-- **glib / RUSTSEC-2024-0429 is genuinely unfixable from here.**
+- **glib / RUSTSEC-2024-0429 remains accepted on the current dependency line.**
   `cargo update -p glib` locks 0 packages: the 0.18 line has no patched
   release, and glib is pulled by the GTK stack (atk → cairo-rs → gdk → gtk)
   behind wry's Linux webkit2gtk backend. The fix is in glib ≥ 0.20, which
   nothing in the tauri stack has moved to. Already recorded as accepted risk
   in `src-tauri/Cargo.toml`, and the agent ships Windows/macOS where that
-  path is not built. **Treat Dependabot #43 as accepted, not actionable.**
-- **Unblocked by step 2:** Issue #5's A0 signature check can now be run
-  against the GitHub release artifact (it was measuring the stale binary).
+  path is not built. **Treat Dependabot #43 as accepted pending an upstream
+  stack upgrade.** The separate OSV `rustls 0.23.43` alert was remediated by
+  upgrading the lockfile to `rustls 0.23.45`.
+- **Issue #5's A0 signature check is complete.** The public GitHub release
+  artifact, rather than a stale committed binary, was checked directly and is
+  currently `NotSigned`. Signing is deliberately deferred while the company
+  tests locally; the release workflow's signing gate remains the path for the
+  eventual trusted public build.
 - **Attribution precision bug found while building #1.** URL slices are
   back-to-back and the match tolerance is as wide as a slice, so a
   nearest-match lookup selected the *next* interval and shifted a member's
@@ -136,22 +189,17 @@ left implied.
   new and `routes.js` imports it, so syncing the modified files without it
   would crash the backend on boot. New files that existing code imports must
   ship; new *test* files still do not.
-- **🔴 `Auth-Production` has genuinely drifted from `main`.** The zero-drift
-  check flagged three files during S6. The difference is **JSDoc and
-  explanatory comments that exist on the production branch and not on main** —
-  a wholesale copy would have silently deleted them. S6 was therefore patched
-  in place on that branch instead of copied.
-  **This will recur on every future Auth-Backend sync.** Worth deciding
-  which direction is authoritative and reconciling once, rather than
-  hand-patching each time. Nothing is broken today; the two are just not the
-  same source.
+- **The earlier `Auth-Production` source drift has been reconciled.** The
+  branch still has divergent history, but a current direct tree comparison of
+  its `Auth-Backend` content against `main` is empty. Future syncs should still
+  compare content rather than infer equality from branch ancestry.
 
 ## Contents
 
 **Part I — the three original requests**
 - §0 What the code does today · §1 Browser→URL categories (§1.5 cost, §1.6 changing history)
-- §2 Agent sends the URL · §3 Editable screenshot activity (§3.3 all logic cases, §3.4 open question)
-- §4 Phasing · §5 Tests · §6 Incidental findings · §7 Questions for you
+- §2 Agent sends the URL · §3 Editable screenshot activity (§3.3 all logic cases, §3.4 resolved decision)
+- §4 Phasing · §5 Tests · §6 Incidental findings · §7 Resolved original questions
 
 **Part II — added scope**
 - §8–§11 Security alerts: §8 real fixes · §9 false positives · §10 phasing
@@ -165,7 +213,7 @@ left implied.
 - §27 Deploy-time aftermath (**D1 index lock, D2 TLS, D3 install mode**)
 - §28 Behavioural aftermath · §29 Branch sync map · §30 Rollback · §31 Definition of done
 
-**Part IV — security alerts revised (592, was 36)**
+**Part IV — historical security-alert review (592, was 36)**
 - §32 What the 592 actually are (**9 tools; CodeQL still 36**) · §33 Root-cause consolidation
 - §34 Verifications (**no leaked credentials**) · §35 **Stale committed installers**
 - §36 Tune `security.yml` · §37 Revised phasing · §38 What is unchanged
@@ -186,7 +234,7 @@ left implied.
 
 `activity_categories` rows are `(match_type, pattern, category)` where
 `match_type` is `'app'` or `'domain'`. `buildCategoryLookup()`
-([routes.js:139](Dashboard-Backend/src/modules/activity/routes.js:139)) loads
+([routes.js:139](../Dashboard-Backend/src/modules/activity/routes.js:139)) loads
 them all into a `Map` and returns `lookup(matchType, pattern)`, defaulting to
 `"unclassified"`.
 
@@ -194,9 +242,9 @@ Three feeds consume it:
 
 | Feed | Line | Category key used |
 |------|------|-------------------|
-| screenshots | [routes.js:1174](Dashboard-Backend/src/modules/activity/routes.js:1174) | `lookup("app", app_name)` |
-| apps | [routes.js:1212](Dashboard-Backend/src/modules/activity/routes.js:1212), [:1240](Dashboard-Backend/src/modules/activity/routes.js:1240) | `lookup("app", appName)` |
-| urls | [routes.js:1318](Dashboard-Backend/src/modules/activity/routes.js:1318), [:1389](Dashboard-Backend/src/modules/activity/routes.js:1389) | `lookup("domain", domain)` |
+| screenshots | [routes.js:1174](../Dashboard-Backend/src/modules/activity/routes.js:1174) | `lookup("app", app_name)` |
+| apps | [routes.js:1212](../Dashboard-Backend/src/modules/activity/routes.js:1212), [:1240](../Dashboard-Backend/src/modules/activity/routes.js:1240) | `lookup("app", appName)` |
+| urls | [routes.js:1318](../Dashboard-Backend/src/modules/activity/routes.js:1318), [:1389](../Dashboard-Backend/src/modules/activity/routes.js:1389) | `lookup("domain", domain)` |
 
 ### 0.2 The actual defect
 
@@ -205,8 +253,8 @@ A browser is a **container**, not an activity. Today:
 - A screenshot taken while Chrome is focused is categorised as *Chrome*.
   Nobody classifies "Google Chrome" as productive (it isn't — it depends), so
   it lands `unclassified`, which the member rollups fold into **neutral**
-  ([routes.js:1259](Dashboard-Backend/src/modules/activity/routes.js:1259),
-  [:1407](Dashboard-Backend/src/modules/activity/routes.js:1407)).
+  ([routes.js:1259](../Dashboard-Backend/src/modules/activity/routes.js:1259),
+  [:1407](../Dashboard-Backend/src/modules/activity/routes.js:1407)).
 - The Apps tab does the same: every second of browsing collapses into one
   "Google Chrome" row with one category.
 - The URLs tab, on the *same seconds*, correctly reports those domains as
@@ -237,12 +285,12 @@ browsers.
 
 | Helper | Location | Does |
 |---|---|---|
-| `isBrowserAppName(name)` | [app-name.js](Dashboard-Backend/src/modules/activity/app-name.js) | regex over chrome/firefox/edge/opera/brave/safari/vivaldi/chromium |
-| `parseDomain(url)` | [routes.js:157](Dashboard-Backend/src/modules/activity/routes.js:157) | hostname, `www.` stripped |
-| `extractHttpUrl(text)` | [routes.js:165](Dashboard-Backend/src/modules/activity/routes.js:165) | pulls an `http(s)://…` out of a window title |
-| `titleFromBrowserPageTitle` | [routes.js:170](Dashboard-Backend/src/modules/activity/routes.js:170) | strips " - Google Chrome" etc. |
-| `siteNameFromWindowTitle` | [routes.js:188](Dashboard-Backend/src/modules/activity/routes.js:188) | "… \| GitHub" → `GitHub` |
-| `ingestAppUrlRow` | [routes.js:1321](Dashboard-Backend/src/modules/activity/routes.js:1321) | already derives URLs from browser app logs for the URLs feed |
+| `isBrowserAppName(name)` | [app-name.js](../Dashboard-Backend/src/modules/activity/app-name.js) | regex over chrome/firefox/edge/opera/brave/safari/vivaldi/chromium |
+| `parseDomain(url)` | [routes.js:157](../Dashboard-Backend/src/modules/activity/routes.js:157) | hostname, `www.` stripped |
+| `extractHttpUrl(text)` | [routes.js:165](../Dashboard-Backend/src/modules/activity/routes.js:165) | pulls an `http(s)://…` out of a window title |
+| `titleFromBrowserPageTitle` | [routes.js:170](../Dashboard-Backend/src/modules/activity/routes.js:170) | strips " - Google Chrome" etc. |
+| `siteNameFromWindowTitle` | [routes.js:188](../Dashboard-Backend/src/modules/activity/routes.js:188) | "… \| GitHub" → `GitHub` |
+| `ingestAppUrlRow` | [routes.js:1321](../Dashboard-Backend/src/modules/activity/routes.js:1321) | already derives URLs from browser app logs for the URLs feed |
 
 Every input needed for issue #1 is already in the codebase. Issue #1 is
 **wiring, not new machinery** — no new table, no new agent release, and it
@@ -250,26 +298,27 @@ fixes all historical data retroactively because it's resolved at read time.
 
 ### 0.4 Agent pipeline (Tauri)
 
-- Tick loop ([tracker.rs:375](Tauri-App-Extension/src-tauri/src/agent/tracker.rs:375)):
+- Tick loop ([tick.rs:155](../Tauri-App-Extension/src-tauri/src/agent/tracker/tick.rs:155)):
   - app slice every `APP_LOG_INTERVAL_SEC` = **15s**
   - screenshot every `SCREENSHOT_MIN..MAX_DELAY_SEC` = **90–210s**, and
     **skipped entirely while idle** —
-    [tracker.rs:454](Tauri-App-Extension/src-tauri/src/agent/tracker.rs:454)
-    and [:685](Tauri-App-Extension/src-tauri/src/agent/tracker.rs:685)
+    [tick.rs:168](../Tauri-App-Extension/src-tauri/src/agent/tracker/tick.rs:168)
+    and [:343](../Tauri-App-Extension/src-tauri/src/agent/tracker/tick.rs:343)
     both guard on `!idle_now`. *(This fact is load-bearing for issue #3.)*
-- `upload_app_slice` ([tracker.rs:1143](Tauri-App-Extension/src-tauri/src/agent/tracker.rs:1143))
+- `upload_app_slice` ([upload.rs:27](../Tauri-App-Extension/src-tauri/src/agent/tracker/upload.rs:27))
   posts the app event and, if the window is a browser, a URL event **on the
   same tick** — so app and URL rows are already time-aligned to within 15s,
   they're just not linked by an id.
-- URL capture is real sniffing already: PowerShell UIAutomation on Windows,
-  AppleScript on macOS, on a bounded thread
-  ([events.rs:142](Tauri-App-Extension/src-tauri/src/capture/events.rs:142)).
+- URL capture uses native UI Automation first on Windows, retains PowerShell
+  UI Automation as a compatibility fallback, and uses AppleScript on macOS,
+  all behind a bounded worker
+  ([events.rs:356](../Tauri-App-Extension/src-tauri/src/capture/events.rs:356)).
 - The `Screenshot` event
-  ([types.rs:24](Tauri-App-Extension/src-tauri/src/types.rs:24)) carries
+  ([capture.rs:21](../Tauri-App-Extension/src-tauri/src/types/capture.rs:21)) carries
   `app_name`, `page_title`, `activity_level`, `signal` — **no URL**. That's
   the gap for issue #2.
 - The agent already receives server-pushed classification rows via
-  `apply_display_names` ([events.rs:75](Tauri-App-Extension/src-tauri/src/capture/events.rs:75)) —
+  `apply_display_names` ([events.rs:75](../Tauri-App-Extension/src-tauri/src/capture/events.rs:75)) —
   today only the display name is used, the `category` is discarded. That's
   the channel issue #2 extends.
 
@@ -351,7 +400,7 @@ Both cons of the chosen option are addressed below rather than accepted.
 
 **The feed is already paying a bigger cost than the one I'm adding.**
 `buildCategoryLookup()` calls `getAllCategories()`
-([activity-categories.js:40](Dashboard-Backend/src/modules/classification/activity-categories.js:40)),
+([activity-categories.js:40](../Dashboard-Backend/src/modules/classification/activity-categories.js:40)),
 which runs `SELECT … FROM activity_categories ORDER BY match_type, pattern`
 **on every single `/api/activity/feed` request**, uncached, for a table that
 changes a few times a month.
@@ -360,7 +409,7 @@ changes a few times a month.
 |---|---|---|
 | **M1** | **Cache the classification lookup.** `lookup-cache.js` already implements exactly the needed pattern — 15s TTL plus `subscribeChanges` invalidation keyed on a resource name. Reuse it verbatim for `activity_categories`, invalidated from `setCategory`/`removeCategory`. | Removes one full-table query **per request**. This alone outweighs the join being added — net latency should go **down**, not up |
 | **M2** | **Skip the URL query when there is nothing to resolve.** Guard on `rows.some(r => isBrowserAppName(r.app_name))` before issuing it. | A result set with no browser rows pays exactly zero |
-| **M3** | **Add the missing index.** `activity_url_logs` has `(member_id, visited_at DESC)` and `(visited_at DESC)` but **no `session_id` index** — while `activity_app_logs` has `idx_act_app_session_open`. The resolver looks rows up by `(session_id, visited_at)`. `CREATE INDEX IF NOT EXISTS idx_act_url_session_visited ON activity_url_logs (session_id, visited_at);` | Also fixes an **existing latent problem**: `deleteActivitySessionWithChildrenPg` already runs `DELETE FROM activity_url_logs WHERE session_id = $1` ([activity-events-postgres.service.js:404](Dashboard-Backend/src/lib/postgres/activity-events-postgres.service.js:404)), which is a sequential scan on every session delete today |
+| **M3** | **Add the missing index.** `activity_url_logs` has `(member_id, visited_at DESC)` and `(visited_at DESC)` but **no `session_id` index** — while `activity_app_logs` has `idx_act_app_session_open`. The resolver looks rows up by `(session_id, visited_at)`. `CREATE INDEX IF NOT EXISTS idx_act_url_session_visited ON activity_url_logs (session_id, visited_at);` | Also fixes an **existing latent problem**: `deleteActivitySessionWithChildrenPg` already runs `DELETE FROM activity_url_logs WHERE session_id = $1` ([activity-events-postgres.service.js:404](../Dashboard-Backend/src/lib/postgres/activity-events-postgres.service.js:404)), which is a sequential scan on every session delete today |
 | **M4** | **Build the index properly: O((n+m) log n), not O(n·m).** Group URL rows by session, sort once by `visited_at`, binary-search per app/screenshot row. | The naive `.find()` inside `.map()` is the obvious wrong implementation and goes quadratic at the existing `LIMIT 500` on both sides. Called out here so it isn't written that way |
 | **M5** | Both queries stay bounded at the existing `LIMIT 500`. | Worst case is fixed and small |
 
@@ -371,7 +420,7 @@ timing on `/api/activity/feed?type=apps` before and after M1.
 
 **First, a correction from checking the code:** `saved_reports` stores only
 `(member_id, page_id, title, tag)`
-([ensure-lookup-schema.js:1682](Dashboard-Backend/src/lib/postgres/ensure-lookup-schema.js:1682))
+([ensure-lookup-schema.js:1682](../Dashboard-Backend/src/lib/postgres/ensure-lookup-schema.js:1682))
 — it is a **bookmark, not a snapshot**, and re-queries live data on open. So
 there is no stored artifact quietly drifting underneath anyone. The only
 frozen artifacts are `.xlsx` files a manager already downloaded, and those
@@ -384,7 +433,7 @@ numbers with nothing explaining why.**
 | # | Mitigation | Rationale |
 |---|---|---|
 | **M1** | **Keep retroactive as the default.** | It is what users actually expect: "I just told you Reddit is distracting — why does last week still say neutral?" A time-travelling classification would generate that complaint on day one |
-| **M2** | **Stamp exports with the classification time.** Both export paths already write footer rows — `["Period", …]`, `["Category Filter", …]`, `["Exported At", …]` ([apps.tsx](Dashboard-Web/features/activity/components/apps.tsx), [urls.tsx](Dashboard-Web/features/activity/components/urls.tsx)). Add `["Categories as of", <max(activity_categories.updated_at)>]`. | ~2 lines. Two exports that disagree now explain themselves |
+| **M2** | **Stamp exports with the classification time.** Both export paths already write footer rows — `["Period", …]`, `["Category Filter", …]`, `["Exported At", …]` ([apps.tsx](../Dashboard-Web/features/activity/components/apps.tsx), [urls.tsx](../Dashboard-Web/features/activity/components/urls.tsx)). Add `["Categories as of", <max(activity_categories.updated_at)>]`. | ~2 lines. Two exports that disagree now explain themselves |
 | **M3** | **Surface recent reclassification in-page.** `activity_categories.updated_at` already exists. If any classification changed inside the viewed period, show one quiet line: *"4 apps/sites were reclassified since this period — figures reflect current classifications."* | Turns a silent change into a stated one, using a column that is already there |
 | **M4** | **Escape hatch, not built now:** if frozen history is ever a hard requirement, it is `activity_categories.effective_from` plus a temporal lookup. | `// ponytail: classification is current-state, not bitemporal — add effective_from only if someone needs a report to reproduce byte-for-byte a year later` |
 
@@ -408,11 +457,11 @@ after #1 rather than bundled with it.
   `APP_LOG_INTERVAL_SEC * 2` (30s); otherwise it sends nothing rather than a
   stale URL.
 - `ActivityEvent::Screenshot` gains `url: Option<String>`.
-  **Constraint:** [types.rs:678](Tauri-App-Extension/src-tauri/src/types.rs:678)
+  **Constraint:** [types/mod.rs:31](../Tauri-App-Extension/src-tauri/src/types/mod.rs:31)
   has a test asserting the event enum carries no keylogging-shaped field —
   `url` doesn't trip its forbidden list, but the test must be re-read before
   touching that enum, not after.
-- Backend ingest ([routes.js:862](Dashboard-Backend/src/modules/activity/routes.js:862))
+- Backend ingest ([routes.js:862](../Dashboard-Backend/src/modules/activity/routes.js:862))
   persists it; new nullable columns `activity_screenshots.url`,
   `.domain`, applied by `ensure-lookup-schema.js` like every other column.
 - Resolver from §1.1 gains a **step 0**: use the screenshot's own stored
@@ -435,7 +484,7 @@ UI actually wants to display a category.** Pushing a classification table to
 every desktop client to compute something the server already computes is
 duplicated logic with a staleness window — the exact "two sources of truth"
 the codebase's own comments warn about
-([events.rs:31](Tauri-App-Extension/src-tauri/src/capture/events.rs:31)).
+([events.rs:31](../Tauri-App-Extension/src-tauri/src/capture/events.rs:31)).
 
 > **⚠️ Superseded — see Issue #7 (§18).** The above deferred this on the
 > grounds that nothing concrete needed it. Offline-mode display *is* that
@@ -452,7 +501,7 @@ screenshot row **must** run through the same two gates — this is not new data
 collection, and it must not become new data collection by bypassing the
 minimiser. Exclusions currently drop the URL *event*; a screenshot's embedded
 URL must be dropped by the same check at
-[routes.js:909](Dashboard-Backend/src/modules/activity/routes.js:909).
+[routes.js:909](../Dashboard-Backend/src/modules/activity/routes.js:909).
 
 ---
 
@@ -477,9 +526,9 @@ so re-editing never loses the agent's original measurement.
 
 > **Correctness trap — must be in the same PR.** The integrity sweep reads
 > `AVG(activity_level)`
-> ([integrity-postgres.service.js:28](Dashboard-Backend/src/lib/postgres/integrity-postgres.service.js:28))
+> ([integrity-postgres.service.js:28](../Dashboard-Backend/src/lib/postgres/integrity-postgres.service.js:28))
 > to detect "high activity while on distracting sites"
-> ([integrity-checks.js:25](Dashboard-Backend/src/modules/activity/integrity-checks.js:25)).
+> ([integrity-checks.js:25](../Dashboard-Backend/src/modules/activity/integrity-checks.js:25)).
 > If a manager can edit that number, anti-cheat becomes editable. Both
 > integrity queries must switch to
 > `COALESCE(activity_level_original, activity_level)` so integrity is always
@@ -499,7 +548,7 @@ respected.
 
 There is **no per-interval idle record anywhere in the schema** — sessions
 carry only a cumulative `idle_seconds`
-([schema.sql:781](Dashboard-Backend/src/lib/postgres/schema.sql:781)).
+([schema.sql:781](../Dashboard-Backend/src/lib/postgres/schema.sql:781)).
 Inventing an `activity_idle_segments` table to serve this one feature is the
 over-built path; the gap signal already exists and is faithful.
 `// ponytail: gap-derived run boundaries, exact idle segments if a timeline UI ever needs them.`
@@ -532,13 +581,13 @@ for any org that raised it.
 Write path is a single transaction (`withTransaction`) so a run update is
 all-or-nothing.
 
-### 3.4 Open decision — does this change *session* time?
+### 3.4 Resolved decision — this does not change *session* time
 
 **It does not today, and I recommend it stays that way.**
 
 `activityPercent` on the Command Center is
 `activeSeconds / trackedSeconds`
-([command-center-service.js:218](Dashboard-Backend/src/modules/dashboard/command-center-service.js:218))
+([command-center-service.js:218](../Dashboard-Backend/src/modules/dashboard/command-center-service.js:218))
 — derived from `activity_sessions.active_seconds`, which has **no
 relationship** to `activity_level`. So editing a screenshot changes the
 Activity pages and the integrity view, not billable time.
@@ -548,17 +597,16 @@ Making the edit rewrite `active_seconds` would mean:
   screenshot slider;
 - fighting `updatePgSession`, which deliberately rejects downward
   `active_seconds` writes and records them as a **security event**
-  ([activity-events-postgres.service.js:507](Dashboard-Backend/src/lib/postgres/activity-events-postgres.service.js:507));
+  ([activity-events-postgres.service.js:507](../Dashboard-Backend/src/lib/postgres/activity-events-postgres.service.js:507));
 - cascading into `daily_member_active_seconds` and the task rollups.
 
 That's a different, much larger feature ("manager adjusts tracked time"), and
 manual time entry / approvals already exist for it.
 
-**Question for you:** when you said the edit should "immediately affect the
-sessions", did you mean (a) the other **screenshots** in that stretch — which
-is what this plan implements — or (b) the session's **tracked time**? If (b),
-that's a separate plan and I'd want to route it through the existing manual-
-time-approval path rather than a slider on a screenshot.
+The implemented and retained interpretation is (a): update the other
+**screenshots** in that capture stretch. Changing (b), the session's tracked
+time, remains a separate manual-time/timesheet workflow and is not missing
+scope from this plan.
 
 ### 3.5 API
 
@@ -569,7 +617,7 @@ body: { activityLevel: 0..100, applyToRun?: boolean = true, reason?: string }
 ```
 
 Auth mirrors the existing DELETE route
-([routes.js:1041](Dashboard-Backend/src/modules/activity/routes.js:1041))
+([routes.js:1041](../Dashboard-Backend/src/modules/activity/routes.js:1041))
 exactly: bearer token → `resolveMember` → `isManagementRole` →
 `resolveActivityFeedScope(ownerId)` → act. Same gate, same failure codes —
 no new permission concept.
@@ -624,26 +672,25 @@ either order.
 
 ## 6. Incidental findings (not in scope, worth knowing)
 
-1. [routes.js:1172](Dashboard-Backend/src/modules/activity/routes.js:1172) —
+1. [routes.js:1172](../Dashboard-Backend/src/modules/activity/routes.js:1172) —
    `activityLevel: d.activity_level ?? 75` is dead: the column is
    `NOT NULL DEFAULT 50`, so `?? 75` can never fire, and the two numbers
    disagree about what "unknown" means.
 2. The URLs feed classifies window-title-derived rows under
    `lookup("domain", …)` where the "domain" may be an app name
-   ([routes.js:1362](Dashboard-Backend/src/modules/activity/routes.js:1362)) —
+   ([routes.js:1362](../Dashboard-Backend/src/modules/activity/routes.js:1362)) —
    so `Google Chrome` can end up as a *domain* pattern in the classify list.
 3. `fetchPgUrlLogs` lacks the `sinceDay` option its two sibling fetchers have
    (folded into Phase 1 since that phase needs it anyway).
 
 ---
 
-## 7. What I need from you before starting
+## 7. Original questions — now resolved
 
-1. §0.2 — confirm the browser/URL reading is what you meant.
-2. §3.4 — "affect the sessions": other **screenshots** in the stretch (a), or
-   the session's **tracked time** (b)?
-3. §2.2 — agent-side category cache: build now, or defer until the agent UI
-   shows a category?
+1. §0.2 — the browser/URL interpretation was implemented through the shared
+   resolver.
+2. §3.4 — edits affect other **screenshots** in the stretch, not tracked time.
+3. §2.2 — the agent-side category cache was built and released.
 
 ---
 
@@ -851,11 +898,11 @@ Two independent mechanisms are firing:
 
 | Fact | Where | Consequence |
 |---|---|---|
-| Authenticode signing is **conditional** — `if: matrix.platform == 'windows-latest' && env.HAS_WINDOWS_CERT == 'true'` | [release.yml:174](.github/workflows/release.yml:174) | If `secrets.WINDOWS_CERTIFICATE` was never set, **every release has shipped unsigned** and the workflow says nothing |
-| No `certificateThumbprint` in the committed config | [tauri.conf.json](Tauri-App-Extension/src-tauri/tauri.conf.json) `bundle.windows` | Confirms signing is injected only at CI time, if at all |
+| Authenticode signing is **conditional** — `if: matrix.platform == 'windows-latest' && env.HAS_WINDOWS_CERT == 'true'` | [release.yml:174](../.github/workflows/release.yml:174) | If `secrets.WINDOWS_CERTIFICATE` was never set, **every release has shipped unsigned** and the workflow says nothing |
+| No `certificateThumbprint` in the committed config | [tauri.conf.json](../Tauri-App-Extension/src-tauri/tauri.conf.json) `bundle.windows` | Confirms signing is injected only at CI time, if at all |
 | `"installMode": "perMachine"` | same file | Installer demands UAC elevation. Unsigned **+** elevated is the harshest SmartScreen path — "Unknown publisher", with Run-anyway buried behind *More info* |
 | `"publisher": "Virtual Tracker"` | same file | Cosmetic metadata. Without a certificate it is an unverified string, not an identity |
-| New version every release, private repo, few installs | [release.yml](.github/workflows/release.yml) bump job | Defender's cloud blocks on **prevalence**: a brand-new hash almost nobody has downloaded is blocked on that basis alone, signature or not |
+| New version every release, private repo, few installs | [release.yml](../.github/workflows/release.yml) bump job | Defender's cloud blocks on **prevalence**: a brand-new hash almost nobody has downloaded is blocked on that basis alone, signature or not |
 
 **First thing to establish, before any work is planned:**
 
@@ -873,13 +920,13 @@ what a scanner's heuristics and ML models are trained to catch.
 
 | # | Behaviour | Where | Why it scores |
 |---|---|---|---|
-| 1 | **Global low-level keyboard + mouse hooks** — `SetWindowsHookExW(WH_KEYBOARD_LL / WH_MOUSE_LL)` | [activity.rs:209](Tauri-App-Extension/src-tauri/src/capture/activity.rs:209) | *The* canonical keylogger API. The code deliberately never captures key **content** — there is even a test enforcing that ([types.rs:678](Tauri-App-Extension/src-tauri/src/types.rs:678)) — but a static scanner sees the API, not the intent |
-| 2 | **Hidden PowerShell with execution-policy bypass** — `powershell -STA -NoProfile -ExecutionPolicy Bypass -File …` spawned with `CREATE_NO_WINDOW` (0x08000000) | [window.rs:360](Tauri-App-Extension/src-tauri/src/capture/window.rs:360) | MITRE **T1059.001**. Hidden-window + policy-bypass is one of the most heavily weighted combinations in existence, because that is precisely how commodity loaders run their payload |
-| 3 | **Anti-VM / sandbox fingerprinting** — CPUID hypervisor bit, hypervisor vendor string, VM driver-file probing | [vm_detect.rs](Tauri-App-Extension/src-tauri/src/capture/vm_detect.rs) | Anti-analysis behaviour, and **self-defeating here**: AV emulators detonate samples *inside a VM*, so the scanner directly observes the sample checking whether it is being analysed. Legitimate software rarely does this; evasive malware always does |
+| 1 | **Global low-level keyboard + mouse hooks** — `SetWindowsHookExW(WH_KEYBOARD_LL / WH_MOUSE_LL)` | [activity.rs:209](../Tauri-App-Extension/src-tauri/src/capture/activity.rs:209) | *The* canonical keylogger API. The code deliberately never captures key **content** — there is even a test enforcing that ([types/mod.rs:49](../Tauri-App-Extension/src-tauri/src/types/mod.rs:49)) — but a static scanner sees the API, not the intent |
+| 2 | **Hidden PowerShell with execution-policy bypass** — `powershell -STA -NoProfile -ExecutionPolicy Bypass -File …` spawned with `CREATE_NO_WINDOW` (0x08000000) | [window.rs:360](../Tauri-App-Extension/src-tauri/src/capture/window.rs:360) | MITRE **T1059.001**. Hidden-window + policy-bypass is one of the most heavily weighted combinations in existence, because that is precisely how commodity loaders run their payload |
+| 3 | **Anti-VM / sandbox fingerprinting** — CPUID hypervisor bit, hypervisor vendor string, VM driver-file probing | [vm_detect.rs](../Tauri-App-Extension/src-tauri/src/capture/vm_detect.rs) | Anti-analysis behaviour, and **self-defeating here**: AV emulators detonate samples *inside a VM*, so the scanner directly observes the sample checking whether it is being analysed. Legitimate software rarely does this; evasive malware always does |
 | 4 | **Periodic screen capture** | `capture/screen.rs` (xcap) | Spyware staple |
-| 5 | **Persistence** — Run-key autostart | [lib.rs:479](Tauri-App-Extension/src-tauri/src/lib.rs:479) (`tauri-plugin-autostart`) | Persistence mechanism |
+| 5 | **Persistence** — Run-key autostart | [lib.rs:479](../Tauri-App-Extension/src-tauri/src/lib.rs:479) (`tauri-plugin-autostart`) | Persistence mechanism |
 | 6 | **Self-update: downloads and executes new binaries** | `tauri-plugin-updater`, endpoint in tauri.conf.json | Dropper-shaped |
-| 7 | Foreground-window and process enumeration — `OpenProcess`, `QueryFullProcessImageNameW` | [window.rs:203](Tauri-App-Extension/src-tauri/src/capture/window.rs:203) | Reconnaissance |
+| 7 | Foreground-window and process enumeration — `OpenProcess`, `QueryFullProcessImageNameW` | [window.rs:203](../Tauri-App-Extension/src-tauri/src/capture/window.rs:203) | Reconnaissance |
 | 8 | Periodic upload of screenshots + input metrics to a remote endpoint | `client/api/events.rs` | Exfiltration-shaped traffic |
 
 Items 1+2+3+4+5+6 in one unsigned, elevation-requiring binary is not a
@@ -928,7 +975,7 @@ This is worth doing on its own merits, independent of any scanner:
 - deletes the worst heuristic trigger in the codebase (§12.2 #2);
 - removes a process spawn **every 15 seconds** per tracked machine;
 - removes the 7-second `URL_CAPTURE_TICK_BUDGET_SEC` stall path and the
-  "tick gave up" fallback ([events.rs:161](Tauri-App-Extension/src-tauri/src/capture/events.rs:161));
+  "tick gave up" fallback ([events.rs:161](../Tauri-App-Extension/src-tauri/src/capture/events.rs:161));
 - removes a `resources`-shipped `.ps1` that can be tampered with on disk —
   spawning a bypassed-policy script from a writable resources directory is a
   genuine local-privilege-escalation footgun, scanner or no scanner.
@@ -1118,21 +1165,21 @@ constraint below applies — recorded now so it isn't rediscovered later:
 ### 17.2 Where it goes
 
 - **Agent:** an *About* section at the bottom of
-  [SettingsPanel.tsx](Tauri-App-Extension/src/components/views/SettingsPanel.tsx).
+  [SettingsPanel.tsx](../Tauri-App-Extension/src/components/views/SettingsPanel.tsx).
   Sits naturally beside the existing
-  [MonitoringNoticePanel.tsx](Tauri-App-Extension/src/components/views/MonitoringNoticePanel.tsx),
+  [MonitoringNoticePanel.tsx](../Tauri-App-Extension/src/components/views/MonitoringNoticePanel.tsx),
   which is already the app's transparency surface — "what this does" and
   "who made it" belong together, and together they are what §13.6 needs.
 - **Dashboard-Web:** an About card in
-  [settings-all.tsx](Dashboard-Web/features/settings/components/app/settings-all.tsx).
+  [settings-all.tsx](../Dashboard-Web/features/settings/components/app/settings-all.tsx).
 
 ### 17.3 Implementation notes — three real traps
 
 1. **Zero new dependencies.** `@tauri-apps/plugin-opener` is already in
-   [package.json](Tauri-App-Extension/package.json), the Rust plugin is
-   already registered ([lib.rs:669](Tauri-App-Extension/src-tauri/src/lib.rs:669)),
+   [package.json](../Tauri-App-Extension/package.json), the Rust plugin is
+   already registered ([lib.rs:669](../Tauri-App-Extension/src-tauri/src/lib.rs:669)),
    and `"opener:default"` is already granted in
-   [capabilities/default.json](Tauri-App-Extension/src-tauri/capabilities/default.json).
+   [capabilities/default.json](../Tauri-App-Extension/src-tauri/capabilities/default.json).
    *(If `openUrl` is rejected at runtime, the default permission set needs
    `opener:allow-open-url` added — one line, confirm on first run.)*
 2. **Never navigate the webview to GitHub.** Use `openUrl()` so the link opens
@@ -1142,7 +1189,7 @@ constraint below applies — recorded now so it isn't rediscovered later:
 3. **Read the version at runtime** via `getVersion()` from
    `@tauri-apps/api/app`. The release workflow rewrites the version in
    `package.json`, `tauri.conf.json` **and** `Cargo.toml` on every release
-   ([release.yml bump job](.github/workflows/release.yml)) — a hardcoded
+   ([release.yml bump job](../.github/workflows/release.yml)) — a hardcoded
    string in an About box would silently drift on the very next release, and
    a wrong version in the one place users go to report bugs is worse than no
    version at all.
@@ -1166,10 +1213,10 @@ Goals given: **offline clock-in support**, **less server load**, and the cache
 
 | Already there | Where |
 |---|---|
-| The agent **already downloads the entire `activity_categories` table every 30 minutes** — and then discards most of it | [classification.rs:21](Tauri-App-Extension/src-tauri/src/client/api/classification.rs:21) `fetch_app_display_names()` filters to `matchType == "app"` **and** requires a `displayName`, dropping every `domain` row and every `category` field |
-| Refresh cadence | `DISPLAY_NAME_REFRESH_INTERVAL_SEC = 30 min` ([constants.rs:31](Tauri-App-Extension/src-tauri/src/constants.rs:31)) |
-| Disk-backed offline event queue with bounded backlog | [queue.rs](Tauri-App-Extension/src-tauri/src/queue.rs) (`MAX_QUEUED_BATCHES = 2000`) |
-| OS-keychain credential storage — **`keyring` 4.1.6 is already a dependency** and already holds the auth tokens (DPAPI is now migration-only) | [Cargo.toml:59](Tauri-App-Extension/src-tauri/Cargo.toml:59), [auth/dpapi.rs:1](Tauri-App-Extension/src-tauri/src/auth/dpapi.rs:1) |
+| The agent **already downloads the entire `activity_categories` table every 30 minutes** — and then discards most of it | [classification.rs:21](../Tauri-App-Extension/src-tauri/src/client/api/classification.rs:21) `fetch_app_display_names()` filters to `matchType == "app"` **and** requires a `displayName`, dropping every `domain` row and every `category` field |
+| Refresh cadence | `DISPLAY_NAME_REFRESH_INTERVAL_SEC = 30 min` ([constants.rs:31](../Tauri-App-Extension/src-tauri/src/constants.rs:31)) |
+| Disk-backed offline event queue with bounded backlog | [queue.rs](../Tauri-App-Extension/src-tauri/src/queue.rs) (`MAX_QUEUED_BATCHES = 2000`) |
+| OS-keychain credential storage — **`keyring` 4.1.6 is already a dependency** and already holds the auth tokens (DPAPI is now migration-only) | [Cargo.toml:59](../Tauri-App-Extension/src-tauri/Cargo.toml:59), [auth/dpapi.rs:1](../Tauri-App-Extension/src-tauri/src/auth/dpapi.rs:1) |
 
 So the feature is mostly **"stop throwing away rows you already fetched, and
 persist them"** — not a new pipeline. No new crate for encryption either;
@@ -1213,7 +1260,7 @@ the agent send its own verdict. That single change would silently convert
 this cache from cosmetic to authoritative and make tampering profitable.
 
 **Enforce it with a test, using the pattern this codebase already invented.**
-[types.rs:678](Tauri-App-Extension/src-tauri/src/types.rs:678) already scans
+[types/mod.rs:31](../Tauri-App-Extension/src-tauri/src/types/mod.rs:31) already scans
 its own source to assert `ActivityEvent` can never grow a keylogging-shaped
 field. Add the sibling assertion:
 
@@ -1251,7 +1298,7 @@ Events are **already safe offline**: `queue.rs` buffers them and resends on
 reconnect. So this is not about data loss.
 
 **The real, visible bug it fixes:** `apply_display_names` keeps the mapping
-**in memory only** ([events.rs:75](Tauri-App-Extension/src-tauri/src/capture/events.rs:75)).
+**in memory only** ([events.rs:75](../Tauri-App-Extension/src-tauri/src/capture/events.rs:75)).
 Restart the agent while offline and it shows raw executable names —
 `chrome.exe`, `msedge.exe` — until it can reach the server again. Persisting
 the cache fixes that outright.
@@ -1301,7 +1348,7 @@ server.
 - `capture/events.rs`: `apply_display_names` becomes
   `apply_classifications(entries)`, persisting as well as caching in memory;
   unchanged fallback contract — a failed fetch leaves the existing cache
-  intact ([classification.rs:14](Tauri-App-Extension/src-tauri/src/client/api/classification.rs:14)).
+  intact ([classification.rs:14](../Tauri-App-Extension/src-tauri/src/client/api/classification.rs:14)).
 - `types.rs`: the §19.3 guard test.
 
 **Not changing:** `ActivityEvent`, the ingest endpoint, and the server-side
@@ -1373,16 +1420,13 @@ yours to authorise, and it is visible to anyone auditing the repo.
 permanently; dismissing them one by one is per-alert and they can return on
 the next scan of a changed file. Dismissal is for what survives tuning.
 
-## 24.3 Decisions only you can make — no work, just answers
+## 24.3 Original decisions — current outcomes
 
-1. **§16.1 — which name goes in `bundle.publisher`?** Soft Fix, Virtual
-   Callers, or both. Without a certificate this is now cosmetic rather than
-   binding, so it is a free choice — but I need the string.
-2. **§14.3 — self-service installs or IT-pushed?** Decides whether A7
-   (`currentUser`, no UAC prompt) is a win or pointless.
-3. **§3.4 — "affect the sessions"**: other screenshots in the stretch, or the
-   session's tracked time?
-4. **§0.2 — confirm the browser/URL reading.**
+1. **§16.1 publisher:** `Soft Fix / Virtual Callers` is configured.
+2. **§14.3 install mode:** managed `perMachine` is retained; A7 is declined.
+3. **§3.4 screenshot edit:** other screenshots in the stretch change; tracked
+   time does not.
+4. **§0.2 browser/URL interpretation:** implemented in the shared resolver.
 
 ## 24.4 Genuinely outside this plan — yours to do or skip
 
@@ -1393,14 +1437,13 @@ the next scan of a changed file. Dismissal is for what survives tuning.
 | Microsoft / Avast false-positive submissions (§13.5) | Free, but require uploading the file and a human on a vendor portal |
 | Any real-Windows verification of A4/A5/A7 | I cannot run the built installer or observe Defender's live verdict from here. **You are the only one who can confirm whether the behavioural work actually changed the outcome** — the release build is the test |
 
-## 24.5 One honest caveat on A4
+## 24.5 A4 verification caveat after implementation
 
-The UIAutomation rewrite (§13.2) is the largest free lever **and** the item I
-can least verify from here: it is Windows-only COM code, and this environment
-cannot run it. The existing PowerShell path at least has a known-good
-fallback (`None` → window-title parsing), and I would keep that fallback
-rather than replace it, so a failed UIAutomation call degrades exactly the
-way a failed script does today instead of losing URL capture entirely.
+The UIAutomation rewrite (§13.2) is now implemented and released, but it
+remains the item least verifiable from this repository: it is Windows-only COM
+code and needs representative machines. The implementation kept browser
+history and PowerShell fallbacks, so a failed native lookup can still degrade
+without losing URL capture entirely.
 
 Expect **at least one round of "it built, but URLs stopped appearing"** on
 real hardware. That is normal for this kind of change, not a sign it went
@@ -1464,10 +1507,10 @@ cache is built on the new implementation** — or both go in one change. Doing
 ### C2 🟠 Issues #1 and #3 edit the same route and the same row shape
 
 Both modify the `feedType === "screenshots"` branch of
-[routes.js:1135](Dashboard-Backend/src/modules/activity/routes.js:1135) and
+[routes.js:1135](../Dashboard-Backend/src/modules/activity/routes.js:1135) and
 both extend the screenshot row (`matchedDomain` from #1, edit markers from
 #3), plus the `Screenshot` interface in
-[screenshots.tsx](Dashboard-Web/features/activity/components/screenshots.tsx).
+[screenshots.tsx](../Dashboard-Web/features/activity/components/screenshots.tsx).
 
 Not a logical conflict, purely a merge one — **sequence them (#1 then #3)
 rather than running both in parallel branches.**
@@ -1494,13 +1537,13 @@ The most subtle finding in this review.
 
 **Browser wall-clock seconds are recorded in two tables at once.** The agent
 emits an app slice *and* a URL slice on the same 15-second tick
-([tracker.rs:1143](Tauri-App-Extension/src-tauri/src/agent/tracker.rs:1143)),
+([upload.rs:27](../Tauri-App-Extension/src-tauri/src/agent/tracker/upload.rs:27)),
 so 15 seconds of Chrome on `reddit.com` exists as 15s in `activity_app_logs`
 **and** 15s in `activity_url_logs`.
 
 The integrity sweep sums **both** tables into one
 `distractingBySession` total
-([integrity-sweep.service.js:102-115](Dashboard-Backend/src/modules/activity/integrity-sweep.service.js:102)).
+([integrity-sweep.service.js:102-115](../Dashboard-Backend/src/modules/activity/integrity-sweep.service.js:102)).
 It avoids double-counting today only by accident: "Google Chrome" is
 `unclassified`, so the app row is skipped and only the URL row counts.
 
@@ -1535,7 +1578,7 @@ during boot, so the backend looks hung and agents fail to post events.
 
 Good news, verified: `ensure-lookup-schema.js` runs its statements
 sequentially and **not inside a transaction**
-([ensure-lookup-schema.js:1721](Dashboard-Backend/src/lib/postgres/ensure-lookup-schema.js:1721)),
+([ensure-lookup-schema.js:1721](../Dashboard-Backend/src/lib/postgres/ensure-lookup-schema.js:1721)),
 so `CONCURRENTLY` is available:
 
 ```sql
@@ -1648,34 +1691,44 @@ The agent ships via GitHub Releases, not a branch.
 ## 31. Definition of done
 
 **Product**
-- [ ] Apps and URLs tabs report the **same** productive percentage for the same browser seconds (the §0.2 contradiction is gone)
-- [ ] A screenshot edit updates only its capture run; idle gaps hold on both sides
-- [ ] Integrity flags computed on original, never edited, activity levels
-- [ ] Agent shows real app names after a cold start with no network
-- [ ] `ActivityEvent` still carries no category field — enforced by test
-- [ ] About panel shows owner + both developers, version read at runtime
+- [x] Apps and URLs use the same shared resolver and avoid double-counting the same browser seconds
+- [x] A screenshot edit updates only its capture run; idle gaps hold on both sides
+- [x] Integrity flags are computed from original, never edited, activity levels
+- [x] Agent classification cache provides real app names after a cold start with no network
+- [x] `ActivityEvent` still carries no category field — enforced by test
+- [x] About panel shows owner + both developers, with version read at runtime
 
 **Correctness / ops**
-- [ ] `SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid` returns nothing after deploy (D1)
-- [ ] `NODE_ENV=production` confirmed in the deployed environment **before** §8.2 ships (D2)
-- [ ] 493+ existing tests green; new resolver / run-splitting / `buttonHref` tests added
-- [ ] One agent release contains **all** agent-side work (C3)
-- [ ] Integrity-flag volume checked for a week after #1 deploys (E3)
-- [ ] Every touched production branch synced, zero-drift verified (§29)
+- [ ] `SELECT indexrelid::regclass FROM pg_index WHERE NOT indisvalid` returns nothing after deploy (D1; authenticated production check deferred)
+- [x] All five deployment container definitions set `NODE_ENV=production`; live runtime configuration was not queried (D2)
+- [x] Resolver, focused-time reuse, browser single-counting, capture minimization, run-splitting, and integrity tests are present; the focused audit ran **79/79** targeted backend tests successfully
+- [x] One released agent line contains all agent-side work (C3); the changes first shipped in `agent-v0.4.22` and remain in `agent-v1.1.2`
+- [ ] Integrity-flag volume checked for a week after #1 deploys (E3; observation-period check)
+- [x] Relevant Dashboard activity and Auth source subtrees match `main`; live deployment state was not queried (§29)
 
 **Security**
-- [ ] `?continueUrl=javascript:alert(1)` on the auth action page produces an inert button — **in both copies of the file**
-- [ ] `/downloads/*.exe` no longer serves a stale build; both sites link to the current release (§35)
-- [ ] Issue #5's A0 signature check run against the **GitHub release artifact**, not a committed `.exe`
-- [ ] All GitHub Actions pinned to SHAs; Dockerfile base images pinned
-- [ ] Containers no longer run as root
-- [ ] `security.yml` tuned (§36) — alert count in the 60–90 range, not 592
-- [ ] Remaining open alerts are only the ones deliberately accepted, each with a written reason
-- [ ] Nothing dismissed that was not actually triaged
+- [x] `?continueUrl=javascript:alert(1)` on the auth action page produces an inert button — **in both copies of the file**
+- [x] `/downloads/*.exe` no longer serves a stale committed build; both sites use the release-backed download path (§35)
+- [x] Issue #5's A0 signature check run against the **GitHub release artifact**, not a committed `.exe`; result is `NotSigned`, so Authenticode remains deferred external work
+- [x] All GitHub Actions and Dockerfile base images are pinned to immutable references in the current working tree
+- [x] Containers no longer run as root
+- [x] `security.yml` tuned (§36), including test/noise exclusions and meaningful Bearer severities
+- [x] Current alerts re-triaged; actionable source findings were fixed locally and the remaining `glib` advisory has a written accepted-risk reason
+- [ ] GitHub alert counts confirm those fixes after the working tree is committed, pushed, and rescanned
+
+**Deferred operational validation (does not block the current employee-local testing phase)**
+- [ ] Add the company Authenticode certificate secrets and publish a trusted Windows release when signing is ready
+- [ ] Confirm authenticated fleet uptake and production activity telemetry
+- [ ] Complete Defender/Avast and representative physical-Windows validation
 
 ---
 
-# Part IV — Security alerts revised: 592 code scanning + 3 Dependabot
+# Part IV — Historical security review: 592 code scanning + 3 Dependabot
+
+> **Historical snapshot.** This part records the alert population that drove
+> the original cleanup. The live reconciliation on 2026-09-27 found **88 open
+> code-scanning alerts, 1 Dependabot alert, and 0 secret-scanning alerts**. Use
+> the Progress section and final completion table for current status.
 
 Issue #4 was written against **36** CodeQL alerts. The count is now **592**.
 Before rewriting anything I queried the API rather than assuming, and the
@@ -1818,8 +1871,27 @@ the next scan of a changed file; a threshold change does not.
 
 ## 38. What this does not change
 
-- **CodeQL is still 36.** Every conclusion in §8 and §9 holds exactly as written.
-- **Dependabot is still 3** (§8.7) — browserslist ×2, glib ×1.
-- **The one genuinely exploitable finding is still §8.1**, the auth-page
-  `continueUrl` XSS/open-redirect. Nothing in the other 556 outranks it.
-- Priority order in §25 is unchanged; §37 just replaces §10 inside it.
+- At the time of this historical review, **CodeQL was 36** and Dependabot was
+  3. Those counts no longer describe the live queue.
+- The original `continueUrl` XSS/open-redirect was the highest-priority finding
+  in that snapshot and was fixed. The later high-severity session-log
+  regressions were also removed in the final repository completion pass.
+- The original priority order in §25 was appropriate for that cleanup; the
+  current remaining work is summarized below.
+
+## Completion estimate (2026-09-27)
+
+This estimate compares the present code, relevant production-branch source,
+tag containment, the latest release workflow, current GitHub alert state, and
+the later updater plan. It separates implemented/released behavior from live
+fleet and real-machine observations that the repository cannot prove.
+
+| Workstream | Already done / not missing | Still missing | Estimated completion |
+| --- | --- | --- | ---: |
+| Browser URL classification | Shared resolver is used by screenshots, apps, URL/focused-time reporting, title/window classification, indexed URL history, export provenance, and UI explanations; relevant production-branch source is synchronized; employee Activity scope is self-only; public production services are healthy | Authenticated production telemetry and longer regression observation only | 100% repository scope |
+| Screenshot activity editing | Schema/audit fields, capture-run splitting, API, editor UI, original-value integrity checks, and boundary tests are implemented. The contract deliberately does **not** move tracked seconds | No required code remains; only optional real-user validation | 100% |
+| Security remediation | Original exploitable findings and the later actionable regressions are fixed locally: session identifiers were removed from logs, mutable Actions were pinned, `rustls` was upgraded, CORS fails closed, client exception leakage was removed, and scanner noise is excluded at source | Commit/push and rerun GitHub scanners to update the pre-fix alert count; `glib` remains a documented accepted transitive Linux-only risk | ~95% |
+| Agent classification/cache changes | URL-on-capture, local cache, VM-probe reduction, native UI Automation, browser-history fallback, and the original PowerShell compatibility path are present; 270/270 runnable Rust library tests pass | Confirm authenticated real-fleet uptake and behavior on representative company Windows machines | 100% repository scope |
+| Installer reputation/hardening | Native UI Automation is preferred, while browser-history and PowerShell URL/icon fallbacks are intentionally retained for reliable employee testing; ownership/transparency, managed `perMachine`, guarded updates, and local NSIS packaging are verified | Authenticode certificate is intentionally deferred; Defender/Avast reputation and representative physical-hardware behavior remain operational validation | ~90% |
+| Final decisions and release | Both former product decisions are resolved, A4 shipped with compatibility fallbacks, A7 was intentionally declined, `agent-v1.1.2` is live, and the workflow supports explicit unsigned internal builds while requiring signing by default | Add Authenticode credentials and publish a trusted release when the company is ready; complete real-machine validation | ~95% |
+| **Overall scope** | **All repository-deliverable browser classification, screenshot editing, agent cache/classification, compatibility tracking, current hardening, and release-policy work is complete** | **Only external signing, authenticated fleet observation, scanner rescan, and physical-machine/AV validation remain** | **~97% overall; 100% repository-deliverable scope** |

@@ -990,3 +990,17 @@ already-open session.
 
 No code has been changed for this. This is planning and research only, per
 request.
+
+## Completion estimate (2026-09-27)
+
+The plan explicitly records that no code was changed. These percentages separate completed research/decisions from product implementation.
+
+| Workstream | Already done / not missing | Still missing | Estimated completion |
+| --- | --- | --- | ---: |
+| Research and model | Existing limit/report behavior, DST/tzdata risks, aliases, work-week defaults, crash/restart behavior, and established-product approaches were investigated | Recheck assumptions against current production data and deployment images | ~90% design-ready |
+| Core decisions | Member timezone is confirmed for “today”; sticky start-date attribution and start-only working-day gates are agreed | Choose the multi-member aggregate reference timezone and confirm v1 scope for regional/project overrides | ~75% decision-ready |
+| Data model and migration | Required session attribution and historical-row problem are identified | Define the immutable session day/zone fields, cutover/backfill strategy for `daily_member_active_seconds`, and legacy timezone cleanup | 0% |
+| Backend enforcement | DST-safe helper and relevant call sites are identified | Route all limit, weekly reset, resume/start, working-day, background-job, and server write paths through the agreed model | 0% |
+| Reporting and UI | Report/enforcement inconsistency and Command Center aggregation problem are documented | Stop midnight splitting, adopt start-day attribution, apply the aggregate convention, and update any explanatory UI/export behavior | 0% |
+| Operations and tests | Edge cases and required checks are listed | Pin/update tzdata ownership, audit real timezone values, decide work-week defaults, and add DST/midnight/weekend/crash/migration/multi-member tests | 0% |
+| **Overall product implementation** | **Research and the main attribution rule are complete** | **Remaining decisions, schema/migration, code changes, data audit, tests, and rollout are all outstanding** | **~5–10%** |

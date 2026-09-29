@@ -1,12 +1,15 @@
 # Plan — Project chat, the Break Lounge, Friends, and controller-owned feature access
 
-Status: **proposal — nothing built.** This file is the deliverable of the
-discussion; no code changes accompany it. Research on free third-party APIs and
+Status: **proposal — no Lounge product implementation.** A separate design
+prototype now accompanies it; no tracker or backend Lounge feature code has
+been built. Research on free third-party APIs and
 assets was done on 2026-09-26 (§14). The same day, every risk and unverified
 item from the first draft was investigated and either resolved with evidence or
 turned into a concrete gate (§10). Two things changed materially: the
 "agent-only" mechanism (§13.2 — the first draft's design would not have worked)
 and the screenshot protection (§3.3 — now proven with xcap's own capture method).
+
+App-based first design pass: [Lounge pilot product and design specification](docs/LOUNGE-PILOT-FIRST-DESIGN-SPEC.md), an interactive [prototype using the tracker stylesheet](docs/prototypes/lounge-pilot-first-design.html), and [Figma visual references](https://www.figma.com/design/WN6SbX0FfpvDNk7rkpPuB3/Private-Lounge-app-based-design-revision?node-id=4-54). The Lounge reference was revised into a room-and-presence social hub after review; the earlier generic Figma exploration is archived, not the implementation baseline.
 
 Four parts, planned together because they share one transport (the presence
 WebSocket), one privacy rule (membership and relationship, never role), and one
@@ -30,9 +33,10 @@ break (or pressing Back to work) returns to the normal layout.
 
 **D. A controller-owned switch.** A member gets A–C only if the one controller
 account (`mohamedhms3102@gmail.com`) grants it — directly, or by handing them a
-single-use access code. Access is **not tied to an app version**: the code ships
-dark in normal releases (1.1.1, 1.1.2, … 1.1.N) and the server decides who sees
-it.
+single-use access code. Lounge is delivered from a **second, private restricted
+release tree** after the member accepts an invitation; the normal tracker stays
+on its existing public release tree. Server-side entitlement is still required,
+so possessing private Lounge files never grants access (§26).
 
 ### Decisions locked
 
@@ -169,7 +173,7 @@ two room kinds. Feature tiers:
   only for a member's own "saved as sticker" copy, and only once the provider
   permits it — §22.11). If the
   provider later removes a GIF or shuts down, the message renders its `title`
-  as a "GIF unavailable: <title>" placeholder instead of a broken image. The
+  as a "GIF unavailable: `title`" placeholder instead of a broken image. The
   picker follows Klipy's attribution rules ("Search KLIPY" placeholder, "Powered
   by KLIPY" mark). Default rating filter is `g` (a work tool), env-tunable
   (`GIF_RATING`).
@@ -1034,7 +1038,7 @@ self-hosted app.
   `arcade` grant), validates it against the allowlist, and builds the window.
 - **Disclaimer interstitial before a game's first launch** (acknowledgement
   stored in `arcade_acks (member_id, game_id, acked_at)`): "Third-party game —
-  *not part of Virtual Tracker*. Provided by <provider>. Virtual Tracker does not
+  *not part of Virtual Tracker*. Provided by `provider`. Virtual Tracker does not
   operate, endorse, or receive any data from it. It may load its own ads and
   cookies and can see your IP address. Terms · Privacy." A one-line banner with
   the same wording stays on the launcher tile; no Virtual Tracker branding is
@@ -1658,7 +1662,7 @@ interstitial:
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │  Third-party game — not part of Virtual Tracker              │
-│  Sudoku · provided by <provider>                             │
+│  Sudoku · provided by `provider`                             │
 │  Virtual Tracker doesn't operate, endorse, or receive any    │
 │  data from it. It may load its own ads and cookies and can   │
 │  see your IP address.       Terms · Privacy                  │
@@ -2228,18 +2232,19 @@ The owner reviewed the brainstorm list and accepted every item. This section
 turns each answer into a design. Where an answer leaves a real choice, the
 choice made here is marked **[decided here — confirm]**.
 
-### 22.1 Context: a consented pilot, not a product release
+### 22.1 Context: a consented pilot, not a public product release
 
-The social layer is **under development, is not shipped as part of Virtual
-Tracker's release**, and runs **by agreement** with employees who opt in, because
-its costs are not covered by the business yet. That turns several earlier ideas
-into a written **pilot charter**:
+The social layer is **under development, is not shipped in Virtual Tracker's
+public release tree**, and runs **by agreement** with employees who opt in,
+because its costs are not covered by the business yet. It is distributed only
+through the private restricted Lounge release tree in §26. That turns several earlier
+ideas into a written **pilot charter**:
 
 | Charter item | What it says |
 | --- | --- |
 | **Scope** | Only members who opt in (grant + acknowledged notice, §4.3). No one is enrolled by default. |
 | **No harm to the business** | The feature is dormant by default (all kill switches off); it never changes time accounting, capture policy or the tracker's Start/Pause/Stop; a resource budget applies (§22.14); one switch turns everything off. |
-| **Not part of the release** | Code lives in one module (§4.0) on its own branch until the sponsor approves. It is merged only **dormant** (every switch defaults off) after security review, following the existing branch-sync workflow. It is absent from release notes, public docs and pricing. |
+| **Not part of the public release** | Lounge code and assets are built as a separately versioned private component (§26). Development builds, including the current live employee environment, are explicitly **unsigned**; signing is later hardening and must never be described as present until verified. The public tracker contains only the generic, dormant component manager, notification hook and capability bridge required to receive an eligible offer. The private artifact is absent from public installers, release feeds, notes, docs and pricing. |
 | **Costs** | Free tiers only (§14); if a free ceiling is hit the feature degrades (§17) rather than spending money. Who pays beyond that is agreed before enabling. |
 | **Duration and decision gate** | A fixed pilot window (suggested 8 weeks) ending in a continue / change / stop decision using the metrics in §22.2. |
 | **Exit** | Any participant can leave at any time: the grant is revoked, their DMs and personal stickers are exported on request and deleted, friendships end. |
@@ -2628,13 +2633,13 @@ mode. The holes are at the **seams**, in two places:
 | **H1** | The boundary test forbids `chat-lounge` from importing hierarchy helpers (§9), but Pulse, standups, lounge policy and collection requests are *defined by* management reach | **Two modules.** `chat-lounge` (chat, friends, lounge, arcade, voice, stickers, notifications, analytics ingestion) keeps the no-hierarchy rule. `wellbeing-policy` (Pulse, standups, lounge policy, collection requests) is the **only** module allowed to use the reach helpers (`mayAccessMemberCaptureSettings` / `getVisibleMemberIds` style), and never touches chat tables |
 | **H2** | Managers need screens, but Q3 says the dashboard has no social surface | Unchanged for **chat, lounge and friends** (agent only). The **manager screens** live in the web dashboard, dormant behind flags in one folder: *Wellbeing* (Pulse per report + team aggregates), *Standups*, *Lounge rules* editor, *Collection requests* inbox, and the *Sponsor* view. They ship dormant like everything else (§22.1) |
 | **H3** | Consent is scattered: a first-run notice (§4.3), Pulse consent, arcade acknowledgements, third-party voice | One table, `feature_access_consents (member_id, kind, version, acked_at, withdrawn_at)`; kinds `social_notice`, `pulse`, `voice_third_party`, `arcade:<gameId>`. The monitoring-notice hash is **not** touched (changing it forces everyone to re-consent) |
-| **H4** | "Member does nothing" (Route 1) vs. "opt-in" (pilot) | An **enrolment state machine**: *Granted* → *Invited* (notice shown) → **Active** (acknowledged) → *Suspended* (kill switch/revoke) → *Left*. A grant alone gives nothing; only **Active** members appear in rooms |
+| **H4** | "Member does nothing" (Route 1) vs. "opt-in" (pilot) | The authoritative **enrolment state machine is in §26.5**. A grant produces an invitation, not access. The member may stay on the standard release or explicitly install Lounge; only an entitled, installed, acknowledged **Active** member appears in rooms |
 | **H5** | No offboarding rule | Table below (§23.4): what happens to each data type when a member leaves the pilot, is archived, or is removed from a project |
 | **H6** | Erasure vs. backups: a restored database resurrects deleted messages | An append-only `erasure_log`; **after any restore, replay it** before the feature is re-enabled; backup retention stated in the notice |
 | **H7** | Tenancy: general read isolation is not enforced yet | **Pilot is restricted to one tenant** (`SOCIAL_PILOT_TENANT_IDS`). No customer tenant is enabled until the isolation verifier (a live probe) covers every new table (§24.2) |
 | **H8** | Phase 0 (OTP, email templates, invite codes) is heavy for a small pilot | **Phase 0-lite (recommended first):** an env allowlist `SOCIAL_PILOT_MEMBER_IDS` plus a controller-only CLI/route to add and remove members, agent proof, kill switches, consent ledger. The OTP challenge and invite codes follow when the pilot proves worthwhile |
 | **H9** | Non-Windows agents would receive capabilities they can't honour | Agent sends `X-Agent-OS`; `capabilities.social` is false unless OS is Windows (§24.4) |
-| **H10** | Release engineering unspecified | Rides a normal agent release under the update contract (readiness probe, frozen agents, both NSIS and MSI feeds); bump `CHAT_LOUNGE_MIN_AGENT_VERSION`; nothing in the installers changes |
+| **H10** | Release engineering unspecified | **Two release trees (§26):** the existing public tracker feed and a private restricted Lounge-component feed. Both use the exact same approved tracker-core commit/API contract; Lounge cannot replace tracking code. The public build carries only a dormant component manager. Private downloads require a current grant plus agent proof and use short-lived member/device-bound URLs. Both trees are unsigned during development; future signing is a hardening milestone, not a current fact |
 | **H11** | **Elevation.** Per your notes the agent runs elevated (`requireAdministrator`). Windows blocks **drag-and-drop from a non-elevated Explorer into an elevated window** | Sticker upload and image attach must use **file picker and clipboard paste**, not drag-and-drop; **verify** paste behaviour and toast click-activation from an elevated process |
 | **H12** | DND schedules need a timezone, but the design rule is "no agent-side timezone dependency" | Follow the capture-policy pattern: the **server** computes `quietNow` and `recheckInSec` from the member's timezone and the work window; the agent obeys the boolean |
 | **H13** | The repo's guard tests: every button needs a tip, every input a `data-help`, plus a guided tour | Every new control ships with tip/help text; the **Social** group and lounge get tour steps; the tests are in each phase's gate |
@@ -2793,7 +2798,7 @@ proof → chat core with the shield. Everything social sits on those four.
 
 | Role | Derived from | Notes |
 | --- | --- | --- |
-| Controller | Enrolled UID/member/email | One person; grants, codes, catalog, sticker packs, reports, kill switches |
+| Controller | Immutable enrolled UID/member ID, with normalized email `mohamedhms3102@gmail.com` as a bootstrap assertion | One person; grants, codes, private-release invitations, revoke/removal policy, catalog, sticker packs, reports, kill switches. Email text alone is never sufficient authorization |
 | Sponsor | Tenant Owner (or named member) | Read-only: roster and aggregates; no rooms, no individual data |
 | **Manager (reach)** | The management hierarchy for a specific member | Sees a report's **Pulse answers, submitted standups, lounge rules, collection requests**; **never** chat, DMs or lounge activity unless a room member |
 | Grantee / Active member | Grant + consent | Required for social features |
@@ -2817,7 +2822,7 @@ proof → chat core with the shield. Everything social sits on those four.
 
 | Module | Tables |
 | --- | --- |
-| **chat-lounge** | `feature_access_grants`, `feature_access_challenges`, `feature_access_invites`, `feature_access_attempts`, `feature_access_audit`, **`feature_access_consents`**, `chat_rooms`, `chat_messages` (kinds: text, sticker, gif, image, game_link, voice_link, **task_card**, **standup_card**), `chat_reactions`, `chat_reads`, `chat_reports`, `chat_sticker_packs`, `chat_stickers`, **`chat_user_stickers`**, **`chat_prefs`**, **`chat_room_prefs`**, **`chat_member_mutes`**, `chat_attachments`, `member_friendships`, `member_blocks`, `member_friend_codes`, `friend_hidden_presence`, **`arcade_games`**, **`arcade_acks`**, **`voice_rooms`**, **`social_events`**, **`social_rollups`**, **`erasure_log`** |
+| **chat-lounge** | `feature_access_grants`, `feature_access_challenges`, `feature_access_invites`, `feature_access_attempts`, `feature_access_audit`, **`feature_access_consents`**, **`feature_access_enrolments`**, **`private_release_manifests`**, **`feature_cleanup_commands`**, `chat_rooms`, `chat_messages` (kinds: text, sticker, gif, image, game_link, voice_link, **task_card**, **standup_card**), `chat_reactions`, `chat_reads`, `chat_reports`, `chat_sticker_packs`, `chat_stickers`, **`chat_user_stickers`**, **`chat_prefs`**, **`chat_room_prefs`**, **`chat_member_mutes`**, `chat_attachments`, `member_friendships`, `member_blocks`, `member_friend_codes`, `friend_hidden_presence`, **`arcade_games`**, **`arcade_acks`**, **`voice_rooms`**, **`social_events`**, **`social_rollups`**, **`erasure_log`** |
 | **wellbeing-policy** | **`lounge_policy`**, **`pulse_responses`** (question bank ships as static config), **`standups`**, **`capture_change_requests`**, **`capture_flagged_items`** |
 | **Core, read/used only** | `member_capture_settings` (written by an approved request through `setMemberCaptureSettings`), `project_members`, existing notification tables, `agent_devices` |
 
@@ -2826,7 +2831,7 @@ proof → chat core with the shield. Everything social sits on those four.
 | Group | Base path | Agent proof | Who |
 | --- | --- | --- | --- |
 | Agent proof | `POST /api/activity/agent/proof` | — (uses device secret) | agent |
-| Feature access | `/api/feature-access/…` (+ `/redeem`) | for redeem only | controller / member |
+| Feature access | `/api/feature-access/…` (+ `/redeem`, `/release-offer`, `/release-choice`, `/private-release/token`, `/cleanup-commands`) | **yes** for every member/agent release or cleanup call | controller / member / agent |
 | Chat, stickers, prefs | `/api/chat/…` | **yes** | active members |
 | Friends (list, search, requests) | `/api/friends/…` (§25.5) | **yes** | active members |
 | Lounge, arcade, voice | WS types + `/api/arcade/…`, `/api/voice/…` | **yes** | active members |
@@ -2857,6 +2862,7 @@ Returned only when the request carries `X-Agent-Version` ≥
 
 ### 24.5 Configuration and kill switches (server-only)
 
+`CONTROLLER_EMAIL` (`mohamedhms3102@gmail.com`), `CONTROLLER_UID`,
 `SOCIAL_PILOT_TENANT_IDS`, `SOCIAL_PILOT_MEMBER_IDS` (Phase 0-lite),
 `AGENT_PROOF_SECRET`, `CHAT_LOUNGE_MIN_AGENT_VERSION`, `PROJECT_CHAT_ENABLED`,
 `LOUNGE_ENABLED`, `FRIENDS_ENABLED`, `ARCADE_ENABLED`, `VOICE_ENABLED`,
@@ -2864,7 +2870,10 @@ Returned only when the request carries `X-Agent-Version` ≥
 `CHAT_RETENTION_DAYS` (180), `SOCIAL_EVENTS_RETENTION_DAYS` (90),
 `LOUNGE_NUDGE_MINUTES` (15), `GIF_RATING` (g), `KLIPY_API_KEY`,
 `GIF_SAVE_AS_STICKER_BYTES` (off), `JAAS_APP_ID` / `JAAS_KEY_ID` /
-`JAAS_PRIVATE_KEY`, `CONTROLLER_ALERT_WEBHOOK` (optional). All default **off**.
+`JAAS_PRIVATE_KEY`, `CONTROLLER_ALERT_WEBHOOK` (optional),
+`PRIVATE_LOUNGE_RELEASES_ENABLED`, `PRIVATE_LOUNGE_MANIFEST_KEY_ID`,
+`PRIVATE_LOUNGE_URL_TTL_SECONDS`, `LOUNGE_OFFLINE_LEASE_SECONDS`. All feature
+switches default **off**; §26 defines the private-release values and handling.
 
 ### 24.6 Consent kinds
 
@@ -3003,3 +3012,298 @@ search results in either direction, silently (§13.3 unchanged).
 - UI: search filters both sections live; the Requests badge count matches the
   server; keyboard-only flow (tab to search, arrow through results, enter to
   open a profile card) works with the existing tour/tooltip guard tests.
+
+---
+
+## 26. Private Lounge release, invitation, revocation, and removal (2026-09-28)
+
+This section is authoritative wherever older release or enrolment wording
+conflicts with it, especially §4.3, §22.1 and §23.3 H4/H10. It adds the requested
+private delivery path without changing the established tracking paths.
+
+**Current-state correction.** Everything is still under development. The
+standard app, Lounge component and their manifests are **not signed today**, in
+the employee test environment or the current live environment. Any signing
+language below is a future hardening target, not evidence that signing exists.
+Until it is implemented and verified, builds and release records must say
+`unsigned-development` and must not claim a signed release.
+
+**Employee-only trust boundary.** Loading the public web shell or sign-in page
+does not grant use of the system. Functional access requires an authenticated
+identity linked to an active member record and a role assigned through the
+company's Owner/Admin/Super Admin administration flow; backend routes enforce
+that identity, role and tenant scope. Lounge is narrower still: a valid employee
+role is necessary but never sufficient — the controller grant, agent proof,
+registered device, accepted invitation and current Lounge capability are also
+required. Publicly reachable static web files are therefore not treated as a
+security boundary, and no sensitive API may rely only on a hidden button or
+frontend role check.
+
+### 26.1 Non-negotiable outcome
+
+There are two release trees, but **not two independently evolving trackers**:
+
+| Tree | Contents | Who can obtain it | Update behavior |
+| --- | --- | --- | --- |
+| **Standard / public** | The tracker as it works today, plus a small dormant component manager, notification hook and capability bridge. No Lounge UI, games, chat assets or private manifest are included | Anyone may obtain the installer, but only an authenticated active company member with an assigned role may use protected app functions | Keeps the current updater, NSIS/MSI behavior, PowerShell fallback and frozen-agent rules. Current builds are unsigned |
+| **Private Lounge** | A separately versioned, currently unsigned development component containing only Lounge/social UI and assets; no timer, capture, offline queue, login, updater or tracking engine | Only a currently granted employee on a registered device, through the authenticated invitation flow below | Installed beside the stable host; it can be enabled, disabled or removed without replacing the tracker |
+
+The two trees are built against the **same approved tracker-core commit and a
+versioned Lounge host API**. The private component may call only its allowlisted
+Lounge IPC surface and cannot patch or replace tracking code. If an optional
+component proves technically impossible, a separate private full installer is a
+last resort: it must be built from the exact same core commit, preserve the
+standard updater and PowerShell fallback, and pass every parity test in §26.9.
+Maintaining a long-lived fork of the tracker is rejected.
+
+This separation means future signing of the standard app and private Lounge
+component can happen on their own schedules. Signing is defense in depth; it is
+not the access-control mechanism. A standard build remains usable and continues
+receiving ordinary security/tracker updates whether the member accepts,
+declines, loses or removes Lounge.
+
+### 26.2 Controller identity and authority
+
+The sole controller is the account whose normalized bootstrap email is
+`mohamedhms3102@gmail.com`. On first secure setup that email is resolved to an
+immutable Firebase UID and member ID, stored as `CONTROLLER_UID` plus the
+enrolled controller record. Every controller action requires all of:
+
+1. a valid verified session for that immutable UID/member ID;
+2. the normalized email still matching the configured controller email;
+3. recent sign-in and the controller OTP challenge from §4 for grant, revoke,
+   removal-policy changes, manifest publication or kill-switch changes; and
+4. an append-only audit event with actor, targets, policy, manifest version,
+   request ID and result.
+
+An email string in a request body, an Owner/Admin role, or knowledge of a
+private URL never grants controller authority. There is no delegated controller.
+
+### 26.3 Grant notification and sound
+
+Granting Lounge creates one idempotent invitation per member and offered
+manifest version. The existing authenticated agent inbox delivers it; while the
+agent is running in the background/tray it also raises a Windows notification
+using the **standard OS notification sound**, subject to the member's Windows
+notification and quiet-hours settings. Do not loop, bypass Do Not Disturb or
+ship a custom sound file.
+
+The locked-screen-safe toast says: **“You’ve been selected for the private
+Lounge pilot. Open My Virtual Tracker to choose.”** It contains no project,
+friend or chat details. In the foreground, the same invitation appears in the
+protected in-app notification centre. Delivery, display and click are recorded
+separately so retries never play the sound twice for the same delivered invite.
+
+Clicking the notification or its **Update** action opens a signed-in decision
+panel — it does not immediately install anything:
+
+- **Stay on standard version** — dismisses this offered version, leaves the
+  ordinary tracker and its update channel unchanged, and preserves the grant so
+  the member may reconsider later from Settings → Private features.
+- **Install Lounge preview** — shows the size, version, privacy notice and the
+  fact that this is an optional private pilot, then requires explicit consent
+  before requesting a private download token.
+- Closing the panel makes no choice. Normal security updates remain separate
+  and must never be blocked by an unanswered Lounge invitation.
+
+The controller may resend an invitation only after a new Lounge version is
+published or the member explicitly asks for it; ordinary reconnects do not
+produce repeated sounds.
+
+### 26.4 Private download and installation
+
+Private Lounge artifacts must **not** be attached to a public GitHub Release,
+placed at a permanent public URL, or returned in public update metadata. Store
+them in private object storage behind the backend. The flow is:
+
+1. The agent calls `GET /api/feature-access/release-offer` with a valid agent
+   proof, registered `deviceId`, stable host version and OS. A non-grantee gets
+   the same generic `404` as every other hidden-feature route.
+2. After the member chooses Lounge, the agent posts
+   `POST /api/feature-access/release-choice` with the invitation ID and
+   `choice = lounge`. The backend re-checks controller grant, enrolment, tenant,
+   device, Windows support, host compatibility and kill switches.
+3. `POST /api/feature-access/private-release/token` returns a very short-lived,
+   single-use URL or streams the artifact. The token is bound to member,
+   registered device, manifest, nonce and expiry; replay on another device or
+   after revocation fails.
+4. The agent downloads to a staging directory and checks the authenticated
+   manifest, SHA-256, declared size, component version and compatible host range;
+   it rejects path traversal/symlinks and extracts with size/file-count limits.
+   While builds are unsigned, the manifest records
+   `verification_mode = unsigned-development`. Once signing exists, the same
+   step must additionally require the pinned key ID and valid signature.
+5. Installation uses an atomic directory rename. The previous compatible
+   component may be retained for one rollback, but neither version is loaded
+   until the next entitlement refresh confirms `active`.
+
+The stable host loads only hash-validated local web assets in an isolated view
+with a strict CSP and a versioned, Lounge-only IPC allowlist. When signing is
+implemented, signature validation becomes mandatory as well. No native DLL or
+arbitrary remote JavaScript is accepted. Server-side entitlement is checked on
+every API and WebSocket operation; copied component files are inert.
+
+### 26.5 Enrolment state machine
+
+`feature_access_enrolments` is the single current state per member/device where
+the device-specific part matters:
+
+```text
+granted -> invited -> stayed_standard
+                   -> install_pending -> active
+
+active / stayed_standard -> suspended_keep
+active / stayed_standard -> removal_pending -> removed
+```
+
+- `granted` and `invited` provide no Lounge access.
+- `stayed_standard` records the member's choice without revoking their grant.
+- `active` requires a current grant, installed compatible component, accepted
+  notice, enabled switches and a fresh online capability lease.
+- `suspended_keep` means access is denied immediately but the private component
+  remains dormant on disk.
+- `removal_pending` persists until every targeted device reports cleanup or the
+  controller cancels it before delivery. It never restores access.
+- `removed` means this device has acknowledged local cleanup. A new grant and a
+  fresh explicit install choice are required to reinstall.
+
+The Lounge capability uses a short renewable online lease, default 10 minutes
+(`LOUNGE_OFFLINE_LEASE_SECONDS = 600`). If a device goes offline, Lounge closes
+when the lease expires; tracking continues normally. This bounds revocation
+delay without turning an offline network problem into lost tracked time.
+
+### 26.6 Controller deactivation choices
+
+The controller can deactivate Lounge for any member at any time. The confirmation
+dialog shows affected devices and requires one of these policies:
+
+| Policy | Immediate effect | Device effect |
+| --- | --- | --- |
+| **Revoke access; keep Lounge installed** (`keep_installed`) | Grant/capability is denied, Lounge WS sessions close, rooms disappear and the component cannot load | Private component files remain dormant. The member sees “Lounge access ended” and may choose **Remove Lounge from this device** or **from all my devices** at any later time |
+| **Revoke access and remove on next connection** (`delete_on_next_online`) | Same immediate server-side denial | A durable cleanup command is queued per registered device. It runs when that device next opens the app and connects to the internet |
+
+The controller may later change `keep_installed` to
+`delete_on_next_online`. Deactivation does not wait for a push notification or
+for the device to acknowledge deletion: API and WebSocket access is denied as
+soon as the server commits the revoke. The owner UI shows each device as
+pending, delivered, cleaning, complete or failed, with last-seen time and a
+safe retry action.
+
+### 26.7 Safe auto-delete contract
+
+`feature_cleanup_commands` is durable database state, not an ephemeral socket
+message. On authenticated startup/reconnect, before registering Lounge panels,
+the agent fetches its pending commands. For `delete_lounge_component` it:
+
+1. verifies the authenticated response, command/member/device binding,
+   monotonic command sequence and current server state; future signed commands
+   add signature verification without replacing these checks;
+2. closes Lounge views and sockets, unregisters its routes and clears the
+   renewable capability lease;
+3. removes only the private component's version directories, staging files,
+   Lounge caches, local Lounge settings and device-scoped Lounge keys;
+4. leaves the standard executable, updater, PowerShell fallback, auth session,
+   tracking database/queue, timer, screenshots and capture settings untouched;
+5. records an idempotent local tombstone and posts an authenticated completion
+   receipt; the receipt becomes signed when device signing is implemented.
+
+If the app crashes during cleanup, the command resumes on the next online
+launch. Missing files count as success. A failed deletion keeps Lounge disabled,
+reports a bounded error to the controller, and retries with backoff. The command
+must never recursively delete a path until its canonical path is proven to be
+inside the dedicated Lounge component directory.
+
+Member-requested removal uses the exact same command/receipt path; it is not a
+weaker client-only delete. **Removing program files is separate from deleting
+server chat/pilot data.** The existing exit/erasure rules in §22.1 and §23.4
+govern messages, friendships and personal content and require an explicit
+separate choice.
+
+### 26.8 Data and API additions
+
+| Record | Required fields / behavior |
+| --- | --- |
+| `feature_access_enrolments` | `member_id`, `device_id`, invitation/manifest IDs, state, choice, invited/delivered/displayed/chosen/installed/activated timestamps, installed version, last lease time; unique active record per member/device |
+| `private_release_manifests` | version, object key (never public URL), size, SHA-256, `verification_mode`, nullable future signature/key ID, host min/max, OS/arch, published/disabled timestamps and actor |
+| `feature_cleanup_commands` | command ID and sequence, member/device, action, requested policy/actor/reason, status, attempts, delivered/started/completed timestamps, receipt and bounded error |
+| `feature_access_audit` | adds invite-created, notified, sound-requested, choice-standard, choice-Lounge, token-issued/denied, install, activate, revoke policy, cleanup-requested/completed/failed |
+
+Required endpoint semantics:
+
+- `GET /api/feature-access/release-offer` — generic `404` unless eligible;
+- `POST /api/feature-access/release-choice` — idempotently stores standard or
+  Lounge for a specific invitation;
+- `POST /api/feature-access/private-release/token` — issues the bound,
+  short-lived one-use download authorization only after `choice = lounge`;
+- `POST /api/feature-access/:memberId/revoke` — controller-only, OTP-bound body
+  includes `devicePolicy = keep_installed | delete_on_next_online` and target
+  devices;
+- `GET /api/feature-access/cleanup-commands` and
+  `POST /api/feature-access/cleanup-commands/:id/ack` — agent proof required;
+- `POST /api/feature-access/remove-my-component` — member chooses this device or
+  all their devices; creates the same durable cleanup commands.
+
+The capability payload in §24.4 adds `release` with `channel`, `state`,
+`offeredVersion`, `installedVersion`, `leaseExpiresAt` and `cleanupPending`.
+These fields are returned only to the authenticated agent itself and are absent
+for non-grantees.
+
+### 26.9 Tracking protection and release gates
+
+The private release is not ready for the employee pilot/live environment until
+all of these pass on a clean Windows machine and an upgraded employee machine:
+
+- Start, Pause, Stop, private break, normal break, screenshots, activity,
+  focused URL/app classification, offline queue/replay and manual time behave
+  identically with Lounge absent, installed-dormant, active and removed.
+- The standard updater and PowerShell fallback still update the host; Lounge
+  cannot downgrade, block or replace that update. An incompatible Lounge
+  component disables itself and asks for a standard host update.
+- A non-grantee, revoked member, copied artifact, guessed object key, expired or
+  replayed URL, wrong device and wrong tenant all fail without revealing that
+  Lounge exists.
+- Invitation delivery is idempotent; background delivery requests one standard
+  notification sound; quiet hours and OS notification settings are respected;
+  clicking **Update** always shows the standard-vs-Lounge choice.
+- Choosing standard installs nothing and does not disrupt normal updates.
+- Revocation closes server access immediately. An offline active device loses
+  Lounge at lease expiry while tracking remains available.
+- Both deactivation policies work across multiple devices. Cleanup is
+  resumable/idempotent, cannot escape the dedicated component directory, and
+  never removes tracker, updater, tracking data, screenshots, auth or policy.
+- The public installer/feed contains no Lounge component or manifest. The
+  private artifact and object-storage key are not indexable or reusable after
+  token expiry.
+- Every development component, manifest and rollback version is visibly marked
+  unsigned, hash-identified and mapped to the same approved core commit/API
+  contract. When signing becomes available, valid signatures become an
+  additional release gate; the plan must not retroactively describe earlier
+  builds as signed.
+
+### 26.10 Delivery order
+
+1. Ship and validate the dormant component manager, authenticated notification
+   hook, controller immutable-identity check and cleanup engine in the standard
+   tracker without publishing a Lounge artifact.
+2. Add manifests, private storage/token delivery, enrolment state and controller
+   revoke-policy UI; run security and path-deletion tests.
+3. Build the Lounge component from the approved commit, label it as an unsigned
+   development build, record its hash/provenance, and run the full parity matrix
+   in §26.9 against both fresh and upgraded agents. Add signing later without
+   changing employee, role or Lounge-entitlement checks.
+4. Invite a tiny employee cohort. Observe invitation, choice, install, offline
+   lease, both revoke paths and multi-device receipts before widening access.
+
+## Completion estimate (2026-09-28)
+
+This plan explicitly states that no feature code has been built. The percentages below measure implementation, while recognizing that substantial design and research work is complete.
+
+| Workstream | Already done / not missing | Still missing | Estimated completion |
+| --- | --- | --- | ---: |
+| Product design and policy | Behavior, roles, permissions, privacy boundaries, pilot policy, consent, moderation, discovery, controller identity, private invitation choice, deactivation policies and member-requested removal are documented | Final business approval for the pilot charter, collection-request ownership, optional per-member break policy and employee-facing invitation/exit wording | ~95% design-ready |
+| Technical architecture | Data model, endpoints, WebSocket protocol, capability payload, feature flags, critical path, third-party choices, dual release trees, current unsigned-development verification, future signing hardening, offline lease and durable cleanup contract are specified | Validate the component-loading boundary in the real elevated Tauri/WebView2 app and finalize private storage; implement signing later without claiming it exists now | ~90% design-ready |
+| Access and backend foundation | Existing code paths and isolation risks were researched; private release/enrolment/revocation contracts are designed | Build tenancy verifier integration, immutable controller gate, agent proof, tables, repositories, APIs, private token delivery, cleanup commands, Redis presence, rate limits, audit, and offboarding/erasure flows | 0% |
+| Agent and UI | Detailed tracker, chat, friends, lounge, arcade, voice, notification, private-update choice, cleanup, and workspace-shell behavior is designed | Implement all Tauri windows/panels, component manager, notification sound request, privacy shield, protected notifications, friends/chat/lounge UI, settings, cleanup safety, accessibility, and resource controls | 0% |
+| External integrations | Providers, licenses, ceilings, and fallbacks were researched | Obtain Klipy answers/account configuration, JaaS credentials, and validate platform-specific capture/microphone behavior | ~10% |
+| Tests and rollout | Test matrices, pilot metrics and the public/private release parity gates are specified | Write and run backend, PGlite, WebSocket, Tauri, privacy, accessibility, updater/PowerShell parity, private-download abuse, multi-device cleanup, resource-budget, provider, and end-to-end pilot tests; deploy behind kill switches | 0% |
+| **Overall product implementation** | **Planning and research are advanced** | **All production code, validation, deployment, and pilot operation remain** | **~0–5%** |

@@ -377,3 +377,17 @@ Recommended defaults are included so implementation is not blocked:
 | Emergency recovery | Offline admin procedure plus global kill switch |
 
 If permanent grants are required, `expires_at` can be nullable, but a time-limited default is strongly preferred because the public role does not advertise the extra authority.
+
+## Completion estimate (2026-09-27)
+
+No implementation or verification results are recorded in this plan. The estimate therefore treats the document as design work only, not evidence that the security-sensitive feature exists.
+
+| Workstream | Already done / not missing | Still missing | Estimated completion |
+| --- | --- | --- | ---: |
+| Policy and threat model | Safety boundary, exclusions, attribution, audit requirements, failure behavior, and recommended defaults are documented | Formally lock the capability allowlist, duration, controller identity binding, recovery procedure, and governance exclusions | ~85% design-ready |
+| Schema and controller gate | Tables, fields, constraints, and controller-only behavior are specified | Implement migrations, private configuration, stable UID/member binding, feature flag, and fail-closed controller tests | 0% |
+| Verification pipeline | Code lifecycle, HMAC storage, delivery states, rate limits, and API contracts are designed | Implement code generation/storage, Notify template/delivery, retries, concurrency handling, fresh-auth checks, and audit events | 0% |
+| Authorization integration | Effective-capability model and migration targets are mapped | Implement the central resolver and audit every owner/admin/hierarchy/permission decision; invalidate sessions/caches on revoke/expiry | 0% |
+| Controller UI | Roles-tab card and verification flow are specified | Build controller-only discovery, grant/revoke dialogs, expiry/resend/error states, and non-disclosure behavior | 0% |
+| Testing and rollout | Acceptance criteria, test areas, rollout, and rollback order are defined | Run identity, leakage, code-security, authorization, attribution, UI, failure, concurrency, and controlled-enablement tests | 0% |
+| **Overall product implementation** | **The security design is substantially specified** | **Every schema, backend, authorization, UI, test, and deployment step remains** | **~5%** |

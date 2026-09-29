@@ -1,5 +1,136 @@
 # Customer Accounts Tab and Multi-Tenancy Plan
 
+Status: **substantially implemented on `main`, but not ready for real customer tenants. Database-role separation, public-route bootstrapping under RLS, background-job isolation, resumable removal, and cross-tenant read-only viewing still require correction and live-Postgres proof.**
+
+## 0. Current implementation audit — 2026-09-27
+
+This section and the completion table at the end are authoritative for current
+status. Sections 1–16 preserve the original design and investigation history;
+statements such as “there is no tenancy” describe the repository at the time
+the plan was written, not the current `main` branch.
+
+The Phase 1–6 backend commit (`7338cf4a`) and Phase 7 web commit (`4cdff098`)
+are both contained in `main`. Later commits added seat enforcement, tenant-aware
+write defaults and invite lists, main-tenant expiry handling, and a live
+isolation verifier. The present implementation includes:
+
+- three control-plane tables, tenant columns/defaults, singleton-key and
+  tenant-aware unique-key migrations;
+- a current classification of **83 tenant-scoped and 6 global business
+  tables**, plus the three control-plane tables;
+- request tenant context, generated RLS policies, an isolation verifier, and
+  static table-coverage tests;
+- verification codes, unlock capabilities, Enterprise root roles, customer
+  creation/list/detail/renew/seat/removal APIs, audit records and expiry gates;
+- the Add Members tab and Customer Accounts management page;
+- passing current suites: **1,045 backend tests**, Dashboard Web type-check,
+  and **81 web tests**.
+
+Those tests are valuable but do not prove deployed isolation: the tenancy
+coverage and isolation-decision tests are static or mocked and the full suite
+runs without a real `POSTGRES_URL`. No production-shaped migration, two-tenant
+database test, application-role connection, or live RLS probe was exercised in
+this audit.
+
+### 0.1 Release blockers found in the current code
+
+1. **The three database identities are designed but not wired.**
+   [`client.js`](Dashboard-Backend/src/lib/postgres/client.js) exposes one pool.
+   [`tenant.service.js`](Dashboard-Backend/src/modules/customer-accounts/tenant.service.js)
+   explicitly notes that customer-account writes still need a `vt_admin` pool.
+   RLS is off by default, and switching the single `POSTGRES_URL` to `vt_app`
+   would make cross-tenant control-plane operations fail their own `WITH CHECK`
+   policies. This is the central unfinished architecture item.
+
+2. **The current grants are broader than the plan promises.**
+   [`ensure-tenancy-rls.js`](Dashboard-Backend/src/lib/postgres/ensure-tenancy-rls.js)
+   grants `vt_app` all privileges on every table and grants the cross-tenant
+   read-only role `SELECT` on every table. That includes control-plane tables
+   such as verification-code hashes. Grants must be generated from explicit
+   business/control-plane allowlists, not `ALL TABLES`.
+
+3. **Public authentication and invite routes have a tenant-discovery
+   chicken-and-egg problem under real RLS.** Session bootstrap and
+   `findInviteByToken()` query tenant-scoped tables before a request tenant is
+   known. With `vt_app` and an empty `app.tenant_id`, those reads correctly
+   return no rows. They need a narrowly privileged identity/token lookup first,
+   followed by a tenant-scoped transaction; using the ordinary app pool cannot
+   solve this safely.
+
+4. **Customer creation cannot yet run through the intended security boundary.**
+   The isolation guard correctly refuses creation while RLS is not proven, but
+   once the ordinary pool really is `vt_app`, creating another tenant's invite
+   requires the missing admin pool. `ALLOW_UNISOLATED_CUSTOMER_TENANTS` is a
+   diagnostic escape hatch and must never be the production rollout path.
+
+5. **Background isolation is incomplete.** Scheduled reports use
+   `withTenant()`, but the abandoned-session, counter-reconciliation,
+   integrity, and retention sweeps do not. Retention also does not enumerate
+   active tenants, so the promised expiry freeze is not implemented.
+
+6. **Removal is not resumable and can orphan GCS data.**
+   [`removeCustomerTenant()`](Dashboard-Backend/src/modules/customer-accounts/tenant.service.js)
+   catches a blob-deletion failure and then still deletes the tenant row and
+   every screenshot reference. The ordinary retention sweep cannot retry a
+   blob whose row was cascaded away. The plan's `removing` state plus persistent
+   retry job/sweep must be implemented before permanent removal is safe.
+
+7. **The cross-tenant read-only customer Dashboard is not implemented.** The
+   management page can inspect account metadata and mutate commercial terms,
+   but there is no allowlisted business-data viewing surface using
+   `vt_readonly_crosstenant`. Recording an `account_detail` audit entry is not
+   the same feature.
+
+8. **Some seat paths still have a race.** The shared helper locks the tenant
+   row and is fully atomic when the insert callback uses that same transaction.
+   Its own documentation accepts a gap for migration, pre-provisioning and
+   invite registration because their actual write happens after the lock is
+   released. Those paths must accept a transaction client so the protected
+   count and consuming write are one unit.
+
+9. **The tenant root is never linked.** `tenants.root_user_id` is created and
+   read, but no current path updates it when the Enterprise invite is accepted.
+   Invite acceptance must atomically set it once and reject any second root.
+
+10. **Expiry has backend enforcement but not the planned dedicated web state.**
+    The backend emits `SUBSCRIPTION_EXPIRED`; Dashboard Web currently has no
+    specialized expired-account screen or error classification for it.
+
+### 0.2 Correct implementation and rollout order
+
+1. **Build the database boundary first.** Add separately configured pools for
+   schema/control work (`vt_admin`), ordinary requests (`vt_app`), and audited
+   cross-tenant reads (`vt_readonly_crosstenant`). Bootstrap/migrations must use
+   the admin pool; normal query helpers must use the app pool. Generate explicit
+   per-table grants and revoke the current blanket grants.
+2. **Solve pre-tenant lookups deliberately.** Use a minimal admin/bootstrap
+   repository or tightly scoped `SECURITY DEFINER` functions to resolve a
+   Firebase UID, opaque invite token, link token, or transfer token to a tenant.
+   Immediately enter `withTenant(tenantId)` and perform the rest through
+   `vt_app`. Never accept a tenant id from an unauthenticated request.
+3. **Finish lifecycle transactions.** Set `root_user_id` during Enterprise
+   invite acceptance; pass transaction clients through every seat-consuming
+   path; add a persistent tenant-removal job/manifest and retry sweep; only
+   delete the tenant after every external object is confirmed deleted.
+4. **Convert every background worker.** Enumerate tenants through the admin
+   pool, run each tenant iteration through the scoped app pool, and skip
+   inactive tenants for retention. Aggregations and writes must never share an
+   unscoped frame.
+5. **Add the structural read-only view.** Expose a small allowlisted query
+   service through the read-only pool, audit every opened surface, and provide
+   no generic tenant-switch primitive to ordinary route code.
+6. **Complete the UI states.** Add the dedicated expired/removed account screen
+   and the audited read-only customer Dashboard entry point. Add focused tests
+   for the Customer Accounts form/page rather than relying only on type-check.
+7. **Prove it with real Postgres.** In CI, create two tenants with colliding
+   human names/numbers, connect as each database role, exercise every public
+   bootstrap route and every CRUD module, prove cross-tenant reads/writes fail,
+   run concurrency tests for the last seat, and test interrupted removal.
+8. **Roll out in stages.** Rehearse the schema/backfill on a production-shaped
+   snapshot, enable policies in staging, cut each pool to its intended role,
+   require the live isolation verifier to report `enforced`, soak, then enable
+   customer creation. Production must have no unsafe-override flag.
+
 ## 1. Goal
 
 Add a fourth tab to the Add Members modal — **Customer accounts** — visible only to Owners and Super Admins, gated behind an emailed 6-digit code, that onboards an external paying customer as the root of a **fully isolated tenant**.
@@ -972,3 +1103,24 @@ export const PEOPLE_MEMBER_SUBPAGE_IDS = [
 Add `"people-customer-accounts"` as a fourth id, and `features/members/pages/customer-accounts-page.tsx` copied from `members-page.tsx`. Keep the table, filters, row menu and skeleton; swap the columns for **email, granted role, seats used / limit, period end, status**; replace the row actions with renew / change period / change seats / remove. The subpage is rendered only for Owner and Super Admin, and the backend refuses it for everyone else regardless.
 
 Reuse rather than reinvent: `members-page-skeleton.tsx`, `member-filters-panel.tsx` and the row-menu components all carry over with column changes only.
+
+## Completion estimate (2026-09-27)
+
+This estimate compares current `main`, later tenancy fixes, the complete local
+test suites, and the architectural requirements above. “Repository progress”
+means code exists and passes its present tests; it does not mean production
+isolation has been proven.
+
+| Workstream | Already done / not missing | Still missing | Estimated completion |
+| --- | --- | --- | ---: |
+| Phase 0 — inventory and decisions | Core RLS, role, expiry, retention, removal, seat, audit, UI, and agent decisions are documented and mostly still sound | Refresh old counts and assumptions as new tables/features are added; current code classifies 83 scoped + 6 global business tables | ~95% |
+| Phase 1 — control plane | `tenants`, verification codes, customer audit, code hashing/rate limits, unlock capabilities, Enterprise roles, routes, and tests exist | Add real admin/app/read-only pools and least-privilege grants; make unlock storage shared or sticky-session aware for multi-replica deployments | ~75% |
+| Phase 2 — tenant columns and keys | Generated tenant columns/defaults, five singleton re-keys, four tenant-aware unique migrations, high-volume handling, and static coverage exist | Rehearse on a production-shaped database, verify locks/backfill/index validity, and validate every resulting constraint/catalog entry | ~80% |
+| Phase 3 — isolation | Request tenant context, per-query GUC publication, RLS policy generation, keyed lookup cache, isolation reporting, and static tests exist | Wire separate pools; narrow grants; fix pre-tenant public/bootstrap queries; convert all background sweeps; execute real two-tenant DB tests; enable and prove RLS live | ~45% |
+| Phase 4 — customer creation | Guarded create API, Enterprise invite, configuration/lookup seeding, email, audit, and UI are implemented | Run creation through `vt_admin` while ordinary work uses `vt_app`; make public invite redemption RLS-compatible; set `root_user_id` atomically | ~65% |
+| Phase 5 — seats | One seat definition, list/detail counts, lowering protection, tenant-row locking, most invite/add integrations, and tests exist | Keep the lock through migration, pre-provision, and public invite-registration writes; add real concurrent route tests | ~80% |
+| Phase 6 — expiry, viewing and removal | Per-request and session-bootstrap expiry gates, renewal cache invalidation, removal preview, token revocation, and commercial mutations exist | Implement tenant-looped retention freeze, read-only customer Dashboard, persistent/resumable removal, complete public-route expiry gates, and the dedicated expired web state | ~45% |
+| Phase 7 — management UI | Owner/Super Admin tab, create unlock flow, management page, renew/seats/remove dialogs, loading and error handling are implemented | Add read-only customer-data entry/view, expired-state UX, and focused component/API tests | ~80% |
+| Verification and rollout | 1,045 backend tests pass; web type-check and 81 tests pass; static table coverage and isolation-decision tests exist | Add real Postgres role/RLS/migration/property/concurrency/interruption tests, stage soak, deployment role verification, rollback/recovery rehearsal, and live validation | ~25% |
+| **Overall repository implementation** | **Most planned schema, API, authorization model, commercial management, and UI code exists on `main`** | **The database trust boundary and several lifecycle/background paths must be completed before any real customer tenant is enabled** | **~65%** |
+| **Production readiness** | **The creation guard prevents accidental second-tenant rollout while isolation is unproven** | **No production-shaped database evidence, role cutover, live RLS proof, full lifecycle recovery, or cross-tenant read-only surface yet** | **~35%** |
