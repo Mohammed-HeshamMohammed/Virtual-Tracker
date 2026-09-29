@@ -23,6 +23,8 @@ mock.module("../src/lib/postgres/client.js", {
     // lookup-availability.js, which needs isPostgresConfigured.
     getPostgresPool: () => null,
     getAdminPostgresPool: () => null,
+    queryAsAdmin: async () => [],
+    withTenant: async (_tenantId, fn) => fn(),
     isPostgresConfigured: () => true,
     withTransaction: async (fn) => fn(),
     probePostgresReadiness: async () => true,

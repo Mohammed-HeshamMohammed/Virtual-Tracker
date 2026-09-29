@@ -6,6 +6,8 @@ import { getRequestIp } from "./request-ip.js";
 import { checkHierarchyAccess } from "../modules/hierarchy/hierarchy-access-guard.js";
 import { readIdToken } from "./auth-token.js";
 import { setAuthContext } from "./auth-context.js";
+import { setRequestTenantId } from "../lib/postgres/audit-actor.js";
+import { resolveTenantIdForFirebaseUid } from "../lib/postgres/tenant-resolution.js";
 import { resolveMemberRoleNameCached } from "./role-cache.js";
 import { getMemberByFirebaseUidPg, getMemberByIdPg, getMemberAuthContextPg } from "../lib/postgres/members-postgres.service.js";
 import { resolveTenantGrantCached } from "../modules/customer-accounts/tenant-grant-cache.js";
@@ -79,6 +81,11 @@ export async function authenticateRequest(req, url, db) {
       }
     }
 
+    // Before the member lookup, not after it: under RLS the lookup itself
+    // only sees rows of the published tenant, and every query for the rest
+    // of this request (governance, ban checks, the route) runs in it too.
+    // setAuthContext re-publishes the same tenant once the member is known.
+    setRequestTenantId(await resolveTenantIdForFirebaseUid(decoded.uid));
     const memberData = await getMemberAuthContextPg(decoded.uid);
     const mustChangePassword = memberData?.must_change_password === true;
 

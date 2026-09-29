@@ -42,6 +42,8 @@ mock.module("../src/lib/postgres/client.js", {
   namedExports: {
     getPostgresPool: () => ({}),
     getAdminPostgresPool: () => null,
+    queryAsAdmin: async () => [],
+    withTenant: async (_tenantId, fn) => fn(),
     query: async () => [],
     withTransaction: async (fn) => fn(fakeClient),
     // Not exercised by deleteActivitySessionWithChildrenPg (it only uses

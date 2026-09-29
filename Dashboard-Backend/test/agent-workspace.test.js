@@ -15,6 +15,8 @@ mock.module("../src/lib/postgres/client.js", {
     // the transitive import chain touches has to exist here, not just query.
     getPostgresPool: () => null,
     getAdminPostgresPool: () => null,
+    queryAsAdmin: async () => [],
+    withTenant: async (_tenantId, fn) => fn(),
     isPostgresConfigured: () => true,
     withTransaction: async (fn) => fn(),
     probePostgresReadiness: async () => true,
