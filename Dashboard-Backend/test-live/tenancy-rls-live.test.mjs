@@ -223,5 +223,23 @@ await check("tenant_seat_limit() gives vt_app the one number the seat check need
   );
 });
 
+await check("vt_app can take the seat lock and read its limit inside one transaction (no tenants grant needed)", async () => {
+  const { SEAT_LOCK_SQL } = await import("../src/modules/customer-accounts/seat-usage.service.js");
+  await asRole("vt_app", TENANT_A, async () => {
+    await db.query("BEGIN");
+    try {
+      await db.query(SEAT_LOCK_SQL, [TENANT_A]);
+      const r = await db.query(`SELECT tenant_seat_limit($1) AS n`, [TENANT_A]);
+      assert.equal(r.rows[0].n, 10);
+      const held = await db.query(`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND granted`);
+      assert.ok(held.rows[0].n >= 1, "the advisory lock is held for the transaction");
+    } finally {
+      await db.query("COMMIT");
+    }
+    const after = await db.query(`SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory'`);
+    assert.equal(after.rows[0].n, 0, "released on commit, like FOR UPDATE");
+  });
+});
+
 console.log(`\n${failures === 0 ? "RESULT: PASS" : `RESULT: FAIL (${failures} proof(s) failed)`}`);
 process.exit(failures === 0 ? 0 : 1);

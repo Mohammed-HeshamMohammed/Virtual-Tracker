@@ -12,7 +12,8 @@ let queryCalls = 0;
 
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
-    query: async () => {
+    // Control-plane table: the code under test reads it on the admin identity.
+    queryAsAdmin: async () => {
       queryCalls += 1;
       return currentRow ? [currentRow] : [];
     },

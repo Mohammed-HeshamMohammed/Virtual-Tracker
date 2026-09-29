@@ -15,7 +15,8 @@ function reset() {
 
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
-    query: async (sql, params = []) => {
+    // Control-plane table: the code under test reads it on the admin identity.
+    queryAsAdmin: async (sql, params = []) => {
       if (sql.includes("SELECT count(*)::int AS count FROM verification_codes")) {
         const [memberId, purpose, since] = params;
         const count = table.rows.filter(

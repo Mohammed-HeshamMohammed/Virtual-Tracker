@@ -1,4 +1,4 @@
-import { query } from "../../lib/postgres/client.js";
+import { queryAsAdmin } from "../../lib/postgres/client.js";
 import { currentTenantId } from "../../lib/postgres/audit-actor.js";
 
 /**
@@ -44,7 +44,9 @@ export function usedSeatsSql(tenantRef, { excludeInvitesParam, excludePendingUid
 export async function getTenantSeatUsage(tenantId) {
   if (!tenantId) return null;
 
-  const rows = await query(
+  // tenants is control-plane (no vt_app grant); the counts below are filtered
+  // by tenant_id explicitly, so reading them as admin changes nothing.
+  const rows = await queryAsAdmin(
     `SELECT t.seat_limit, ${usedSeatsSql("t.id")} AS seats_used
      FROM tenants t
      WHERE t.id = $1
@@ -81,6 +83,19 @@ export class SeatLimitError extends Error {
 const USED_SEATS_SQL = `SELECT ${usedSeatsSql("$1", { excludeInvitesParam: "$2", excludePendingUidsParam: "$3" })} AS used`;
 
 /**
+ * Serializes everything that reads or changes a tenant's seat count: the
+ * add/invite guard below, setTenantSeatLimit, and tenant.service.js's
+ * changeCustomerTenantSeats. A row lock on tenants used to do this, but the
+ * guard runs on vt_app (same transaction as the member insert it protects)
+ * and vt_app has no grant on the control-plane tenants table. A
+ * transaction-scoped advisory lock needs no table privilege, is released on
+ * COMMIT/ROLLBACK exactly like FOR UPDATE, and - because every seat path
+ * takes this same key - still makes "two invites cannot both take the last
+ * seat" true.
+ */
+export const SEAT_LOCK_SQL = `SELECT pg_advisory_xact_lock(hashtextextended('seats:' || $1::text, 0))`;
+
+/**
  * The seat check every add/invite path runs before it creates anyone.
  *
  * tenant.service.js had an assertSeatAvailable written as "the only place a
@@ -90,9 +105,9 @@ const USED_SEATS_SQL = `SELECT ${usedSeatsSql("$1", { excludeInvitesParam: "$2",
  * takes several at once) and to any tenant: the main organization too, once
  * an Owner gives it a real limit (PATCH /api/members/seats).
  *
- * `insert(client)` runs inside the same transaction, while the tenant row is
- * locked FOR UPDATE, so two concurrent invites cannot both read "one seat
- * left" and both take it. Every seat-consuming path now threads `insert`
+ * `insert(client)` runs inside the same transaction, while the tenant's seat
+ * lock (SEAT_LOCK_SQL) is held, so two concurrent invites cannot both read
+ * "one seat left" and both take it. Every seat-consuming path now threads `insert`
  * (§0.1 blocker 8, closed 2026-09-29) - promotion passes it directly (the
  * Firebase user already exists by that point, nothing external between the
  * check and the write); invite-register and preprovision each call this
@@ -119,12 +134,14 @@ export async function withSeatsAvailable(tenantId, needed, { insert, excludeInvi
   // inserts below should stay attributed to them.
   const run = (fn) => (currentTenantId() === tenantId ? fn() : withTenant(tenantId, fn));
   return run(() => withTransaction(async (client) => {
-    const tenantRows = await client.query(
-      `SELECT seat_limit FROM tenants WHERE id = $1 FOR UPDATE`,
-      [tenantId],
-    );
-    const seatLimit = Number(tenantRows.rows[0]?.seat_limit ?? 0);
-    if (tenantRows.rows.length && seatLimit < UNLIMITED_THRESHOLD && count > 0) {
+    await client.query(SEAT_LOCK_SQL, [tenantId]);
+    // tenant_seat_limit() is SECURITY DEFINER (ensure-tenancy-schema.js):
+    // exactly this one number, no grant on tenants needed. NULL = no such
+    // tenant, which skips the check the same way a missing row used to.
+    const limitRows = await client.query(`SELECT tenant_seat_limit($1) AS seat_limit`, [tenantId]);
+    const rawLimit = limitRows.rows[0]?.seat_limit;
+    const seatLimit = Number(rawLimit ?? 0);
+    if (rawLimit !== null && rawLimit !== undefined && seatLimit < UNLIMITED_THRESHOLD && count > 0) {
       const usedRows = await client.query(USED_SEATS_SQL, [
         tenantId,
         excludeInviteIds.filter(Boolean),
@@ -151,7 +168,9 @@ export async function withSeatsAvailable(tenantId, needed, { insert, excludeInvi
  * limit with no way to tell who is "extra".
  */
 export async function setTenantSeatLimit(tenantId, seats) {
-  const { withTransaction } = await import("../../lib/postgres/client.js");
+  // Writes the control-plane tenants row, so admin - under the same seat
+  // lock as the add/invite guard.
+  const { withTransactionAsAdmin: withTransaction } = await import("../../lib/postgres/client.js");
   let next;
   if (seats === null) {
     next = 2147483647;
@@ -165,6 +184,7 @@ export async function setTenantSeatLimit(tenantId, seats) {
     next = n;
   }
   return withTransaction(async (client) => {
+    await client.query(SEAT_LOCK_SQL, [tenantId]);
     const tenantRows = await client.query(`SELECT seat_limit FROM tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
     if (!tenantRows.rows.length) throw Object.assign(new Error("Organization not found."), { status: 404 });
     if (next < UNLIMITED_THRESHOLD) {
