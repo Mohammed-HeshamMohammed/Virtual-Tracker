@@ -5,7 +5,7 @@ import type { TimeActivityDayRow, TimeActivityEntry, TimeActivityMemberSubRow, T
 import { formatMoney, sumMoneyByCurrency } from "@/features/reports/utils/money"
 
 import { toDateParam } from "@/features/reports/utils/time-and-activity/date-range"
-import { formatCurrency, resolveViewerCurrency } from "@/features/reports/utils/viewer-currency"
+import { resolveViewerCurrency } from "@/features/reports/utils/viewer-currency"
 
 interface RawMemberDay {
   memberId: string
@@ -82,7 +82,10 @@ function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
       : 0,
     idlePct: pctString(member.idleSeconds, member.activeSeconds),
     idleHr: formatSecondsAsHMS(member.idleSeconds),
-    totalSpent: formatCurrency(member.spentAmount ?? 0, member.currency ?? "USD"),
+    // Same formatter the day-total row below uses (sumMoneyByCurrency -> formatMoney),
+    // so a member row and its own day's total don't render the same currency two
+    // different ways ("E£0.00" next to "EGP 1325.86").
+    totalSpent: formatMoney(member.spentAmount ?? 0, member.currency ?? "USD"),
     trackedHours: member.activeSeconds / 3600,
     manualHours: manualSeconds / 3600,
     projectNames: member.projectNames,

@@ -91,6 +91,7 @@ import {
   getProjectBudgetPg,
   computeProjectSpentPg,
   computeProjectBudgetTargetPg,
+  isManagerAllowedToTrackPg,
 } from "../../lib/postgres/projects-postgres.service.js";
 import { maybeNotifyProjectBudget } from "../projects/services/project-budget-notify.js";
 import { isTaskLessProjectType } from "../projects/project-types.js";
@@ -235,6 +236,20 @@ const MANAGER_TRACKING_DISABLED_MESSAGE =
 
 function isManagerRoleName(roleName) {
   return String(roleName || "").trim().toLowerCase().replace(/\s+/g, "") === "manager";
+}
+
+/**
+ * Whether a plain "manager" may clock in on this project: the blanket switch
+ * is the ceiling (off blocks everyone, same as before this existed), and when
+ * the project has narrowed it to specific managers, this manager must be one
+ * of them. restrictManagerTracking off (the default, unchanged for every
+ * existing project) skips the per-member lookup entirely - any manager who is
+ * a project member is allowed, exactly as before.
+ */
+async function managerMayTrackProject(project, memberId) {
+  if (project.allow_project_tracking === false) return false;
+  if (project.restrict_manager_tracking !== true) return true;
+  return isManagerAllowedToTrackPg(project.id, memberId);
 }
 
 async function resolveMember(db, req) {
@@ -697,7 +712,7 @@ export async function routeActivity(req, res, url, origin) {
             sessionProjectId = task.project_id ?? sessionProjectId;
             if (sessionProjectId && isManagerRoleName(viewer?.roleName)) {
               const gateProject = await getProjectPg(sessionProjectId);
-              if (gateProject && gateProject.allow_project_tracking === false) {
+              if (gateProject && !(await managerMayTrackProject(gateProject, member.memberId))) {
                 sendJson(res, origin, 403, { success: false, error: MANAGER_TRACKING_DISABLED_MESSAGE });
                 return true;
               }
@@ -739,7 +754,7 @@ export async function routeActivity(req, res, url, origin) {
             });
             return true;
           }
-          if (isManagerRoleName(viewer?.roleName) && project.allow_project_tracking === false) {
+          if (isManagerRoleName(viewer?.roleName) && !(await managerMayTrackProject(project, member.memberId))) {
             sendJson(res, origin, 403, { success: false, error: MANAGER_TRACKING_DISABLED_MESSAGE });
             return true;
           }

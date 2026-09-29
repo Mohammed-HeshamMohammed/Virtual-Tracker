@@ -12,6 +12,7 @@ import {
   getMemberFilterOptions,
   getProjectFilterOptions,
   groupByColumnLabel,
+  parseTimeToSeconds,
   type ActivityLevelFilter,
   type ManualTimeFilter,
   type TrackedTimeFilter,
@@ -295,9 +296,15 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range, cur
     const m = Math.floor((secs % 3600) / 60)
     const s = secs % 60
     const spent = sumMoneyStrings(activeRows.map((d) => d.totalSpent))
+    // Weighted by each row's actual active/idle seconds, not an average of its
+    // own percentage - a quiet day with one minute tracked at 100% activity
+    // shouldn't count as much as a full 8-hour day at 60%.
+    const activeSec = activeRows.reduce((a, d) => a + d.trackedHours * 3600, 0)
+    const idleSec = activeRows.reduce((a, d) => a + parseTimeToSeconds(d.idleHr), 0)
+    const activity = activeSec + idleSec > 0 ? Math.round((activeSec / (activeSec + idleSec)) * 100) : 0
     return {
       time: `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`,
-      activity: Math.round(activeRows.reduce((a, d) => a + d.activityPct, 0) / activeRows.length),
+      activity,
       spent,
     }
   }, [activeRows])

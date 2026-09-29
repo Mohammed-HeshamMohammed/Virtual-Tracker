@@ -36,11 +36,11 @@ export async function createProjectPg(data) {
   const id = crypto.randomUUID();
   const rows = await query(
     `INSERT INTO projects (
-       id, name, status, billable, disable_activity, allow_project_tracking, disable_idle_time,
+       id, name, status, billable, disable_activity, allow_project_tracking, restrict_manager_tracking, disable_idle_time,
        idle_time_seconds, break_time_seconds, disable_break_limit, client_id, managers_notes, users_notes, viewers_notes, type, end_date,
        require_task_to_track, restrict_task_creation, require_stop_note, client_can_manage, client_can_track,
        timezone, created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$23)
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$24)
      RETURNING *`,
     [
       id,
@@ -49,6 +49,7 @@ export async function createProjectPg(data) {
       data.billable ?? true,
       data.disableActivity ?? false,
       data.allowProjectTracking ?? true,
+      data.restrictManagerTracking === true,
       data.disableIdleTime ?? false,
       toStoredIdleTimeSeconds(data.idleTimeSeconds),
       toStoredBreakTimeSeconds(data.breakTimeSeconds),
@@ -85,6 +86,7 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
     billable: "billable",
     disableActivity: "disable_activity",
     allowProjectTracking: "allow_project_tracking",
+    restrictManagerTracking: "restrict_manager_tracking",
     disableIdleTime: "disable_idle_time",
     idleTimeSeconds: "idle_time_seconds",
     breakTimeSeconds: "break_time_seconds",
@@ -303,6 +305,46 @@ export async function isProjectTrackerPg(projectId, memberId) {
 
 export async function listProjectMembersPg(projectId) {
   return query("SELECT * FROM project_members WHERE project_id = $1", [projectId]);
+}
+
+/**
+ * Sets the project's manager clock-in allow-list in one statement: every
+ * `manager`-role row on this project gets `manager_can_track` set to whether
+ * its member_id is in `allowedMemberIds`, so the picker's full desired state
+ * can just be sent over - same "declarative list, not incremental toggles"
+ * shape as syncProjectMembers. Only meaningful once the project's own
+ * restrict_manager_tracking switch is on (see isManagerAllowedToTrackPg); it
+ * is always saved regardless of that switch so turning it back on later
+ * doesn't need the list re-entered.
+ */
+export async function setManagerTrackingAccessPg(projectId, allowedMemberIds, actorId) {
+  const ids = Array.isArray(allowedMemberIds) ? allowedMemberIds.filter(Boolean) : [];
+  await query(
+    `UPDATE project_members
+        SET manager_can_track = (member_id = ANY($2::uuid[])),
+            updated_by = COALESCE($3, updated_by)
+      WHERE project_id = $1 AND LOWER(COALESCE(project_role, '')) = 'manager'`,
+    [projectId, ids, uuidOrNull(actorId)],
+  );
+  void publishChange("project-members", projectId, "updated", uuidOrNull(actorId) ?? undefined);
+}
+
+/**
+ * Whether this specific manager may clock in on this project. Only ever
+ * consulted for the plain "manager" role (see isManagerRoleName in
+ * activity/routes.js) - callers should check project.restrict_manager_tracking
+ * first and skip this entirely when it's off, since off means every manager
+ * on the project is allowed, same as before this feature existed.
+ */
+export async function isManagerAllowedToTrackPg(projectId, memberId) {
+  if (!projectId || !memberId) return false;
+  const rows = await query(
+    `SELECT manager_can_track FROM project_members
+      WHERE project_id = $1 AND member_id = $2 AND LOWER(COALESCE(project_role, '')) = 'manager'
+      LIMIT 1`,
+    [projectId, memberId],
+  );
+  return rows[0]?.manager_can_track === true;
 }
 
 export async function listProjectIdsForMemberPg(memberId) {

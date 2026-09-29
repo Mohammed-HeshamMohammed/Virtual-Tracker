@@ -16,6 +16,9 @@ function toProject(input: Record<string, unknown>): Project {
     allowProjectTracking: Boolean(
       input.allow_project_tracking ?? input.allowProjectTracking ?? true,
     ),
+    restrictManagerTracking: Boolean(
+      input.restrict_manager_tracking ?? input.restrictManagerTracking ?? false,
+    ),
     requireTaskToTrack: Boolean(input.require_task_to_track ?? input.requireTaskToTrack ?? true),
     restrictTaskCreation: Boolean(input.restrict_task_creation ?? input.restrictTaskCreation ?? true),
     requireStopNote: Boolean(input.require_stop_note ?? input.requireStopNote ?? false),
@@ -49,6 +52,7 @@ function toProjectPayload(
   if (input.billable !== undefined) out.billable = input.billable
   if (input.disableActivity !== undefined) out.disable_activity = input.disableActivity
   if (input.allowProjectTracking !== undefined) out.allow_project_tracking = input.allowProjectTracking
+  if (input.restrictManagerTracking !== undefined) out.restrict_manager_tracking = input.restrictManagerTracking
   if (input.requireTaskToTrack !== undefined) out.require_task_to_track = input.requireTaskToTrack
   if (input.restrictTaskCreation !== undefined) out.restrict_task_creation = input.restrictTaskCreation
   if (input.requireStopNote !== undefined) out.require_stop_note = input.requireStopNote
@@ -96,6 +100,7 @@ export interface Project {
   billable: boolean
   disableActivity: boolean
   allowProjectTracking: boolean
+  restrictManagerTracking: boolean
   requireTaskToTrack: boolean
   restrictTaskCreation: boolean
   requireStopNote: boolean
@@ -134,6 +139,7 @@ export interface CreateProjectInput {
   billable?: boolean
   disableActivity?: boolean
   allowProjectTracking?: boolean
+  restrictManagerTracking?: boolean
   requireTaskToTrack?: boolean
   restrictTaskCreation?: boolean
   requireStopNote?: boolean
@@ -160,6 +166,7 @@ export interface UpdateProjectInput {
   billable?: boolean
   disableActivity?: boolean
   allowProjectTracking?: boolean
+  restrictManagerTracking?: boolean
   requireTaskToTrack?: boolean
   restrictTaskCreation?: boolean
   requireStopNote?: boolean
@@ -382,5 +389,25 @@ export async function removeProjectMember(id: string): Promise<void> {
   if (!res.ok) {
     const json = await res.json().catch(() => null)
     throw extractApiError(res.status, "Failed to remove project member", json)
+  }
+}
+
+/**
+ * The project's manager clock-in allow-list, as a full desired state - every
+ * manager not in `memberIds` loses tracking access the next time the switch
+ * that gates on it (Project.restrictManagerTracking) is on.
+ */
+export async function setProjectManagerTrackingAccess(
+  projectId: string,
+  memberIds: string[],
+): Promise<void> {
+  const res = await apiFetch(apiPath(`/api/projects/${encodeURIComponent(projectId)}/manager-tracking-access`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ member_ids: memberIds }),
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null)
+    throw extractApiError(res.status, "Failed to save manager tracking access", json)
   }
 }

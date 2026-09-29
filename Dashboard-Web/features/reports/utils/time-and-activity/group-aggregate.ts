@@ -181,7 +181,16 @@ export function buildGroupedRows(
     }))
   }
 
-  rows.sort((a, b) => a.dateLabel.localeCompare(b.dateLabel))
+  // Weekly rows: `date` is the ISO week-start key, which sorts chronologically.
+  // `dateLabel` ("Jan 5 - Jan 11") does not - alphabetical order scrambles any
+  // range spanning more than a couple of months (e.g. puts April before January).
+  // Every other grouping mode has no real date in `date` (it's the entity's
+  // grouping key), so those keep sorting by the human-readable label instead.
+  if (groupBy === "date_per_week") {
+    rows.sort((a, b) => a.date.localeCompare(b.date))
+  } else {
+    rows.sort((a, b) => a.dateLabel.localeCompare(b.dateLabel))
+  }
   return { rows, subRowsByKey }
 }
 

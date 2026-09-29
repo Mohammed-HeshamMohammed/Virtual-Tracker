@@ -81,6 +81,8 @@ interface AddProjectFormState {
   billable: boolean
   disableActivity: boolean
   allowProjectTracking: boolean
+  restrictManagerTracking: boolean
+  trackingAllowedManagerIds: string[]
   requireTaskToTrack: boolean
   restrictTaskCreation: boolean
   requireStopNote: boolean
@@ -217,6 +219,8 @@ function createDefaultAddForm(): AddProjectFormState {
     billable: true,
     disableActivity: false,
     allowProjectTracking: true,
+    restrictManagerTracking: false,
+    trackingAllowedManagerIds: [],
     requireTaskToTrack: true,
     restrictTaskCreation: true,
     requireStopNote: false,
@@ -362,6 +366,8 @@ function formStateToPayload(
     billable: addForm.billable,
     disableActivity: addForm.disableActivity,
     allowProjectTracking: addForm.allowProjectTracking,
+    restrictManagerTracking: addForm.restrictManagerTracking,
+    trackingAllowedManagerIds: addForm.trackingAllowedManagerIds,
     requireTaskToTrack: addForm.requireTaskToTrack,
     restrictTaskCreation: addForm.restrictTaskCreation,
     requireStopNote: addForm.requireStopNote,
@@ -702,6 +708,8 @@ export function ProjectModal({
           billable: payload.billable,
           disableActivity: payload.disableActivity,
           allowProjectTracking: payload.allowProjectTracking,
+          restrictManagerTracking: payload.restrictManagerTracking,
+          trackingAllowedManagerIds: payload.trackingAllowedManagerIds ?? [],
           requireTaskToTrack: payload.requireTaskToTrack,
           restrictTaskCreation: payload.restrictTaskCreation,
           requireStopNote: payload.requireStopNote,
@@ -1971,6 +1979,55 @@ export function ProjectModal({
                       }
                     />
                   </div>
+
+                  {addForm.allowProjectTracking ? (
+                    <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
+                      <SettingToggleRow
+                        checked={addForm.restrictManagerTracking}
+                        onChange={(next) => setAddForm((p) => ({ ...p, restrictManagerTracking: next }))}
+                        label="Only specific managers can clock in"
+                      />
+                      <p className={cn("text-xs", formTheme.mutedText)}>
+                        Off lets every manager on this project record time. On, only the managers checked
+                        below can — the rest still manage the project, just can&apos;t clock in on it.
+                      </p>
+                      {addForm.restrictManagerTracking ? (
+                        addForm.managers.length === 0 ? (
+                          <p className={cn("text-xs italic", formTheme.mutedText)}>
+                            No managers on this project yet — add some on the Members tab, then choose which
+                            of them can clock in.
+                          </p>
+                        ) : (
+                          <div className="flex flex-col gap-1.5">
+                            {addForm.managers.map((managerId) => {
+                              const checked = addForm.trackingAllowedManagerIds.includes(managerId)
+                              return (
+                                <label
+                                  key={managerId}
+                                  className={cn("flex cursor-pointer items-center gap-2 text-sm", formTheme.bodyText)}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() =>
+                                      setAddForm((p) => ({
+                                        ...p,
+                                        trackingAllowedManagerIds: checked
+                                          ? p.trackingAllowedManagerIds.filter((id) => id !== managerId)
+                                          : [...p.trackingAllowedManagerIds, managerId],
+                                      }))
+                                    }
+                                    className="h-4 w-4 rounded border-slate-300"
+                                  />
+                                  <span>{memberLabelById[managerId] ?? managerId}</span>
+                                </label>
+                              )
+                            })}
+                          </div>
+                        )
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   {!projectTypeDef(addForm.type).hasTasks ? null : (
                     <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>

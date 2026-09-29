@@ -1,5 +1,6 @@
 import { ALL_MEMBERS_VALUE, ALL_PROJECTS_VALUE } from "@/features/reports/components/shared/constants"
 import type { TimeActivityDayRow, TimeActivityMemberSubRow, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
+import { moneyLabelToNumber, sumMoneyStrings } from "@/features/reports/utils/money"
 
 export function parseTimeToSeconds(hms: string): number {
   const parts = hms.split(":").map(Number)
@@ -51,17 +52,28 @@ function aggregateMemberSubRows(subs: TimeActivityMemberSubRow[]): {
   const regSec = subs.reduce((a, s) => a + parseTimeToSeconds(s.regularHours), 0)
   const breakSec = subs.reduce((a, s) => a + parseTimeToSeconds(s.breakTime), 0)
   const totSec = subs.reduce((a, s) => a + parseTimeToSeconds(s.totalHours), 0)
+  const idleSec = subs.reduce((a, s) => a + parseTimeToSeconds(s.idleHr), 0)
   const tracked = subs.reduce((a, s) => a + s.trackedHours, 0)
   const manual = subs.reduce((a, s) => a + s.manualHours, 0)
-  const activity = Math.round(subs.reduce((a, s) => a + s.activityPct, 0) / subs.length)
+  // Weighted by each member's actual active/idle seconds, not an average of their
+  // individual percentages - a member who tracked one minute at 100% shouldn't
+  // count as much as one who tracked 8 hours at 60%. regSec is exactly the sum of
+  // activeSeconds (regularHours is formatted straight from it in toMemberSubRow),
+  // so it doubles as the "active" side of that ratio without recomputing it from
+  // the already-summed tracked hours and risking float drift between the two.
+  const activityPct = regSec + idleSec > 0 ? Math.round((regSec / (regSec + idleSec)) * 100) : 0
+  const idlePct = regSec + idleSec > 0 ? `${Math.round((idleSec / (regSec + idleSec)) * 100)}%` : "-"
   return {
     regularHours: formatSecondsAsHMS(regSec),
     breakTime: formatSecondsAsHMS(breakSec),
     totalHours: formatSecondsAsHMS(totSec),
-    activityPct: activity,
-    idlePct: subs[0].idlePct,
-    idleHr: subs[0].idleHr,
-    totalSpent: subs[0].totalSpent,
+    activityPct,
+    idlePct,
+    idleHr: formatSecondsAsHMS(idleSec),
+    // sumMoneyStrings, not subs[0].totalSpent - the old code silently dropped
+    // every member past the first whenever a filter left more than one on the
+    // day row, understating idle time and pay together.
+    totalSpent: sumMoneyStrings(subs.map((s) => s.totalSpent)),
     trackedHours: tracked,
     manualHours: manual,
   }
@@ -165,7 +177,10 @@ export function getMetricNumeric(metric: TimeActivityMetric, d: TimeActivityDayR
     case "activity":
       return d.activityPct
     case "total_spent":
-      return Number.parseFloat(d.totalSpent.replace(/[^0-9.-]/g, "")) || 0
+      // Not a plain digit-strip: a mixed-currency day ("$0.00 + EGP 787.54")
+      // would glue the two amounts into one ("0.00787.54") otherwise - the
+      // chart plotted a wildly wrong bar for exactly that case.
+      return moneyLabelToNumber(d.totalSpent)
     default:
       return 0
   }
