@@ -1,0 +1,18 @@
+[package]
+name = "soft-fix-tracker"
+version = "0.1.0"
+description = "Soft Fix Tracker desktop shell"
+authors = ["Soft Fix"]
+edition = "2021"
+
+[lib]
+name = "soft_fix_tracker_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
