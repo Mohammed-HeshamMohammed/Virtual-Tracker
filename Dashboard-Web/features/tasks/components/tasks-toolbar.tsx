@@ -41,6 +41,8 @@ interface TasksToolbarProps {
   addTask: () => void
   syncPulse: boolean
   handleSync: () => void
+  /** Viewing only: hides assign, edit, duplicate and add. */
+  readOnly?: boolean
 }
 const VIEW_TABS: { mode: ViewMode; icon: React.ReactNode; label: string }[] = [
     { mode: "list", icon: <List className="h-4 w-4" />, label: "List" },
@@ -71,6 +73,7 @@ export function TasksToolbar({
   addTask,
   syncPulse,
   handleSync,
+  readOnly = false,
 }: TasksToolbarProps) {
   return (
     <motion.div layout className="mb-4 flex shrink-0 items-center justify-between gap-4">
@@ -148,6 +151,8 @@ export function TasksToolbar({
       </motion.div>
 
       <motion.div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+        {readOnly ? null : (
+        <>
         <TaskAssignButton
           selectedTask={selectedTask}
           projectTeams={projectTeams}
@@ -192,7 +197,9 @@ export function TasksToolbar({
             <span className="hidden sm:inline">Duplicate</span>
           </button>
         </IconTooltip>
-        {canAddTask && (
+        </>
+        )}
+        {canAddTask && !readOnly && (
           <button
             type="button"
             onClick={addTask}

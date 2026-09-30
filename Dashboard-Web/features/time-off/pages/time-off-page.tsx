@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Plus } from "lucide-react"
 import { useAuth } from "@/shared/providers/app"
-import { isManagementRole } from "@/features/auth"
+import { isManagementRole, isReadOnlyRole } from "@/features/auth"
 import { cn } from "@/shared/utils/utils"
 import {
   createTimeOffPolicy,
@@ -43,6 +43,8 @@ const inputCls =
 export function TimeOffRequestsPage(_props: { onNavigate?: (id: string) => void } = {}) {
   const { memberId, memberRole } = useAuth()
   const canReview = isManagementRole(memberRole ?? "")
+  // A Clients login sees the requests of the people on its projects and files none.
+  const readOnly = isReadOnlyRole(memberRole ?? "")
 
   const [policies, setPolicies] = useState<TimeOffPolicy[]>([])
   const [requests, setRequests] = useState<TimeOffRequest[]>([])
@@ -154,15 +156,17 @@ export function TimeOffRequestsPage(_props: { onNavigate?: (id: string) => void 
               Policies
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={() => setShowForm((v) => !v)}
-            disabled={policies.length === 0}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-50"
-          >
-            <Plus className="h-4 w-4" />
-            Request time off
-          </button>
+          {readOnly ? null : (
+            <button
+              type="button"
+              onClick={() => setShowForm((v) => !v)}
+              disabled={policies.length === 0}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600 disabled:opacity-50"
+            >
+              <Plus className="h-4 w-4" />
+              Request time off
+            </button>
+          )}
         </div>
       </div>
 
@@ -170,7 +174,7 @@ export function TimeOffRequestsPage(_props: { onNavigate?: (id: string) => void 
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{error}</p>
       ) : null}
 
-      {policies.length === 0 && !loading ? (
+      {policies.length === 0 && !loading && !readOnly ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
           No time off policies exist yet.{" "}
           {canReview ? "Create one to let people request time off." : "Ask an administrator to create one."}
@@ -209,7 +213,7 @@ export function TimeOffRequestsPage(_props: { onNavigate?: (id: string) => void 
         </div>
       ) : null}
 
-      {showForm && policies.length > 0 ? (
+      {showForm && !readOnly && policies.length > 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="mb-3 text-sm font-semibold text-slate-800">New request</h2>
           <div className="grid gap-3 sm:grid-cols-3">
@@ -338,7 +342,7 @@ export function TimeOffRequestsPage(_props: { onNavigate?: (id: string) => void 
                           </button>
                         </>
                       ) : null}
-                      {isOwn ? (
+                      {isOwn && !readOnly ? (
                         <button
                           type="button"
                           disabled={busyId === r.id}
