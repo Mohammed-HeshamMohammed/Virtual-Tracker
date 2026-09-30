@@ -106,6 +106,24 @@ await step("boot migrations apply to the copy", async () => {
   }
 });
 
+// The synthetic tenant is left behind by an earlier run (a failed or repeated
+// rehearsal), and the differential below must see only the main tenant.
+await step("leftovers from an earlier rehearsal are cleared", async () => {
+  const c = await admin.connect();
+  try {
+    await c.query("SET session_replication_role = replica");
+    let cleared = 0;
+    for (const t of tableNames) {
+      cleared += (await c.query(`DELETE FROM ${t} WHERE tenant_id = $1`, [TENANT_B])).rowCount ?? 0;
+    }
+    await c.query("DELETE FROM tenants WHERE id = $1", [TENANT_B]);
+    return `${cleared} rows`;
+  } finally {
+    await c.query("SET session_replication_role = DEFAULT").catch(() => {});
+    c.release();
+  }
+});
+
 await step("vt_app logs in with its derived password and cannot escalate", async () => {
   const c = await app.connect();
   try {
