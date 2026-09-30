@@ -772,6 +772,10 @@ export async function routeProjects(req, res, url, db, origin) {
             ...row,
             has_tasks: projectTypeDef(row.type).hasTasks,
             can_create_tasks: viewer ? await viewerCanCreateProjectTasks(db, viewer, row.id) : false,
+            // What the project is configured to require. `require_task_to_track` below is what
+            // it means for THIS viewer (an admin or a clock-in client never needs a task), so the
+            // Projects table reads this one to describe the project itself.
+            task_required_setting: row.require_task_to_track !== false,
             ...(clientTrackable || orgAdminTrackable ? { require_task_to_track: false } : {}),
           };
         }),
