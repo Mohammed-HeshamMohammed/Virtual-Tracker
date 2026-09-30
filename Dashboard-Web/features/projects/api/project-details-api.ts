@@ -126,6 +126,8 @@ export interface ProjectMemberRow {
   projectId: string
   memberId: string
   projectRole: string
+  /** Set on a manager's row: ticked in "Only specific managers can clock in". */
+  managerCanTrack?: boolean
 }
 
 function parseOptionalNumber(value: string): number | null {
@@ -437,6 +439,7 @@ async function getProjectMemberRows(options: RequestOptions & { fields?: string[
     projectId: String(row.project_id ?? row.projectId ?? ""),
     memberId: String(row.member_id ?? row.memberId ?? ""),
     projectRole: String(row.project_role ?? row.projectRole ?? ""),
+    managerCanTrack: (row.manager_can_track ?? row.managerCanTrack) === true,
   }))
 }
 
@@ -975,13 +978,15 @@ export interface EnrichedProjectListContext {
   memberLimitByProject: Map<string, number>
   teamNamesByProject: Map<string, string[]>
   memberIdsByProject: Map<string, string[]>
+  /** Managers on each project, and which of them the clock-in allow-list names. */
+  managersByProject: Map<string, { managerIds: string[]; allowedIds: string[] }>
   taskCountsByProject: Map<string, { done: number; total: number }>
 }
 
 async function loadProjectListContext(): Promise<EnrichedProjectListContext> {
   const [budgets, members, teamLinks, limits, overview] = await Promise.all([
     getProjectBudgets(undefined, { fields: ["id", "project_id", "cost", "type", "based_on"] }).catch(() => [] as ProjectBudgetRow[]),
-    getProjectMemberRows({ fields: ["id", "project_id", "member_id"] }).catch(() => [] as ProjectMemberRow[]),
+    getProjectMemberRows({ fields: ["id", "project_id", "member_id", "project_role", "manager_can_track"] }).catch(() => [] as ProjectMemberRow[]),
     getTeamProjectLinks().catch(() => [] as TeamProjectLink[]),
     getProjectMemberLimits(undefined, { fields: ["id", "project_id", "cost"] }).catch(() => [] as ProjectMemberLimitRow[]),
     getProjectOverviewCore().catch(() => null),
@@ -994,11 +999,18 @@ async function loadProjectListContext(): Promise<EnrichedProjectListContext> {
 
   const memberCountByProject = new Map<string, number>()
   const memberIdsByProject = new Map<string, string[]>()
+  const managersByProject = new Map<string, { managerIds: string[]; allowedIds: string[] }>()
   for (const m of members) {
     memberCountByProject.set(m.projectId, (memberCountByProject.get(m.projectId) ?? 0) + 1)
     const ids = memberIdsByProject.get(m.projectId) ?? []
     ids.push(m.memberId)
     memberIdsByProject.set(m.projectId, ids)
+    if (normalizeProjectRole(m.projectRole) === "manager") {
+      const entry = managersByProject.get(m.projectId) ?? { managerIds: [], allowedIds: [] }
+      entry.managerIds.push(m.memberId)
+      if (m.managerCanTrack) entry.allowedIds.push(m.memberId)
+      managersByProject.set(m.projectId, entry)
+    }
   }
 
   const teamNamesByProject = new Map<string, string[]>()
@@ -1025,6 +1037,7 @@ async function loadProjectListContext(): Promise<EnrichedProjectListContext> {
     memberLimitByProject,
     teamNamesByProject,
     memberIdsByProject,
+    managersByProject,
     taskCountsByProject,
   }
 }
@@ -1034,7 +1047,13 @@ export async function fetchEnrichedProjects(): Promise<{
   context: EnrichedProjectListContext
 }> {
   const [projects, context] = await Promise.all([
-    getProjects({ fields: ["id", "name", "status", "type"] }),
+    getProjects({
+      fields: [
+        "id", "name", "status", "type",
+        "allow_project_tracking", "restrict_manager_tracking", "require_task_to_track",
+        "restrict_task_creation", "require_stop_note", "client_can_manage", "client_can_track",
+      ],
+    }),
     loadProjectListContext(),
   ])
   return { projects, context }

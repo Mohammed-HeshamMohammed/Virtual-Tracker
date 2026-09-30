@@ -31,12 +31,15 @@ import {
   BudgetBar,
   formatProjectBudget,
   MemberLimit,
+  ProjectRulesCell,
   TeamBadge,
   TodoProgress,
 } from "@/features/projects/components/project-table-cells"
 import { ProjectRowMenu } from "@/features/projects/components/menus/project-row-menu"
 import { useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 import type { ProjectListItem } from "@/features/projects/models/list"
+import { isTaskLessProjectType } from "@/features/projects/config/project-types"
+import { projectRulesWeight } from "@/features/projects/utils/project-rules"
 
 export function ProjectsTab({
   projects,
@@ -124,6 +127,10 @@ export function ProjectsTab({
           case "member_limits":
             aVal = a.memberLimit ?? -1
             bVal = b.memberLimit ?? -1
+            break
+          case "management":
+            aVal = projectRulesWeight(a.rules, !isTaskLessProjectType(a.type))
+            bVal = projectRulesWeight(b.rules, !isTaskLessProjectType(b.type))
             break
           default:
             return 0
@@ -274,6 +281,12 @@ export function ProjectsTab({
         return (
           <td key="member_limits" className={cellClass} style={cellStyle}>
             <MemberLimit members={project.members} limit={project.memberLimit} isDark={isDark} />
+          </td>
+        )
+      case "management":
+        return (
+          <td key="management" className={cellClass} style={cellStyle}>
+            <ProjectRulesCell rules={project.rules} hasTasks={!isTaskLessProjectType(project.type)} isDark={isDark} />
           </td>
         )
       default:

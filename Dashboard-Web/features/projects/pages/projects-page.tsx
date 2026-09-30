@@ -21,7 +21,8 @@ import { changedEvent } from "@/infrastructure/api/change-events"
 import { ProjectsSkeleton } from "@/features/projects/components/skeletons/projects-skeleton"
 import { ProjectsTab } from "@/features/projects/components/tables/projects-tab"
 import type { ProjectListItem as Project } from "@/features/projects/models/list"
-import type { ProjectType } from "@/features/projects/api/project-api"
+import type { Project as ApiProject } from "@/features/projects/api/project-api"
+import { buildProjectRules } from "@/features/projects/utils/project-rules"
 
 import { useProjectColumns } from "@/features/projects/hooks/use-project-columns"
 import { useProjectMutations } from "@/features/projects/hooks/use-project-mutations"
@@ -35,12 +36,7 @@ import { NotifyToastHost } from "@/shared/ui/layout/toasts/notify-toast-host"
 const PROJECT_COLOR_POOL = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6", "#8b5cf6", "#0ea5e9"]
 
 function mapApiProject(
-  p: {
-    id: string
-    name: string
-    status: string
-    type?: ProjectType
-  },
+  p: Pick<ApiProject, "id" | "name" | "status"> & Partial<ApiProject>,
   idx: number,
   ctx: EnrichedProjectListContext,
 ): Project {
@@ -69,6 +65,17 @@ function mapApiProject(
       }
       : null,
     memberIds: ctx.memberIdsByProject.get(id) ?? [],
+    rules: buildProjectRules({
+      allowProjectTracking: p.allowProjectTracking ?? true,
+      restrictManagerTracking: p.restrictManagerTracking ?? false,
+      managerIds: ctx.managersByProject.get(id)?.managerIds ?? [],
+      trackingAllowedManagerIds: ctx.managersByProject.get(id)?.allowedIds ?? [],
+      requireTaskToTrack: p.requireTaskToTrack ?? true,
+      restrictTaskCreation: p.restrictTaskCreation ?? true,
+      requireStopNote: p.requireStopNote ?? false,
+      clientCanManage: p.clientCanManage ?? false,
+      clientCanTrack: p.clientCanTrack ?? false,
+    }),
   }
 }
 
