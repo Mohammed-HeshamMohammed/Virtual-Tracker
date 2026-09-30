@@ -1,9 +1,16 @@
 import {
   extractPresenceFields,
   flattenPresenceForApi,
+  presenceWithOpenSession,
   resolveEffectivePresence,
 } from "./presence-status.js";
 import { getMemberByFirebaseUidPg, getMemberByIdPg } from "../../../lib/postgres/members-postgres.service.js";
+
+// Loaded on first use, like the presence runtime below: activity-session-status pulls in the
+// activity database layer, which nothing else that imports this file needs.
+async function sessionStatusApi() {
+  return import("../../activity/activity-session-status.js");
+}
 
 export async function resolveMemberIdForUid(_db, firebaseUid) {
   if (!firebaseUid) return "";
@@ -20,7 +27,12 @@ export async function getMemberPresence(_db, memberId) {
 
 export async function enrichMemberWithPresence(_db, memberId, memberData) {
   const { getPresenceService } = await import("../../presence/index.js");
-  const runtime = getPresenceService().getPresence(memberId);
+  let runtime = getPresenceService().getPresence(memberId);
+  if (runtime.status === "offline") {
+    const { buildOpenSessionIndex, effectiveTrackingStatusFromSession } = await sessionStatusApi();
+    const session = (await buildOpenSessionIndex().catch(() => null))?.get(memberId) ?? null;
+    runtime = presenceWithOpenSession(runtime, effectiveTrackingStatusFromSession(session), session?.updated_at);
+  }
   return { ...memberData, ...flattenPresenceForApi(memberData, runtime) };
 }
 
@@ -30,10 +42,21 @@ export async function enrichMembersWithPresenceBatch(_db, members) {
   const presenceService = getPresenceService();
   const ids = members.map((member) => member.id);
   const presenceMap = await presenceService.getPresenceMany(ids);
-  return members.map((member) => ({
-    ...member,
-    ...flattenPresenceForApi(member, presenceMap.get(member.id) ?? null),
-  }));
+  // One read of the open sessions, and only when someone reads offline: it is the fallback for
+  // a tracker that is logging time with its presence socket down (see presenceWithOpenSession).
+  const anyOffline = ids.some((id) => (presenceMap.get(id)?.status ?? "offline") === "offline");
+  const { buildOpenSessionIndex, effectiveTrackingStatusFromSession } = anyOffline
+    ? await sessionStatusApi()
+    : { buildOpenSessionIndex: null, effectiveTrackingStatusFromSession: null };
+  const sessions = buildOpenSessionIndex ? await buildOpenSessionIndex().catch(() => null) : null;
+  return members.map((member) => {
+    let presence = presenceMap.get(member.id) ?? null;
+    if (sessions) {
+      const session = sessions.get(member.id) ?? null;
+      presence = presenceWithOpenSession(presence, effectiveTrackingStatusFromSession(session), session?.updated_at);
+    }
+    return { ...member, ...flattenPresenceForApi(member, presence) };
+  });
 }
 
 export async function patchMemberPresence(_db, memberId, patch) {
