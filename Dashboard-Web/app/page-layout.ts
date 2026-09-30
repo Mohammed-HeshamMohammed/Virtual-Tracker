@@ -3,6 +3,7 @@ export const FULL_BLEED_PAGE_IDS = new Set([
   "people-teams",
   "people-members-tree",
   "people-member-bans",
+  "people-customer-accounts",
   "pm-overview",
   "pm-projects",
   "pm-tasks",

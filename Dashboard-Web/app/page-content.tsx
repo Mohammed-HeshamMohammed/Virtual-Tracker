@@ -27,6 +27,7 @@ function renderPageBody(activeItem: string, onNavigate: NavigateHandler, pagePar
     activeItem === "people-members" ||
     activeItem === "people-members-tree" ||
     activeItem === "people-member-bans" ||
+    activeItem === "people-customer-accounts" ||
     activeItem === "people-teams"
   ) {
     return <PeopleSectionContent activeItem={activeItem} onNavigate={onNavigate} />

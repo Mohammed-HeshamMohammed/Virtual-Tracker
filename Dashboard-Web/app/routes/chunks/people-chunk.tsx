@@ -2,6 +2,7 @@
 
 import { MembersPage, MemberTreePage } from "@/features/members"
 import { MemberBansPage } from "@/features/members/pages/member-bans-page"
+import { PeopleSectionContent } from "@/features/members/pages/people-section-content"
 import { TeamsPage } from "@/features/teams"
 import type { PageChunkProps } from "@/app/routes/types"
 
@@ -13,6 +14,8 @@ export default function PeopleChunk({ pageId, onNavigate }: PageChunkProps) {
       return <MemberTreePage />
     case "people-member-bans":
       return <MemberBansPage />
+    case "people-customer-accounts":
+      return <PeopleSectionContent activeItem={pageId} onNavigate={onNavigate} />
     case "people-teams":
       return <TeamsPage />
     default:
