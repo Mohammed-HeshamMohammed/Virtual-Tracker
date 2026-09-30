@@ -7,19 +7,19 @@ import type { ActivityLevelFilter, ManualTimeFilter, TrackedTimeFilter } from "@
 import { ReportFilterDropdown } from "@/features/reports/components/time-activity-report/filter-dropdown"
 import { PAY_RATE_CURRENCIES } from "@/features/members/config/pay-currencies"
 
-const TRACKED_TIME_SELECT_OPTIONS: { value: TrackedTimeFilter; label: string }[] = [
+export const TRACKED_TIME_SELECT_OPTIONS: { value: TrackedTimeFilter; label: string }[] = [
   { value: "all", label: "All members" },
   { value: "with", label: "Members with tracked time" },
   { value: "without", label: "Members without tracked time" },
 ]
 
-const MANUAL_TIME_SELECT_OPTIONS: { value: ManualTimeFilter; label: string }[] = [
+export const MANUAL_TIME_SELECT_OPTIONS: { value: ManualTimeFilter; label: string }[] = [
   { value: "all", label: "Any manual time" },
   { value: "with", label: "Has manual time" },
   { value: "without", label: "No manual time" },
 ]
 
-const ACTIVITY_LEVEL_OPTIONS: { value: ActivityLevelFilter; label: string }[] = [
+export const ACTIVITY_LEVEL_OPTIONS: { value: ActivityLevelFilter; label: string }[] = [
   { value: "all", label: "Any activity level" },
   { value: "under_50", label: "Under 50%" },
   { value: "50_to_79", label: "50–79%" },
@@ -39,6 +39,7 @@ export function ReportFiltersPanel({
   resolvedDisplayCurrency,
   setDisplayCurrency,
   onClearFilters,
+  hideCurrency = false,
 }: {
   onClose: () => void
   panelStyle?: CSSProperties | null
@@ -52,6 +53,8 @@ export function ReportFiltersPanel({
   resolvedDisplayCurrency?: string
   setDisplayCurrency: (value: string) => void
   onClearFilters: () => void
+  /** No money is shown, so there is no currency to choose. */
+  hideCurrency?: boolean
 }) {
   const currencyOptions = [
     { value: "", label: resolvedDisplayCurrency ? `Automatic (${resolvedDisplayCurrency})` : "Automatic" },
@@ -122,6 +125,7 @@ export function ReportFiltersPanel({
               }}
             />
           </div>
+          {hideCurrency ? null : (
           <div>
             <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">DISPLAY CURRENCY</div>
             <ReportFilterDropdown
@@ -134,6 +138,7 @@ export function ReportFiltersPanel({
               }}
             />
           </div>
+          )}
         </div>
       </div>
 

@@ -16,9 +16,12 @@ function isLeafItem(item: TimeActivityColumnPickerLeafItem | string): item is Ti
 export function ReportColumnPicker({
   enabledCols,
   onToggle,
+  hideMoney = false,
 }: {
   enabledCols: Set<string>
   onToggle: (k: string) => void
+  /** Leaves the Total spent column out of the picker entirely. */
+  hideMoney?: boolean
 }) {
   const [flyout, setFlyout] = useState<string | null>(null)
 
@@ -27,7 +30,11 @@ export function ReportColumnPicker({
   }
 
   function renderFlatSection(section: TimeActivityColumnPickerSection) {
-    const items = section.items
+    const items = section.items?.filter((item) => {
+      if (!hideMoney) return true
+      const key = typeof item === "string" ? getKey(item) : (item.key ?? getKey(item.label ?? ""))
+      return key !== "total_spent"
+    })
     if (!items) return null
     return items.map((item) => {
       if (isLeafItem(item) || (typeof item === "object" && item !== null && "key" in item)) {
@@ -103,7 +110,7 @@ export function ReportColumnPicker({
                               {sub.sub}
                             </div>
                           )}
-                          {sub.items.map((item) => {
+                          {sub.items.filter((item) => !(hideMoney && getKey(item) === "total_spent")).map((item) => {
                             const k = getKey(item)
                             return (
                               <button

@@ -80,6 +80,10 @@ export interface TimeActivityColumnPickerSection {
 }
 
 export interface TimeActivityReportData {
+  /** The viewer may not see pay or cost (a Client login): the server has
+   *  already removed every amount, and the UI drops the Total spent column,
+   *  card, chart series and currency choice instead of rendering zeros. */
+  moneyHidden?: boolean
   days: TimeActivityDayRow[]
   memberRows: Record<string, TimeActivityMemberSubRow[]>
   entries: TimeActivityEntry[]
