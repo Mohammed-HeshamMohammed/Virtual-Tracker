@@ -9,6 +9,7 @@ const PAGE_CHUNK: Record<string, AppChunkId> = {
   "people-members": "people",
   "people-members-tree": "people",
   "people-member-bans": "people",
+  "people-customer-accounts": "people",
   "people-teams": "people",
 
   "pm-overview": "projects",
@@ -42,6 +43,7 @@ const PAGE_CHUNK: Record<string, AppChunkId> = {
   "settings-activity": "settings",
   "settings-integrations": "settings",
   "settings-policies": "settings",
+  "settings-compliance": "settings",
   "settings-enterprise-security": "settings",
   "settings-billing": "settings",
   "settings-billing-plans": "settings",
