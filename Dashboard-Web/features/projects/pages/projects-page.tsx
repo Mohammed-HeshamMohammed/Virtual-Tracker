@@ -70,7 +70,7 @@ function mapApiProject(
       restrictManagerTracking: p.restrictManagerTracking ?? false,
       managerIds: ctx.managersByProject.get(id)?.managerIds ?? [],
       trackingAllowedManagerIds: ctx.managersByProject.get(id)?.allowedIds ?? [],
-      requireTaskToTrack: p.requireTaskToTrack ?? true,
+      requireTaskToTrack: p.taskRequiredSetting ?? p.requireTaskToTrack ?? true,
       restrictTaskCreation: p.restrictTaskCreation ?? true,
       requireStopNote: p.requireStopNote ?? false,
       clientCanManage: p.clientCanManage ?? false,

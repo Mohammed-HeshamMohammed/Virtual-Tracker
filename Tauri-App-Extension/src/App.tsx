@@ -57,7 +57,7 @@ import { AssignedTodayBadge, AssignedToMeBadge } from "./components/stats/Assign
 import { TaskProgressPanel } from "./components/stats/TaskProgressPanel";
 import { TitleBarStats } from "./components/common/TitleBarStats";
 import { TeamStatusCard } from "./components/sidebar/TeamStatusCard";
-import { timesheetNotification, TIMESHEETS_NOTIFICATION_ID } from "./utils/approvalNotification";
+import { clampSeenTimesheets, timesheetNotification, TIMESHEETS_NOTIFICATION_ID } from "./utils/approvalNotification";
 import { ProjectsList } from "./components/sidebar/ProjectsList";
 import { TasksList } from "./components/sidebar/TasksList";
 import { SidebarActions } from "./components/sidebar/SidebarActions";
@@ -536,6 +536,9 @@ function MainApp() {
     if (!workspace) return;
     const previous = announcedTimesheetsRef.current;
     announcedTimesheetsRef.current = pendingTimesheets;
+    // "Seen at N" only means something while N or more are waiting: if some were approved and
+    // a new one arrives, the count can be back under the old mark and would read as seen.
+    setSeenTimesheets((seen) => clampSeenTimesheets(seen, pendingTimesheets));
     if (previous !== null && pendingTimesheets > previous) {
       const item = timesheetNotification(pendingTimesheets, 0);
       if (item) void notify(item.title, item.message);

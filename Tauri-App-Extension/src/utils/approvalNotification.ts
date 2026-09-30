@@ -20,3 +20,9 @@ export function timesheetNotification(pendingCount: number, seenCount: number): 
     actionLabel: "Review",
   };
 }
+
+/** "Seen at N" only means something while N or more are waiting. If some are approved and a new
+ *  one arrives, the count can be back under the old mark and would read as already seen. */
+export function clampSeenTimesheets(seen: number, pendingCount: number): number {
+  return Math.min(seen, Math.max(0, pendingCount));
+}

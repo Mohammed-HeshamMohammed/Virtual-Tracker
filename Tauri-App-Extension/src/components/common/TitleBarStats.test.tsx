@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TitleBarStats } from "./TitleBarStats";
-import { timesheetNotification } from "../../utils/approvalNotification";
+import { clampSeenTimesheets, timesheetNotification } from "../../utils/approvalNotification";
 
 const weekly = { percent: 62, dash: 40, activeSeconds: 3600, idleSeconds: 600 };
 const pulse = { totalActiveSecondsToday: 7200, trackingNowCount: 2, membersWorkedTodayCount: 5 };
@@ -72,5 +72,19 @@ describe("timesheetNotification", () => {
 
   it("carries a Review action", () => {
     expect(timesheetNotification(1, 0)?.actionLabel).toBe("Review");
+  });
+});
+
+describe("clampSeenTimesheets", () => {
+  it("lowers the seen mark when timesheets are approved, so a later arrival reads unread", () => {
+    let seen = 3;
+    seen = clampSeenTimesheets(seen, 1); // two approved
+    expect(seen).toBe(1);
+    expect(timesheetNotification(2, seen)?.read).toBe(false); // a new one arrives
+  });
+
+  it("leaves the mark alone while the count is at or above it, and never goes negative", () => {
+    expect(clampSeenTimesheets(2, 5)).toBe(2);
+    expect(clampSeenTimesheets(2, 0)).toBe(0);
   });
 });

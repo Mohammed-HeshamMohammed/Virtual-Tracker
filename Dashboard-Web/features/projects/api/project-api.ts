@@ -20,6 +20,7 @@ function toProject(input: Record<string, unknown>): Project {
       input.restrict_manager_tracking ?? input.restrictManagerTracking ?? false,
     ),
     requireTaskToTrack: Boolean(input.require_task_to_track ?? input.requireTaskToTrack ?? true),
+    taskRequiredSetting: Boolean(input.task_required_setting ?? input.taskRequiredSetting ?? input.require_task_to_track ?? input.requireTaskToTrack ?? true),
     restrictTaskCreation: Boolean(input.restrict_task_creation ?? input.restrictTaskCreation ?? true),
     requireStopNote: Boolean(input.require_stop_note ?? input.requireStopNote ?? false),
     clientCanManage: Boolean(input.client_can_manage ?? input.clientCanManage ?? false),
@@ -102,6 +103,8 @@ export interface Project {
   allowProjectTracking: boolean
   restrictManagerTracking: boolean
   requireTaskToTrack: boolean
+  /** The configured rule, not the viewer-adjusted `requireTaskToTrack` (admins never need a task). */
+  taskRequiredSetting: boolean
   restrictTaskCreation: boolean
   requireStopNote: boolean
   clientCanManage: boolean

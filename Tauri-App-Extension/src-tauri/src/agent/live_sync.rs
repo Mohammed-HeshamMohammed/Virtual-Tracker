@@ -34,6 +34,20 @@ pub fn spawn(api_url: String, api: Arc<Mutex<ApiClient>>, on_message: LiveSyncCa
         .ok();
 }
 
+/// A connection that stayed up this long was a healthy one: when it later drops, the next
+/// attempt starts from the short delay, not from wherever earlier failures left the backoff.
+const HEALTHY_CONNECTION: Duration = Duration::from_secs(60);
+
+/// Delay before the next attempt after a failure, given the current delay and how long the
+/// failed connection had been up.
+fn next_backoff(current: Duration, ran_for: Duration) -> Duration {
+    if ran_for >= HEALTHY_CONNECTION {
+        INITIAL_RECONNECT_BACKOFF
+    } else {
+        (current * 2).min(MAX_RECONNECT_BACKOFF)
+    }
+}
+
 /// The Firebase close code the presence gateway uses for a token it will not accept.
 const CLOSE_UNAUTHORIZED: u16 = 4401;
 
@@ -71,12 +85,18 @@ fn run_loop(api_url: &str, api: &Arc<Mutex<ApiClient>>, on_message: &(dyn Fn(Str
         };
 
         // Always back off before retrying, including a clean server-initiated close.
+        let started = Instant::now();
         match connect_and_pump(api_url, &token, on_message) {
             Ok(()) => reconnect_backoff = INITIAL_RECONNECT_BACKOFF,
             Err(err) => {
                 log::warn!("[live-sync] {err}");
+                // Healthy connections used to end here too and never reset the delay, so a few
+                // network blips over a day left every reconnect waiting the full minute.
+                if started.elapsed() >= HEALTHY_CONNECTION {
+                    reconnect_backoff = INITIAL_RECONNECT_BACKOFF;
+                }
                 thread::sleep(reconnect_backoff);
-                reconnect_backoff = (reconnect_backoff * 2).min(MAX_RECONNECT_BACKOFF);
+                reconnect_backoff = next_backoff(reconnect_backoff, started.elapsed());
                 continue;
             }
         }
@@ -208,6 +228,15 @@ mod tests {
         // The old behaviour returned this dead token and looped on the server refusing it.
         let api = api_with(&jwt_expiring_at(1_000_000_000)); // 2001, no refresh token, no device credential
         assert_eq!(fresh_token(&api), None);
+    }
+
+    #[test]
+    fn backoff_doubles_to_a_cap_but_restarts_after_a_connection_that_held() {
+        let quick = Duration::from_secs(1);
+        assert_eq!(next_backoff(Duration::from_secs(2), quick), Duration::from_secs(4));
+        assert_eq!(next_backoff(Duration::from_secs(45), quick), MAX_RECONNECT_BACKOFF);
+        assert_eq!(next_backoff(MAX_RECONNECT_BACKOFF, quick), MAX_RECONNECT_BACKOFF);
+        assert_eq!(next_backoff(MAX_RECONNECT_BACKOFF, HEALTHY_CONNECTION), INITIAL_RECONNECT_BACKOFF);
     }
 
     #[test]
