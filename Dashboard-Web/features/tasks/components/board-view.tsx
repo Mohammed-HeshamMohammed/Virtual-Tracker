@@ -42,11 +42,13 @@ function DraggableTaskCard({
   onReview,
   onBlockTask,
   canMarkCompleted = false,
+  readOnly = false,
 }: any) {
   const t = isDark ? dark : light
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     data: { task, status: task.status },
+    disabled: readOnly,
   })
   const style = transform ? { transform: CSS.Translate.toString(transform), zIndex: isDragging ? 50 : undefined, opacity: isDragging ? 0.5 : 1 } : undefined
 
@@ -81,21 +83,25 @@ function DraggableTaskCard({
             (isDark ? "ring-2 ring-[#4be277]/40 border-[#4be277]" : "ring-2 ring-blue-300 border-blue-400"),
         )}
       >
-        <button
-          type="button"
-          className="absolute left-1.5 top-1.5 flex cursor-grab items-center rounded p-0.5 active:cursor-grabbing"
-          onClick={(e) => e.stopPropagation()}
-          {...attributes}
-          {...listeners}
-          aria-label="Drag task"
-        >
-          <GripVertical className={cn("h-3.5 w-3.5", t.tableCellMuted)} />
-        </button>
-        <div className="flex items-start justify-between gap-2 pl-4">
+        {readOnly ? null : (
+          <button
+            type="button"
+            className="absolute left-1.5 top-1.5 flex cursor-grab items-center rounded p-0.5 active:cursor-grabbing"
+            onClick={(e) => e.stopPropagation()}
+            {...attributes}
+            {...listeners}
+            aria-label="Drag task"
+          >
+            <GripVertical className={cn("h-3.5 w-3.5", t.tableCellMuted)} />
+          </button>
+        )}
+        <div className={cn("flex items-start justify-between gap-2", !readOnly && "pl-4")}>
           <div className="flex items-start gap-2">
-            <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
-              <Checkbox checked={!!isChecked} onChange={() => onToggleChecked?.(task.id)} isDark={isDark} />
-            </div>
+            {readOnly ? null : (
+              <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
+                <Checkbox checked={!!isChecked} onChange={() => onToggleChecked?.(task.id)} isDark={isDark} />
+              </div>
+            )}
             <div className="flex flex-col gap-1">
               <span
                 className={cn(
@@ -115,6 +121,7 @@ function DraggableTaskCard({
               )}
             </div>
           </div>
+          {readOnly ? null : (
           <div onPointerDown={(e) => e.stopPropagation()}>
             <TaskRowMenu
               task={task}
@@ -130,6 +137,7 @@ function DraggableTaskCard({
               canMarkCompleted={canMarkCompleted}
             />
           </div>
+          )}
         </div>
         {task.subtasks && (
           <div className="flex items-center gap-1.5">
@@ -191,8 +199,9 @@ function DroppableColumn({
   onReview,
   onBlockTask,
   canMarkCompleted = false,
+  readOnly = false,
 }: any) {
-  const { setNodeRef, isOver } = useDroppable({ id: status })
+  const { setNodeRef, isOver } = useDroppable({ id: status, disabled: readOnly })
   return (
     <div ref={setNodeRef} className={cn("flex flex-col gap-3 min-w-[180px] rounded-xl p-2 transition-colors", isOver && (isDark ? "bg-[#2e3447]/30" : "bg-slate-50"))}>
       <div className={cn("flex items-center gap-2 px-3 py-2 rounded-lg group", cfg.bg)}>
@@ -232,6 +241,7 @@ function DroppableColumn({
                 onReview={onReview}
                 onBlockTask={onBlockTask}
                 canMarkCompleted={canMarkCompleted}
+                readOnly={readOnly}
               />
             )
           })}
@@ -262,6 +272,7 @@ export function BoardView({
   onReview,
   onBlockTask,
   canMarkCompleted = false,
+  readOnly = false,
 }: {
   tasks: Task[]
   members: Member[]
@@ -283,6 +294,8 @@ export function BoardView({
   onReview?: (taskId: string) => void
   onBlockTask?: (task: Task) => void
   canMarkCompleted?: boolean
+  /** Viewing only: no selection, dragging or card menu. */
+  readOnly?: boolean
 }) {
   const memberMap = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members])
 
@@ -339,6 +352,7 @@ export function BoardView({
             onReview={onReview}
             onBlockTask={onBlockTask}
             canMarkCompleted={canMarkCompleted}
+            readOnly={readOnly}
           />
         )
       })}

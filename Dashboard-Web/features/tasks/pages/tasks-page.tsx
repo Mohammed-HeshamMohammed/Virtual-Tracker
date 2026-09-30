@@ -13,7 +13,7 @@ import {
 import { getMembers } from "@/features/members/api/member-api"
 import { getTeams } from "@/features/teams/api/team-api"
 import { useAuth } from "@/shared/providers/app"
-import { canCreateTasksInProject, canViewParticipationMetrics, isManagementRole, normalizeMemberRole, SERVER_SCOPED_PROJECT_ROLES } from "@/features/auth"
+import { canCreateTasksInProject, canViewParticipationMetrics, isManagementRole, isReadOnlyRole, normalizeMemberRole, SERVER_SCOPED_PROJECT_ROLES } from "@/features/auth"
 import { isTaskLessProjectType } from "@/features/projects/config/project-types"
 import { getProjectMembers, type ProjectMember } from "@/features/projects/api/project-api"
 import { blockTaskAssignment, startTaskAssignment } from "@/features/tasks/api/task-assignments-api"
@@ -57,6 +57,9 @@ export function TasksPage() {
   const normalizedRole = normalizeMemberRole(memberRole ?? "")
   const showParticipation = canViewParticipationMetrics(memberRole)
   const canMarkCompleted = isManagementRole(memberRole)
+  // A Clients login looks at its projects' tasks and changes nothing, whatever
+  // a project's client_can_manage flag says.
+  const readOnly = isReadOnlyRole(memberRole ?? "")
   const t = isDark ? dark : light
 
   const [view, setView] = useComponentState<ViewMode>("list")
@@ -121,6 +124,7 @@ export function TasksPage() {
 
   const canAddTask = useMemo(
     () =>
+      !readOnly &&
       canCreateTasksInProject(
         memberRole,
         currentMemberId,
@@ -129,7 +133,7 @@ export function TasksPage() {
         rawProjectList.find((p: any) => p.id === selectedProjectId)?.restrictTaskCreation ?? true,
         rawProjectList.find((p: any) => p.id === selectedProjectId)?.clientCanManage ?? false,
       ),
-    [memberRole, currentMemberId, selectedProjectId, projectMemberLinks, rawProjectList],
+    [memberRole, currentMemberId, selectedProjectId, projectMemberLinks, rawProjectList, readOnly],
   )
 
   const {
@@ -152,6 +156,7 @@ export function TasksPage() {
   })
 
   function handleDragEnd(event: any) {
+    if (readOnly) return
     const { active, over } = event
     if (!over) return
     const taskId = active.id
@@ -537,6 +542,7 @@ export function TasksPage() {
               addTask={addTask}
               syncPulse={syncPulse}
               handleSync={handleSync}
+              readOnly={readOnly}
             />
 
             <TasksBatchBar
@@ -580,6 +586,7 @@ export function TasksPage() {
                         onBlockTask={handleBlockTask}
                         showParticipation={showParticipation}
                         canMarkCompleted={canMarkCompleted}
+                        readOnly={readOnly}
                       />
                     )}
                     {view === "board" && (
@@ -604,6 +611,7 @@ export function TasksPage() {
                         onReview={openReviewDialog}
                         onBlockTask={handleBlockTask}
                         canMarkCompleted={canMarkCompleted}
+                        readOnly={readOnly}
                       />
                     )}
                     {view === "timeline" && (

@@ -262,11 +262,13 @@ function DraggableListRow({
   onBlockTask,
   showParticipation,
   canMarkCompleted = false,
+  readOnly = false,
 }: any) {
   const t = isDark ? dark : light
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
     data: { task, status: task.status },
+    disabled: readOnly,
   })
   const style = transform ? { transform: CSS.Translate.toString(transform), zIndex: isDragging ? 50 : undefined, opacity: isDragging ? 0.5 : 1 } : undefined
 
@@ -291,18 +293,22 @@ function DraggableListRow({
       )}
     >
       <td className="w-8 px-3 py-3" onClick={(e) => e.stopPropagation()}>
-        <Checkbox checked={isChecked} onChange={(e) => onToggleChecked?.(task.id, e.shiftKey)} isDark={isDark} />
+        {readOnly ? null : (
+          <Checkbox checked={isChecked} onChange={(e) => onToggleChecked?.(task.id, e.shiftKey)} isDark={isDark} />
+        )}
       </td>
       <td className="w-8 px-2 py-3" onClick={(e) => e.stopPropagation()}>
-        <button
-          type="button"
-          className="flex cursor-grab items-center justify-center rounded p-0.5 active:cursor-grabbing"
-          {...attributes}
-          {...listeners}
-          aria-label="Drag task"
-        >
-          <GripVertical className={cn("h-4 w-4", t.tableCellMuted)} />
-        </button>
+        {readOnly ? null : (
+          <button
+            type="button"
+            className="flex cursor-grab items-center justify-center rounded p-0.5 active:cursor-grabbing"
+            {...attributes}
+            {...listeners}
+            aria-label="Drag task"
+          >
+            <GripVertical className={cn("h-4 w-4", t.tableCellMuted)} />
+          </button>
+        )}
       </td>
       {/*
         Status indicator, not a third selection control. This used to be a button
@@ -401,6 +407,7 @@ function DraggableListRow({
         </span>
       </td>
       <td className="px-4 py-3" onPointerDown={(e) => e.stopPropagation()}>
+        {readOnly ? null : (
         <TaskRowMenu
           task={task}
           onDelete={() => onDelete(task.id)}
@@ -418,6 +425,7 @@ function DraggableListRow({
           isDark={isDark}
           canMarkCompleted={canMarkCompleted}
         />
+        )}
       </td>
     </motion.tr>
   )
@@ -453,8 +461,9 @@ function DroppableListGroup({
   onBlockTask,
   showParticipation,
   canMarkCompleted = false,
+  readOnly = false,
 }: any) {
-  const { setNodeRef, isOver } = useDroppable({ id: status })
+  const { setNodeRef, isOver } = useDroppable({ id: status, disabled: readOnly })
   const t = isDark ? dark : light
   return (
     <div
@@ -543,6 +552,7 @@ function DroppableListGroup({
                       onBlockTask={onBlockTask}
                       showParticipation={showParticipation}
                       canMarkCompleted={canMarkCompleted}
+                      readOnly={readOnly}
                     />
                   )
                 })}
@@ -578,6 +588,7 @@ export function ListView({
   onBlockTask,
   showParticipation = false,
   canMarkCompleted = false,
+  readOnly = false,
 }: {
   tasks: Task[]
   members: Member[]
@@ -602,6 +613,8 @@ export function ListView({
   onBlockTask?: (task: Task) => void
   showParticipation?: boolean
   canMarkCompleted?: boolean
+  /** Viewing only: no selection, dragging, row menu or renaming. */
+  readOnly?: boolean
 }) {
   const [collapsed, setCollapsed] = useState<Set<TaskStatus>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -663,6 +676,7 @@ export function ListView({
             onBlockTask={onBlockTask}
             showParticipation={showParticipation}
             canMarkCompleted={canMarkCompleted}
+            readOnly={readOnly}
           />
         )
       })}

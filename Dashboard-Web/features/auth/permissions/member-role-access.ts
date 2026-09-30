@@ -261,12 +261,15 @@ const RESTRICTED_SECTION_IDS = new Set(["dashboard", "people", "activity", "sett
 // allowlist (section -> page ids) rather than "everything minus a blocklist",
 // so a page added to the sidebar later stays hidden from clients until
 // someone deliberately lists it here.
-const CLIENT_SECTION_IDS = new Set(["dashboard", "timesheets", "activity", "reports"])
+const CLIENT_SECTION_IDS = new Set(["dashboard", "timesheets", "activity", "project-management", "reports"])
 
 const CLIENT_PAGE_IDS_BY_SECTION: Record<string, Set<string>> = {
   dashboard: new Set(["command-center"]),
   timesheets: new Set(["timesheets-time-activity"]),
   activity: new Set(["activity-screenshots"]),
+  // Everything but Clients: a client does not see the client list. The pages
+  // themselves open read-only for this role (see isReadOnlyRole).
+  "project-management": new Set(["pm-overview", "pm-projects", "pm-tasks", "calendar-timeoff"]),
 }
 
 const CLIENT_ALLOWED_REPORT_PAGE_IDS = new Set([
