@@ -110,7 +110,7 @@ export async function teamHasMembers(db, teamId) {
 
 export async function getTeamIdsLedByMember(db, memberId) {
   if (!memberId) return new Set();
-  const rows = await pgQuery("SELECT team_id FROM team_members WHERE member_id = $1 AND (is_lead = true OR role = 'lead')", [memberId]);
+  const rows = await pgQuery("SELECT team_id FROM team_members WHERE member_id = $1 AND is_lead = true", [memberId]);
   return new Set(rows.map((r) => r.team_id).filter(Boolean));
 }
 
@@ -118,7 +118,7 @@ export async function canEditTeam(db, memberId, roleName, teamId) {
   if (!teamId || !memberId) return false;
   if (canManageAllTeams(roleName)) return true;
 
-  const rows = await pgQuery("SELECT 1 FROM team_members WHERE team_id = $1 AND member_id = $2 AND (is_lead = true OR role = 'lead') LIMIT 1", [teamId, memberId]);
+  const rows = await pgQuery("SELECT 1 FROM team_members WHERE team_id = $1 AND member_id = $2 AND is_lead = true LIMIT 1", [teamId, memberId]);
   return rows.length > 0;
 }
 

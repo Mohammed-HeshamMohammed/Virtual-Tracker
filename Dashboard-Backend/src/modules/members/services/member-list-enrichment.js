@@ -36,7 +36,7 @@ export async function fetchMemberRelationSnaps(db, memberIds) {
 
   try {
     const [teamMemberRows, projectMemberRows] = await Promise.all([
-      pgQuery("SELECT id, team_id, member_id, role, is_lead FROM team_members WHERE member_id = ANY($1)", [ids]),
+      pgQuery("SELECT id, team_id, member_id, is_lead FROM team_members WHERE member_id = ANY($1)", [ids]),
       pgQuery("SELECT id, project_id, member_id, project_role FROM project_members WHERE member_id = ANY($1)", [ids]),
     ]);
 

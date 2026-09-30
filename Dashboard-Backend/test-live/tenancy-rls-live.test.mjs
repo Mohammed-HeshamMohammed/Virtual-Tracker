@@ -286,5 +286,23 @@ await check("client screenshot scoping: fetchPgScreenshots(projectIds) and isScr
   assert.equal(await isScreenshotInProjectsPg(figma, []), false);
 });
 
+await check("the team-lead and member-relation SQL only uses columns team_members really has", async () => {
+  // These once selected a team_members.role column that never existed: the
+  // agent workspace 500'd for everyone and the member list lost its team
+  // columns (that query's failure was swallowed). Same statements as
+  // http/team-edit-access.js and member-list-enrichment.js.
+  const lead = "55555555-eeee-4eee-8eee-555555555555";
+  const team = "66666666-ffff-4fff-8fff-666666666666";
+  await db.query(`INSERT INTO members (id, tenant_id, first_name, work_email) VALUES ($1, $2, 'Lead', 'lead@a.test')`, [lead, TENANT_A]);
+  await db.query(`INSERT INTO teams (id, tenant_id, name) VALUES ($1, $2, 'Core')`, [team, TENANT_A]);
+  await db.query(`INSERT INTO team_members (tenant_id, team_id, member_id, is_lead) VALUES ($1, $2, $3, true)`, [TENANT_A, team, lead]);
+  const led = await db.query("SELECT team_id FROM team_members WHERE member_id = $1 AND is_lead = true", [lead]);
+  assert.equal(led.rows.length, 1);
+  const isLead = await db.query("SELECT 1 FROM team_members WHERE team_id = $1 AND member_id = $2 AND is_lead = true LIMIT 1", [team, lead]);
+  assert.equal(isLead.rows.length, 1);
+  const rel = await db.query("SELECT id, team_id, member_id, is_lead FROM team_members WHERE member_id = ANY($1)", [[lead]]);
+  assert.equal(rel.rows.length, 1);
+});
+
 console.log(`\n${failures === 0 ? "RESULT: PASS" : `RESULT: FAIL (${failures} proof(s) failed)`}`);
 process.exit(failures === 0 ? 0 : 1);
