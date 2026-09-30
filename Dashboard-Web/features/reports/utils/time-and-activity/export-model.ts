@@ -3,6 +3,7 @@ import type {
   TimeActivityGroupBy,
   TimeActivityMemberSubRow,
 } from "@/features/reports/models/time-and-activity"
+import { hmsToSeconds, type RowMetrics } from "./export-flags.ts"
 
 /**
  * One description of the Time & Activity table, built once and rendered by
@@ -31,11 +32,15 @@ export interface ExportRow {
    *  "detail" is one of the rows expanded underneath it. */
   kind: "group" | "detail"
   cells: Record<string, string>
+  /** The row's own numbers, for anything that has to judge them (the workbook's risk flags)
+   *  rather than print them. The CSV and the PDF never read this. */
+  metrics: RowMetrics
 }
 
 export interface TimeActivityExportTable {
   columns: ExportColumn[]
   rows: ExportRow[]
+  groupBy: TimeActivityGroupBy
 }
 
 export interface BuildExportInput {
@@ -66,6 +71,15 @@ const NUMERIC_KEYS = new Set([
   "idle_hr",
   "total_spent",
 ])
+
+/** A row's numbers as hours. Idle arrives only as the "h:mm:ss" text the table shows. */
+function metricsOf(row: { trackedHours: number; manualHours: number; idleHr: string }): RowMetrics {
+  return {
+    activeHours: row.trackedHours,
+    idleHours: (hmsToSeconds(row.idleHr) ?? 0) / 3600,
+    manualHours: row.manualHours,
+  }
+}
 
 function groupCell(day: TimeActivityDayRow, key: string, input: BuildExportInput): string {
   switch (key) {
@@ -152,7 +166,7 @@ export function buildTimeActivityExportTable(input: BuildExportInput): TimeActiv
       __members: String(day.memberCount),
     }
     for (const c of metrics) groupCells[c.key] = groupCell(day, c.key, input)
-    rows.push({ kind: "group", cells: groupCells })
+    rows.push({ kind: "group", cells: groupCells, metrics: metricsOf(day) })
 
     for (const sub of input.getSubRows(day.date)) {
       const cells: Record<string, string> = {
@@ -163,10 +177,10 @@ export function buildTimeActivityExportTable(input: BuildExportInput): TimeActiv
         __members: "",
       }
       for (const c of metrics) cells[c.key] = detailCell(sub, c.key, input)
-      rows.push({ kind: "detail", cells })
+      rows.push({ kind: "detail", cells, metrics: metricsOf(sub) })
     }
   }
-  return { columns, rows }
+  return { columns, rows, groupBy: input.groupBy }
 }
 
 const UTF8_BOM = String.fromCharCode(0xfeff)
