@@ -1098,7 +1098,11 @@ GROUP BY task_id`,
   updated_by              UUID,
   updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  `INSERT INTO capture_minimization_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
+  // Seeds are "only when the table is empty", never ON CONFLICT (<old key>):
+  // the tenancy migration re-keys these tables to (tenant_id[, key]), after
+  // which an ON CONFLICT on the old key matches no constraint and this whole
+  // function failed on every boot after the first.
+  `INSERT INTO capture_minimization_settings (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM capture_minimization_settings)`,
   // Per-member overrides for everything capture-related. NULL means inherit
   // the org row; break_until/break_reason are the member's own privacy break.
   `CREATE TABLE IF NOT EXISTS member_capture_settings (
@@ -1130,9 +1134,10 @@ GROUP BY task_id`,
   updated_by     UUID,
   updated_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  `INSERT INTO data_retention_settings (data_type, retention_days) VALUES
-     ('screenshots', 90), ('app_logs', 180), ('url_logs', 180), ('sessions', 730)
-   ON CONFLICT (data_type) DO NOTHING`,
+  `INSERT INTO data_retention_settings (data_type, retention_days)
+   SELECT v.data_type, v.retention_days
+   FROM (VALUES ('screenshots', 90), ('app_logs', 180), ('url_logs', 180), ('sessions', 730)) AS v(data_type, retention_days)
+   WHERE NOT EXISTS (SELECT 1 FROM data_retention_settings)`,
   `CREATE TABLE IF NOT EXISTS screenshot_access_log (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   screenshot_id    UUID NOT NULL,
@@ -1148,7 +1153,7 @@ GROUP BY task_id`,
   updated_by        UUID,
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  `INSERT INTO activity_scoring_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`,
+  `INSERT INTO activity_scoring_settings (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM activity_scoring_settings)`,
   `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS screenshot_min_delay_sec INT NOT NULL DEFAULT 90 CHECK (screenshot_min_delay_sec > 0)`,
   `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS screenshot_max_delay_sec INT NOT NULL DEFAULT 210 CHECK (screenshot_max_delay_sec > 0)`,
   `ALTER TABLE activity_scoring_settings ADD COLUMN IF NOT EXISTS idle_threshold_sec INT NOT NULL DEFAULT 60 CHECK (idle_threshold_sec > 0)`,
@@ -1932,7 +1937,7 @@ $$ LANGUAGE plpgsql`,
   updated_by       UUID,
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
-  "INSERT INTO currency_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING",
+  "INSERT INTO currency_settings (id) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM currency_settings)",
   `CREATE TABLE IF NOT EXISTS report_schedules (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   report_type     VARCHAR(64) NOT NULL DEFAULT 'time-and-activity',
@@ -2002,13 +2007,14 @@ export async function ensurePostgresLookupSchema() {
 
     await client.query(
       `INSERT INTO monitoring_capabilities (capability, enabled)
-       VALUES ('screenshots', $1)
-       ON CONFLICT (capability) DO NOTHING`,
+       SELECT 'screenshots', $1
+       WHERE NOT EXISTS (SELECT 1 FROM monitoring_capabilities WHERE capability = 'screenshots')`,
       [isActivityScreenshotsEnabled()],
     );
     for (const capability of ["app_tracking", "url_capture", "activity_metering", "dns_logging", "integrity_signals"]) {
       await client.query(
-        `INSERT INTO monitoring_capabilities (capability) VALUES ($1) ON CONFLICT (capability) DO NOTHING`,
+        `INSERT INTO monitoring_capabilities (capability)
+         SELECT $1::text WHERE NOT EXISTS (SELECT 1 FROM monitoring_capabilities WHERE capability = $1)`,
         [capability],
       );
     }

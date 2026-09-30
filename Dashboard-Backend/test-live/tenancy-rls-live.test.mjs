@@ -304,5 +304,19 @@ await check("the team-lead and member-relation SQL only uses columns team_member
   assert.equal(rel.rows.length, 1);
 });
 
+await check("a second boot (schema -> tenancy -> RLS on an already-migrated database) succeeds", async () => {
+  // The singleton seeds used ON CONFLICT (id), which stops matching once the
+  // tenancy migration re-keys the table: production's lookup schema failed on
+  // every boot after the first, silently skipping everything after it.
+  const again = await ensurePostgresLookupSchema();
+  assert.notEqual(again.ok, false, again.error);
+  const tenancyAgain = await ensureTenancySchema();
+  assert.notEqual(tenancyAgain.ok, false, tenancyAgain.error);
+  const rlsAgain = await ensureTenancyRls();
+  assert.notEqual(rlsAgain.ok, false, rlsAgain.error);
+  const n = await db.query("SELECT count(*)::int AS n FROM capture_minimization_settings");
+  assert.equal(n.rows[0].n, 1, "no duplicate singleton row");
+});
+
 console.log(`\n${failures === 0 ? "RESULT: PASS" : `RESULT: FAIL (${failures} proof(s) failed)`}`);
 process.exit(failures === 0 ? 0 : 1);
