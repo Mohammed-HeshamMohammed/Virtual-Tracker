@@ -16,6 +16,10 @@
 //! elevation, which this process already has by virtue of the same manifest
 //! that created the problem.
 
+// Only Windows registers the task; elsewhere the helpers below are compiled (their tests run
+// everywhere) but nothing calls them.
+#![cfg_attr(not(windows), allow(dead_code))]
+
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 

@@ -264,12 +264,14 @@ impl ActivityMeter {
 
     // Note_input through on_mouse_move: real production callers are the #[cfg(windows)]
     // hook callbacks further down (there's no macOS/Linux input-hook implementation yet).
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn note_input(&self, injected: bool) {
         if injected {
             self.injected_count.fetch_add(1, Ordering::Relaxed);
         }
         self.last_input_ms.store(now_ms(), Ordering::Relaxed);
     }
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn on_keyboard_input(&self, vk_code: u32, injected: bool) {
         self.keyboard_count.fetch_add(1, Ordering::Relaxed);
         self.distinct_keys.lock().insert(vk_code);
@@ -283,10 +285,12 @@ impl ActivityMeter {
         }
         self.note_input(injected);
     }
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn on_mouse_click(&self, injected: bool) {
         self.click_count.fetch_add(1, Ordering::Relaxed);
         self.note_input(injected);
     }
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn on_mouse_move(&self, injected: bool, x: i32, y: i32) {
         self.move_count.fetch_add(1, Ordering::Relaxed);
         {

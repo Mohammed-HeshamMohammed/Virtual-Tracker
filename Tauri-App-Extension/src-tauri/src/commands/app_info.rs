@@ -43,6 +43,8 @@ pub async fn get_link_status(state: tauri::State<'_, AppState>) -> Result<LinkSt
 
 #[tauri::command]
 pub fn get_app_settings(app: AppHandle, state: tauri::State<'_, AppState>) -> crate::prefs::AppSettingsView {
+    // Only Windows rewrites `launch_at_login` below.
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut view = state.controller.get_app_settings();
     // The stored preference records what the member asked for; this reports
     // what is actually registered. They diverge whenever registration was
