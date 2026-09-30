@@ -27,9 +27,9 @@ on:
         type: string
         required: false
       require_windows_signing:
-        description: Fail instead of publishing an unsigned Windows installer
+        description: Fail instead of publishing an unsigned Windows installer (off while in development - no Authenticode certificate yet; turn on once WINDOWS_CERTIFICATE is configured)
         type: boolean
-        default: true
+        default: false
 
 concurrency:
   group: agent-release
