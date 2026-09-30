@@ -45,6 +45,12 @@ async function getManagerVisibleMemberIds(req) {
   return getVisibleMemberIds(getDb(), viewer.memberId, viewer.roleName);
 }
 
+/** The people the viewer can see version reports for - always including the viewer themself. */
+async function listVersionMembers(req, release) {
+  const visibleIds = await getManagerVisibleMemberIds(req);
+  return listAgentVersionMembers(release.version, visibleIds, { includeMemberId: getAuthContext(req)?.memberId });
+}
+
 async function managerCanTarget(req, memberId) {
   const viewer = getAuthContext(req);
   return canManageMember(getDb(), viewer.memberId, viewer.roleName, memberId);
@@ -134,8 +140,7 @@ export async function routeAgentVersions(req, res, url, origin) {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
       const release = await getLatestAgentRelease();
-      const visibleIds = await getManagerVisibleMemberIds(req);
-      const members = await listAgentVersionMembers(release.version, visibleIds);
+      const members = await listVersionMembers(req, release);
       const unrecognizedMemberIds = members
         .filter((member) => member.status === "unrecognized")
         .map((member) => member.memberId);
@@ -249,8 +254,7 @@ export async function routeAgentVersions(req, res, url, origin) {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
       const release = await getLatestAgentRelease();
-      const visibleIds = await getManagerVisibleMemberIds(req);
-      const members = await listAgentVersionMembers(release.version, visibleIds);
+      const members = await listVersionMembers(req, release);
       const targets = members.filter((member) => member.status === "unknown" && member.canReceiveEmail);
       const summary = { sent: 0, current: 0, duplicate: 0, unsupported: 0, missingEmail: 0, failed: 0 };
       for (let index = 0; index < targets.length; index += 5) {
@@ -281,8 +285,7 @@ export async function routeAgentVersions(req, res, url, origin) {
     if (!assertManagementRole(req, res, origin)) return true;
     try {
       const release = await getLatestAgentRelease();
-      const visibleIds = await getManagerVisibleMemberIds(req);
-      const members = await listAgentVersionMembers(release.version, visibleIds);
+      const members = await listVersionMembers(req, release);
       const targets = members.filter((member) => member.needsManualReinstall && member.canReceiveEmail);
       const summary = { sent: 0, current: 0, duplicate: 0, unsupported: 0, missingEmail: 0, failed: 0 };
       for (let index = 0; index < targets.length; index += 5) {
@@ -329,8 +332,7 @@ export async function routeAgentVersions(req, res, url, origin) {
         sendJson(res, origin, 409, { success: false, code: "AGENT_ALREADY_CURRENT", error: "Update reminders are disabled for the latest tracker version." });
         return true;
       }
-      const visibleIds = await getManagerVisibleMemberIds(req);
-      const members = await listAgentVersionMembers(release.version, visibleIds);
+      const members = await listVersionMembers(req, release);
       const targets = members.filter((member) => member.agentVersion === requestedVersion);
       const summary = { sent: 0, current: 0, duplicate: 0, unsupported: 0, missingEmail: 0, failed: 0 };
       for (let index = 0; index < targets.length; index += 5) {

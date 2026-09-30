@@ -39,12 +39,16 @@ export function AppVersionsTab() {
   const [latestVersion, setLatestVersion] = useState("")
   const [selectedKey, setSelectedKey] = useState("")
   const [loading, setLoading] = useState(true)
+  // A refresh keeps the tab as it is - the chosen version, its list and its scroll - and only
+  // the button shows it is working; `loading` is the very first load only.
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState("")
   const [result, setResult] = useState("")
   const [busyKey, setBusyKey] = useState("")
 
-  async function load() {
-    setLoading(true)
+  async function load(options: { refresh?: boolean } = {}) {
+    if (options.refresh) setRefreshing(true)
+    else setLoading(true)
     setError("")
     try {
       const data = await getAgentVersions()
@@ -55,6 +59,7 @@ export function AppVersionsTab() {
       setError(err instanceof Error ? err.message : "Failed to load tracker versions")
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
@@ -152,8 +157,8 @@ export function AppVersionsTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm text-slate-500 dark:text-slate-400">Latest published tracker: <strong className="text-slate-700 dark:text-slate-200">v{latestVersion}</strong></p>
-        <button type="button" onClick={() => void load()} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
-          <RefreshCw className="h-3.5 w-3.5" /> Refresh
+        <button type="button" disabled={refreshing} onClick={() => void load({ refresh: true })} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-wait disabled:opacity-60 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+          <RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} /> {refreshing ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 

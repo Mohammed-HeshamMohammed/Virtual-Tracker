@@ -92,6 +92,29 @@ test("the list query selects and exposes the blocked state", async () => {
   assert.equal(listed[2].updateBlocked, null, "an unreported agent stays unknown");
 });
 
+test("an Owner is left out of the list except the Owner who is looking", async () => {
+  mock.restoreAll();
+  const calls = [];
+  mock.module("../src/lib/postgres/client.js", {
+    namedExports: { query: async (sql, params) => { calls.push({ sql, params }); return []; } },
+  });
+  const fresh = await import(`../src/modules/agent-versions/service.js?t=${Date.now()}owner`);
+
+  await fresh.listAgentVersionMembers("1.0.28");
+  assert.match(calls[0].sql, /!= 'owner'\s*\n/, "owners stay out for everyone else");
+  assert.equal(calls[0].sql.includes("OR m.id"), false);
+  assert.deepEqual(calls[0].params, []);
+
+  await fresh.listAgentVersionMembers("1.0.28", null, { includeMemberId: "viewer-id" });
+  assert.match(calls[1].sql, /!= 'owner' OR m\.id = \$1::uuid/);
+  assert.deepEqual(calls[1].params, ["viewer-id"]);
+
+  await fresh.listAgentVersionMembers("1.0.28", ["a", "b"], { includeMemberId: "viewer-id" });
+  assert.match(calls[2].sql, /m\.id = \$2::uuid/, "the viewer's param follows the visible-ids array");
+  assert.match(calls[2].sql, /m\.id = ANY\(\$1::uuid\[\]\)/);
+  assert.deepEqual(calls[2].params, [["a", "b"], "viewer-id"]);
+});
+
 test("listAgentVersionMembers is exported", () => {
   assert.equal(typeof listAgentVersionMembers, "function");
 });

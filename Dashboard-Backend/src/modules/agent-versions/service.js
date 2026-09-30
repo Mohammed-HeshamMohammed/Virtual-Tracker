@@ -83,19 +83,30 @@ export async function reportAgentOpen(memberId, version, platform, updateBlocked
   return rows.length ? { version: normalizedVersion, platform: normalizedPlatform, updateBlocked: blocked } : null;
 }
 
-export async function listAgentVersionMembers(latestVersion, visibleMemberIds = null) {
+/**
+ * Owners are left out of the tracker-version lists - they are not someone to send a reminder
+ * to - except the Owner who is looking: `includeMemberId` keeps the viewer's own row, so an
+ * Owner running a tracker can see which version they are on (and was asking where they were).
+ */
+export async function listAgentVersionMembers(latestVersion, visibleMemberIds = null, options = {}) {
   const scoped = Array.isArray(visibleMemberIds);
+  const includeMemberId = typeof options?.includeMemberId === "string" && options.includeMemberId ? options.includeMemberId : null;
+  const params = [];
+  if (scoped) params.push(visibleMemberIds);
+  const ownerClause = includeMemberId
+    ? `(lower(COALESCE(r.name, '')) != 'owner' OR m.id = $${params.push(includeMemberId)}::uuid)`
+    : `lower(COALESCE(r.name, '')) != 'owner'`;
   const rows = await query(
     `SELECT m.id, m.display_name, m.first_name, m.last_name, m.work_email, m.personal_email,
             m.agent_version, m.agent_platform, m.agent_last_opened_at,
             m.agent_update_blocked, m.agent_install_dir
      FROM members m
      LEFT JOIN roles r ON r.id = m.role_id
-     WHERE m.status != 'banned' AND lower(COALESCE(r.name, '')) != 'owner'
+     WHERE m.status != 'banned' AND ${ownerClause}
        ${scoped ? "AND m.id = ANY($1::uuid[])" : ""}
      ORDER BY m.agent_last_opened_at DESC NULLS LAST, m.date_added DESC
      LIMIT 2000`,
-    scoped ? [visibleMemberIds] : [],
+    params,
   );
   return rows.map((row) => {
     const version = normalizeAgentVersion(row.agent_version);
