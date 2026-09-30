@@ -261,6 +261,8 @@ export type WorkspaceTeam = {
 export type WorkspaceApprovals = { pendingCount: number };
 
 export type WorkspacePulse = {
+  /** Whom the numbers cover - the server decides from the viewer's role. */
+  scope?: "organization" | "people" | "projects" | "";
   totalActiveSecondsToday: number;
   trackingNowCount: number;
   membersWorkedTodayCount: number;
@@ -357,6 +359,8 @@ export type AgentNotification = {
   targetVersion: string | null;
   /** Set on an Owner message: what a reply is posted against. */
   threadId?: string | null;
+  /** A made-here entry with one button (e.g. "Review") instead of Update / Reply. */
+  actionLabel?: string | null;
   read: boolean;
   createdAt: string | null;
 };

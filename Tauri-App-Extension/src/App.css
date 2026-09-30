@@ -240,6 +240,66 @@ body {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
+.titlebar-stats {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-left: 14px;
+  padding-left: 14px;
+  border-left: 1px solid rgb(var(--c-overlay) / 0.14);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  /* Read-only, so clicks fall through to the drag area underneath. */
+  pointer-events: none;
+}
+
+.titlebar-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--on-surface-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.titlebar-stat strong {
+  font-weight: 700;
+}
+
+.titlebar-stat-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.titlebar-stat-part em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--on-surface-faint);
+}
+
+.titlebar-stat-scope {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--on-surface-faint);
+}
+
+.titlebar-ring {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
+
+/* Focus is the small layout: no room for a row of numbers beside the title. */
+.layout-focus .titlebar-stats {
+  display: none;
+}
+
 .titlebar-controls {
   display: flex;
   align-items: center;
@@ -1975,68 +2035,6 @@ body {
 
 .side-team-stat.warn {
   color: rgb(var(--c-warn));
-}
-
-/* The pending-approvals row: a real button, because the only useful thing to
-   do with it is open the dashboard and clear the queue. */
-.side-team-cta {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  width: 100%;
-  padding: 8px 10px;
-  border: none;
-  border-radius: 8px;
-  background: rgb(var(--c-warn) / 0.12);
-  box-shadow: inset 0 0 0 1px rgb(var(--c-warn) / 0.28);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.15s ease;
-}
-
-.side-team-cta:hover {
-  background: rgb(var(--c-warn) / 0.2);
-}
-
-.side-team-cta-count {
-  flex-shrink: 0;
-  font-size: 15px;
-  font-weight: 700;
-  color: rgb(var(--c-warn));
-  font-variant-numeric: tabular-nums;
-}
-
-.side-team-cta-copy {
-  font-size: 11.5px;
-  line-height: 1.3;
-  color: var(--on-surface);
-}
-
-/* Weekly activity - same percentage as the web dashboard's own "Weekly
-   trends" widget, drawn as a ring (reusing .activity-ring/-value/-legend
-   from the main pane's Activity tile) instead of a second chart shape. */
-.side-weekly {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  flex-shrink: 0;
-}
-
-.side-weekly-ring-row {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.side-weekly-ring {
-  width: 48px;
-  height: 48px;
-}
-
-.side-weekly-ring .activity-ring-value {
-  font-size: 12px;
 }
 
 .side-tasklist-empty {
@@ -5507,8 +5505,7 @@ select.modal-input {
    budget, which is fine at Wide/Standard's width but crams hard in Focus's
    narrower pane - "active"/"idle" were taking up room the dot and number
    already communicate on their own. Scoped to .activity-tile specifically so
-   the sidebar's own Weekly activity card (same markup, more room) keeps its
-   words. */
+   nothing else that reuses these classes loses its words. */
 .layout-focus .activity-tile .activity-legend-row em {
   display: none;
 }

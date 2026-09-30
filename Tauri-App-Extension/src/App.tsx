@@ -55,9 +55,9 @@ import { WeekTile } from "./components/stats/WeekTile";
 import { ProjectBudgetTile } from "./components/stats/ProjectBudgetTile";
 import { AssignedTodayBadge, AssignedToMeBadge } from "./components/stats/AssignedTodayBadge";
 import { TaskProgressPanel } from "./components/stats/TaskProgressPanel";
-import { WeeklyActivityCard } from "./components/sidebar/WeeklyActivityCard";
+import { TitleBarStats } from "./components/common/TitleBarStats";
 import { TeamStatusCard } from "./components/sidebar/TeamStatusCard";
-import { ManagementCard } from "./components/sidebar/ManagementCard";
+import { timesheetNotification, TIMESHEETS_NOTIFICATION_ID } from "./utils/approvalNotification";
 import { ProjectsList } from "./components/sidebar/ProjectsList";
 import { TasksList } from "./components/sidebar/TasksList";
 import { SidebarActions } from "./components/sidebar/SidebarActions";
@@ -141,6 +141,9 @@ function retryDelayMs(failCount: number): number {
   const steps = [3000, 3000, 5000, 8000];
   return failCount <= steps.length ? steps[failCount - 1] : 15_000;
 }
+
+/** How often the workspace (team, pulse, pending timesheets) is re-read. */
+const WORKSPACE_POLL_MS = 20_000;
 
 function usePolling(enabled: boolean, intervalMs: number, fn: () => Promise<void>) {
   const inFlight = useRef(false);
@@ -522,6 +525,27 @@ function MainApp() {
       if (!firstRun) void notify(item.title, item.message);
     }
   }, []);
+
+  // Timesheets waiting for the viewer's approval live in the bell, next to everything else that
+  // wants their attention. `seenTimesheets` is the count they last opened it at, so it reads as
+  // read until more arrive; a rise also raises a Windows notification (never on first load).
+  const pendingTimesheets = workspace?.approvals?.pendingCount ?? 0;
+  const [seenTimesheets, setSeenTimesheets] = useState(0);
+  const announcedTimesheetsRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!workspace) return;
+    const previous = announcedTimesheetsRef.current;
+    announcedTimesheetsRef.current = pendingTimesheets;
+    if (previous !== null && pendingTimesheets > previous) {
+      const item = timesheetNotification(pendingTimesheets, 0);
+      if (item) void notify(item.title, item.message);
+    }
+  }, [workspace, pendingTimesheets]);
+  const bellNotifications = useMemo(() => {
+    const local = timesheetNotification(pendingTimesheets, seenTimesheets);
+    return local ? [local, ...agentNotifications] : agentNotifications;
+  }, [pendingTimesheets, seenTimesheets, agentNotifications]);
+  const bellUnreadCount = agentNotificationUnreadCount + (pendingTimesheets > seenTimesheets ? 1 : 0);
 
   const replyToMessage = useCallback(
     async (threadId: string, body: string) => {
@@ -915,7 +939,8 @@ function MainApp() {
     }
   }, [signedIn, selectedProjectId]);
 
-  usePolling(view === "home" || view === "profile", 5000, refreshMemberLimits);
+  // The title bar's weekly ring reads these on every view, not just Home.
+  usePolling(signedIn, 5000, refreshMemberLimits);
 
   const refreshProjectBudget = useCallback(async () => {
     if (!signedIn || !selectedProjectId) {
@@ -938,7 +963,8 @@ function MainApp() {
   usePolling(view === "home" || view === "profile", 30000, refreshProjects);
   usePolling(view === "home" || view === "profile", 30000, refreshAssignedTasks);
   usePolling(view === "home" || view === "profile", 60000, refreshDashboardSummary);
-  usePolling(view === "home" || view === "profile", 60000, refreshWorkspace);
+  // Live org/people numbers and the timesheets bell: fresh within ~20s on every view.
+  usePolling(signedIn, WORKSPACE_POLL_MS, refreshWorkspace);
 
   useEffect(() => {
     if (!signedIn || !selectedTaskId) {
@@ -2279,10 +2305,33 @@ function MainApp() {
         checkingUpdate={checkingUpdate}
         theme={themePref}
         onCycleTheme={handleCycleTheme}
-        notifications={agentNotifications}
-        unreadCount={agentNotificationUnreadCount}
-        onMarkNotificationRead={(id) => void markAgentNotificationRead(id)}
-        onMarkAllNotificationsRead={() => void markAllAgentNotificationsRead()}
+        stats={
+          signedIn && memberLimits ? (
+            <TitleBarStats
+              weekly={{
+                percent: weekActivityPercent,
+                dash: weekActivityDash,
+                activeSeconds: weekActiveSeconds,
+                idleSeconds: weekIdleSeconds,
+              }}
+              pulse={workspace?.pulse ?? null}
+            />
+          ) : null
+        }
+        notifications={bellNotifications}
+        unreadCount={bellUnreadCount}
+        onMarkNotificationRead={(id) => {
+          if (id === TIMESHEETS_NOTIFICATION_ID) setSeenTimesheets(pendingTimesheets);
+          else void markAgentNotificationRead(id);
+        }}
+        onMarkAllNotificationsRead={() => {
+          setSeenTimesheets(pendingTimesheets);
+          void markAllAgentNotificationsRead();
+        }}
+        onNotificationAction={(notification) => {
+          if (notification.id === TIMESHEETS_NOTIFICATION_ID) setSeenTimesheets(pendingTimesheets);
+          void invoke("open_web_app");
+        }}
         onReplyToMessage={replyToMessage}
         onNotificationUpdate={(notification) => {
           if (!notification.read) void markAgentNotificationRead(notification.id);
@@ -2413,22 +2462,7 @@ function MainApp() {
       <div className={`app-body${signedIn ? "" : " app-body-auth-only"}`}>
         <aside className="side-panel">
         <div className="side-panel-scroll">
-          <WeeklyActivityCard
-            signedIn={signedIn}
-            loading={!memberLimits}
-            weekActivityPercent={weekActivityPercent}
-            weekActivityDash={weekActivityDash}
-            weekActiveSeconds={weekActiveSeconds}
-            weekIdleSeconds={weekIdleSeconds}
-          />
-
           <TeamStatusCard team={workspace?.team ?? null} />
-
-          <ManagementCard
-            approvals={workspace?.approvals ?? null}
-            pulse={workspace?.pulse ?? null}
-            onOpenDashboard={() => void invoke("open_web_app")}
-          />
 
           <ProjectsList
             signedIn={signedIn}

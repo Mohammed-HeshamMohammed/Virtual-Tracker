@@ -61,6 +61,11 @@ pub struct WorkspaceApprovals {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspacePulse {
+    /// Whom the numbers cover, decided by the server from the viewer's role:
+    /// `organization`, `people` (their own tree) or `projects` (a client's). Empty from an
+    /// older server, which only ever sent the organization-wide pulse.
+    #[serde(default)]
+    pub scope: String,
     #[serde(default)]
     pub total_active_seconds_today: i64,
     #[serde(default)]

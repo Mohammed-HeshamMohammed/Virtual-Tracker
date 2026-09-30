@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AgentNotification, ThemePreference } from "../../types";
 import { HelpButton } from "./HelpButton";
@@ -58,6 +59,8 @@ export function TitleBar({
   onMarkAllNotificationsRead,
   onNotificationUpdate,
   onReplyToMessage,
+  onNotificationAction,
+  stats,
 }: {
   title?: string;
   showBrand?: boolean;
@@ -73,6 +76,10 @@ export function TitleBar({
   onNotificationUpdate?: (notification: AgentNotification) => void;
   /** Replying to an Owner message from inside the tracker (Part A3). */
   onReplyToMessage?: (threadId: string, body: string) => Promise<void>;
+  /** The button on a made-here notification (`actionLabel`), e.g. "Review" timesheets. */
+  onNotificationAction?: (notification: AgentNotification) => void;
+  /** At-a-glance numbers shown after the title, in the drag area. */
+  stats?: ReactNode;
 }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -117,6 +124,7 @@ export function TitleBar({
             ) : null}
           </>
         ) : null}
+        {stats}
       </div>
       <div className="titlebar-controls">
         <HelpButton />
@@ -167,6 +175,11 @@ export function TitleBar({
                       {notification.targetVersion ? (
                         <button data-tip="Install the version this notification announces" type="button" className="notification-update-btn" onClick={(event) => { event.stopPropagation(); onNotificationUpdate?.(notification); }}>
                           Update now
+                        </button>
+                      ) : null}
+                      {notification.actionLabel && onNotificationAction ? (
+                        <button data-tip="Open the dashboard to act on this" type="button" className="notification-update-btn" onClick={(event) => { event.stopPropagation(); onNotificationAction(notification); }}>
+                          {notification.actionLabel}
                         </button>
                       ) : null}
                       {notification.threadId && onReplyToMessage ? (

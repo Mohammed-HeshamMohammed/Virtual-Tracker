@@ -5,50 +5,14 @@
 // projectId).
 import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { WeeklyActivityCard } from "./WeeklyActivityCard";
 import { ProjectsList } from "./ProjectsList";
 import { TasksList } from "./TasksList";
 import { SidebarActions } from "./SidebarActions";
 import { SidebarFooter } from "./SidebarFooter";
 import { TeamStatusCard } from "./TeamStatusCard";
-import { ManagementCard } from "./ManagementCard";
 import type { AgentTask, ProjectInfo, WorkspaceTeam } from "../../types";
 
 const noop = () => {};
-
-describe("WeeklyActivityCard", () => {
-  it("renders nothing when signed out", () => {
-    expect(
-      renderToStaticMarkup(
-        <WeeklyActivityCard signedIn={false} loading={false} weekActivityPercent={62} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
-      ),
-    ).toBe("");
-  });
-
-  it("renders a skeleton while the week is still loading", () => {
-    const html = renderToStaticMarkup(
-      <WeeklyActivityCard signedIn loading weekActivityPercent={null} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
-    );
-    expect(html).toContain("skeleton-bar");
-  });
-
-  it("renders the percent and the week's active and idle time once loaded", () => {
-    const html = renderToStaticMarkup(
-      <WeeklyActivityCard signedIn loading={false} weekActivityPercent={62} weekActivityDash={40} weekActiveSeconds={3600} weekIdleSeconds={600} />,
-    );
-    expect(html).toContain("62%");
-    expect(html).toContain("1h 0s");
-    expect(html).toContain("10m 0s");
-  });
-
-  it("shows a dash rather than 0% before anything is tracked this week", () => {
-    const html = renderToStaticMarkup(
-      <WeeklyActivityCard signedIn loading={false} weekActivityPercent={null} weekActivityDash={0} weekActiveSeconds={0} weekIdleSeconds={0} />,
-    );
-    expect(html).toContain("—");
-    expect(html).not.toContain("0%");
-  });
-});
 
 describe("ProjectsList", () => {
   const projects: ProjectInfo[] = [
@@ -525,62 +489,6 @@ describe("TeamStatusCard", () => {
       <TeamStatusCard team={{ ...team, notStartedCount: 0 }} />,
     );
     expect(html).not.toContain("not started");
-  });
-});
-
-describe("ManagementCard", () => {
-  it("renders nothing when the viewer got neither section", () => {
-    expect(
-      renderToStaticMarkup(<ManagementCard approvals={null} pulse={null} onOpenDashboard={noop} />),
-    ).toBe("")
-  });
-
-  it("shows a pending count as an actionable row", () => {
-    const html = renderToStaticMarkup(
-      <ManagementCard approvals={{ pendingCount: 3 }} pulse={null} onOpenDashboard={noop} />,
-    );
-    expect(html).toContain("3");
-    expect(html).toContain("timesheets waiting on you");
-  });
-
-  it("singularizes a lone pending timesheet", () => {
-    const html = renderToStaticMarkup(
-      <ManagementCard approvals={{ pendingCount: 1 }} pulse={null} onOpenDashboard={noop} />,
-    );
-    expect(html).toContain("timesheet waiting on you");
-    expect(html).not.toContain("timesheets waiting");
-  });
-
-  it("shows the all-clear rather than a zero count", () => {
-    const html = renderToStaticMarkup(
-      <ManagementCard approvals={{ pendingCount: 0 }} pulse={null} onOpenDashboard={noop} />,
-    );
-    expect(html).toContain("No timesheets waiting on you");
-  });
-
-  it("titles itself Organization once the pulse section is present, and shows its numbers", () => {
-    const html = renderToStaticMarkup(
-      <ManagementCard
-        approvals={{ pendingCount: 0 }}
-        pulse={{ totalActiveSecondsToday: 7200, trackingNowCount: 2, membersWorkedTodayCount: 5 }}
-        onOpenDashboard={noop}
-      />,
-    );
-    expect(html).toContain("Organization");
-    expect(html).toContain("2 tracking");
-    expect(html).toContain("5 worked today");
-  });
-
-  it("renders the pulse alone for an org admin with nothing pending", () => {
-    const html = renderToStaticMarkup(
-      <ManagementCard
-        approvals={null}
-        pulse={{ totalActiveSecondsToday: 0, trackingNowCount: 0, membersWorkedTodayCount: 0 }}
-        onOpenDashboard={noop}
-      />,
-    );
-    expect(html).toContain("Organization");
-    expect(html).not.toContain("waiting on you");
   });
 });
 
