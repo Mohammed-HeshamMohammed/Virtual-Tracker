@@ -52,6 +52,31 @@ export function resolveEffectivePresence(runtime, memberData = {}) {
   };
 }
 
+/**
+ * A member who is tracking is online, whether or not their tracker's presence socket is up.
+ *
+ * Presence ("Online" on the People page) is the presence WebSocket; tracking time and logs
+ * arrive over ordinary HTTP and never touch it. A tracker whose socket is down - an older
+ * build that reconnects with an expired token, a flaky network, a proxy that eats sockets -
+ * kept logging hours while the People page said Offline. An open, fresh activity session is
+ * direct evidence the tracker is running and reaching us, so it lifts an offline reading.
+ * It never lowers one: a live socket (online / idle) wins as it is.
+ *
+ * `sessionStatus` is effectiveTrackingStatusFromSession's answer ("active" | "idle" |
+ * "offline"; already false for an ended or stale session).
+ */
+export function presenceWithOpenSession(presence, sessionStatus, sessionUpdatedAt) {
+  if (presence?.status === "online" || presence?.status === "idle") return presence;
+  if (sessionStatus !== "active" && sessionStatus !== "idle") return presence;
+  const at = timestampMs(sessionUpdatedAt) || Date.now();
+  return {
+    status: sessionStatus === "active" ? "online" : "idle",
+    lastSeenAt: at,
+    lastActivityAt: at,
+    connectionCount: presence?.connectionCount ?? 0,
+  };
+}
+
 export function flattenPresenceForApi(memberData, runtime = null) {
   const fields = extractPresenceFields(memberData);
   const effective = resolveEffectivePresence(runtime, memberData);
