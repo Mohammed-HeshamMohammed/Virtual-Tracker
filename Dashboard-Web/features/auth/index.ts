@@ -28,7 +28,6 @@ export {
   allowedNavSectionIds,
   visibleNavSections,
   SERVER_SCOPED_PROJECT_ROLES,
-  clientHiddenPageIds,
   isPageAllowedForRole,
   canUseBatchMemberActions,
   canManageMemberBans,

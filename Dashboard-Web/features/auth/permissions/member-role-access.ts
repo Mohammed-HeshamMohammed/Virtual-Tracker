@@ -252,17 +252,22 @@ export function canClassifyActivity(role: string): boolean {
 }
 
 export function defaultNavItemForRole(role: string): string {
-  if (normalizeMemberRole(role) === "client") return "reports-work-sessions"
   return "command-center"
 }
 
 const RESTRICTED_SECTION_IDS = new Set(["dashboard", "people", "activity", "settings"])
 
-// pm-clients is excluded for the Clients role: it lists every client company
-// in the org, and a client login must never see other customers' records.
-const CLIENT_EXCLUDED_PAGE_IDS = new Set(["calendar-timeoff", "pm-clients"])
+// What a Clients login sees, and nothing else. Their pages are a fixed
+// allowlist (section -> page ids) rather than "everything minus a blocklist",
+// so a page added to the sidebar later stays hidden from clients until
+// someone deliberately lists it here.
+const CLIENT_SECTION_IDS = new Set(["dashboard", "timesheets", "activity", "reports"])
 
-const CLIENT_SECTION_IDS = new Set(["timesheets", "activity", "project-management", "reports"])
+const CLIENT_PAGE_IDS_BY_SECTION: Record<string, Set<string>> = {
+  dashboard: new Set(["command-center"]),
+  timesheets: new Set(["timesheets-time-activity"]),
+  activity: new Set(["activity-screenshots"]),
+}
 
 const CLIENT_ALLOWED_REPORT_PAGE_IDS = new Set([
   "reports-all",
@@ -275,10 +280,6 @@ const CLIENT_ALLOWED_REPORT_PAGE_IDS = new Set([
 export function isReadOnlyRole(role: string): boolean {
   const key = normalizeMemberRole(role)
   return key === "client" || key === "viewer" || key === "user"
-}
-
-export function clientHiddenPageIds(): Set<string> {
-  return new Set(CLIENT_EXCLUDED_PAGE_IDS)
 }
 
 export const SERVER_SCOPED_PROJECT_ROLES = new Set(["owner", "superadmin", "admin", "client"])
@@ -297,12 +298,8 @@ export function allowedNavSectionIds(role: string): Set<string> {
 // (isPageAllowedForRole, via getClientPageIds) build off this so a page
 // hidden from the sidebar can never be reached by direct navigation either.
 function clientVisibleSections(): NavSection[] {
-  const hidden = clientHiddenPageIds()
   const sections = NAV_SECTIONS.filter((s) => CLIENT_SECTION_IDS.has(s.id))
   return sections.map((s) => {
-    if (s.id === "timesheets") {
-      return { ...s, pages: s.pages?.filter((p) => p.id === "timesheets-view") }
-    }
     if (s.id === "reports") {
       return {
         ...s,
@@ -315,14 +312,8 @@ function clientVisibleSections(): NavSection[] {
           .filter((sub) => sub.items.length > 0),
       }
     }
-    return {
-      ...s,
-      pages: s.pages?.filter((p) => !hidden.has(p.id)),
-      subsections: s.subsections?.map((sub) => ({
-        ...sub,
-        items: sub.items.filter((item) => !hidden.has(item.id)),
-      })),
-    }
+    const allowed = CLIENT_PAGE_IDS_BY_SECTION[s.id] ?? new Set<string>()
+    return { ...s, pages: s.pages?.filter((p) => allowed.has(p.id)), subsections: undefined }
   })
 }
 

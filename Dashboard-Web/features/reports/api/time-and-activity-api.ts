@@ -43,6 +43,7 @@ interface RawTimeAndActivityReport {
   days: RawReportDay[]
   entries?: RawEntry[]
   currency?: TimeActivityReportData["currency"]
+  moneyHidden?: boolean
 }
 
 function initialsFor(name: string): string {
@@ -188,7 +189,7 @@ function mapReport(raw: RawTimeAndActivityReport, range?: { from: string; to: st
     memberRows[day.date] = day.members.map(toMemberSubRow)
   }
   const entries = (raw.entries ?? []).map(toEntry)
-  return { days, memberRows, entries, currency: raw.currency }
+  return { days, memberRows, entries, currency: raw.currency, moneyHidden: raw.moneyHidden === true }
 }
 
 export async function fetchTimeAndActivityReport(range: {

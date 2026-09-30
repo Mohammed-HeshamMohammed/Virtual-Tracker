@@ -34,6 +34,12 @@ import { AddManualEntryDialog } from "@/features/reports/components/time-activit
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu"
 import { downloadTimeActivityCsv } from "@/features/reports/utils/time-and-activity/csv-export"
+import {
+  buildTimeActivityExportTable,
+  describeExportFilters,
+  timeActivityFilename,
+  timeActivityReportTitle,
+} from "@/features/reports/utils/time-and-activity/export-model"
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
 import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
 import {
@@ -44,7 +50,12 @@ import {
 import type { TimeActivityGroupBy, TimeActivityReportViewProps } from "@/features/reports/models/time-and-activity"
 import { ReportColumnPicker } from "@/features/reports/components/time-activity-report/column-picker"
 import { ReportDateRangePicker } from "@/features/reports/components/time-activity-report/date-range-picker"
-import { ReportFiltersPanel } from "@/features/reports/components/time-activity-report/filters-panel"
+import {
+  ACTIVITY_LEVEL_OPTIONS,
+  MANUAL_TIME_SELECT_OPTIONS,
+  ReportFiltersPanel,
+  TRACKED_TIME_SELECT_OPTIONS,
+} from "@/features/reports/components/time-activity-report/filters-panel"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { ReportMemberMetricCell } from "@/features/reports/components/time-activity-report/member-metric-cell"
 import { ReportPeriodMetricCell } from "@/features/reports/components/time-activity-report/period-metric-cell"
@@ -55,6 +66,8 @@ import { SearchableSelectField, type SearchableSelectOption } from "@/shared/ui/
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
   ALL_MEMBERS_VALUE,
+  ALL_PROJECTS_VALUE,
+  TABLE_METRIC_COLUMNS,
   STANDARD_REPORT_ORG_LABEL,
   MEMBER_TIMEZONE_LABEL,
   TIME_ACTIVITY_TABLE_COL_AUTO_HIDE_PRIORITY,
@@ -78,6 +91,7 @@ export function TimeActivityReportView({
   onReload,
   loading,
   error,
+  moneyHidden = false,
   displayCurrency = "",
   resolvedDisplayCurrency,
   onDisplayCurrencyChange,
@@ -141,7 +155,7 @@ export function TimeActivityReportView({
     getSubRowsForDay,
     memberTotals,
     groupColumnLabel,
-  } = useTimeAndActivityReport({ days, memberRows, entries, range, currentMemberName: currentMember?.name })
+  } = useTimeAndActivityReport({ days, memberRows, entries, range, currentMemberName: currentMember?.name, moneyHidden })
 
   // Same searchable, avatar-bearing member picker as Manual Time Requests
   // (ManualTimeContent) and the Add Manual Entry dialog on this page, rather
@@ -200,6 +214,41 @@ export function TimeActivityReportView({
       .finally(() => setDeletingKey(null))
   }
 
+  // One description of the table, shared by both exports so they always
+  // match what is on screen: the same grouping, filters, sort and people
+  // underneath each row. `allColumns` is for the spreadsheet (every column
+  // the report has); the PDF keeps to the columns the viewer chose.
+  function buildExportTable(allColumns: boolean) {
+    return buildTimeActivityExportTable({
+      rows: tableDisplayRows,
+      getSubRows: getSubRowsForDay,
+      groupBy,
+      groupColumnLabel,
+      metricColumns: allColumns ? TABLE_METRIC_COLUMNS : visibleMetricColumns,
+      moneyHidden,
+      formatManualHours: formatDecimalHoursClock,
+    })
+  }
+
+  function exportFilterLines(): string[] {
+    const label = (opts: { value: string; label: string }[], value: string) =>
+      value === "all" ? "" : (opts.find((o) => o.value === value)?.label ?? "")
+    return describeExportFilters({
+      memberLabel: memberFilter === ALL_MEMBERS_VALUE ? "All members" : memberFilter,
+      projectLabel: projectFilter === ALL_PROJECTS_VALUE ? "All projects" : projectFilter,
+      groupColumnLabel,
+      trackedTime: label(TRACKED_TIME_SELECT_OPTIONS, trackedTimeFilter),
+      manualTime: label(MANUAL_TIME_SELECT_OPTIONS, manualTimeFilter),
+      activityLevel: label(ACTIVITY_LEVEL_OPTIONS, activityLevelFilter),
+      currency: resolvedDisplayCurrency ?? displayCurrency,
+      moneyHidden,
+    })
+  }
+
+  function downloadCsv() {
+    downloadTimeActivityCsv(buildExportTable(true), timeActivityFilename(dateLabel, groupBy))
+  }
+
   function downloadPdf() {
     // memberTotals comes straight from the filtered entries, so this chart
     // is per-member in EVERY grouping mode. Walking getSubRowsForDay here
@@ -207,23 +256,28 @@ export function TimeActivityReportView({
     // table was grouped by member or by week, because a sub-row is only a
     // member in some modes (see the hook's own comment).
     const byMemberHours = new Map<string, number>(memberTotals.map((m) => [m.name, m.hours]))
+    const exportTable = buildExportTable(false)
     downloadReportPdf({
-      title: "Time & Activity Report",
-      subtitle: "Time worked, activity levels, and amounts earned per project or to-do.",
+      title: timeActivityReportTitle(groupColumnLabel),
+      subtitle: moneyHidden
+        ? "Time worked and activity levels for the selected filters."
+        : "Time worked, activity levels, and amounts earned for the selected filters.",
       orgLabel: STANDARD_REPORT_ORG_LABEL,
       timezoneLabel: MEMBER_TIMEZONE_LABEL,
       rangeLabel: dateLabel,
+      filterLines: exportFilterLines(),
+      orientation: exportTable.columns.length > 7 ? "landscape" : "portrait",
       summary: [
         { label: "Total time", value: totals.time },
         { label: "Average activity", value: `${totals.activity}%` },
-        { label: "Total spent", value: totals.spent },
+        ...(moneyHidden ? [] : [{ label: "Total spent", value: totals.spent }]),
       ],
       charts: [
         ...(sortedDisplayRows.length > 0
           ? [
               {
                 type: "line" as const,
-                title: "Tracked hours by day",
+                title: `Tracked hours by ${groupColumnLabel.toLowerCase()}`,
                 points: sortedDisplayRows.map((d) => ({ label: d.dateLabel, value: Math.round(d.trackedHours * 100) / 100 })),
                 valueFormatter: formatDecimalHoursClock,
               },
@@ -243,34 +297,21 @@ export function TimeActivityReportView({
           : []),
       ],
       table: {
-        columns: [
-          { header: groupColumnLabel, key: "date" },
-          { header: "Members", key: "members", align: "right" },
-          { header: "Total hours", key: "totalHours", align: "right" },
-          { header: "Activity %", key: "activity", align: "right" },
-          { header: "Idle %", key: "idlePct", align: "right" },
-          { header: "Idle hours", key: "idleHr", align: "right" },
-          { header: "Total spent", key: "totalSpent", align: "right" },
-        ],
-        rows: tableDisplayRows.map((d) => ({
-          date: d.dateLabel,
-          members: d.memberCount,
-          totalHours: d.totalHours,
-          activity: `${d.activityPct}%`,
-          idlePct: d.idlePct,
-          idleHr: d.idleHr,
-          totalSpent: d.totalSpent,
-        })),
+        columns: exportTable.columns.map((c) => ({ header: c.header, key: c.key, align: c.align })),
+        rows: exportTable.rows.map((r) => r.cells),
+        rowKinds: exportTable.rows.map((r) => r.kind),
         emptyMessage: "No data for this range.",
       },
-      filename: "time-and-activity",
+      filename: timeActivityFilename(dateLabel, groupBy),
     })
   }
 
   const statCards = [
     { icon: <Clock className="h-5 w-5 text-blue-500 dark:text-blue-400" />, label: "Total time", value: totals.time },
     { icon: <TrendingUp className="h-5 w-5 text-blue-500 dark:text-blue-400" />, label: "Average activity", value: `${totals.activity}%` },
-    { icon: <CreditCard className="h-5 w-5 text-blue-500 dark:text-blue-400" />, label: "Total spent", value: totals.spent },
+    ...(moneyHidden
+      ? []
+      : [{ icon: <CreditCard className="h-5 w-5 text-blue-500 dark:text-blue-400" />, label: "Total spent", value: totals.spent }]),
   ]
 
   return (
@@ -397,9 +438,7 @@ export function TimeActivityReportView({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => downloadTimeActivityCsv(tableDisplayRows, "time-and-activity", groupColumnLabel)}>
-                  To CSV
-                </DropdownMenuItem>
+                <DropdownMenuItem onClick={downloadCsv}>To CSV</DropdownMenuItem>
                 <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -460,7 +499,7 @@ export function TimeActivityReportView({
           ))}
         </div>
 
-        <ReportTimeActivityChart days={sortedDisplayRows} enabledMetrics={chartMetrics} onToggleMetric={toggleChartMetric} />
+        <ReportTimeActivityChart days={sortedDisplayRows} enabledMetrics={chartMetrics} onToggleMetric={toggleChartMetric} hideMoney={moneyHidden} />
 
         {deleteError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
@@ -485,6 +524,7 @@ export function TimeActivityReportView({
                 <ReportColumnPicker
                   enabledCols={enabledCols}
                   onToggle={toggleCol}
+                  hideMoney={moneyHidden}
                 />
               )}
             </AnimatePresence>
@@ -630,7 +670,7 @@ export function TimeActivityReportView({
                                   <ContextMenu.Item
                                     onSelect={() =>
                                       void copyTextToClipboard(
-                                        `${member.name} — ${day.dateLabel}\nTotal hours: ${member.totalHours}\nActivity: ${member.activityPct}%\nTotal spent: ${member.totalSpent}`,
+                                        `${member.name} — ${day.dateLabel}\nTotal hours: ${member.totalHours}\nActivity: ${member.activityPct}%${moneyHidden ? "" : `\nTotal spent: ${member.totalSpent}`}`,
                                       )
                                     }
                                     className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none transition-colors hover:bg-slate-50 focus:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus:bg-slate-800"
@@ -728,6 +768,7 @@ export function TimeActivityReportView({
                   resolvedDisplayCurrency={resolvedDisplayCurrency}
                   setDisplayCurrency={onDisplayCurrencyChange ?? (() => {})}
                   onClearFilters={clearFilters}
+                  hideCurrency={moneyHidden}
                 />
               </>
             )}

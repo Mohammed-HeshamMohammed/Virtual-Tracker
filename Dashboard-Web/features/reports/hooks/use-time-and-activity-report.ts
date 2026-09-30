@@ -63,7 +63,7 @@ export type UseTimeAndActivityReportParams = TimeActivityReportData & {
   currentMemberName?: string
 }
 
-export function useTimeAndActivityReport({ days, memberRows, entries, range, currentMemberName }: UseTimeAndActivityReportParams) {
+export function useTimeAndActivityReport({ days, memberRows, entries, range, currentMemberName, moneyHidden = false }: UseTimeAndActivityReportParams) {
   const savedView = useMemo(() => loadSavedView(), [])
   const [chartMetrics, setChartMetrics] = useState<Set<TimeActivityMetric>>(
     () => new Set<TimeActivityMetric>(["total_hours"])
@@ -346,8 +346,8 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range, cur
   )
 
   const visibleMetricColumns = useMemo(
-    () => TABLE_METRIC_COLUMNS.filter((c) => enabledCols.has(c.key)),
-    [enabledCols]
+    () => TABLE_METRIC_COLUMNS.filter((c) => enabledCols.has(c.key) && !(moneyHidden && c.key === "total_spent")),
+    [enabledCols, moneyHidden]
   )
 
   function toggleRow(date: string) {

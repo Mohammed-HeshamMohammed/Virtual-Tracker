@@ -85,10 +85,15 @@ export async function buildTimeAndActivityPdf(payload, opts = {}) {
     summary: [
       { label: "Total active", value: formatHms(totalActiveSeconds) },
       { label: "Average activity", value: `${activityPct}%` },
-      {
-        label: "Total spent",
-        value: formatReportMoney(totalSpent, opts.currency ?? payload.currency?.displayCurrency),
-      },
+      // Absent, not zero, when the viewer may not see money (stripReportMoney).
+      ...(payload.moneyHidden
+        ? []
+        : [
+            {
+              label: "Total spent",
+              value: formatReportMoney(totalSpent, opts.currency ?? payload.currency?.displayCurrency),
+            },
+          ]),
     ],
     charts: [
       ...(dailyActiveHours.length > 0

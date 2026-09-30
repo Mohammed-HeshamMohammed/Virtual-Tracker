@@ -47,11 +47,21 @@ export interface ReportPdfSpec {
   timezoneLabel?: string
   rangeLabel?: string
   scopeLabel?: string
+  /** One line per applied filter (members, projects, grouping...). Printed
+   *  under the letterhead so a reader can tell what the figures are limited
+   *  to without seeing the screen the report was exported from. */
+  filterLines?: string[]
+  /** Wide tables (many columns) do not fit portrait A4 without crushing. */
+  orientation?: "portrait" | "landscape"
   summary?: ReportPdfSummaryItem[]
   charts?: ReportPdfChart[]
   table: {
     columns: ReportPdfColumn[]
     rows: Record<string, string | number>[]
+    /** Parallel to rows. "group" rows are the table's totals lines and are
+     *  drawn bold on a tint; "detail" rows are the people or projects under
+     *  them, in a lighter style. Omit for a plain table. */
+    rowKinds?: ("group" | "detail")[]
     emptyMessage?: string
   }
   filename: string
@@ -111,6 +121,15 @@ function drawLetterhead(doc: jsPDF, spec: ReportPdfSpec): number {
     setMuted(doc)
     doc.text(metaParts.join("   •   "), left, y)
     y += 14
+  }
+
+  if (spec.filterLines && spec.filterLines.length > 0) {
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(8.5)
+    setInk(doc)
+    const wrapped = doc.splitTextToSize(spec.filterLines.join("   |   "), contentWidth(doc))
+    doc.text(wrapped, left, y)
+    y += wrapped.length * 11
   }
 
   y += 4
@@ -322,7 +341,7 @@ function chartHeightEstimate(chart: ReportPdfChart): number {
 }
 
 export function downloadReportPdf(spec: ReportPdfSpec): void {
-  const doc = new jsPDF({ unit: "pt", format: "a4" })
+  const doc = new jsPDF({ unit: "pt", format: "a4", orientation: spec.orientation ?? "portrait" })
   const pageH = doc.internal.pageSize.getHeight()
   const bottomLimit = pageH - PAGE_MARGIN - 16
 
@@ -345,7 +364,7 @@ export function downloadReportPdf(spec: ReportPdfSpec): void {
     y = PAGE_MARGIN
   }
 
-  const { columns, rows, emptyMessage } = spec.table
+  const { columns, rows, emptyMessage, rowKinds } = spec.table
   if (rows.length === 0) {
     doc.setFont("helvetica", "normal")
     doc.setFontSize(10)
@@ -368,7 +387,25 @@ export function downloadReportPdf(spec: ReportPdfSpec): void {
       ),
       styles: { fontSize: 8, cellPadding: 5, textColor: [INK.r, INK.g, INK.b], lineColor: [RULE.r, RULE.g, RULE.b] },
       headStyles: { fillColor: BRAND, textColor: [255, 255, 255], fontStyle: "bold" },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
+      alternateRowStyles: rowKinds ? {} : { fillColor: [248, 250, 252] },
+      // autotable draws every header cell left-aligned regardless of the
+      // column's own halign, which left numeric headers sitting off their
+      // right-aligned figures. Align each header with its column.
+      didParseCell: (data) => {
+        const align = columns[data.column.index]?.align ?? "left"
+        if (data.section === "head") {
+          data.cell.styles.halign = align
+          return
+        }
+        if (data.section === "body" && rowKinds) {
+          if (rowKinds[data.row.index] === "group") {
+            data.cell.styles.fontStyle = "bold"
+            data.cell.styles.fillColor = [239, 246, 255]
+          } else {
+            data.cell.styles.textColor = [MUTED.r, MUTED.g, MUTED.b]
+          }
+        }
+      },
     })
   }
 

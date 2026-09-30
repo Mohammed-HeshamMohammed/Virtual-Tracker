@@ -105,6 +105,7 @@ export function TimeAndActivityReport() {
       days={reportData.days}
       memberRows={reportData.memberRows}
       entries={reportData.entries}
+      moneyHidden={reportData.moneyHidden}
       onRangeApply={(start, end) => setRange({ start, end })}
       range={{ from: toDateParam(range.start), to: toDateParam(range.end) }}
       onReload={() => setReloadKey((k) => k + 1)}

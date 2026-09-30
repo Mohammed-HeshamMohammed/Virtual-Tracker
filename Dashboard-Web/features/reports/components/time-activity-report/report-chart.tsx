@@ -48,19 +48,26 @@ export function ReportTimeActivityChart({
   days,
   enabledMetrics,
   onToggleMetric,
+  hideMoney = false,
 }: {
   days: TimeActivityDayRow[]
   enabledMetrics: Set<TimeActivityMetric>
   onToggleMetric: (m: TimeActivityMetric) => void
+  /** No Total spent series, legend pill or tooltip line. */
+  hideMoney?: boolean
 }) {
+  const metricOrder = useMemo(
+    () => CHART_METRIC_ORDER.filter((m) => !(hideMoney && m === "total_spent")),
+    [hideMoney],
+  )
   const [hovered, setHovered] = useState<number | null>(null)
   const currency = useWorkspaceCurrency()
   const svgRef = useRef<SVGSVGElement>(null)
 
   const activeMetrics = useMemo((): TimeActivityMetric[] => {
-    const found = CHART_METRIC_ORDER.filter((m) => enabledMetrics.has(m))
+    const found = metricOrder.filter((m) => enabledMetrics.has(m))
     return found.length > 0 ? found : ["total_hours"]
-  }, [enabledMetrics])
+  }, [enabledMetrics, metricOrder])
 
   const primaryMetric: TimeActivityMetric = activeMetrics[0] ?? "total_hours"
   const multi = activeMetrics.length > 1
@@ -183,7 +190,7 @@ export function ReportTimeActivityChart({
               {METRIC_OPTIONS.find((o) => o.value === m)?.label}
             </button>
           ))}
-          {CHART_METRIC_ORDER.filter((m) => !enabledMetrics.has(m) || !activeMetrics.includes(m)).map((m) => {
+          {metricOrder.filter((m) => !enabledMetrics.has(m) || !activeMetrics.includes(m)).map((m) => {
             if (enabledMetrics.has(m)) return null
             return (
               <button
