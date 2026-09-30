@@ -57,9 +57,7 @@ export function TasksPage() {
   const normalizedRole = normalizeMemberRole(memberRole ?? "")
   const showParticipation = canViewParticipationMetrics(memberRole)
   const canMarkCompleted = isManagementRole(memberRole)
-  // A Clients login looks at its projects' tasks and changes nothing, whatever
-  // a project's client_can_manage flag says.
-  const readOnly = isReadOnlyRole(memberRole ?? "")
+  const roleReadOnly = isReadOnlyRole(memberRole ?? "")
   const t = isDark ? dark : light
 
   const [view, setView] = useComponentState<ViewMode>("list")
@@ -121,6 +119,13 @@ export function TasksPage() {
   const setTasks = (value: Task[] | ((prev: Task[]) => Task[])): void => {
     setTasksListData("tasks", value)
   }
+
+  // A Clients login looks at its projects' tasks and changes nothing - except
+  // on a project the owner switched client_can_manage on for, which is the
+  // setting that hands a client task editing (the API enforces the same rule).
+  const readOnly =
+    roleReadOnly &&
+    !(normalizedRole === "client" && Boolean(rawProjectList.find((p: any) => p.id === selectedProjectId)?.clientCanManage))
 
   const canAddTask = useMemo(
     () =>

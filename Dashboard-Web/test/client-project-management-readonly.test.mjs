@@ -21,7 +21,9 @@ test("the client allowlist includes Project Management minus Clients", () => {
 
 test("the tasks page is read-only for a read-only role and reaches every view", () => {
   const page = read("features/tasks/pages/tasks-page.tsx")
-  assert.match(page, /const readOnly = isReadOnlyRole\(/)
+  assert.match(page, /const roleReadOnly = isReadOnlyRole\(/)
+  // ...unless the project's owner switched client_can_manage on for it.
+  assert.match(page, /roleReadOnly &&\s+!\(normalizedRole === "client" && Boolean\(rawProjectList\.find\(.*?\)\?\.clientCanManage\)\)/)
   assert.match(page, /!readOnly &&\s+canCreateTasksInProject/)
   assert.match(page, /function handleDragEnd\(event: any\) \{\s+if \(readOnly\) return/)
   assert.equal((page.match(/readOnly=\{readOnly\}/g) ?? []).length, 3)
