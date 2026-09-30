@@ -34,6 +34,7 @@ import { AddManualEntryDialog } from "@/features/reports/components/time-activit
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu"
 import { downloadTimeActivityCsv } from "@/features/reports/utils/time-and-activity/csv-export"
+import { downloadTimeActivityXlsx } from "@/features/reports/utils/time-and-activity/xlsx-download"
 import {
   buildTimeActivityExportTable,
   describeExportFilters,
@@ -104,6 +105,7 @@ export function TimeActivityReportView({
   const [scheduleOpen, setScheduleOpen] = useComponentState(false)
   const [deletingKey, setDeletingKey] = useComponentState<string | null>(null)
   const [deleteError, setDeleteError] = useComponentState<string | null>(null)
+  const [exportError, setExportError] = useComponentState<string | null>(null)
   const {
     chartMetrics,
     toggleChartMetric,
@@ -247,6 +249,16 @@ export function TimeActivityReportView({
 
   function downloadCsv() {
     downloadTimeActivityCsv(buildExportTable(true), timeActivityFilename(dateLabel, groupBy))
+  }
+
+  // Every column the report has, like the CSV - the workbook is for working in, not for printing.
+  function downloadXlsx() {
+    setExportError(null)
+    downloadTimeActivityXlsx(
+      buildExportTable(true),
+      { title: timeActivityReportTitle(groupColumnLabel), rangeLabel: dateLabel, filterLines: exportFilterLines() },
+      timeActivityFilename(dateLabel, groupBy),
+    ).catch((err) => setExportError(err instanceof Error ? err.message : "Could not build the Excel file."))
   }
 
   function downloadPdf() {
@@ -438,6 +450,7 @@ export function TimeActivityReportView({
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={downloadXlsx}>To Excel (formatted, one sheet per {groupColumnLabel.toLowerCase()})</DropdownMenuItem>
                 <DropdownMenuItem onClick={downloadCsv}>To CSV</DropdownMenuItem>
                 <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
               </DropdownMenuContent>
@@ -500,6 +513,12 @@ export function TimeActivityReportView({
         </div>
 
         <ReportTimeActivityChart days={sortedDisplayRows} enabledMetrics={chartMetrics} onToggleMetric={toggleChartMetric} hideMoney={moneyHidden} />
+
+        {exportError ? (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
+            {exportError}
+          </div>
+        ) : null}
 
         {deleteError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-400">
