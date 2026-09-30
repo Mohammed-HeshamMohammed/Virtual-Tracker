@@ -9,6 +9,7 @@ import {
   type CreateProjectFormPayload,
 } from "@/infrastructure/api"
 import type { ProjectListItem as Project } from "@/features/projects/models/list"
+import { buildProjectRules } from "@/features/projects/utils/project-rules"
 
 function computeOptimisticMemberIds(payload: CreateProjectFormPayload): string[] {
   return [
@@ -48,6 +49,17 @@ function applyOptimisticProjectEdit(prev: Project, payload: CreateProjectFormPay
     memberIds,
     members: memberIds.length,
     budget: computeOptimisticBudget(prev.budget, payload),
+    rules: buildProjectRules({
+      allowProjectTracking: payload.allowProjectTracking,
+      restrictManagerTracking: payload.restrictManagerTracking,
+      managerIds: payload.managerIds,
+      trackingAllowedManagerIds: payload.trackingAllowedManagerIds,
+      requireTaskToTrack: payload.requireTaskToTrack,
+      restrictTaskCreation: payload.restrictTaskCreation,
+      requireStopNote: payload.requireStopNote,
+      clientCanManage: payload.clientCanManage,
+      clientCanTrack: payload.clientCanTrack,
+    }),
   }
 }
 

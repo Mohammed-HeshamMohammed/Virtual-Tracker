@@ -1,6 +1,7 @@
 "use client"
 
 import { cn } from "@/shared/utils/utils"
+import { describeProjectRules, type ProjectRules, type RuleChip } from "@/features/projects/utils/project-rules"
 import { formatMoney, useWorkspaceCurrency } from "@/shared/utils/workspace-currency"
 
 export function formatHoursLabel(totalHours: number): string {
@@ -96,5 +97,48 @@ export function TeamBadge({ name, isDark }: { name: string; isDark: boolean }) {
     >
       {name}
     </span>
+  )
+}
+
+const RULE_CHIP_TONE: Record<RuleChip["tone"], { light: string; dark: string }> = {
+  warn: { light: "bg-amber-50 text-amber-700", dark: "bg-amber-500/15 text-amber-300" },
+  info: { light: "bg-blue-50 text-blue-600", dark: "bg-[#4be277]/10 text-[#4be277]" },
+  muted: { light: "bg-slate-100 text-slate-500", dark: "bg-[#2e3447] text-[#bccbb9]" },
+}
+
+const VISIBLE_RULE_CHIPS = 2
+
+/** The project's Management tab switches as chips. The first two show; the rest are in the tooltip. */
+export function ProjectRulesCell({
+  rules,
+  hasTasks,
+  isDark,
+}: {
+  rules: ProjectRules | undefined
+  hasTasks: boolean
+  isDark: boolean
+}) {
+  if (!rules) return <span className={cn("text-xs", isDark ? "text-[#3d4a3d]" : "text-slate-300")}>—</span>
+  const chips = describeProjectRules(rules, { hasTasks })
+  if (chips.length === 0) return <span className={cn("text-xs", isDark ? "text-[#3d4a3d]" : "text-slate-300")}>—</span>
+  const shown = chips.slice(0, VISIBLE_RULE_CHIPS)
+  const hidden = chips.length - shown.length
+  return (
+    <div className="flex flex-wrap items-center gap-1" title={chips.map((chip) => `${chip.label} - ${chip.detail}`).join("\n")}>
+      {shown.map((chip) => (
+        <span
+          key={chip.key}
+          className={cn(
+            "inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-medium",
+            isDark ? RULE_CHIP_TONE[chip.tone].dark : RULE_CHIP_TONE[chip.tone].light,
+          )}
+        >
+          {chip.label}
+        </span>
+      ))}
+      {hidden > 0 ? (
+        <span className={cn("text-[10px] font-medium", isDark ? "text-[#bccbb9]" : "text-slate-400")}>+{hidden}</span>
+      ) : null}
+    </div>
   )
 }
