@@ -250,6 +250,14 @@ export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = 
     params.push(options.sinceDay);
     where += ` AND ${localDay("sc.captured_at")} >= $${params.length}::date`;
   }
+  if (Array.isArray(options.projectIds)) {
+    // A restricted viewer (a client): only captures whose project is one of
+    // theirs. Same two-join resolution as projectId below; an empty list
+    // matches nothing rather than meaning "no filter".
+    if (options.projectIds.length === 0) return [];
+    params.push(options.projectIds);
+    where += ` AND (t.project_id = ANY($${params.length}::uuid[]) OR s.project_id = ANY($${params.length}::uuid[]))`;
+  }
   if (options.projectId) {
     // A screenshot's project comes from whichever of the two joins below
     // actually resolves - the task's project for a task-based session, the
@@ -433,6 +441,23 @@ export async function findUnclassifiedDomainsPg(sinceDays = 30, limit = 20) {
     [sinceDays, limit],
   );
   return result?.rows ?? [];
+}
+
+/** Whether a capture belongs to one of these projects - resolved the same way
+ *  fetchPgScreenshots does (task's project, else the session's own). */
+export async function isScreenshotInProjectsPg(screenshotId, projectIds) {
+  const id = parseProgressUuid(screenshotId);
+  if (!id || !Array.isArray(projectIds) || projectIds.length === 0) return false;
+  const result = await pgQuery(
+    `SELECT 1
+     FROM activity_screenshots sc
+     LEFT JOIN tasks t ON t.id = sc.task_id
+     LEFT JOIN activity_sessions s ON s.id::text = sc.session_id
+     WHERE sc.id = $1 AND (t.project_id = ANY($2::uuid[]) OR s.project_id = ANY($2::uuid[]))
+     LIMIT 1`,
+    [id, projectIds],
+  );
+  return (result?.rows?.length ?? 0) > 0;
 }
 
 export async function fetchPgScreenshotById(screenshotId) {

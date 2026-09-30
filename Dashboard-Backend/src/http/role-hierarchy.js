@@ -28,6 +28,10 @@ export function isEnterpriseRole(roleName) {
   return ENTERPRISE_ROLE_KEYS.has(normalizeRoleKey(roleName));
 }
 
+export function isClientRole(roleName) {
+  return normalizeRoleKey(roleName) === "client";
+}
+
 export function isAdminLevelRole(roleName) {
   const key = normalizeRoleKey(roleName);
   return key === "admin" || key === "superadmin" || key === "owner";

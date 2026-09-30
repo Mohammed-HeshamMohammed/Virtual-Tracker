@@ -83,8 +83,8 @@ import {
 import { localDayFor, weekdayIndexForLocalDay } from "../../lib/time/timezone-utils.js";
 import { getMemberTimezone } from "../reports/member-timezones.js";
 import { adoptReportedTimezone } from "./adopt-reported-timezone.js";
-import { clientMayTrackProject, isProjectMemberForTimer } from "../../http/project-access.js";
-import { isAdminLevelRole } from "../../http/role-hierarchy.js";
+import { clientMayTrackProject, getViewerProjectIds, isProjectMemberForTimer } from "../../http/project-access.js";
+import { isAdminLevelRole, isClientRole } from "../../http/role-hierarchy.js";
 import { buildAgentWorkspace } from "./workspace.service.js";
 import { buildWeekDays } from "./week-days.js";
 import {
@@ -103,6 +103,7 @@ import {
   createPgSession,
   fetchPgAppLogs,
   fetchPgScreenshotById,
+  isScreenshotInProjectsPg,
   fetchPgScreenshots,
   fetchPgSessionScreenshots,
   updatePgScreenshotActivityLevels,
@@ -1281,6 +1282,15 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 403, { success: false, error: "Not allowed to view this screenshot" });
         return true;
       }
+      // A client sees a member's captures only on projects that are the
+      // client's own - the member being visible to them is not enough.
+      if (isClientRole(scope.roleName)) {
+        const own = await getViewerProjectIds(db, member.memberId, scope.roleName);
+        if (!(await isScreenshotInProjectsPg(resolvedId, own ?? []))) {
+          sendJson(res, origin, 403, { success: false, error: "Not allowed to view this screenshot" });
+          return true;
+        }
+      }
 
       void recordScreenshotAccess({
         screenshotId: resolvedId,
@@ -1558,6 +1568,15 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
 
+      // Clients get the Screenshots tab only, and only for their own projects.
+      const feedClientProjectIds = isClientRole(scope.roleName)
+        ? (await getViewerProjectIds(db, member.memberId, scope.roleName)) ?? []
+        : null;
+      if (feedClientProjectIds && feedType !== "screenshots") {
+        sendJson(res, origin, 403, { success: false, error: "Not available for this account." });
+        return true;
+      }
+
       const memberMeta = await buildMemberMetaMap(
         db,
         scope.allowedMemberIds === null
@@ -1590,7 +1609,12 @@ export async function routeActivity(req, res, url, origin) {
 
         const screenshotLimit = dayFilter ? 80 : 500;
 
-        const pgRows = await fetchPgScreenshots(scope.targetMemberIds, dayFilter, screenshotLimit);
+        const pgRows = await fetchPgScreenshots(
+          scope.targetMemberIds,
+          dayFilter,
+          screenshotLimit,
+          feedClientProjectIds ? { projectIds: feedClientProjectIds } : {},
+        );
         // A screenshot taken while a browser was focused is categorised by the
         // site that was open, not by the browser. Only fetch the URL logs
         // needed to do that when a browser actually appears in the results.

@@ -253,5 +253,38 @@ await check("unlock tokens round-trip through the real table, and vt_app cannot 
   );
 });
 
+await check("client screenshot scoping: fetchPgScreenshots(projectIds) and isScreenshotInProjectsPg on the real schema", async () => {
+  const { fetchPgScreenshots, isScreenshotInProjectsPg } = await import(
+    "../src/lib/postgres/activity-events-postgres.service.js"
+  );
+  const member = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  const mine = "11111111-aaaa-4aaa-8aaa-111111111111";
+  const other = "22222222-bbbb-4bbb-8bbb-222222222222";
+  const sessMine = "33333333-cccc-4ccc-8ccc-333333333333";
+  const sessOther = "44444444-dddd-4ddd-8ddd-444444444444";
+  await db.query(`INSERT INTO members (id, tenant_id, first_name, work_email) VALUES ($1, $2, 'Shot', 'shot@a.test')`, [member, TENANT_A]);
+  await db.query(`INSERT INTO projects (id, tenant_id, name, status) VALUES ($1, $3, 'Mine', 'active'), ($2, $3, 'Other', 'active')`, [mine, other, TENANT_A]);
+  await db.query(
+    `INSERT INTO activity_sessions (id, tenant_id, member_id, project_id, status, ended_at)
+     VALUES ($1, $3, $4, $5, 'stopped', now()), ($2, $3, $4, $6, 'stopped', now())`,
+    [sessMine, sessOther, TENANT_A, member, mine, other],
+  );
+  await db.query(
+    `INSERT INTO activity_screenshots (tenant_id, member_id, session_id, app_name, captured_at)
+     VALUES ($1, $2, $3, 'Figma', now()), ($1, $2, $4, 'Slack', now())`,
+    [TENANT_A, member, sessMine, sessOther],
+  );
+  const scoped = await fetchPgScreenshots([member], "", 50, { projectIds: [mine] });
+  assert.deepEqual(scoped.map((r) => r.app_name), ["Figma"], "only the client's project");
+  assert.equal((await fetchPgScreenshots([member], "", 50, { projectIds: [] })).length, 0, "no projects -> nothing, not everything");
+  assert.equal((await fetchPgScreenshots([member], "", 50, {})).length, 2, "unscoped viewers still see both");
+  const shots = await db.query(`SELECT id, app_name FROM activity_screenshots ORDER BY app_name`);
+  const figma = shots.rows.find((r) => r.app_name === "Figma").id;
+  const slack = shots.rows.find((r) => r.app_name === "Slack").id;
+  assert.equal(await isScreenshotInProjectsPg(figma, [mine]), true);
+  assert.equal(await isScreenshotInProjectsPg(slack, [mine]), false, "another project's capture is not reachable by id");
+  assert.equal(await isScreenshotInProjectsPg(figma, []), false);
+});
+
 console.log(`\n${failures === 0 ? "RESULT: PASS" : `RESULT: FAIL (${failures} proof(s) failed)`}`);
 process.exit(failures === 0 ? 0 : 1);

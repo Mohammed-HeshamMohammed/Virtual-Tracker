@@ -1,5 +1,5 @@
 import { requireAuthContext, isManagementRole } from "../../http/auth-context.js";
-import { isEmployeeRole, isViewerRole } from "../../http/role-hierarchy.js";
+import { isClientRole, isEmployeeRole, isViewerRole } from "../../http/role-hierarchy.js";
 import { sendJson } from "../../http/response.js";
 import { logSafeError } from "../../http/sanitize-error.js";
 import { readJsonBody } from "../../http/read-json-body.js";
@@ -57,6 +57,7 @@ import {
 import { listClientsPg, getAllClientBudgetsPg } from "../../lib/postgres/clients-postgres.service.js";
 import { canViewCompensation } from "../../http/field-policy.js";
 import { getViewerProjectIds } from "../../http/project-access.js";
+import { stripReportMoney } from "./strip-report-money.js";
 import { listExpensesPg } from "../../lib/postgres/expenses-postgres.service.js";
 import {
   getTimeOffBalanceRowsPg,
@@ -212,6 +213,7 @@ async function resolveReportMemberScope(db, viewer, url) {
 }
 
 async function filterProjectIdsForViewer(db, viewer, requestedProjectIds) {
+  if (isClientRole(viewer.roleName)) return clientProjectScope(db, viewer, requestedProjectIds);
   if (!requestedProjectIds || requestedProjectIds.length === 0) return null;
   const allowed = await getViewerProjectIds(db, viewer.memberId, viewer.roleName);
   if (allowed === null) return requestedProjectIds;
@@ -220,7 +222,30 @@ async function filterProjectIdsForViewer(db, viewer, requestedProjectIds) {
   return permitted.length > 0 ? permitted : ["00000000-0000-0000-0000-000000000000"];
 }
 
+const NO_PROJECT_ID = "00000000-0000-0000-0000-000000000000";
+
+/** A client sees time only on the projects that are theirs - the member scope
+ *  alone would also expose those same people's work on every other project.
+ *  Applied here, the one place every consumer (screen, CSV, PDF, scheduled
+ *  email) loads this payload from, so none of them can skip it. */
+async function clientProjectScope(db, viewer, requestedProjectIds) {
+  const owned = (await getViewerProjectIds(db, viewer.memberId, viewer.roleName)) ?? [];
+  const ownedSet = new Set(owned);
+  const permitted = requestedProjectIds?.length ? requestedProjectIds.filter((id) => ownedSet.has(id)) : owned;
+  return permitted.length > 0 ? permitted : [NO_PROJECT_ID];
+}
+
 export async function loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer = null, projectIds = null, currency = null) {
+  const viewerIsClient = Boolean(viewer && isClientRole(viewer.roleName));
+  if (viewerIsClient) projectIds = await clientProjectScope(db, viewer, projectIds);
+  const payload = await loadTimeAndActivityReportPayloadUnscoped(db, memberIds, from, to, viewer, projectIds, currency);
+  // A client never sees what anyone is paid or what the work cost. Removed
+  // from the payload itself, not just hidden on screen, so the network
+  // response, the CSV and the emailed PDF cannot carry it either.
+  return viewerIsClient ? stripReportMoney(payload) : payload;
+}
+
+async function loadTimeAndActivityReportPayloadUnscoped(db, memberIds, from, to, viewer, projectIds, currency) {
   const [rawRows, manualRows] = await Promise.all([
     getTimeAndActivityReportRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
     getManualTimeEntryRowsPg({ memberIds, fromDay: from, toDay: to, projectIds }),
