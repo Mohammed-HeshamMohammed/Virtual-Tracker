@@ -7,7 +7,7 @@ import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
 /** @type {{ ledTeamIds: Set<string>, visibleMemberIds: string[] | null, queries: string[] }} */
-const stub = { ledTeamIds: new Set(), visibleMemberIds: null, queries: [] };
+const stub = { ledTeamIds: new Set(), visibleMemberIds: null, peopleIds: [], queries: [], params: [] };
 
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
@@ -21,8 +21,9 @@ mock.module("../src/lib/postgres/client.js", {
     withTransaction: async (fn) => fn(),
     probePostgresReadiness: async () => true,
     __closePostgresPoolForTests: async () => {},
-    query: async (sql) => {
+    query: async (sql, params) => {
       stub.queries.push(sql);
+      stub.params.push(params);
       if (sql.includes("FROM timesheets") && sql.includes("COUNT(*)")) return [{ pending: 3 }];
       if (sql.includes("FROM timesheets")) return [];
       if (sql.includes("FROM pay_rates")) return [{ rate: 50, currency: "USD" }];
@@ -79,7 +80,7 @@ mock.module("../src/modules/member-relationships/service.js", {
     getVisibleMembersForClient: async () => [],
     getTeamSubtreeMemberIds: async () => [],
     getManagerVisibleMemberIds: async () => [],
-    getManagerPeoplePageVisibleMemberIds: async () => [],
+    getManagerPeoplePageVisibleMemberIds: async () => stub.peopleIds,
     getManageableMemberIds: async () => [],
     getEmployeeHierarchyMemberIds: async () => [],
     buildMemberTree: async () => null,
@@ -128,12 +129,14 @@ mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
   },
 });
 
-const { buildAgentWorkspace } = await import("../src/modules/activity/workspace.service.js");
+const { buildAgentWorkspace, pulseAudience } = await import("../src/modules/activity/workspace.service.js");
 
 function reset() {
   stub.ledTeamIds = new Set();
   stub.visibleMemberIds = null;
+  stub.peopleIds = [];
   stub.queries = [];
+  stub.params = [];
 }
 
 const EMPLOYEE = { memberId: "m1", roleName: "Employee" };
@@ -167,7 +170,7 @@ test("a Client gets the self section too - they can track on an opted-in project
   assert.ok(ws.self);
   assert.equal(ws.team, null);
   assert.equal(ws.approvals, null);
-  assert.equal(ws.pulse, null);
+  assert.equal(ws.pulse?.scope, "projects", "a client sees the people on their own projects, nobody else");
 });
 
 test("the team section is gated on actually leading a team, not on the role name", async () => {
@@ -204,12 +207,12 @@ test("the team panel counts tracking / not-started / total from the member rows"
   assert.equal(ws.team.totalActiveSecondsToday, 5400);
 });
 
-test("a Manager gets approvals but not the org-wide pulse", async () => {
+test("a Manager gets approvals and a pulse scoped to their people", async () => {
   reset();
   const ws = await buildAgentWorkspace(null, MANAGER);
   assert.ok(ws.approvals, "management role gets the approvals count");
   assert.equal(ws.approvals.pendingCount, 3);
-  assert.equal(ws.pulse, null, "a Manager is not an org admin");
+  assert.equal(ws.pulse?.scope, "people", "a Manager gets the pulse over their own people");
 });
 
 test("a Super Manager gets both approvals and the pulse", async () => {
@@ -222,12 +225,59 @@ test("a Super Manager gets both approvals and the pulse", async () => {
   assert.equal(ws.pulse.membersWorkedTodayCount, 5);
 });
 
+test("a Super Manager pulse is scoped to their people, not the organization", async () => {
+  reset();
+  stub.peopleIds = ["p1", "p2"];
+  const ws = await buildAgentWorkspace(null, SUPER_MANAGER);
+  assert.equal(ws.pulse.scope, "people");
+  const pulseCall = stub.queries.findIndex((q) => q.includes("members_worked"));
+  assert.deepEqual(stub.params[pulseCall][1], ["p1", "p2"], "the query is limited to the visible members");
+});
+
+test("an org admin pulse is unscoped (null member filter) and labelled organization", async () => {
+  for (const roleName of ["Owner", "Super Admin", "Admin"]) {
+    reset();
+    const ws = await buildAgentWorkspace(null, { memberId: "a1", roleName });
+    assert.equal(ws.pulse.scope, "organization", roleName);
+    const pulseCall = stub.queries.findIndex((q) => q.includes("members_worked"));
+    assert.equal(stub.params[pulseCall][1], null, `${roleName} sees everyone`);
+  }
+});
+
+test("a Client pulse is limited to the members sharing their projects", async () => {
+  reset();
+  stub.visibleMemberIds = ["c1", "e7"];
+  const ws = await buildAgentWorkspace(null, CLIENT);
+  assert.equal(ws.pulse.scope, "projects");
+  const pulseCall = stub.queries.findIndex((q) => q.includes("members_worked"));
+  assert.deepEqual(stub.params[pulseCall][1], ["c1", "e7"]);
+});
+
+test("the Enterprise roles get a people-scoped pulse like the tier they share", async () => {
+  for (const roleName of ["Enterprise Super Manager", "Enterprise Manager"]) {
+    reset();
+    stub.peopleIds = ["x1"];
+    const ws = await buildAgentWorkspace(null, { memberId: "e1", roleName });
+    assert.equal(ws.pulse.scope, "people", roleName);
+  }
+});
+
+test("pulseAudience: who sees what", () => {
+  const expected = {
+    Owner: "organization", "Super Admin": "organization", Admin: "organization",
+    "Super Manager": "people", Manager: "people", "Enterprise Super Manager": "people", "Enterprise Manager": "people",
+    Client: "projects",
+    "Team Lead": null, Employee: null, Intern: null, Viewer: null, "": null,
+  };
+  for (const [role, audience] of Object.entries(expected)) assert.equal(pulseAudience(role), audience, role);
+});
+
 test("an Employee never triggers the approvals or pulse queries at all", async () => {
   reset();
   await buildAgentWorkspace(null, EMPLOYEE);
   const ran = stub.queries.join("\n");
   assert.equal(ran.includes("COUNT(*)::int AS pending"), false, "no approvals query for a non-management role");
-  assert.equal(ran.includes("members_worked"), false, "no pulse query for a non-org-admin");
+  assert.equal(ran.includes("members_worked"), false, "no pulse query for a role with no pulse audience");
 });
 
 test("self carries time off, the latest timesheet (null when there is none) and earnings from the member's own rate", async () => {

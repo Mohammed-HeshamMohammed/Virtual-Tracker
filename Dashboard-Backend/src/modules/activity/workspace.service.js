@@ -1,9 +1,9 @@
 import { query } from "../../lib/postgres/client.js";
 import { isManagementRole } from "../../http/auth-context.js";
-import { isOrgProjectAdminRole } from "../../http/project-access.js";
+import { normalizeRoleKey } from "../members/services/relation-sync.js";
 import { canViewCompensation } from "../../http/field-policy.js";
 import { getTeamIdsLedByMember } from "../../http/team-edit-access.js";
-import { getVisibleMemberIds } from "../member-relationships/service.js";
+import { getManagerPeoplePageVisibleMemberIds, getVisibleMemberIds } from "../member-relationships/service.js";
 import { currentDayRange } from "../tasks/timer-limit.service.js";
 import { getMemberTimezone } from "../reports/member-timezones.js";
 import { getTimeOffBalanceRowsPg } from "../../lib/postgres/time-off-postgres.service.js";
@@ -136,7 +136,40 @@ async function buildApprovalsSection(visibleMemberIds) {
   return { pendingCount: Number(rows[0]?.pending ?? 0) };
 }
 
-async function buildPulseSection(todayDay) {
+/**
+ * Who sees the live "tracking now / worked today / total" numbers, and over whom. The desktop
+ * app renders whatever arrives and has no role logic of its own, so this is the whole gate.
+ *  - organization: Owner, Super Admin, Admin - everyone in the organization.
+ *  - people: Super Manager, Manager and the two Enterprise roles - the people they can see on
+ *    the People page (their tree, plus the read-only leadership/upline rows it lists).
+ *  - projects: Client - the people sharing the projects they are on.
+ * Anyone else (Team Lead, Employee, Intern, Viewer) gets no pulse; a Team Lead who leads a
+ * team still gets the separate `team` section.
+ */
+export function pulseAudience(roleName) {
+  const key = normalizeRoleKey(roleName);
+  if (key === "owner" || key === "superadmin" || key === "admin") return "organization";
+  if (
+    key === "supermanager" ||
+    key === "supermanger" ||
+    key === "manager" ||
+    key === "enterprisesupermanager" ||
+    key === "enterprisemanager"
+  ) {
+    return "people";
+  }
+  if (key === "client") return "projects";
+  return null;
+}
+
+async function pulseMemberScope(db, viewer, audience) {
+  if (audience === "organization") return null;
+  if (audience === "people") return getManagerPeoplePageVisibleMemberIds(db, viewer.memberId);
+  return getVisibleMemberIds(db, viewer.memberId, viewer.roleName);
+}
+
+async function buildPulseSection(db, viewer, audience, todayDay) {
+  const memberIds = await pulseMemberScope(db, viewer, audience);
   const rows = await query(
     `SELECT COALESCE(SUM(s.active_seconds), 0) AS active_seconds,
             COUNT(DISTINCT s.member_id) FILTER (
@@ -145,11 +178,13 @@ async function buildPulseSection(todayDay) {
             COUNT(DISTINCT s.member_id) AS members_worked
      FROM activity_sessions s
      LEFT JOIN members m ON m.id = s.member_id
-     WHERE (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date = $1::date`,
-    [todayDay],
+     WHERE (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date = $1::date
+       AND ($2::uuid[] IS NULL OR s.member_id = ANY($2::uuid[]))`,
+    [todayDay, memberIds],
   );
   const row = rows[0] ?? {};
   return {
+    scope: audience,
     totalActiveSecondsToday: Math.max(0, Math.floor(Number(row.active_seconds) || 0)),
     trackingNowCount: Number(row.tracking_now ?? 0),
     membersWorkedTodayCount: Number(row.members_worked ?? 0),
@@ -163,7 +198,7 @@ export async function buildAgentWorkspace(db, viewer) {
 
   const ledTeamIds = [...(await getTeamIdsLedByMember(db, viewer.memberId))];
   const isManagement = isManagementRole(viewer.roleName);
-  const isOrgAdmin = isOrgProjectAdminRole(viewer.roleName);
+  const audience = pulseAudience(viewer.roleName);
 
   const [self, team, approvals, pulse] = await Promise.all([
     buildSelfSection(viewer, todayDay, weekStartDay),
@@ -171,7 +206,7 @@ export async function buildAgentWorkspace(db, viewer) {
     isManagement
       ? getVisibleMemberIds(db, viewer.memberId, viewer.roleName).then(buildApprovalsSection)
       : null,
-    isOrgAdmin ? buildPulseSection(todayDay) : null,
+    audience ? buildPulseSection(db, viewer, audience, todayDay) : null,
   ]);
 
   return {
