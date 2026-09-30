@@ -118,7 +118,7 @@ jobs:
             --metrics off \
             --sarif --output semgrep.sarif
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v3
         # `always()` so a semgrep crash still uploads whatever it wrote rather
         # than silently reporting nothing.
         if: always()
@@ -149,7 +149,7 @@ jobs:
             Dashboard-Web Landing-Web Tauri-App-Extension
             --config .njsscan --sarif --output njsscan.sarif || true
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v3
         if: always()
         with:
           sarif_file: njsscan.sarif
@@ -186,7 +186,7 @@ jobs:
           severity: critical,high,medium
           skip-path: '**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**,**/scripts/**,**/test/**,**/tests/**,**/*.test.*,**/*_tests.rs,**/*.example'
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v3
         if: always()
         with:
           sarif_file: bearer.sarif
@@ -212,7 +212,7 @@ jobs:
           # action's default, so **/.git/** has to be repeated here.
           ignore-globs: '**/.git/**,**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**,**/scripts/**,**/test/**,**/tests/**,**/*.test.*,**/*_tests.rs,**/*.example'
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v3
         if: always()
         with:
           sarif_file: devskim-results.sarif
@@ -347,7 +347,7 @@ jobs:
           limit-severities-for-sarif: true
           cache: true
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v3
         if: always()
         with:
           sarif_file: trivy.sarif
@@ -384,7 +384,7 @@ jobs:
           # Set false to keep results repo-local.
           publish_results: true
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v3
         if: always()
         with:
           sarif_file: scorecard.sarif
