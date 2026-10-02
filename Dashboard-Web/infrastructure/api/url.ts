@@ -18,7 +18,22 @@ function readGatewayUrl(): string | null {
   return gateway ? getSecureApiBaseUrl(trimTrailingSlash(gateway)) : null;
 }
 
+/**
+ * Same-origin mode: the browser talks only to the dashboard's own host
+ * (`/api/*` and the presence WebSocket), and Dashboard-Web's server forwards
+ * those to the backends (see next.config.mjs). Corporate proxies / web filters
+ * that block or redirect the separate `appapi.` and `auth.` hostnames - which
+ * breaks CORS preflights - then only ever see the one host they already allow.
+ * Build-time flag, like the other NEXT_PUBLIC_* variables.
+ */
+function readSameOriginBase(): string | null {
+  if (process.env.NEXT_PUBLIC_API_SAME_ORIGIN !== "true") return null;
+  return typeof window !== "undefined" ? window.location.origin : "";
+}
+
 export function getAuthApiBaseUrl(): string {
+  const sameOrigin = readSameOriginBase();
+  if (sameOrigin !== null) return sameOrigin;
   const gateway = readGatewayUrl();
   if (gateway) return gateway;
 
@@ -34,6 +49,17 @@ export function getAuthApiBaseUrl(): string {
 }
 
 export function getDashboardApiBaseUrl(): string {
+  const sameOrigin = readSameOriginBase();
+  if (sameOrigin !== null) return sameOrigin;
+  return getAgentApiBaseUrl();
+}
+
+/**
+ * The backend host the desktop agent talks to. Unlike getDashboardApiBaseUrl()
+ * this ignores same-origin mode, because the agent is built against the real
+ * API host and the agent-link check compares against that.
+ */
+export function getAgentApiBaseUrl(): string {
   const gateway = readGatewayUrl();
   if (gateway) return gateway;
 

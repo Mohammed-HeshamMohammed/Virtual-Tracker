@@ -7,7 +7,7 @@ import { getFirebaseAuth } from "@/infrastructure/firebase/config"
 import { completeAgentLink } from "@/features/auth/api/agent-link-api"
 import { DASHBOARD_PATH, finishAgentLinkSuccess } from "@/features/auth/services/navigation"
 import { useAgentConnectAndAutoClose } from "@/features/auth/services/use-agent-connect"
-import { getDashboardApiBaseUrl } from "@/infrastructure/api/url"
+import { getAgentApiBaseUrl } from "@/infrastructure/api/url"
 import {
   waitForLocalAgentAuthenticated,
   fetchLocalAgentHealth,
@@ -25,7 +25,7 @@ const INVALID_LINK_MESSAGE =
   "This linking session is invalid or expired. Open My Virtual Tracker and click Sign In again."
 
 function assertAgentApiHostMatches(health: LocalAgentHealth): void {
-  const expectedHost = new URL(getDashboardApiBaseUrl()).host
+  const expectedHost = new URL(getAgentApiBaseUrl()).host
   if (!health.apiUrl) return
   let agentHost = ""
   try {
@@ -35,7 +35,7 @@ function assertAgentApiHostMatches(health: LocalAgentHealth): void {
   }
   if (agentHost && agentHost !== expectedHost) {
     throw new Error(
-      `Desktop agent API (${agentHost}) does not match dashboard API (${expectedHost}). Rebuild My Virtual Tracker with VT_API_URL=${getDashboardApiBaseUrl()}, then click Sign In again.`,
+      `Desktop agent API (${agentHost}) does not match dashboard API (${expectedHost}). Rebuild My Virtual Tracker with VT_API_URL=${getAgentApiBaseUrl()}, then click Sign In again.`,
     )
   }
 }
