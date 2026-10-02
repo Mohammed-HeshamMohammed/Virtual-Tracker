@@ -29,7 +29,7 @@ import { planRelationshipRepairs, RelationshipIntegrityError } from "./relations
 import { moveMemberToParent } from "./move-service.js";
 import { MOVE_ERROR } from "./move-plan.js";
 import { initializeMemberRelationships, forceReinitializeRelationships } from "./migrate.js";
-import { maybeRepairOrphansOnTreeLoad, cleanupExternalEntityHierarchyEdges, maybeSeparateOwnersOnTreeLoad } from "../hierarchy/hierarchy-repair.js";
+import { maybeRepairOrphansOnTreeLoad, cleanupExternalEntityHierarchyEdges, maybeSeparateOwnersOnTreeLoad, maybeAnchorAdminsOnTreeLoad } from "../hierarchy/hierarchy-repair.js";
 import { classifyHierarchyPlacement, isExcludedFromHierarchy, isOrganizationAdminRole, isOrganizationRootRole } from "../hierarchy/hierarchy-placement.js";
 import { canCreateTeams } from "../../http/team-member-assign-policy.js";
 import { getTeamStaffableMemberIds, getTeamStaffableMemberSummaries } from "../../http/team-edit-access.js";
@@ -163,6 +163,7 @@ export async function routeMemberRelationships(req, res, url, origin) {
         for (const [name, repair] of [
           ["external-entity cleanup", () => cleanupExternalEntityHierarchyEdges(db)],
           ["owner separation", () => maybeSeparateOwnersOnTreeLoad(db)],
+          ["admins under the Owner", () => maybeAnchorAdminsOnTreeLoad(db, authz.memberId)],
           ["orphan repair", () => maybeRepairOrphansOnTreeLoad(db, authz.memberId)],
         ]) {
           try {

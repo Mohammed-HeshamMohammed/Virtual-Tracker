@@ -183,10 +183,20 @@ export async function recordMemberRelationship(db, {
   const { resolveMemberRoleName } = await import("../activity/activity-scope.js");
   const { isExcludedFromHierarchy } = await import("../hierarchy/hierarchy-placement.js");
 
-  const [childRoleName, parentRoleName] = await Promise.all([
+  let [childRoleName, parentRoleName] = await Promise.all([
     resolveMemberRoleName(db, childMemberId),
     resolveMemberRoleName(db, parentMemberId),
   ]);
+
+  // Super Admins and Admins report to the Owner, whoever added them (see admin-anchor.js).
+  const { isAdminTierRole, findPrimaryOwnerId } = await import("../hierarchy/admin-anchor.js");
+  if (isAdminTierRole(childRoleName) && normalizeRoleKey(parentRoleName) !== "owner") {
+    const ownerId = await findPrimaryOwnerId(db, childMemberId);
+    if (ownerId) {
+      parentMemberId = ownerId;
+      parentRoleName = await resolveMemberRoleName(db, ownerId);
+    }
+  }
 
   if (isExcludedFromHierarchy(childRoleName)) {
     throw new RelationshipIntegrityError(

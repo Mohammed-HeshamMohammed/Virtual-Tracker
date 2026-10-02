@@ -11,6 +11,7 @@ export const MOVE_ERROR = {
   EXTERNAL_CHILD: "external_entity",
   EXTERNAL_PARENT: "external_parent",
   RANK: "manager_rank",
+  ADMIN_TO_OWNER: "admin_reports_to_owner",
   CYCLE: "cycle",
 };
 
@@ -29,6 +30,7 @@ function reject(code, message) {
  * @param {(roleName: string) => boolean} input.isExternal clients and other roles outside the hierarchy
  */
 export function planMemberMove({ memberId, newParentId, edges, roleOf, roleKey, rankOf, isExternal }) {
+  const adminTier = (role) => ["superadmin", "admin"].includes(roleKey(role));
   if (!memberId || !newParentId) return reject(MOVE_ERROR.INVALID, "A member and a new manager are required.");
   if (memberId === newParentId) return reject(MOVE_ERROR.SELF, "A member cannot be their own manager.");
 
@@ -49,6 +51,11 @@ export function planMemberMove({ memberId, newParentId, edges, roleOf, roleKey, 
   }
   if (rankOf(parentRole) < rankOf(childRole)) {
     return reject(MOVE_ERROR.RANK, `A ${parentRole} cannot be the manager of a ${childRole}.`);
+  }
+
+  // Super Admins and Admins report straight to the Owner, whoever added them.
+  if (adminTier(childRole) && roleKey(parentRole) !== "owner") {
+    return reject(MOVE_ERROR.ADMIN_TO_OWNER, `A ${childRole} reports directly to the Owner.`);
   }
 
   const parentOfChild = new Map();
