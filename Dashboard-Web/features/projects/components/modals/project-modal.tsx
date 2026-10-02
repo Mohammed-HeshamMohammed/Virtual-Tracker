@@ -28,6 +28,10 @@ import { timeZoneSelectOptions } from "@/features/settings/components/shared/con
 import { FormSearchSelect } from "@/shared/ui/forms/form-search-select"
 import { isManagementRole } from "@/features/auth"
 import { useAuth } from "@/shared/providers/auth/auth-context"
+import {
+  nonTrackerIds,
+  projectTrackerIds as computeTrackerIds,
+} from "@/features/projects/utils/project-trackers"
 import { ManagerClockInList } from "@/features/projects/components/modals/manager-clock-in-list"
 import { SubProjectsPicker, type SubProjectOption } from "@/features/projects/components/modals/sub-projects-picker"
 import { getProjectMembers, getProjects } from "@/features/projects/api/project-api"
@@ -834,14 +838,11 @@ export function ProjectModal({
     return map
   }, [formConfig?.options.members])
 
+  // Budget figures are about tracked time, so they count the people who can
+  // clock in under the Management tab's rules - not viewers, and not managers
+  // it keeps from clocking in.
   function countProjectMemberSlots(form: AddProjectFormState): number {
-    const ids = new Set([
-      ...form.managers,
-      ...form.users,
-      ...form.viewers,
-      ...form.memberLimitMembers,
-    ])
-    return Math.max(1, ids.size)
+    return Math.max(1, computeTrackerIds(form).length)
   }
 
   function applyClientBudgetAggregation(
@@ -976,7 +977,9 @@ export function ProjectModal({
     addForm.managers,
     addForm.users,
     addForm.viewers,
-    addForm.memberLimitMembers,
+    addForm.allowProjectTracking,
+    addForm.restrictManagerTracking,
+    addForm.trackingAllowedManagerIds,
   ])
 
   useEffect(() => {
@@ -1005,15 +1008,40 @@ export function ProjectModal({
     })
   }, [allTeamMembers, memberRoleById])
 
-  // Member limits are only for people assigned to the project: its managers
-  // and users (picking a team adds its people to those).
-  const projectTrackerIds = useMemo(
-    () => new Set([...addForm.managers, ...addForm.users]),
-    [addForm.managers, addForm.users],
+  // Member limits are for people who can clock in on the project: its users
+  // and the managers the Management tab lets clock in (picking a team adds its
+  // people to the project first). Anyone already holding a limit stays listed
+  // so their chip shows a name; the notice below flags the ones it no longer
+  // applies to.
+  const trackerRules = useMemo(
+    () => ({
+      managers: addForm.managers,
+      users: addForm.users,
+      viewers: addForm.viewers,
+      allowProjectTracking: addForm.allowProjectTracking,
+      restrictManagerTracking: addForm.restrictManagerTracking,
+      trackingAllowedManagerIds: addForm.trackingAllowedManagerIds,
+    }),
+    [
+      addForm.managers,
+      addForm.users,
+      addForm.viewers,
+      addForm.allowProjectTracking,
+      addForm.restrictManagerTracking,
+      addForm.trackingAllowedManagerIds,
+    ],
   )
-  const memberLimitOptions = useMemo(
-    () => (formConfig?.options.members ?? []).filter((member) => projectTrackerIds.has(member.id)),
-    [formConfig?.options.members, projectTrackerIds],
+  const projectTrackerIds = useMemo(() => new Set(computeTrackerIds(trackerRules)), [trackerRules])
+  const projectNonTrackerIds = useMemo(() => new Set(nonTrackerIds(trackerRules)), [trackerRules])
+  const memberLimitOptions = useMemo(() => {
+    const limited = new Set(addForm.memberLimitMembers)
+    return (formConfig?.options.members ?? []).filter(
+      (member) => projectTrackerIds.has(member.id) || limited.has(member.id),
+    )
+  }, [formConfig?.options.members, projectTrackerIds, addForm.memberLimitMembers])
+  const limitedButCannotTrack = useMemo(
+    () => addForm.memberLimitMembers.filter((id) => projectNonTrackerIds.has(id)),
+    [addForm.memberLimitMembers, projectNonTrackerIds],
   )
 
   // Someone taken off the project loses their member limit with them.
@@ -1818,9 +1846,8 @@ export function ProjectModal({
 
                     <ExpandCollapse show={addForm.budgetScope === "per_person"}>
                       {(() => {
-                        const memberCount = new Set(
-                          [...addForm.managers, ...addForm.users, ...addForm.viewers].filter(Boolean),
-                        ).size
+                        const memberCount = projectTrackerIds.size
+                        const notCounted = projectNonTrackerIds.size
                         const perPerson = Number(addForm.budgetTotal) || 0
                         return (
                           <div
@@ -1848,10 +1875,16 @@ export function ProjectModal({
                               </p>
                               <p className={cn("mt-1 text-xs", formTheme.mutedText)}>
                                 {memberCount > 0
-                                  ? `${memberCount} member${memberCount === 1 ? "" : "s"} × ${formatHoursLabel(perPerson)} each`
-                                  : `Add members to see the combined total — ${formatHoursLabel(perPerson)} each so far`}
+                                  ? `${memberCount} member${memberCount === 1 ? "" : "s"} who can clock in × ${formatHoursLabel(perPerson)} each`
+                                  : `No one can clock in yet — ${formatHoursLabel(perPerson)} each so far`}
                                 {addForm.budgetType !== "Hours based" ? " · converted to cost at each member's rate" : ""}
                               </p>
+                              {notCounted > 0 ? (
+                                <p className={cn("mt-1 text-xs", formTheme.mutedText)}>
+                                  {notCounted} {notCounted === 1 ? "person isn't" : "people aren't"} counted: viewers, and
+                                  managers the Management tab keeps from clocking in, don&apos;t use up budget.
+                                </p>
+                              ) : null}
                             </div>
                           </div>
                         )
@@ -2020,6 +2053,15 @@ export function ProjectModal({
                       teamsLoading={teamsLoading}
                       teamsLoadError={teamsLoadError}
                     />
+                  ) : null}
+
+                  {limitedButCannotTrack.length > 0 ? (
+                    <p className={cn("text-xs", formTheme.isDark ? "text-amber-300" : "text-amber-600")}>
+                      {limitedButCannotTrack.map((id) => memberLabelById[id] ?? id).join(", ")}{" "}
+                      {limitedButCannotTrack.length === 1 ? "has" : "have"} a limit but can&apos;t clock in on this
+                      project (see the Management tab), so {limitedButCannotTrack.length === 1 ? "it has" : "they have"} no
+                      effect.
+                    </p>
                   ) : null}
 
                   <MemberLimitsEditor
