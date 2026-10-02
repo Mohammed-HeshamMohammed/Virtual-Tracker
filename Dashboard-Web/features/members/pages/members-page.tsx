@@ -486,28 +486,29 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
     payBill?: { payRate?: string; currency?: string; payPeriod?: string }
     workLimits?: { weeklyLimit?: string; dailyLimit?: string; workDays?: number[]; makeupDays?: number[] }
   }) {
-    // payload.ids is what the modal actually cleared for this action (for the
-    // remove actions: the selection minus Owners). Counts in the messages
-    // below use it too, so "Removed 5" is never reported when 4 happened.
+    // payload.ids is what the modal cleared for this action (for the remove
+    // actions: the selection minus Owners). The handlers then return how many
+    // members were actually changed, and the messages below use that - so
+    // "Removed 5" is never reported when 4 happened.
+    const skippedNote = (done: number) =>
+      done < payload.ids.length ? ` ${payload.ids.length - done} skipped (not allowed or already gone).` : ""
     if (payload.action === "removeFromTree") {
-      const count = payload.ids.length
-      await handleBatchRemoveFromTree(payload.ids)
+      const count = await handleBatchRemoveFromTree(payload.ids)
       setSelectedMembers(new Set())
       setAddMembersToast({
         title: "Batch actions",
         tone: "info",
-        message: `Removed ${count} member${count === 1 ? "" : "s"} from the tree.`,
+        message: `Removed ${count} member${count === 1 ? "" : "s"} from the tree.${skippedNote(count)}`,
       })
       return
     }
     if (payload.action === "remove") {
-      const count = payload.ids.length
-      await handleRemoveMembers(payload.ids)
+      const count = await handleRemoveMembers(payload.ids)
       setSelectedMembers(new Set())
       setAddMembersToast({
         title: "Batch actions",
         tone: "info",
-        message: `Removed ${count} member${count === 1 ? "" : "s"}.`,
+        message: `Removed ${count} member${count === 1 ? "" : "s"}.${skippedNote(count)}`,
       })
       return
     }
@@ -515,13 +516,12 @@ export function MembersPage({ onNavigate }: { onNavigate?: (id: string) => void 
       ...(payload.payBill ? { payBill: payload.payBill } : {}),
       ...(payload.workLimits ? { workLimits: payload.workLimits } : {}),
     }
-    const count = payload.ids.length
-    await handleBatchUpdateMembers(payload.ids, patch)
+    const count = await handleBatchUpdateMembers(payload.ids, patch)
     setSelectedMembers(new Set())
     setAddMembersToast({
       title: "Batch actions",
       tone: "info",
-      message: `Updated ${count} member${count === 1 ? "" : "s"}.`,
+      message: `Updated ${count} member${count === 1 ? "" : "s"}.${skippedNote(count)}`,
     })
   }
 

@@ -27,6 +27,7 @@ import { projectTypeDef } from "@/features/projects/config/project-types"
 import { TIME_ZONES, ianaIdFromTimeZoneLabel } from "@/features/settings/components/shared/constants"
 import { isManagementRole } from "@/features/auth"
 import { useAuth } from "@/shared/providers/auth/auth-context"
+import { ManagerClockInList } from "@/features/projects/components/modals/manager-clock-in-list"
 import { SubProjectsPicker, type SubProjectOption } from "@/features/projects/components/modals/sub-projects-picker"
 import { getProjectMembers, getProjects } from "@/features/projects/api/project-api"
 import { formatHoursLabel } from "@/features/projects/components/project-table-cells"
@@ -284,6 +285,9 @@ function ProjectModalSelect({
   return <SelectField value={value} onChange={onChange} options={toSelectOptions(options, placeholder)} />
 }
 
+/** Sentinel for the "set everyone to" control - never a real IANA zone id. */
+const INHERIT_ALL = "__inherit_all__"
+
 function SettingToggleRow({
   checked,
   onChange,
@@ -508,6 +512,11 @@ export function ProjectModal({
 
   const memberLabelById = useMemo(
     () => Object.fromEntries((formConfig?.options.members ?? []).map((m) => [m.id, m.label])),
+    [formConfig?.options.members],
+  )
+
+  const memberById = useMemo(
+    () => Object.fromEntries((formConfig?.options.members ?? []).map((m) => [m.id, m])),
     [formConfig?.options.members],
   )
 
@@ -1329,6 +1338,41 @@ export function ProjectModal({
                         </p>
                       ) : (
                         <div className="flex flex-col gap-2">
+                          {projectMemberIds.length > 1 && !readOnly ? (
+                            <div className="flex items-center gap-2">
+                              <span className={cn("min-w-0 flex-1 text-xs font-medium", formTheme.mutedText)}>
+                                Set everyone to
+                              </span>
+                              <select
+                                value=""
+                                onChange={(e) => {
+                                  const zone = e.target.value
+                                  if (!zone) return
+                                  setAddForm((p) => ({
+                                    ...p,
+                                    memberTimeZones: {
+                                      ...p.memberTimeZones,
+                                      ...Object.fromEntries(
+                                        projectMemberIds.map((id) => [id, zone === INHERIT_ALL ? "" : zone]),
+                                      ),
+                                    },
+                                  }))
+                                }}
+                                className={cn(formTheme.control, "w-56 shrink-0")}
+                              >
+                                <option value="">Choose a time zone…</option>
+                                <option value={INHERIT_ALL}>Inherit (clear all)</option>
+                                {TIME_ZONES.map((label) => {
+                                  const id = ianaIdFromTimeZoneLabel(label)
+                                  return (
+                                    <option key={id} value={id}>
+                                      {label}
+                                    </option>
+                                  )
+                                })}
+                              </select>
+                            </div>
+                          ) : null}
                           {projectMemberIds.map((memberId) => {
                             const value = addForm.memberTimeZones[memberId] ?? ""
                             return (
@@ -2079,32 +2123,15 @@ export function ProjectModal({
                             of them can clock in.
                           </p>
                         ) : (
-                          <div className="flex flex-col gap-1.5">
-                            {addForm.managers.map((managerId) => {
-                              const checked = addForm.trackingAllowedManagerIds.includes(managerId)
-                              return (
-                                <label
-                                  key={managerId}
-                                  className={cn("flex cursor-pointer items-center gap-2 text-sm", formTheme.bodyText)}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() =>
-                                      setAddForm((p) => ({
-                                        ...p,
-                                        trackingAllowedManagerIds: checked
-                                          ? p.trackingAllowedManagerIds.filter((id) => id !== managerId)
-                                          : [...p.trackingAllowedManagerIds, managerId],
-                                      }))
-                                    }
-                                    className="h-4 w-4 rounded border-slate-300"
-                                  />
-                                  <span>{memberLabelById[managerId] ?? managerId}</span>
-                                </label>
-                              )
-                            })}
-                          </div>
+                          <ManagerClockInList
+                            managers={addForm.managers.map(
+                              (managerId) =>
+                                memberById[managerId] ?? { id: managerId, label: memberLabelById[managerId] ?? managerId },
+                            )}
+                            allowedIds={addForm.trackingAllowedManagerIds}
+                            disabled={readOnly}
+                            onChange={(next) => setAddForm((p) => ({ ...p, trackingAllowedManagerIds: next }))}
+                          />
                         )
                       ) : null}
                     </div>

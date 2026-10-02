@@ -549,7 +549,10 @@ function timeZoneOffsetMinutes(date: Date, timeZone: string): number {
     Number(parts.minute),
     Number(parts.second),
   )
-  return (asUtc - date.getTime()) / 60000
+  // The zone's wall clock is only known to the second, so compare against the
+  // instant truncated to the second and round to whole minutes - otherwise the
+  // milliseconds in `date` leak into the label as "GMT-11:0.0005833...".
+  return Math.round((asUtc - Math.floor(date.getTime() / 1000) * 1000) / 60000)
 }
 
 function gmtOffsetLabel(offsetMinutes: number): string {

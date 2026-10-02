@@ -26,6 +26,8 @@ export type ProjectFormOption = {
   id: string
   label: string
   initials?: string
+  /** Profile photo, when the member has one and it is small enough to inline. */
+  avatarUrl?: string
   role?: string
   budget?: {
     type: "hourly" | "fixed" | "retainer" | "none"

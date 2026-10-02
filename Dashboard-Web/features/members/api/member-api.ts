@@ -455,7 +455,36 @@ export type BatchMemberUpdatePayload = {
   workLimits?: { weeklyLimit?: string; dailyLimit?: string; workDays?: number[]; makeupDays?: number[] }
 }
 
+/** The batch endpoints handle at most this many ids per request and silently drop the rest. */
+const BATCH_REQUEST_MAX_IDS = 100
+
+/**
+ * Runs `send` over `ids` in request-sized chunks and adds up the counts it
+ * returns. A chunk that fails stops the run, and the error says how many were
+ * already done so the user is not told "failed" about a half-applied batch.
+ */
+async function runInChunks(
+  ids: string[],
+  send: (chunk: string[]) => Promise<number>,
+  verb: string,
+): Promise<number> {
+  let done = 0
+  for (let i = 0; i < ids.length; i += BATCH_REQUEST_MAX_IDS) {
+    try {
+      done += await send(ids.slice(i, i + BATCH_REQUEST_MAX_IDS))
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Request failed"
+      throw new Error(done > 0 ? `${message} (${done} of ${ids.length} members were ${verb} before this failed.)` : message)
+    }
+  }
+  return done
+}
+
 export async function batchRemoveMembersFromTree(ids: string[]): Promise<{ removed: number }> {
+  return { removed: await runInChunks(ids, async (chunk) => (await batchRemoveMembersFromTreeRequest(chunk)).removed, "removed") }
+}
+
+async function batchRemoveMembersFromTreeRequest(ids: string[]): Promise<{ removed: number }> {
   const { res, json } = await fetchJsonWithRetry<ApiEnvelope<{ removed: number }>>(
     apiPath("/api/members/batch-remove-from-tree"),
     {
@@ -483,6 +512,10 @@ export async function removeMemberFromTree(memberId: string): Promise<void> {
 }
 
 export async function batchDeleteMembers(ids: string[]): Promise<{ deleted: number }> {
+  return { deleted: await runInChunks(ids, async (chunk) => (await batchDeleteMembersRequest(chunk)).deleted, "removed") }
+}
+
+async function batchDeleteMembersRequest(ids: string[]): Promise<{ deleted: number }> {
   const { res, json } = await fetchJsonWithRetry<ApiEnvelope<{ deleted: number }>>(
     apiPath("/api/members/batch-delete"),
     {
@@ -497,6 +530,13 @@ export async function batchDeleteMembers(ids: string[]): Promise<{ deleted: numb
 }
 
 export async function batchUpdateMembers(
+  ids: string[],
+  patch: BatchMemberUpdatePayload,
+): Promise<{ updated: number }> {
+  return { updated: await runInChunks(ids, async (chunk) => (await batchUpdateMembersRequest(chunk, patch)).updated, "updated") }
+}
+
+async function batchUpdateMembersRequest(
   ids: string[],
   patch: BatchMemberUpdatePayload,
 ): Promise<{ updated: number }> {
