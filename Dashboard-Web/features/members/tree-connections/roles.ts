@@ -58,3 +58,36 @@ const ROLE_COLOR: Record<string, string> = {
 export function roleColor(role: string | undefined | null): string {
   return ROLE_COLOR[roleKey(role)] ?? "#64748b"
 }
+
+/**
+ * Where a role sits on the ladder an organization is read by: administrators at the top, then
+ * managers, then the people who do the work, then everyone else (viewers, clients).
+ */
+export type RoleTier = 0 | 1 | 2 | 3
+
+export function roleTier(role: string | undefined | null): RoleTier {
+  switch (roleKey(role)) {
+    case "owner":
+    case "superadmin":
+    case "admin":
+      return 0
+    case "supermanager":
+    case "manager":
+    case "enterprisesupermanager":
+    case "enterprisemanager":
+      return 1
+    case "teamlead":
+    case "employee":
+    case "intern":
+      return 2
+    default:
+      return 3
+  }
+}
+
+export const TIER_LABELS: Record<RoleTier, string> = {
+  0: "Administrators",
+  1: "Managers",
+  2: "Team members",
+  3: "Others",
+}

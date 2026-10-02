@@ -585,7 +585,8 @@ export function OrphanTray({
 export function ConfirmMove({
   theme,
   model,
-  memberId,
+  memberIds,
+  skipped = [],
   newParentId,
   busy,
   error,
@@ -594,20 +595,25 @@ export function ConfirmMove({
 }: {
   theme: ChartTheme
   model: TreeModel
-  memberId: string
+  memberIds: string[]
+  /** Dragged along but not movable (the rules refuse them): listed so nobody is surprised. */
+  skipped?: { memberId: string; reason: string }[]
   newParentId: string
   busy: boolean
   error: string
   onCancel: () => void
   onConfirm: () => void
 }) {
+  const memberId = memberIds[0]
   const member = model.nodeById.get(memberId)
   const parent = model.nodeById.get(newParentId)
   if (!member || !parent) return null
+  const many = memberIds.length > 1
   const previous = model.parentOf.get(memberId)
   const previousName = previous ? model.nodeById.get(previous)?.name : null
-  const team = descendantsOf(model, memberId).length
+  const team = many ? 0 : descendantsOf(model, memberId).length
   const verdict = canReassign(model, memberId, newParentId)
+  const subject = many ? `${memberIds.length} members` : member.name
   return (
     <div className="absolute inset-0 z-[70] grid place-items-center" style={{ background: "rgba(0,0,0,0.35)" }} onPointerDown={(event) => event.stopPropagation()}>
       <Surface theme={theme} className="w-[380px] p-5">
@@ -616,14 +622,29 @@ export function ConfirmMove({
           Change manager
         </p>
         <p className="mt-3 text-sm leading-relaxed" style={{ color: theme.text }}>
-          Move <strong>{member.name}</strong>
-          {team > 0 ? ` and their team of ${team}` : ""} {previousName ? `from ${previousName} ` : ""}to report to <strong>{parent.name}</strong>?
+          Move <strong>{subject}</strong>
+          {team > 0 ? ` and their team of ${team}` : ""} {!many && previousName ? `from ${previousName} ` : ""}to report to <strong>{parent.name}</strong>?
         </p>
+        {many ? (
+          <p className="mt-2 text-xs leading-relaxed" style={{ color: theme.muted }}>
+            {memberIds
+              .slice(0, 4)
+              .map((id) => model.nodeById.get(id)?.name)
+              .filter(Boolean)
+              .join(", ")}
+            {memberIds.length > 4 ? ` and ${memberIds.length - 4} more` : ""}.
+          </p>
+        ) : null}
         <p className="mt-2 text-xs leading-relaxed" style={{ color: theme.muted }}>
-          Who reports to whom decides who can see whom, so this changes what {member.name}
+          Who reports to whom decides who can see whom, so this changes what {many ? "they" : member.name}
           {team > 0 ? " and their team" : ""} can access.
         </p>
-        {!verdict.ok ? (
+        {skipped.length > 0 ? (
+          <p className="mt-3 text-xs font-medium" style={{ color: theme.danger }}>
+            {skipped.length === 1 ? "1 member" : `${skipped.length} members`} cannot move there and will stay: {skipped[0].reason}
+          </p>
+        ) : null}
+        {!many && !verdict.ok ? (
           <p className="mt-3 text-xs font-medium" style={{ color: theme.danger }}>
             {verdict.reason}
           </p>
@@ -640,7 +661,7 @@ export function ConfirmMove({
           <button
             type="button"
             onClick={onConfirm}
-            disabled={busy || !verdict.ok}
+            disabled={busy || (!many && !verdict.ok)}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-white disabled:opacity-50"
             style={{ background: theme.accent }}
           >

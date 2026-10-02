@@ -61,3 +61,27 @@ export async function moveMemberInTree(memberId: string, newParentId: string): P
     throw extractApiError(res.status, "Could not change the manager", json)
   }
 }
+
+export type MoveManyResult = { moved: number; unchanged: number; skipped: { memberId: string; message: string }[] }
+
+/**
+ * Puts several members under the same manager. The server checks each one on its own: those the
+ * rules refuse come back in `skipped` with the reason and do not stop the others.
+ */
+export async function moveMembersInTree(memberIds: string[], newParentId: string): Promise<MoveManyResult> {
+  const res = await apiFetch(apiPath("/api/member-relationships/move"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ member_ids: memberIds, new_parent_id: newParentId }),
+  })
+  const json = await readJsonSafe<ApiEnvelope<{ moved?: number; unchanged?: number; skipped?: { member_id: string; message: string }[] }>>(res)
+  if (!res.ok || json?.success !== true) {
+    throw extractApiError(res.status, "Could not change the manager", json)
+  }
+  const data = json.data ?? {}
+  return {
+    moved: data.moved ?? 0,
+    unchanged: data.unchanged ?? 0,
+    skipped: (data.skipped ?? []).map((s) => ({ memberId: s.member_id, message: s.message })),
+  }
+}
