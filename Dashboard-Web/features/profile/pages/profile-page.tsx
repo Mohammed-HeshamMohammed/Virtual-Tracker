@@ -12,7 +12,8 @@ import { validateEmailField, validatePersonName, validatePhoneField } from "@/sh
 import { SidebarSection } from "@/features/profile/components/sidebar-section"
 import { AccountForm } from "@/features/profile/components/account-form"
 import { ChangePasswordDialog } from "@/features/profile/components/change-password-dialog"
-import { TIME_ZONES, ianaIdFromTimeZoneLabel } from "@/features/settings/components/shared/constants"
+import { timeZoneSelectOptions } from "@/features/settings/components/shared/constants"
+import { FormSearchSelect } from "@/shared/ui/forms/form-search-select"
 import { IntegrityFlagsPanel } from "@/features/activity/components/integrity-flags-panel"
 import type { PhoneVerifyControlHandle } from "@/shared/ui/phone-verify-control"
 
@@ -316,28 +317,13 @@ export function ProfilePage({ onNavigate }: { onNavigate: (id: string) => void }
             >
               Time zone
             </label>
-            <select
-              id="profile-timezone"
+            <FormSearchSelect
               value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-              className={cn(
-                "w-full rounded-lg border px-3 py-2 text-sm",
-                isDark ? "border-white/10 bg-[#191f31] text-[#dce1fb]" : "border-slate-200 bg-white text-slate-700",
-              )}
-            >
-              {!timezone && <option value="">Select a time zone</option>}
-              {timezone && !TIME_ZONES.some((label) => ianaIdFromTimeZoneLabel(label) === timezone) && (
-                <option value={timezone}>{timezone}</option>
-              )}
-              {TIME_ZONES.map((label) => {
-                const value = ianaIdFromTimeZoneLabel(label)
-                return (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                )
-              })}
-            </select>
+              onChange={setTimezone}
+              options={timeZoneSelectOptions([], timezone)}
+              placeholder="Select a time zone"
+              searchPlaceholder="Search time zones"
+            />
             <p className={cn("mt-1.5 text-xs", isDark ? "text-white/40" : "text-slate-400")}>
               Used to show your reports and activity on your own calendar day.
             </p>
