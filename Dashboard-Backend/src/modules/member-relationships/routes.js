@@ -156,9 +156,19 @@ export async function routeMemberRelationships(req, res, url, origin) {
     if (!authz) return true;
     try {
       if (scope === "organization") {
-        await cleanupExternalEntityHierarchyEdges(db);
-        await maybeSeparateOwnersOnTreeLoad(db);
-        await maybeRepairOrphansOnTreeLoad(db, authz.memberId);
+        // Housekeeping that rides along with the read. If one of them fails the tree is still
+        // worth showing - it used to take the whole page down with a 500.
+        for (const [name, repair] of [
+          ["external-entity cleanup", () => cleanupExternalEntityHierarchyEdges(db)],
+          ["owner separation", () => maybeSeparateOwnersOnTreeLoad(db)],
+          ["orphan repair", () => maybeRepairOrphansOnTreeLoad(db, authz.memberId)],
+        ]) {
+          try {
+            await repair();
+          } catch (repairError) {
+            logSafeError(`[member-relationships/visual-tree] ${name} failed`, repairError);
+          }
+        }
       }
 
       let [membersRows, relDocs, roleNameById] = await Promise.all([

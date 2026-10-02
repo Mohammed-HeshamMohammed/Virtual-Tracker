@@ -314,13 +314,16 @@ export async function removeMemberParentEdge(db, memberId) {
   return rows.length;
 }
 
+// Each SELECT is parenthesized on purpose: `SELECT ... LIMIT n UNION SELECT ... LIMIT n` is a syntax
+// error in Postgres (LIMIT may only follow the whole union), and this statement used to be exactly
+// that - so removing a Client's tree edges threw, and with it every organization Members tree load.
 export async function removeMemberHierarchyRelationships(db, memberId) {
   const rows = await pgQuery(
     `DELETE FROM member_relationships
      WHERE id IN (
-       SELECT id FROM member_relationships WHERE child_member_id = $1 LIMIT 50
+       (SELECT id FROM member_relationships WHERE child_member_id = $1 LIMIT 50)
        UNION
-       SELECT id FROM member_relationships WHERE parent_member_id = $1 LIMIT 50
+       (SELECT id FROM member_relationships WHERE parent_member_id = $1 LIMIT 50)
      )
      RETURNING parent_member_id, child_member_id`,
     [memberId],
