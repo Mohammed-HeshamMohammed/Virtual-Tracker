@@ -26,6 +26,8 @@ import {
   resolveAvatarUrlsForMembers,
 } from "./service.js";
 import { planRelationshipRepairs, RelationshipIntegrityError } from "./relationship-integrity.js";
+import { moveMemberToParent } from "./move-service.js";
+import { MOVE_ERROR } from "./move-plan.js";
 import { initializeMemberRelationships, forceReinitializeRelationships } from "./migrate.js";
 import { maybeRepairOrphansOnTreeLoad, cleanupExternalEntityHierarchyEdges, maybeSeparateOwnersOnTreeLoad } from "../hierarchy/hierarchy-repair.js";
 import { classifyHierarchyPlacement, isExcludedFromHierarchy, isOrganizationAdminRole, isOrganizationRootRole } from "../hierarchy/hierarchy-placement.js";
@@ -478,6 +480,51 @@ export async function routeMemberRelationships(req, res, url, origin) {
       }
       logSafeError("[member-relationships/create]", e);
       sendJson(res, origin, 500, { success: false, error: e.message });
+    }
+    return true;
+  }
+
+  // POST /api/member-relationships/move - put a member under a different manager. Owner and
+  // Super Admin only: who reports to whom decides who can see whom, so it is not a manager's call.
+  if ((pn === "/api/member-relationships/move" || pn === "/api/v1/member-relationships/move") && req.method === "POST") {
+    if (!assertOrgAdminRole(req, res, origin)) return true;
+    let body;
+    try {
+      body = await readJsonBody(req);
+      rejectUnknownFields(body, ["member_id", "new_parent_id"]);
+    } catch (e) {
+      sendJson(res, origin, 400, { success: false, error: e.message });
+      return true;
+    }
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuid.test(String(body.member_id ?? "")) || !uuid.test(String(body.new_parent_id ?? ""))) {
+      sendJson(res, origin, 400, { success: false, error: "member_id and new_parent_id must be member ids.", code: MOVE_ERROR.INVALID });
+      return true;
+    }
+    try {
+      const viewer = getAuthContext(req);
+      const outcome = await moveMemberToParent(db, {
+        memberId: body.member_id,
+        newParentId: body.new_parent_id,
+        actorMemberId: viewer?.memberId,
+      });
+      if (!outcome.ok) {
+        const status = outcome.code === MOVE_ERROR.NOT_FOUND ? 404 : 409;
+        sendJson(res, origin, status, { success: false, error: outcome.message, code: outcome.code });
+        return true;
+      }
+      sendJson(res, origin, 200, {
+        success: true,
+        data: {
+          moved: outcome.moved,
+          member_id: body.member_id,
+          previous_parent_id: outcome.previousParentId,
+          parent_id: outcome.parentId,
+        },
+      });
+    } catch (e) {
+      logSafeError("[member-relationships/move]", e);
+      sendJson(res, origin, 500, { success: false, error: "Could not move this member." });
     }
     return true;
   }
