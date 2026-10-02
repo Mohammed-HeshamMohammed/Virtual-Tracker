@@ -67,3 +67,30 @@ export async function moveMemberToParent(db, { memberId, newParentId, actorMembe
   }
   return { ok: true, moved: true, previousParentId, parentId: newParentId };
 }
+
+/** Most members one request may move: a whole team, not the whole organization. */
+export const MAX_BULK_MOVE = 200;
+
+/**
+ * Moves several members under the same manager (a whole group dragged onto them). Each is checked
+ * and moved on its own, so one the rules refuse is skipped with its reason and never blocks the
+ * rest. Returns how many moved and who was skipped.
+ */
+export async function moveMembersToParent(db, { memberIds, newParentId, actorMemberId }) {
+  const unique = [...new Set(memberIds)].slice(0, MAX_BULK_MOVE);
+  let moved = 0;
+  let unchanged = 0;
+  const skipped = [];
+  for (const memberId of unique) {
+    try {
+      const outcome = await moveMemberToParent(db, { memberId, newParentId, actorMemberId });
+      if (!outcome.ok) skipped.push({ memberId, code: outcome.code, message: outcome.message });
+      else if (outcome.moved) moved += 1;
+      else unchanged += 1;
+    } catch (error) {
+      logSafeError("[member-relationships/move] one member of a bulk move failed", error);
+      skipped.push({ memberId, code: "failed", message: "Could not move this member." });
+    }
+  }
+  return { moved, unchanged, skipped };
+}
