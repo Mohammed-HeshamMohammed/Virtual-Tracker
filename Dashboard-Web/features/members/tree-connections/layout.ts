@@ -33,6 +33,26 @@ export const DEFAULT_LAYOUT_OPTIONS: LayoutOptions = {
   gridGap: 14,
 }
 
+/** How a member is drawn on the chart: a full card, or just their picture. */
+export type CardStyle = "card" | "avatar"
+
+/** The sizes for a card style. Avatars are small and square, so the same tree takes a fraction of the room. */
+export function layoutOptionsFor(style: CardStyle, base: Pick<LayoutOptions, "layout" | "orientation">): LayoutOptions {
+  if (style === "avatar") {
+    return {
+      ...DEFAULT_LAYOUT_OPTIONS,
+      ...base,
+      nodeWidth: 72,
+      nodeHeight: 72,
+      siblingGap: 16,
+      levelGap: 56,
+      gridMaxColumns: 10,
+      gridGap: 10,
+    }
+  }
+  return { ...DEFAULT_LAYOUT_OPTIONS, ...base }
+}
+
 export type LayoutInput = {
   roots: string[]
   childrenOf: Map<string, string[]>
