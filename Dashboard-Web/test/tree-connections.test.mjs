@@ -307,6 +307,82 @@ test("wiring: the view keeps its promises - Shift moves a team, drops are checke
   const view = read("features/members/tree-connections/connections-view.tsx")
   assert.match(view, /event\.shiftKey \? \[id, \.\.\.descendantsOf/)
   assert.match(view, /canReassign\(modelRef\.current, id, target\)/)
-  assert.match(view, /await props\.onReassign\(pending\.memberId, pending\.newParentId\)/)
+  assert.match(view, /useReassignFlow\(/)
+  assert.match(read("features/members/tree-connections/use-reassign.ts"), /await onReassign\(pending\.memberId, pending\.newParentId\)/)
   assert.match(view, /overflow-clip/)
+})
+
+// ---- avatar style and the list ------------------------------------------------------------------
+
+import { layoutOptionsFor } from "../features/members/tree-connections/layout.ts"
+import { flattenForList, isFiltering, matchingIds } from "../features/members/tree-connections/list-rows.ts"
+
+test("avatar style: smaller square cards, no overlaps, and a far smaller chart for the same tree", () => {
+  const avatar = layoutOptionsFor("avatar", { layout: "cartesian", orientation: "vertical" })
+  const card = layoutOptionsFor("card", { layout: "cartesian", orientation: "vertical" })
+  assert.equal(avatar.nodeWidth, avatar.nodeHeight)
+  const big = bigTeam(70)
+  const a = computeLayout(big, new Set(), avatar)
+  const c = computeLayout(big, new Set(), card)
+  assert.ok(a.bounds.maxX < c.bounds.maxX && a.bounds.maxY < c.bounds.maxY)
+  const points = [...a.positions.values()]
+  for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
+    assert.equal(Math.abs(points[i].x - points[j].x) < avatar.nodeWidth && Math.abs(points[i].y - points[j].y) < avatar.nodeHeight, false)
+  }
+  assert.equal(layoutOptionsFor("avatar", { layout: "polar", orientation: "horizontal" }).layout, "polar")
+})
+
+const none = { query: "", role: null }
+
+test("list: rows follow the tree with depth, and a collapsed team hides its members", () => {
+  const m = model()
+  const rows = flattenForList(m, new Set(), none)
+  assert.deepEqual(rows.map((r) => [r.id, r.depth]).slice(0, 4), [["owner", 0], ["admin", 1], ["mgrA", 2], ["empA", 3]])
+  const folded = flattenForList(m, new Set(["mgrA"]), none)
+  assert.equal(folded.some((r) => r.id === "empA"), false)
+  assert.equal(folded.find((r) => r.id === "mgrA").open, false)
+  assert.equal(folded.find((r) => r.id === "mgrA").hasTeam, true)
+  assert.equal(folded.find((r) => r.id === "empA"), undefined)
+})
+
+test("list: searching keeps the matches and the managers above them, open, even inside a folded team", () => {
+  const m = model()
+  const rows = flattenForList(m, new Set(["mgrA", "admin"]), { query: "empb", role: null })
+  assert.deepEqual(rows.map((r) => r.id), ["owner", "admin", "mgrA", "empB"])
+  assert.deepEqual(rows.map((r) => r.match), [false, false, false, true])
+  assert.ok(rows.every((r) => r.id === "empB" || r.open))
+})
+
+test("list: a role filter and a search combine, and nothing matching gives no rows", () => {
+  const m = model()
+  assert.deepEqual([...matchingIds(m, { query: "", role: "Manager" })].sort(), ["mgrA", "mgrB"])
+  assert.deepEqual([...matchingIds(m, { query: "mgra", role: "Manager" })], ["mgrA"])
+  assert.equal(matchingIds(m, { query: "mgra", role: "Employee" }).size, 0)
+  assert.deepEqual(flattenForList(m, new Set(), { query: "zzzz", role: null }), [])
+  assert.equal(matchingIds(m, none), null)
+  assert.equal(isFiltering({ query: " ", role: null }), false)
+  assert.equal(isFiltering({ query: "", role: "Admin" }), true)
+})
+
+test("wiring: one slim bar - refresh and the view switch left, the counts in the middle - and the chart carries the layout controls", () => {
+  const page = read("features/members/pages/member-tree-page.tsx")
+  assert.equal(/<h2[^>]*>\s*Members tree/.test(page), false, "the title card is gone")
+  assert.equal(page.includes("TreeChartControls"), false, "the three dropdowns no longer live in the page header")
+  assert.ok(page.indexOf("<TableRefreshButton") < page.indexOf("<TreeViewModeToggle"), "refresh comes before the List / Connections switch")
+  assert.ok(page.indexOf("<TreeViewModeToggle") < page.indexOf("level{treeDepth === 1"), "the counts sit after the controls on the left")
+  assert.match(page, /lg:grid-cols-\[1fr_auto_1fr\]/, "the counts are centred between the two sides")
+  assert.match(page, /onSettingsChange=\{updateChartSettings\}/)
+  assert.match(page, /<MemberTreeListView/)
+  assert.match(page, /onShowInChart=\{showInChart\}/)
+  const view = read("features/members/tree-connections/connections-view.tsx")
+  assert.match(view, /<TreeChartControls settings=\{settings\} onChange=\{props\.onSettingsChange\}/)
+  assert.match(view, /changeCardStyle\("avatar"\)/)
+})
+
+test("wiring: the list offers search, role filter, fold controls and the same guarded reassign flow", () => {
+  const list = read("features/members/tree-connections/list-view.tsx")
+  assert.match(list, /flattenForList\(/)
+  assert.match(list, /useReassignFlow\(/)
+  assert.match(list, /Show in the chart/)
+  assert.match(list, /reassignAllowed && !isSelfOwner/)
 })

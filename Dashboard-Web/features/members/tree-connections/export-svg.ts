@@ -36,6 +36,8 @@ export type SvgExportInput = {
   isDark: boolean
   title: string
   movedIds?: ReadonlySet<string>
+  /** "avatar" draws each member as a picture-sized circle instead of a card. */
+  variant?: "card" | "avatar"
 }
 
 export function buildTreeSvg(input: SvgExportInput): string {
@@ -94,6 +96,16 @@ export function buildTreeSvg(input: SvgExportInput): string {
     const x = p.x - w / 2
     const y = p.y - h / 2
     const colour = roleColor(node.role)
+    if (input.variant === "avatar") {
+      const r = Math.min(w, h) * 0.36
+      parts.push(`<g>`)
+      parts.push(`<title>${escapeXml(node.name)} - ${escapeXml(node.role)}</title>`)
+      parts.push(`<circle cx="${p.x}" cy="${p.y}" r="${r + 3}" fill="none" stroke="${colour}" stroke-width="3"/>`)
+      parts.push(`<circle cx="${p.x}" cy="${p.y}" r="${r}" fill="${colour}"/>`)
+      parts.push(`<text x="${p.x}" y="${p.y + 4}" font-size="${Math.round(r * 0.6)}" font-weight="700" fill="#ffffff" text-anchor="middle">${escapeXml(initialsOf(node.name))}</text>`)
+      parts.push(`</g>`)
+      continue
+    }
     parts.push(`<g>`)
     parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="${palette.card}" stroke="${palette.border}"/>`)
     parts.push(`<rect x="${x}" y="${y + 10}" width="4" height="${h - 20}" rx="2" fill="${colour}"/>`)

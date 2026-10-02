@@ -16,6 +16,8 @@ function isPhoto(url?: string): boolean {
 }
 
 export type NodeCardProps = {
+  /** A full card, or just the member's picture. */
+  variant?: "card" | "avatar"
   node: TreeNodeInfo
   x: number
   y: number
@@ -44,7 +46,107 @@ export type NodeCardProps = {
   onHover: (id: string | null) => void
 }
 
+function AvatarNode(props: NodeCardProps) {
+  const { node, theme, selected, dimmed, traced, collapsed, directReports, branchSize, drop, dragging, needsManager } = props
+  const colour = roleColor(node.role)
+  const photo = isPhoto(node.avatar_url)
+  const hasTeam = directReports > 0
+  const diameter = Math.min(props.width, props.height) * 0.78
+  const ring = drop === "ok" ? theme.accent : drop === "bad" ? theme.danger : selected ? theme.accent : traced ? theme.linkActive : colour
+
+  return (
+    <div
+      data-node-id={node.id}
+      onPointerDown={(event) => props.onPointerDown(event, node.id)}
+      onDoubleClick={(event) => {
+        event.stopPropagation()
+        props.onDoubleClick(node.id)
+      }}
+      onPointerEnter={() => props.onHover(node.id)}
+      onPointerLeave={() => props.onHover(null)}
+      className="group absolute grid select-none place-items-center"
+      style={{
+        left: props.x - props.width / 2,
+        top: props.y - props.height / 2,
+        width: props.width,
+        height: props.height,
+        opacity: dimmed ? 0.3 : dragging ? 0.55 : 1,
+        transition: "opacity 140ms ease",
+        zIndex: dragging ? 30 : selected ? 20 : drop ? 25 : 10,
+        cursor: dragging ? "grabbing" : "grab",
+        touchAction: "none",
+      }}
+    >
+      <div
+        className="relative grid place-items-center overflow-hidden rounded-full"
+        style={{
+          width: diameter,
+          height: diameter,
+          background: photo ? theme.card : props.avatarColor,
+          boxShadow: `0 0 0 3px ${ring}${selected || drop ? `, 0 0 0 7px ${drop === "bad" ? theme.dangerSoft : theme.accentSoft}` : ""}`,
+        }}
+      >
+        {photo ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={node.avatar_url} alt="" draggable={false} className="h-full w-full object-cover" />
+        ) : (
+          <span className="font-bold text-white" style={{ fontSize: diameter * 0.34 }}>
+            {initialsOf(node.name)}
+          </span>
+        )}
+      </div>
+
+      {hasTeam ? (
+        <button
+          type="button"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            props.onToggle(node.id)
+          }}
+          title={collapsed ? `Show ${branchSize} below` : `Hide ${directReports} direct report${directReports === 1 ? "" : "s"}`}
+          className="absolute -right-0.5 -top-0.5 grid h-[18px] min-w-[18px] place-items-center rounded-full border px-1 text-[9px] font-bold tabular-nums"
+          style={{ background: collapsed ? theme.accent : theme.card, borderColor: collapsed ? theme.accent : theme.border, color: collapsed ? "#fff" : theme.muted }}
+        >
+          {collapsed ? branchSize : directReports}
+        </button>
+      ) : null}
+      {needsManager ? <AlertTriangle className="absolute -left-0.5 -top-0.5 h-4 w-4" style={{ color: theme.warn }} aria-label="Needs a manager" /> : null}
+      {props.isSelf ? (
+        <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded px-1 text-[8px] font-bold uppercase" style={{ background: theme.accent, color: "#fff" }}>
+          You
+        </span>
+      ) : null}
+
+      {/* the name, on hover */}
+      <span
+        className="pointer-events-none absolute left-1/2 top-full z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded-lg px-2 py-1 text-[11px] font-semibold opacity-0 transition-opacity group-hover:opacity-100"
+        style={{ background: theme.panel, color: theme.text, border: `1px solid ${theme.panelBorder}`, boxShadow: theme.shadow }}
+      >
+        {node.name || "Member"} <span style={{ color: theme.muted }}>· {node.role}</span>
+      </span>
+
+      {props.onAdd && !props.compact ? (
+        <button
+          type="button"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            props.onAdd?.(node.id)
+          }}
+          title={`Add a member under ${node.name}`}
+          className="absolute -bottom-1 -right-0.5 grid h-5 w-5 place-items-center rounded-full opacity-0 transition-opacity group-hover:opacity-100"
+          style={{ background: theme.accent, color: "#fff", boxShadow: theme.shadow }}
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+      ) : null}
+    </div>
+  )
+}
+
 function NodeCardImpl(props: NodeCardProps) {
+  if (props.variant === "avatar") return <AvatarNode {...props} />
   const { node, theme, selected, dimmed, traced, collapsed, directReports, branchSize, compact, drop, dragging, needsManager } = props
   const colour = roleColor(node.role)
   const photo = isPhoto(node.avatar_url)

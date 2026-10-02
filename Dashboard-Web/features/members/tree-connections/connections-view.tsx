@@ -8,18 +8,20 @@ import {
   Download,
   FileImage,
   HelpCircle,
+  CircleUserRound,
   Hand,
   LocateFixed,
   Maximize2,
   Minus,
   Plus,
+  RectangleHorizontal,
   RotateCcw,
   X,
 } from "lucide-react"
 import type { MemberTreeEdge, MemberTreeNode, MemberTreeScope } from "@/features/members/services/member-tree"
-import type { TreeChartDisplaySettings } from "@/shared/ui/tree-chart"
+import { TreeChartControls, type TreeChartDisplaySettings } from "@/shared/ui/tree-chart"
 import { buildTreeSvg } from "./export-svg"
-import { DEFAULT_LAYOUT_OPTIONS, computeLayout, type LayoutOptions, type Point } from "./layout"
+import { computeLayout, layoutOptionsFor, type CardStyle, type LayoutOptions, type Point } from "./layout"
 import { buildLinks } from "./link-set"
 import {
   allParents,
@@ -34,10 +36,12 @@ import {
 } from "./model"
 import { NodeCard, type DropState } from "./node-card"
 import { loadOffsets, offsetsKey, pruneOffsets, saveOffsets, type Offsets } from "./offsets"
-import { DetailsPanel, IconButton, Legend, Minimap, OrphanTray, SearchBox, Surface, ConfirmMove } from "./panels"
+import { ConfirmMove, DetailsPanel, IconButton, Legend, Minimap, OrphanTray, SearchBox, Surface, ToastBar } from "./panels"
 import { roleKey, roleRank } from "./roles"
 import { canReassign } from "./rules"
 import { chartTheme } from "./theme"
+import { useReassignFlow } from "./use-reassign"
+import { useToast } from "./use-toast"
 
 type Transform = { x: number; y: number; scale: number }
 
@@ -49,8 +53,7 @@ const COMPACT_BELOW = 0.3
 const OPEN_MIN_ZOOM = 0.55
 const DRAG_THRESHOLD = 4
 
-const NODE_W = DEFAULT_LAYOUT_OPTIONS.nodeWidth
-const NODE_H = DEFAULT_LAYOUT_OPTIONS.nodeHeight
+const CARD_STYLE_KEY = "vt:members-tree:card-style"
 
 function clampZoom(scale: number): number {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, scale))
@@ -78,10 +81,13 @@ export type MemberTreeConnectionsViewProps = {
   onAddHere?: (node: MemberTreeNode) => void
   /** Carries out a reassignment; throw an Error with a readable message to refuse. */
   onReassign?: (memberId: string, newParentId: string) => Promise<void>
+  /** Layout, orientation and link style are edited from the chart's own toolbar. */
+  onSettingsChange?: (patch: Partial<TreeChartDisplaySettings>) => void
+  /** Select and centre a member (the List view's "show in chart"). A new `nonce` repeats the request. */
+  focusRequest?: { id: string; nonce: number } | null
 }
 
 type Ghost = { id: string; x: number; y: number; targetId: string | null; ok: boolean; reason: string }
-type Toast = { text: string; tone: "ok" | "bad" }
 
 export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps) {
   const { nodes, edges, validRootMemberIds, scope, viewerId, isDark, settings } = props
@@ -110,10 +116,23 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
     if (focusRootId && !model.nodeById.has(focusRootId)) setFocusRootId(null)
   }, [model, focusRootId])
 
+  const [cardStyle, setCardStyle] = useState<CardStyle>("card")
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(CARD_STYLE_KEY)
+      if (saved === "avatar" || saved === "card") setCardStyle(saved)
+    } catch {
+      /* no storage: the default */
+    }
+  }, [])
   const layoutOptions: LayoutOptions = useMemo(
-    () => ({ ...DEFAULT_LAYOUT_OPTIONS, layout: settings.layout, orientation: settings.orientation }),
-    [settings.layout, settings.orientation],
+    () => layoutOptionsFor(cardStyle, { layout: settings.layout, orientation: settings.orientation }),
+    [cardStyle, settings.layout, settings.orientation],
   )
+  const nodeW = layoutOptions.nodeWidth
+  const nodeH = layoutOptions.nodeHeight
+  const nodeSizeRef = useRef({ w: nodeW, h: nodeH })
+  nodeSizeRef.current = { w: nodeW, h: nodeH }
   const layoutInput = useMemo(
     () => ({ roots: focusRootId && model.nodeById.has(focusRootId) ? [focusRootId] : model.roots, childrenOf: model.childrenOf }),
     [model, focusRootId],
@@ -122,7 +141,8 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
 
   /* ---------- cards the viewer has moved ---------- */
 
-  const storageKey = offsetsKey(scope, viewerId)
+  // Dragged positions belong to one card style: avatars and cards are different sizes.
+  const storageKey = offsetsKey(`${scope}:${cardStyle}`, viewerId)
   const [offsets, setOffsets] = useState<Offsets>(() => new Map())
   const offsetsLoadedFor = useRef<string | null>(null)
   useEffect(() => {
@@ -150,13 +170,13 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
     let maxX = Math.max(base.bounds.maxX, 1)
     let maxY = Math.max(base.bounds.maxY, 1)
     for (const p of positions.values()) {
-      minX = Math.min(minX, p.x - NODE_W / 2 - 40)
-      minY = Math.min(minY, p.y - NODE_H / 2 - 40)
-      maxX = Math.max(maxX, p.x + NODE_W / 2 + 40)
-      maxY = Math.max(maxY, p.y + NODE_H / 2 + 40)
+      minX = Math.min(minX, p.x - nodeW / 2 - 40)
+      minY = Math.min(minY, p.y - nodeH / 2 - 40)
+      maxX = Math.max(maxX, p.x + nodeW / 2 + 40)
+      maxY = Math.max(maxY, p.y + nodeH / 2 + 40)
     }
     return { minX, minY, width: maxX - minX, height: maxY - minY }
-  }, [base.bounds, positions])
+  }, [base.bounds, positions, nodeW, nodeH])
 
   /* ---------- view: pan, zoom, fit ---------- */
 
@@ -204,13 +224,18 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
       let maxX = -Infinity
       let maxY = -Infinity
       for (const p of pts) {
-        minX = Math.min(minX, p.x - NODE_W / 2)
-        maxX = Math.max(maxX, p.x + NODE_W / 2)
-        minY = Math.min(minY, p.y - NODE_H / 2)
-        maxY = Math.max(maxY, p.y + NODE_H / 2)
+        minX = Math.min(minX, p.x - nodeSizeRef.current.w / 2)
+        maxX = Math.max(maxX, p.x + nodeSizeRef.current.w / 2)
+        minY = Math.min(minY, p.y - nodeSizeRef.current.h / 2)
+        maxY = Math.max(maxY, p.y + nodeSizeRef.current.h / 2)
       }
-      const pad = 70
-      const fitScale = clampZoom(Math.min(1.1, (width - pad * 2) / (maxX - minX), (height - pad * 2) / (maxY - minY)))
+      // Leave room for the toolbars across the top and the panels in the corners.
+      const padX = 70
+      const padTop = 132
+      const padBottom = 76
+      const availW = width - padX * 2
+      const availH = height - padTop - padBottom
+      const fitScale = clampZoom(Math.min(1.1, availW / (maxX - minX), availH / (maxY - minY)))
       const scale = options?.minScale && fitScale < options.minScale ? options.minScale : fitScale
       // If we had to stay larger than the true fit, show the top of the tree and let the viewer pan down.
       const tooBig = scale > fitScale + 0.001
@@ -221,7 +246,7 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
         {
           scale,
           x: width / 2 - anchorX * scale,
-          y: tooBig ? pad - minY * scale : height / 2 - ((minY + maxY) / 2) * scale,
+          y: tooBig ? padTop - minY * scale : padTop + availH / 2 - ((minY + maxY) / 2) * scale,
         },
         animate,
       )
@@ -353,38 +378,34 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
     [model, collapsed, centerOn],
   )
 
+  const changeCardStyle = (next: CardStyle) => {
+    setCardStyle(next)
+    try {
+      window.localStorage.setItem(CARD_STYLE_KEY, next)
+    } catch {
+      /* the choice just lasts this session */
+    }
+    window.setTimeout(() => fit(undefined, true, { minScale: OPEN_MIN_ZOOM }), 80)
+  }
+
+  // "Show in chart" from the List view.
+  const lastFocusNonce = useRef<number | null>(null)
+  useEffect(() => {
+    const request = props.focusRequest
+    // Wait for the first fit: before it the viewport is unmeasured and centring would land nowhere.
+    if (!request || !opened || lastFocusNonce.current === request.nonce || positions.size === 0) return
+    lastFocusNonce.current = request.nonce
+    if (model.nodeById.has(request.id)) select(request.id, { center: true })
+  }, [props.focusRequest, opened, positions, model, select])
+
   /* ---------- toasts and reassignment ---------- */
 
-  const [toast, setToast] = useState<Toast | null>(null)
-  const toastTimer = useRef<number | null>(null)
-  const showToast = useCallback((text: string, tone: Toast["tone"] = "ok") => {
-    setToast({ text, tone })
-    if (toastTimer.current) window.clearTimeout(toastTimer.current)
-    toastTimer.current = window.setTimeout(() => setToast(null), 3800)
-  }, [])
-
-  const [pending, setPending] = useState<{ memberId: string; newParentId: string } | null>(null)
-  const [confirmBusy, setConfirmBusy] = useState(false)
-  const [confirmError, setConfirmError] = useState("")
-
-  const requestMove = useCallback(
-    (memberId: string, newParentId: string) => {
-      const verdict = canReassign(model, memberId, newParentId)
-      if (!verdict.ok) return showToast(verdict.reason, "bad")
-      if (verdict.noop) return showToast(`${model.nodeById.get(memberId)?.name ?? "They"} already report to ${model.nodeById.get(newParentId)?.name ?? "them"}.`)
-      setConfirmError("")
-      setPending({ memberId, newParentId })
-    },
-    [model, showToast],
-  )
-
-  const confirmMove = useCallback(async () => {
-    if (!pending || !props.onReassign) return
-    setConfirmBusy(true)
-    setConfirmError("")
-    try {
-      await props.onReassign(pending.memberId, pending.newParentId)
-      const { memberId, newParentId } = pending
+  const { toast, show: showToast } = useToast()
+  const reassign = useReassignFlow({
+    model,
+    onReassign: props.onReassign,
+    notify: showToast,
+    onMoved: (memberId, newParentId) => {
       setMoves((prev) => new Map(prev).set(memberId, newParentId))
       setOffsets((prev) => {
         if (!prev.has(memberId)) return prev
@@ -392,15 +413,10 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
         next.delete(memberId)
         return next
       })
-      setPending(null)
-      showToast(`${model.nodeById.get(memberId)?.name ?? "Member"} now reports to ${model.nodeById.get(newParentId)?.name ?? "their new manager"}.`)
       select(memberId, { center: true })
-    } catch (error) {
-      setConfirmError(error instanceof Error ? error.message : "Could not change the manager.")
-    } finally {
-      setConfirmBusy(false)
-    }
-  }, [pending, props, model, showToast, select])
+    },
+  })
+  const requestMove = reassign.request
 
   /* ---------- dragging cards ---------- */
 
@@ -427,7 +443,7 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
     let found: string | null = null
     for (const [id, p] of positionsRef.current) {
       if (id === draggedId) continue
-      if (Math.abs(point.x - p.x) <= NODE_W / 2 && Math.abs(point.y - p.y) <= NODE_H / 2) found = id
+      if (Math.abs(point.x - p.x) <= nodeSizeRef.current.w / 2 && Math.abs(point.y - p.y) <= nodeSizeRef.current.h / 2) found = id
     }
     return found
   }, [])
@@ -573,7 +589,7 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
         fit()
         break
       case "Escape":
-        if (pending) setPending(null)
+        if (reassign.pending) reassign.cancel()
         else if (helpOpen) setHelpOpen(false)
         else if (ghost) setGhost(null)
         else setSelectedId(null)
@@ -649,8 +665,9 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
       positions,
       groups: base.groups,
       movedIds,
-      nodeWidth: NODE_W,
-      nodeHeight: NODE_H,
+      nodeWidth: nodeW,
+      nodeHeight: nodeH,
+      variant: cardStyle,
       orientation: settings.orientation,
       linkType: settings.linkType,
       stepPercent: settings.stepPercent,
@@ -693,13 +710,13 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
         positions,
         groups: base.groups,
         movedIds,
-        nodeWidth: NODE_W,
-        nodeHeight: NODE_H,
+        nodeWidth: nodeW,
+        nodeHeight: nodeH,
         orientation: settings.orientation,
         type: settings.linkType,
         stepPercent: settings.stepPercent,
       }),
-    [model, positions, base.groups, movedIds, settings.orientation, settings.linkType, settings.stepPercent],
+    [model, positions, base.groups, movedIds, nodeW, nodeH, settings.orientation, settings.linkType, settings.stepPercent],
   )
 
   const compact = transform.scale < COMPACT_BELOW
@@ -791,8 +808,9 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
               node={node}
               x={p.x}
               y={p.y}
-              width={NODE_W}
-              height={NODE_H}
+              width={nodeW}
+              height={nodeH}
+              variant={cardStyle}
               theme={theme}
               avatarColor={memberColour(id, id === selfId)}
               isSelf={id === selfId}
@@ -836,25 +854,34 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
         ) : null}
       </div>
 
-      {/* top left: find + mode */}
-      <div className="absolute left-3 top-3 z-40 flex flex-wrap items-center gap-2">
-        <Surface theme={theme} className="flex items-center gap-2 p-1.5">
-          <SearchBox theme={theme} model={model} inputRef={searchRef} onPick={(id) => select(id, { center: true })} />
-          {reassignAllowed ? (
-            <div className="flex overflow-hidden rounded-lg border" style={{ borderColor: theme.panelBorder }} role="group" aria-label="Drag mode">
-              <ModeButton theme={theme} active={mode === "arrange"} onClick={() => setMode("arrange")} icon={<Hand className="h-3.5 w-3.5" />} label="Arrange" title="Drag cards to rearrange the picture (nothing is saved to the organization)" />
-              <ModeButton theme={theme} active={mode === "reassign"} onClick={() => setMode("reassign")} icon={<ArrowRightLeft className="h-3.5 w-3.5" />} label="Reassign" title="Drag a member onto a new manager to change who they report to" />
-            </div>
-          ) : null}
-        </Surface>
-        {focusRootId ? (
-          <Surface theme={theme} className="flex items-center gap-2 px-3 py-1.5 text-xs" style={{ color: theme.text }}>
-            Focused on <strong>{model.nodeById.get(focusRootId)?.name}</strong>
-            <button type="button" onClick={clearFocusBranch} aria-label="Show the whole tree" style={{ color: theme.muted }}>
-              <X className="h-3.5 w-3.5" />
-            </button>
+      {/* top left: find + mode, then how the chart is drawn */}
+      <div className="absolute left-3 top-3 z-40 flex flex-col items-start gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Surface theme={theme} className="flex items-center gap-2 p-1.5">
+            <SearchBox theme={theme} model={model} inputRef={searchRef} onPick={(id) => select(id, { center: true })} />
+            {reassignAllowed ? (
+              <div className="flex overflow-hidden rounded-lg border" style={{ borderColor: theme.panelBorder }} role="group" aria-label="Drag mode">
+                <ModeButton theme={theme} active={mode === "arrange"} onClick={() => setMode("arrange")} icon={<Hand className="h-3.5 w-3.5" />} label="Arrange" title="Drag cards to rearrange the picture (nothing is saved to the organization)" />
+                <ModeButton theme={theme} active={mode === "reassign"} onClick={() => setMode("reassign")} icon={<ArrowRightLeft className="h-3.5 w-3.5" />} label="Reassign" title="Drag a member onto a new manager to change who they report to" />
+              </div>
+            ) : null}
           </Surface>
-        ) : null}
+          {focusRootId ? (
+            <Surface theme={theme} className="flex items-center gap-2 px-3 py-1.5 text-xs" style={{ color: theme.text }}>
+              Focused on <strong>{model.nodeById.get(focusRootId)?.name}</strong>
+              <button type="button" onClick={clearFocusBranch} aria-label="Show the whole tree" style={{ color: theme.muted }}>
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </Surface>
+          ) : null}
+        </div>
+        <Surface theme={theme} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 p-1.5 pl-3">
+          {props.onSettingsChange ? <TreeChartControls settings={settings} onChange={props.onSettingsChange} isDark={isDark} /> : null}
+          <div className="flex overflow-hidden rounded-lg border" style={{ borderColor: theme.panelBorder }} role="group" aria-label="How members are drawn">
+            <ModeButton theme={theme} active={cardStyle === "card"} onClick={() => changeCardStyle("card")} icon={<RectangleHorizontal className="h-3.5 w-3.5" />} label="Cards" title="Photo, name, role and team size" />
+            <ModeButton theme={theme} active={cardStyle === "avatar"} onClick={() => changeCardStyle("avatar")} icon={<CircleUserRound className="h-3.5 w-3.5" />} label="Avatars" title="Just each member's picture - hover for the name" />
+          </div>
+        </Surface>
       </div>
 
       {/* top right: view controls */}
@@ -965,6 +992,7 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
           viewport={viewport}
           transform={transform}
           selectedId={selectedId}
+          nodeSize={{ width: nodeW, height: nodeH }}
           onCenterOn={(point) => centerOn(point, undefined, false)}
         />
       </div>
@@ -982,26 +1010,18 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
         </div>
       ) : null}
 
-      {toast ? (
-        <div
-          role="status"
-          className="pointer-events-none absolute bottom-16 left-1/2 z-[80] -translate-x-1/2 rounded-xl px-4 py-2 text-xs font-semibold"
-          style={{ background: toast.tone === "ok" ? theme.accent : theme.danger, color: "#fff", boxShadow: theme.shadow }}
-        >
-          {toast.text}
-        </div>
-      ) : null}
+      <ToastBar theme={theme} toast={toast} />
 
-      {pending ? (
+      {reassign.pending ? (
         <ConfirmMove
           theme={theme}
           model={model}
-          memberId={pending.memberId}
-          newParentId={pending.newParentId}
-          busy={confirmBusy}
-          error={confirmError}
-          onCancel={() => setPending(null)}
-          onConfirm={() => void confirmMove()}
+          memberId={reassign.pending.memberId}
+          newParentId={reassign.pending.newParentId}
+          busy={reassign.busy}
+          error={reassign.error}
+          onCancel={reassign.cancel}
+          onConfirm={() => void reassign.confirm()}
         />
       ) : null}
     </div>

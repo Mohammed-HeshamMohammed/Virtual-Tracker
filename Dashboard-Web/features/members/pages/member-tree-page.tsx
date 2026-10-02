@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState as useComponentState } from "react"
-import { GitBranch, LayoutList, Network, Share2, ShieldAlert, UserPlus, Users } from "lucide-react"
+import { GitBranch, LayoutList, Share2, ShieldAlert, Users } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
 import { useAuth } from "@/shared/providers/app"
@@ -9,25 +9,13 @@ import { usePermissions } from "@/features/auth/hooks/use-permissions"
 import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
 import { moveMemberInTree, type MemberTreeNode, type MemberTreeScope } from "@/features/members/services/member-tree"
 import { AddMemberAtNodeModal } from "@/features/members/components/modals/add-member-at-node-modal"
-import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
-import {
-  buildMemberTreeBranches,
-  countTreeMembers,
-  initialsFromName,
-  maxTreeDepth,
-  memberAvatarColor,
-  type MemberTreeBranch,
-} from "@/features/members/utils/build-tree"
-import { Avatar } from "@/shared/ui/avatar"
+import { buildMemberTreeBranches, countTreeMembers, maxTreeDepth } from "@/features/members/utils/build-tree"
 import { MemberTreeConnectionsView } from "@/features/members/tree-connections/connections-view"
+import { MemberTreeListView } from "@/features/members/tree-connections/list-view"
 import { useMemberTreeData } from "@/features/members/hooks/use-member-tree-data"
 import { MemberTreeContentSkeleton } from "@/features/members/components/skeletons/member-tree-page-skeleton"
 import { TableRefreshButton } from "@/shared/tables/ui"
-import {
-  DEFAULT_TREE_CHART_SETTINGS,
-  TreeChartControls,
-  type TreeChartDisplaySettings,
-} from "@/shared/ui/tree-chart"
+import { DEFAULT_TREE_CHART_SETTINGS, type TreeChartDisplaySettings } from "@/shared/ui/tree-chart"
 
 type TreeViewMode = "list" | "connections"
 
@@ -40,6 +28,26 @@ function TreeViewModeToggle({
   onChange: (mode: TreeViewMode) => void
   isDark: boolean
 }) {
+  const button = (mode: TreeViewMode, label: string, icon: React.ReactNode) => (
+    <button
+      type="button"
+      onClick={() => onChange(mode)}
+      aria-pressed={viewMode === mode}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all",
+        viewMode === mode
+          ? isDark
+            ? "bg-slate-800 text-white shadow-sm ring-1 ring-slate-700"
+            : "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
+          : isDark
+            ? "text-slate-400 hover:text-slate-200"
+            : "text-slate-500 hover:text-slate-800",
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  )
   return (
     <div
       className={cn(
@@ -49,170 +57,9 @@ function TreeViewModeToggle({
       role="group"
       aria-label="Tree view mode"
     >
-      <button
-        type="button"
-        onClick={() => onChange("list")}
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all",
-          viewMode === "list"
-            ? isDark
-              ? "bg-slate-800 text-white shadow-sm ring-1 ring-slate-700"
-              : "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
-            : isDark
-              ? "text-slate-400 hover:text-slate-200"
-              : "text-slate-500 hover:text-slate-800",
-        )}
-      >
-        <LayoutList className="h-3.5 w-3.5" />
-        List
-      </button>
-      <button
-        type="button"
-        onClick={() => onChange("connections")}
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all",
-          viewMode === "connections"
-            ? isDark
-              ? "bg-slate-800 text-white shadow-sm ring-1 ring-slate-700"
-              : "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200"
-            : isDark
-              ? "text-slate-400 hover:text-slate-200"
-              : "text-slate-500 hover:text-slate-800",
-        )}
-      >
-        <Share2 className="h-3.5 w-3.5" />
-        Connections
-      </button>
+      {button("list", "List", <LayoutList className="h-3.5 w-3.5" />)}
+      {button("connections", "Connections", <Share2 className="h-3.5 w-3.5" />)}
     </div>
-  )
-}
-
-function roleBadgeClass(role: string, isDark: boolean): string {
-  const normalized = role.toLowerCase()
-  if (normalized.includes("owner") || normalized.includes("admin")) {
-    return isDark ? "bg-violet-500/20 text-violet-200" : "bg-violet-100 text-violet-700"
-  }
-  if (normalized.includes("manager")) {
-    return isDark ? "bg-blue-500/20 text-blue-200" : "bg-blue-100 text-blue-700"
-  }
-  return isDark ? "bg-[#2e3447] text-[#bccbb9]" : "bg-slate-100 text-slate-600"
-}
-
-function TreeNodeCard({
-  branch,
-  isDark,
-  currentMemberId,
-  onAddHere,
-}: {
-  branch: MemberTreeBranch
-  isDark: boolean
-  currentMemberId?: string
-  /** Absent when the viewer cannot add members at all. */
-  onAddHere?: (node: MemberTreeNode) => void
-}) {
-  const [expanded, setExpanded] = useComponentState(true)
-  const { node, children, depth } = branch
-  const isSelf = node.id === currentMemberId
-  const hasChildren = children.length > 0
-  // Clients cannot have anyone under them (the backend refuses the edge).
-  const canAddHere = Boolean(onAddHere) && !isClientRole(node.role)
-
-  return (
-    <li className="relative">
-      {depth > 0 ? (
-        <div
-          className={cn(
-            "absolute left-0 top-0 h-full w-px",
-            isDark ? "bg-[#3d4a3d]/50" : "bg-slate-200",
-          )}
-          aria-hidden
-        />
-      ) : null}
-      <div className={cn("relative", depth > 0 && "ml-6 pl-4")}>
-        {depth > 0 ? (
-          <div
-            className={cn(
-              "absolute left-0 top-7 h-px w-4",
-              isDark ? "bg-[#3d4a3d]/50" : "bg-slate-200",
-            )}
-            aria-hidden
-          />
-        ) : null}
-        <div
-          className={cn(
-            "flex items-start gap-3 rounded-xl border px-4 py-3 transition-colors",
-            isDark ? "border-[#3d4a3d]/40 bg-[#151b2d]" : "border-slate-200 bg-white shadow-sm",
-            isSelf && (isDark ? "ring-1 ring-[#4be277]/40" : "ring-1 ring-blue-400/50"),
-          )}
-        >
-          <Avatar
-            initials={initialsFromName(node.name)}
-            color={memberAvatarColor(node.id, isSelf)}
-            size="md"
-            isDark={isDark}
-            imageUrl={node.avatar_url}
-            alt={node.name}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className={cn("text-sm font-semibold", isDark ? "text-[#dce1fb]" : "text-slate-900")}>
-                {node.name}
-                {isSelf ? (
-                  <span className={cn("ml-2 text-xs font-medium", isDark ? "text-[#4be277]" : "text-blue-600")}>
-                    (You)
-                  </span>
-                ) : null}
-              </p>
-              <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide", roleBadgeClass(node.role, isDark))}>
-                {node.role}
-              </span>
-            </div>
-            <p className={cn("mt-0.5 truncate text-xs", isDark ? "text-[#bccbb9]" : "text-slate-500")}>{node.email}</p>
-            {hasChildren ? (
-              <button
-                type="button"
-                onClick={() => setExpanded((v) => !v)}
-                className={cn(
-                  "mt-2 inline-flex items-center gap-1 text-xs font-medium",
-                  isDark ? "text-[#4be277] hover:text-[#6bf397]" : "text-blue-600 hover:text-blue-700",
-                )}
-              >
-                <GitBranch className="h-3.5 w-3.5" />
-                {expanded ? "Hide" : "Show"} {children.length} direct report{children.length === 1 ? "" : "s"}
-              </button>
-            ) : null}
-          </div>
-          {canAddHere ? (
-            <button
-              type="button"
-              onClick={() => onAddHere?.(node)}
-              title={`Add member under ${node.name}`}
-              aria-label={`Add member under ${node.name}`}
-              className={cn(
-                "shrink-0 rounded-lg p-1.5 transition-colors",
-                isDark ? "text-[#bccbb9] hover:bg-[#2e3447] hover:text-[#4be277]" : "text-slate-400 hover:bg-slate-100 hover:text-blue-600",
-              )}
-            >
-              <UserPlus className="h-4 w-4" />
-            </button>
-          ) : null}
-        </div>
-
-        {hasChildren && expanded ? (
-          <ul className="mt-3 space-y-3">
-            {children.map((child) => (
-              <TreeNodeCard
-                key={child.node.id}
-                branch={child}
-                isDark={isDark}
-                currentMemberId={currentMemberId}
-                onAddHere={onAddHere}
-              />
-            ))}
-          </ul>
-        ) : null}
-      </div>
-    </li>
   )
 }
 
@@ -258,6 +105,13 @@ function MemberTreeScopeView({
   const [addUnder, setAddUnder] = useComponentState<MemberTreeNode | null>(null)
 
   const [viewMode, setViewMode] = useComponentState<TreeViewMode>("list")
+  // The List's "show in chart": switch views and ask the chart to land on that member.
+  const [focusRequest, setFocusRequest] = useComponentState<{ id: string; nonce: number } | null>(null)
+  const showInChart = useCallback((id: string) => {
+    setViewMode("connections")
+    setFocusRequest({ id, nonce: Date.now() })
+  }, [])
+
   // One error per scope. They used to share a single error, so a failure
   // loading one scope (for a manager: the organization tree, which is a
   // guaranteed 403) showed up while looking at the other, and could land
@@ -298,7 +152,6 @@ function MemberTreeScopeView({
   const nodes = treeGraph.nodes
   const edges = treeGraph.edges
   const validRootIds = treeGraph.valid_root_member_ids ?? []
-  const orphanIds = treeGraph.orphan_member_ids ?? []
 
   useEffect(() => {
     if (nodes.length > 0) setError("")
@@ -321,8 +174,8 @@ function MemberTreeScopeView({
   }, [isRefreshing, refetch, setError])
 
   const handleReassign = useCallback(
-    async (memberId: string, newParentId: string) => {
-      await moveMemberInTree(memberId, newParentId)
+    async (movedId: string, newParentId: string) => {
+      await moveMemberInTree(movedId, newParentId)
       // The server has changed the hierarchy: reload both views of it so neither shows the old one.
       await Promise.allSettled([
         organizationTree.refetch({ forceRefetch: true, showLoading: false }),
@@ -333,219 +186,152 @@ function MemberTreeScopeView({
   )
 
   const tree = useMemo(
-    () =>
-      buildMemberTreeBranches(
-        nodes,
-        edges,
-        null,
-        viewScope === "organization" ? validRootIds : null,
-      ),
+    () => buildMemberTreeBranches(nodes, edges, null, viewScope === "organization" ? validRootIds : null),
     [nodes, edges, viewScope, validRootIds],
-  )
-  const orphanNodes = useMemo(
-    () => nodes.filter((n) => orphanIds.includes(n.id)),
-    [nodes, orphanIds],
   )
   const memberCount = useMemo(() => countTreeMembers(tree), [tree])
   const treeDepth = useMemo(() => maxTreeDepth(tree), [tree])
 
+  const chip = cn("inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium", isDark ? "bg-[#191f31] text-[#bccbb9]" : "bg-slate-50 text-slate-600")
+  const ready = !isLoading && !error
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="flex min-h-0 flex-1 flex-col px-4 pb-4 pt-2">
-      <div className={cn("shrink-0 rounded-xl border p-5", t.tableBorder, t.tableBg)}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <Network className={cn("h-5 w-5", isDark ? "text-[#4be277]" : "text-blue-600")} />
-              <h2 className={cn("text-lg font-semibold", isDark ? "text-[#dce1fb]" : "text-slate-900")}>
-                Members tree
-              </h2>
+        {/* One bar: refresh and the view switch on the left, the numbers in the middle, the scope on the right. */}
+        <div className={cn("shrink-0 rounded-xl border px-3 py-2.5", t.tableBorder, t.tableBg)}>
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 lg:grid lg:grid-cols-[1fr_auto_1fr]">
+            <div className="flex items-center gap-2 lg:justify-self-start">
+              <TableRefreshButton
+                onClick={() => void handleRefresh()}
+                isRefreshing={isRefreshing || (isLoading && nodes.length > 0)}
+                isDark={isDark}
+              />
+              <TreeViewModeToggle
+                viewMode={viewMode}
+                onChange={(mode) => {
+                  setViewMode(mode)
+                  if (mode === "list") setFocusRequest(null)
+                }}
+                isDark={isDark}
+              />
             </div>
-            <p className={cn("mt-1 max-w-2xl text-sm leading-relaxed", isDark ? "text-[#bccbb9]" : "text-slate-500")}>
-              {viewScope === "organization"
-                ? "Organization-wide hierarchy showing who added whom across the workspace."
-                : "Your branch from the org root through members you manage — upline roles are visible but not editable."}
-            </p>
-          </div>
 
-          {canToggleScope ? (
-            <div className={cn("inline-flex rounded-lg border p-0.5", isDark ? "border-[#3d4a3d]/40 bg-[#191f31]" : "border-slate-200 bg-slate-100")}>
-              <button
-                type="button"
-                onClick={() => onScopeChange("organization")}
-                className={cn(
-                  "rounded-md px-3 py-2 text-xs font-semibold transition-all",
-                  viewScope === "organization"
-                    ? isDark
-                      ? "bg-[#151b2d] text-[#dce1fb] shadow-sm"
-                      : "bg-white text-slate-900 shadow-sm"
-                    : isDark
-                      ? "text-[#bccbb9] hover:text-[#dce1fb]"
-                      : "text-slate-500 hover:text-slate-700",
-                )}
-              >
-                Organization
-              </button>
-              <button
-                type="button"
-                onClick={() => onScopeChange("team")}
-                className={cn(
-                  "rounded-md px-3 py-2 text-xs font-semibold transition-all",
-                  viewScope === "team"
-                    ? isDark
-                      ? "bg-[#151b2d] text-[#dce1fb] shadow-sm"
-                      : "bg-white text-slate-900 shadow-sm"
-                    : isDark
-                      ? "text-[#bccbb9] hover:text-[#dce1fb]"
-                      : "text-slate-500 hover:text-slate-700",
-                )}
-              >
-                My team
-              </button>
+            <div className="order-last flex w-full flex-wrap items-center justify-center gap-3 lg:order-none lg:w-auto">
+              {ready ? (
+                <>
+                  <div className={chip}>
+                    <Users className="h-3.5 w-3.5" />
+                    {memberCount} member{memberCount === 1 ? "" : "s"}
+                  </div>
+                  <div className={chip}>
+                    <GitBranch className="h-3.5 w-3.5" />
+                    {treeDepth} level{treeDepth === 1 ? "" : "s"} deep
+                  </div>
+                </>
+              ) : (
+                <div className={cn("text-xs", isDark ? "text-[#8a9588]" : "text-slate-400")}>
+                  {isLoading && nodes.length === 0 ? "Loading hierarchy…" : "Unable to load stats"}
+                </div>
+              )}
             </div>
-          ) : isManagerScopedRole ? (
-            <span className={cn("rounded-full px-3 py-1 text-xs font-semibold", isDark ? "bg-[#2e3447] text-[#bccbb9]" : "bg-slate-100 text-slate-600")}>
-              My team view
-            </span>
-          ) : null}
-        </div>
 
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-          {!isLoading && !error ? (
-            <div className="flex flex-wrap items-center gap-3">
-              <div className={cn("inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium", isDark ? "bg-[#191f31] text-[#bccbb9]" : "bg-slate-50 text-slate-600")}>
-                <Users className="h-3.5 w-3.5" />
-                {memberCount} member{memberCount === 1 ? "" : "s"}
-              </div>
-              <div className={cn("inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium", isDark ? "bg-[#191f31] text-[#bccbb9]" : "bg-slate-50 text-slate-600")}>
-                <GitBranch className="h-3.5 w-3.5" />
-                {treeDepth} level{treeDepth === 1 ? "" : "s"} deep
-              </div>
-              {viewMode === "connections" ? (
-                <TreeChartControls
-                  settings={chartSettings}
-                  onChange={updateChartSettings}
-                  isDark={isDark}
-                />
+            <div className="lg:justify-self-end">
+              {canToggleScope ? (
+                <div className={cn("inline-flex rounded-lg border p-0.5", isDark ? "border-[#3d4a3d]/40 bg-[#191f31]" : "border-slate-200 bg-slate-100")}>
+                  {(["organization", "team"] as const).map((scope) => (
+                    <button
+                      key={scope}
+                      type="button"
+                      onClick={() => onScopeChange(scope)}
+                      aria-pressed={viewScope === scope}
+                      title={scope === "organization" ? "Everyone in the workspace" : "Your branch from the org root through members you manage"}
+                      className={cn(
+                        "rounded-md px-3 py-2 text-xs font-semibold transition-all",
+                        viewScope === scope
+                          ? isDark
+                            ? "bg-[#151b2d] text-[#dce1fb] shadow-sm"
+                            : "bg-white text-slate-900 shadow-sm"
+                          : isDark
+                            ? "text-[#bccbb9] hover:text-[#dce1fb]"
+                            : "text-slate-500 hover:text-slate-700",
+                      )}
+                    >
+                      {scope === "organization" ? "Organization" : "My team"}
+                    </button>
+                  ))}
+                </div>
+              ) : isManagerScopedRole ? (
+                <span
+                  title="Your branch from the org root through members you manage - upline roles are visible but not editable"
+                  className={cn("rounded-full px-3 py-1 text-xs font-semibold", isDark ? "bg-[#2e3447] text-[#bccbb9]" : "bg-slate-100 text-slate-600")}
+                >
+                  My team view
+                </span>
               ) : null}
             </div>
-          ) : (
-            <div className={cn("text-xs", isDark ? "text-[#8a9588]" : "text-slate-400")}>
-              {isLoading && nodes.length === 0 ? "Loading hierarchy…" : "Unable to load stats"}
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <TableRefreshButton
-              onClick={() => void handleRefresh()}
-              isRefreshing={isRefreshing || (isLoading && nodes.length > 0)}
-              isDark={isDark}
-            />
-            <TreeViewModeToggle viewMode={viewMode} onChange={setViewMode} isDark={isDark} />
           </div>
         </div>
-      </div>
 
-      <div
-        className={cn(
-          "mt-4 flex min-h-0 flex-1 flex-col",
-          viewMode === "connections" ? "overflow-hidden" : "overflow-y-auto page-custom-scrollbar",
-        )}
-      >
-        {isLoading && nodes.length === 0 ? (
-          <MemberTreeContentSkeleton isDark={isDark} />
-        ) : error && nodes.length === 0 ? (
-          <div className={cn("rounded-xl border p-5 text-sm", isDark ? "border-red-500/30 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700")}>
-            <div className="flex items-center gap-2 font-medium">
-              <ShieldAlert className="h-4 w-4" />
-              Could not load tree
+        <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-hidden">
+          {isLoading && nodes.length === 0 ? (
+            <MemberTreeContentSkeleton isDark={isDark} />
+          ) : error && nodes.length === 0 ? (
+            <div className={cn("rounded-xl border p-5 text-sm", isDark ? "border-red-500/30 bg-red-500/10 text-red-200" : "border-red-200 bg-red-50 text-red-700")}>
+              <div className="flex items-center gap-2 font-medium">
+                <ShieldAlert className="h-4 w-4" />
+                Could not load tree
+              </div>
+              <p className="mt-1">{error}</p>
+              <button
+                type="button"
+                onClick={() => void handleRefresh()}
+                className={cn(
+                  "mt-3 rounded-lg px-3 py-1.5 text-xs font-semibold",
+                  isDark ? "bg-[#191f31] text-[#dce1fb] hover:bg-[#232a3f]" : "bg-white text-slate-700 shadow-sm hover:bg-slate-50",
+                )}
+              >
+                Try again
+              </button>
             </div>
-            <p className="mt-1">{error}</p>
-            <button
-              type="button"
-              onClick={() => void handleRefresh()}
-              className={cn(
-                "mt-3 rounded-lg px-3 py-1.5 text-xs font-semibold",
-                isDark ? "bg-[#191f31] text-[#dce1fb] hover:bg-[#232a3f]" : "bg-white text-slate-700 shadow-sm hover:bg-slate-50",
+          ) : !tree.length && !nodes.length ? (
+            <div className={cn("rounded-xl border p-8 text-center text-sm", t.tableBorder, t.tableBg, isDark ? "text-[#bccbb9]" : "text-slate-500")}>
+              No members found for this view.
+            </div>
+          ) : (
+            <div className={cn("flex h-full min-h-0 flex-col overflow-hidden rounded-xl border", t.tableBorder, t.tableBg)}>
+              {viewMode === "connections" ? (
+                <MemberTreeConnectionsView
+                  nodes={nodes}
+                  edges={edges}
+                  validRootMemberIds={viewScope === "organization" ? validRootIds : null}
+                  scope={viewScope}
+                  viewerId={memberId}
+                  isDark={isDark}
+                  settings={chartSettings}
+                  onSettingsChange={updateChartSettings}
+                  canReassign={canReassign}
+                  onAddHere={canManageMembers ? setAddUnder : undefined}
+                  onReassign={canReassign ? handleReassign : undefined}
+                  focusRequest={focusRequest}
+                />
+              ) : (
+                <MemberTreeListView
+                  nodes={nodes}
+                  edges={edges}
+                  validRootMemberIds={viewScope === "organization" ? validRootIds : null}
+                  scope={viewScope}
+                  viewerId={memberId}
+                  isDark={isDark}
+                  canReassign={canReassign}
+                  onAddHere={canManageMembers ? setAddUnder : undefined}
+                  onReassign={canReassign ? handleReassign : undefined}
+                  onShowInChart={showInChart}
+                />
               )}
-            >
-              Try again
-            </button>
-          </div>
-        ) : !tree.length && !nodes.length ? (
-          <div className={cn("rounded-xl border p-8 text-center text-sm", t.tableBorder, t.tableBg, isDark ? "text-[#bccbb9]" : "text-slate-500")}>
-            No members found for this view.
-          </div>
-        ) : (
-          <div
-            className={cn(
-              "rounded-xl border",
-              viewMode === "connections" ? "flex h-full min-h-0 flex-col overflow-hidden" : "p-5",
-              t.tableBorder,
-              t.tableBg,
-            )}
-          >
-            {viewMode === "connections" ? (
-              <MemberTreeConnectionsView
-                nodes={nodes}
-                edges={edges}
-                validRootMemberIds={viewScope === "organization" ? validRootIds : null}
-                scope={viewScope}
-                viewerId={memberId}
-                isDark={isDark}
-                settings={chartSettings}
-                canReassign={canReassign}
-                onAddHere={canManageMembers ? setAddUnder : undefined}
-                onReassign={canReassign ? handleReassign : undefined}
-              />
-            ) : tree.length ? (
-              <div className="space-y-6">
-                <ul className="space-y-3">
-                  {tree.map((root) => (
-                    <TreeNodeCard
-                      key={root.node.id}
-                      branch={root}
-                      isDark={isDark}
-                      currentMemberId={memberId}
-                      onAddHere={canManageMembers ? setAddUnder : undefined}
-                    />
-                  ))}
-                </ul>
-                {orphanNodes.length > 0 ? (
-                  <div className={cn("rounded-lg border p-4", isDark ? "border-amber-500/30 bg-amber-500/10" : "border-amber-200 bg-amber-50")}>
-                    <div className={cn("mb-3 flex items-center gap-2 text-sm font-semibold", isDark ? "text-amber-200" : "text-amber-900")}>
-                      <ShieldAlert className="h-4 w-4" />
-                      Hierarchy assignment required ({orphanNodes.length})
-                    </div>
-                    <p className={cn("mb-3 text-xs", isDark ? "text-amber-100/80" : "text-amber-800")}>
-                      These members have organizational roles but no valid parent. Refresh the page to auto-assign under the Owner, or use Admin repair tools.
-                    </p>
-                    <ul className="space-y-2">
-                      {orphanNodes.map((node) => (
-                        <li
-                          key={node.id}
-                          className={cn(
-                            "flex items-center justify-between rounded-lg border px-3 py-2 text-sm",
-                            isDark ? "border-amber-500/20 bg-[#151b2d]" : "border-amber-100 bg-white",
-                          )}
-                        >
-                          <span className={isDark ? "text-[#dce1fb]" : "text-slate-900"}>{node.name}</span>
-                          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold uppercase", roleBadgeClass(node.role, isDark))}>
-                            {node.role}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </div>
-            ) : (
-              <div className="p-5 text-sm" style={{ color: isDark ? "#bccbb9" : "#64748b" }}>
-                No members found for this view.
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+            </div>
+          )}
+        </div>
       </div>
       {addUnder ? <AddMemberAtNodeModal parent={addUnder} onClose={() => setAddUnder(null)} /> : null}
     </div>

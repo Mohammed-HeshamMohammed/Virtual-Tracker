@@ -416,6 +416,7 @@ export function Minimap({
   viewport,
   transform,
   selectedId,
+  nodeSize,
   onCenterOn,
 }: {
   theme: ChartTheme
@@ -425,6 +426,7 @@ export function Minimap({
   viewport: { width: number; height: number }
   transform: { x: number; y: number; scale: number }
   selectedId: string | null
+  nodeSize: { width: number; height: number }
   onCenterOn: (canvasPoint: Point) => void
 }) {
   const ref = useRef<SVGSVGElement>(null)
@@ -462,10 +464,10 @@ export function Minimap({
         {[...positions].map(([id, p]) => (
           <rect
             key={id}
-            x={offsetX + (p.x - 94 - bounds.minX) * scale}
-            y={offsetY + (p.y - 30 - bounds.minY) * scale}
-            width={Math.max(2, 188 * scale)}
-            height={Math.max(2, 60 * scale)}
+            x={offsetX + (p.x - nodeSize.width / 2 - bounds.minX) * scale}
+            y={offsetY + (p.y - nodeSize.height / 2 - bounds.minY) * scale}
+            width={Math.max(2, nodeSize.width * scale)}
+            height={Math.max(2, nodeSize.height * scale)}
             rx={1}
             fill={roleColor(model.nodeById.get(id)?.role)}
             opacity={id === selectedId ? 1 : 0.65}
@@ -484,15 +486,25 @@ export function Legend({
   roles,
   active,
   onToggle,
+  plain,
 }: {
   theme: ChartTheme
   roles: { role: string; count: number }[]
   active: string | null
   onToggle: (role: string | null) => void
+  /** Without the floating panel around it, for use in a toolbar. */
+  plain?: boolean
 }) {
   if (roles.length === 0) return null
+  const Wrapper = plain
+    ? ({ children }: { children: React.ReactNode }) => <>{children}</>
+    : ({ children }: { children: React.ReactNode }) => (
+        <Surface theme={theme} className="max-w-[220px] p-2">
+          {children}
+        </Surface>
+      )
   return (
-    <Surface theme={theme} className="max-w-[220px] p-2">
+    <Wrapper>
       <div className="flex flex-wrap gap-1">
         {roles.map(({ role, count }) => {
           const on = active === role
@@ -512,7 +524,7 @@ export function Legend({
           )
         })}
       </div>
-    </Surface>
+    </Wrapper>
   )
 }
 
@@ -641,3 +653,97 @@ export function ConfirmMove({
   )
 }
 
+
+/* ---------- a short message ---------- */
+
+export function ToastBar({ theme, toast }: { theme: ChartTheme; toast: { text: string; tone: "ok" | "bad" } | null }) {
+  if (!toast) return null
+  return (
+    <div
+      role="status"
+      className="pointer-events-none absolute bottom-16 left-1/2 z-[80] -translate-x-1/2 rounded-xl px-4 py-2 text-xs font-semibold"
+      style={{ background: toast.tone === "ok" ? theme.accent : theme.danger, color: "#fff", boxShadow: theme.shadow }}
+    >
+      {toast.text}
+    </div>
+  )
+}
+
+/* ---------- choose a new manager (used by the List) ---------- */
+
+export function ManagerPicker({
+  theme,
+  model,
+  memberId,
+  onPick,
+  onClose,
+}: {
+  theme: ChartTheme
+  model: TreeModel
+  memberId: string
+  onPick: (parentId: string) => void
+  onClose: () => void
+}) {
+  const [filter, setFilter] = useState("")
+  const member = model.nodeById.get(memberId)
+  const options = useMemo(() => validManagersFor(model, memberId), [model, memberId])
+  const shown = options.filter((id) => {
+    const q = filter.trim().toLowerCase()
+    if (!q) return true
+    const n = model.nodeById.get(id)!
+    return n.name.toLowerCase().includes(q) || n.role.toLowerCase().includes(q)
+  })
+  if (!member) return null
+  return (
+    <div className="absolute inset-0 z-[70] grid place-items-center" style={{ background: "rgba(0,0,0,0.35)" }} onPointerDown={onClose}>
+      <Surface theme={theme} className="w-[400px] max-w-[92vw] p-5">
+        <div onPointerDown={(event) => event.stopPropagation()}>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-sm font-semibold" style={{ color: theme.text }}>
+              Who should <strong>{member.name}</strong> report to?
+            </p>
+            <button type="button" onClick={onClose} aria-label="Close" style={{ color: theme.muted }}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <input
+            autoFocus
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+            onKeyDown={(event) => event.key === "Escape" && onClose()}
+            placeholder="Search managers"
+            className="mt-3 h-9 w-full rounded-lg border bg-transparent px-3 text-sm outline-none"
+            style={{ borderColor: theme.panelBorder, color: theme.text }}
+          />
+          <div className="mt-2 max-h-72 space-y-0.5 overflow-y-auto">
+            {shown.length === 0 ? (
+              <p className="px-1 py-3 text-xs" style={{ color: theme.muted }}>
+                No one can manage this member.
+              </p>
+            ) : (
+              shown.slice(0, 80).map((id) => {
+                const n = model.nodeById.get(id)!
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => onPick(id)}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:opacity-80"
+                    style={{ color: theme.text }}
+                  >
+                    <Avatar node={n} colour={roleColor(n.role)} size={28} />
+                    <span className="min-w-0 flex-1 truncate text-sm">{n.name}</span>
+                    <span className="text-[11px]" style={{ color: theme.muted }}>
+                      {n.role}
+                      {(model.childrenOf.get(id)?.length ?? 0) > 0 ? ` · ${model.childrenOf.get(id)!.length} reports` : ""}
+                    </span>
+                  </button>
+                )
+              })
+            )}
+          </div>
+        </div>
+      </Surface>
+    </div>
+  )
+}
