@@ -768,12 +768,27 @@ export async function routeProjects(req, res, url, db, origin) {
       let rows = projectIdFilter ? [await getProjectPg(projectIdFilter)].filter(Boolean) : await listProjectsPg({ limit: 500 });
       rows = await scopedRows(rows, "id");
       const viewer = getAuthContext(req);
+      // The calendar that applies to THIS viewer on each project: their own
+      // override on it, else the project's. The desktop agent reads `timezone`
+      // to decide whose "today" it shows, so handing every member the project's
+      // zone ignored the override that the server itself honours
+      // (see lib/time/resolve-time-zone.js). `project_timezone` stays the raw setting.
+      const ownZoneByProject = new Map();
+      if (viewer?.memberId) {
+        const overrides = await pgQuery(
+          "SELECT project_id, timezone FROM project_members WHERE member_id = $1 AND COALESCE(timezone, '') <> ''",
+          [viewer.memberId],
+        );
+        for (const o of overrides) ownZoneByProject.set(o.project_id, String(o.timezone).trim());
+      }
       const withDerived = await Promise.all(
         rows.map(async (row) => {
           const clientTrackable = viewer ? await clientMayTrackProject(viewer, row.id) : false;
           const orgAdminTrackable = viewer ? isAdminLevelRole(viewer.roleName) : false;
           return {
             ...row,
+            project_timezone: row.timezone ?? null,
+            timezone: ownZoneByProject.get(row.id) ?? row.timezone ?? null,
             has_tasks: projectTypeDef(row.type).hasTasks,
             can_create_tasks: viewer ? await viewerCanCreateProjectTasks(db, viewer, row.id) : false,
             // What the project is configured to require. `require_task_to_track` below is what

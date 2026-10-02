@@ -93,7 +93,13 @@ export async function computeMemberTimerAllowance(db, memberId, options = {}) {
   const [ctx, projectBudgetRemainder, memberLimitRemainder] = await Promise.all([
     loadMemberCapContext(db, memberId, timeZone),
     loadPerPersonProjectBudgetRemainderSeconds(options.projectId ?? null, memberId),
-    loadProjectMemberLimitRemainderSeconds(db, options.projectId ?? null, memberId, currentDayRange(timeZone)),
+    loadProjectMemberLimitRemainderSeconds(
+      db,
+      options.projectId ?? null,
+      memberId,
+      // A limit on a project resets on that project's calendar (lib/time/resolve-time-zone.js).
+      currentDayRange(options.projectId ? await resolveProjectTimeZone(options.projectId, memberId) : timeZone),
+    ),
   ]);
 
   const remainders = [];
@@ -252,7 +258,8 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
       resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, taskTodayDay, projectTimeZone),
       task?.shared_task_budget ? sumOtherAssigneesActiveSeconds(taskId, memberId) : Promise.resolve(0),
       loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId),
-      loadProjectMemberLimitRemainderSeconds(db, projectId, memberId, dayRange),
+      // Project-scoped, so it resets on the project's calendar like the task totals above.
+      loadProjectMemberLimitRemainderSeconds(db, projectId, memberId, currentDayRange(projectTimeZone)),
     ]);
   const totalTaskConsumedSeconds = othersActiveSeconds + currentCumulativeActiveSeconds;
 

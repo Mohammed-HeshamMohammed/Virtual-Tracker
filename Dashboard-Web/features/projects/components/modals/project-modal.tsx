@@ -1127,11 +1127,17 @@ export function ProjectModal({
             viewers: addForm.viewers.filter((id) => formConfig.options.members.some((m) => m.id === id)),
             // Only members assigned to the project keep a limit.
             memberLimitMembers: addForm.memberLimitMembers.filter(
-              (id) => formConfig.options.members.some((m) => m.id === id) && projectTrackerIds.has(id),
+              (id) =>
+                formConfig.options.members.some((m) => m.id === id) &&
+                (addForm.managers.includes(id) || addForm.users.includes(id)),
             ),
           }
         : addForm
-      const payloads = projectNames.map((name) => formStateToPayload(sanitizedAddForm, name, memberRoleById))
+      // The backend refuses a time zone from anyone below Manager, so only send one the viewer may set.
+      const payloads = projectNames.map((name) => ({
+        ...formStateToPayload(sanitizedAddForm, name, memberRoleById),
+        ...(canSetTimezone ? {} : { timezone: undefined }),
+      }))
       await onSave(projectId, payloads, editingBudgetId, editingUpdatedAt, editingBudgetUpdatedAt)
       onClose()
     } catch (err) {

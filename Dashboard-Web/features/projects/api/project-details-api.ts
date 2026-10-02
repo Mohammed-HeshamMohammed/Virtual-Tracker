@@ -47,7 +47,8 @@ export interface CreateProjectFormPayload {
   disableBreakLimit: boolean
   breakTimeSeconds: number
   endDate: string
-  timezone: string
+  /** Leave undefined to keep the saved zone (e.g. the viewer may not set one). */
+  timezone?: string
   subProjectIds: string[]
   clientIds: string[]
   teamIds: string[]
@@ -865,6 +866,7 @@ export async function updateProjectWithDetails(
       disableBreakLimit: payload.disableBreakLimit,
       breakTimeSeconds: payload.breakTimeSeconds,
       endDate: payload.endDate,
+      timezone: payload.timezone,
       clientId: primaryClientId || "",
       ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
       ...(options?.expectedUpdatedAt ? { expectedUpdatedAt: options.expectedUpdatedAt } : {}),
@@ -941,6 +943,7 @@ export async function createProjectWithDetails(
     disableBreakLimit: payload.disableBreakLimit,
     breakTimeSeconds: payload.breakTimeSeconds,
     endDate: payload.endDate,
+    timezone: payload.timezone,
     clientId: primaryClientId,
     ...(actorMemberId ? { createdBy: actorMemberId } : {}),
   }
