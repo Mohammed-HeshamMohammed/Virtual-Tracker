@@ -6,6 +6,16 @@ import { USER_PROFILES_COLLECTION } from "../../auth/profile-collection-name.js"
 import { placeholderEmailForUid, resolveEmailFromUserRecord } from "./auth-user-email.js";
 import { syncMemberPrimaryRole } from "./relation-sync.js";
 import { sanitizeMemberNamePart } from "./member-display-name.js";
+import { applyInviteToNewMember, completeInvitesForJoinedMember, findPendingInviteForEmail } from "./invite-completion.js";
+
+/** Never lets an invite problem fail a sign-in. */
+async function settleInvites(email, uid, tenantId) {
+  try {
+    await completeInvitesForJoinedMember({ email, uid, tenantId });
+  } catch (error) {
+    logSafeWarn("[ensureMemberFromAuth] could not close the pending invite", error);
+  }
+}
 
 export async function ensureMemberRowForUserRecord(db, userRecord) {
   const uid = userRecord.uid;
@@ -37,6 +47,7 @@ export async function ensureMemberRowForUserRecord(db, userRecord) {
       const existingFid = typeof matched.firebase_uid === "string" ? matched.firebase_uid : "";
       if (!existingFid) {
         await updateMemberPg(memberId, { firebase_uid: uid, updated_by: "auth-verify-link" });
+        await settleInvites(email, uid, null);
         return { created: false, memberId, linked: true };
       }
       if (existingFid === uid) {
@@ -71,6 +82,18 @@ export async function ensureMemberRowForUserRecord(db, userRecord) {
     firstName = email.split("@")[0] || "Member";
   }
 
+  // An invite for this address that is still open: this person is arriving by signing in rather
+  // than through the invite link, but the invite is theirs - it decides their tenant, role,
+  // projects and place in the tree, and it is done once they exist.
+  let invite = null;
+  if (email && email !== placeholderEmailForUid(uid)) {
+    try {
+      invite = await findPendingInviteForEmail(email);
+    } catch (error) {
+      logSafeWarn("[ensureMemberFromAuth] could not look up a pending invite", error);
+    }
+  }
+
   const memberId = crypto.randomUUID();
   const memberPayload = {
     id: memberId,
@@ -89,10 +112,13 @@ export async function ensureMemberRowForUserRecord(db, userRecord) {
     updated_at: new Date(),
     firebase_uid: uid,
     hierarchy_status: "unassigned",
+    ...(invite && typeof invite.tenant_id === "string" && invite.tenant_id ? { tenant_id: invite.tenant_id } : {}),
   };
 
   await createMemberPg(memberPayload);
   await syncMemberPrimaryRole(db, memberId, "Viewer", uid);
+  if (invite) await applyInviteToNewMember(db, { memberId, uid, invite });
+  await settleInvites(email, uid, invite && typeof invite.tenant_id === "string" ? invite.tenant_id : null);
 
   return { created: true, memberId, linked: false };
 }

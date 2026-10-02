@@ -105,3 +105,22 @@ export async function enrichMembersWithPayAndLimits(db, members) {
   ]);
   return enrichMembersWithPayAndLimitsFromDocs(members, payDocs, limitDocs);
 }
+
+/**
+ * The Postgres members list reads v_members_enriched, whose `projects` and `teams` are JSON
+ * arrays of {id, name}; every other path (and the web table) speaks counts plus `project_ids` /
+ * `team_names`. Left as arrays, the Projects column read 0 for everyone, the project filter
+ * matched nobody, and team names came out empty. Flatten them to the shared shape.
+ */
+export function flattenViewRelations(member) {
+  const projects = Array.isArray(member.projects) ? member.projects : null;
+  const teams = Array.isArray(member.teams) ? member.teams : null;
+  if (!projects && !teams) return member;
+  const idsOf = (list) => [...new Set(list.map((item) => (typeof item === "string" ? item : item?.id)).filter((id) => typeof id === "string" && id))];
+  const namesOf = (list) => [...new Set(list.map((item) => (typeof item === "string" ? item : item?.name)).filter((name) => typeof name === "string" && name))];
+  return {
+    ...member,
+    ...(projects ? { projects: idsOf(projects).length, project_ids: idsOf(projects) } : {}),
+    ...(teams ? { teams: idsOf(teams).length, team_names: namesOf(teams) } : {}),
+  };
+}
