@@ -401,3 +401,47 @@ test("wiring: the list offers search, role filter, fold controls and the same gu
   assert.match(list, /Show in the chart/)
   assert.match(list, /reassignAllowed && !isSelfOwner/)
 })
+
+// ---- moving a packed team's frame ----------------------------------------------------------------
+
+import { applyOffsets, frameKey, presentOffsetKeys } from "../features/members/tree-connections/offsets.ts"
+
+test("frame: dragging a packed team's frame moves the frame and every card in it, and nothing else", () => {
+  const m = bigTeam(10)
+  const layout = computeLayout(m, new Set(), O)
+  const base = applyOffsets(layout.positions, layout.groups, new Map())
+  const moved = applyOffsets(layout.positions, layout.groups, new Map([[frameKey("boss"), { x: 100, y: -40 }]]))
+  assert.equal(moved.groups[0].x, base.groups[0].x + 100)
+  assert.equal(moved.groups[0].y, base.groups[0].y - 40)
+  for (const id of layout.groups[0].memberIds) {
+    assert.equal(moved.positions.get(id).x, base.positions.get(id).x + 100)
+    assert.equal(moved.positions.get(id).y, base.positions.get(id).y - 40)
+  }
+  assert.deepEqual(moved.positions.get("boss"), base.positions.get("boss"), "the manager stays")
+  assert.equal(moved.movedIds.size, 0, "a frame move does not make its members 'moved out'")
+})
+
+test("frame: a card dragged on its own adds to its frame's move and keeps a line of its own", () => {
+  const m = bigTeam(10)
+  const layout = computeLayout(m, new Set(), O)
+  const base = applyOffsets(layout.positions, layout.groups, new Map())
+  const out = applyOffsets(layout.positions, layout.groups, new Map([[frameKey("boss"), { x: 50, y: 0 }], ["e3", { x: 0, y: 200 }]]))
+  assert.equal(out.positions.get("e3").x, base.positions.get("e3").x + 50)
+  assert.equal(out.positions.get("e3").y, base.positions.get("e3").y + 200)
+  assert.deepEqual([...out.movedIds], ["e3"])
+})
+
+test("frame: offsets for managers who left are dropped, frames of present managers are kept", () => {
+  const keep = presentOffsetKeys(["boss", "e1"])
+  assert.ok(keep.has("boss") && keep.has(frameKey("boss")) && keep.has("e1"))
+  assert.equal(keep.has(frameKey("gone")), false)
+  const stored = pruneOffsets(parseOffsets(serializeOffsets(new Map([[frameKey("boss"), { x: 5, y: 5 }], [frameKey("gone"), { x: 5, y: 5 }]]))), keep)
+  assert.deepEqual([...stored.keys()], [frameKey("boss")])
+})
+
+test("wiring: the frame has a drag handle that only works in Arrange mode", () => {
+  const view = read("features/members/tree-connections/connections-view.tsx")
+  assert.match(view, /onPointerDown=\{\(event\) => beginFrameDrag\(event, g\.parentId\)\}/)
+  assert.match(view, /if \(modeRef\.current === "reassign" && canReassignRef\.current\) return/)
+  assert.match(view, /Drag to move this whole team/)
+})

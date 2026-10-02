@@ -2,7 +2,7 @@
 // layout put it, so a changed tree (someone added, a team collapsed) still lays out sensibly and
 // only the cards that were moved stay moved. Per browser, per view: it is a viewing preference,
 // not data.
-import type { Point } from "./layout.ts"
+import type { GroupFrame, Point } from "./layout.ts"
 
 export type Offsets = Map<string, Point>
 
@@ -62,4 +62,47 @@ export function saveOffsets(key: string, offsets: Offsets): void {
   } catch {
     /* private mode or full: the arrangement just lasts this session */
   }
+}
+
+/** Key under which a packed team's frame is stored: the frame moves, and takes its members with it. */
+export function frameKey(parentId: string): string {
+  return `group:${parentId}`
+}
+
+/** Offsets worth keeping: members still in the tree, and frames of managers still in the tree. */
+export function presentOffsetKeys(memberIds: Iterable<string>): Set<string> {
+  const keys = new Set<string>()
+  for (const id of memberIds) {
+    keys.add(id)
+    keys.add(frameKey(id))
+  }
+  return keys
+}
+
+/**
+ * The picture as the viewer arranged it. A card is where the layout put it, plus its own offset,
+ * plus its frame's offset (dragging a packed team's frame moves every card inside it). Frames move
+ * by their own offset. `movedIds` are the members dragged out on their own - they keep a line of
+ * their own even when they belong to a packed team.
+ */
+export function applyOffsets(
+  basePositions: ReadonlyMap<string, Point>,
+  baseGroups: readonly GroupFrame[],
+  offsets: ReadonlyMap<string, Point>,
+): { positions: Map<string, Point>; groups: GroupFrame[]; movedIds: Set<string> } {
+  const frameOf = new Map<string, Point>()
+  const groups = baseGroups.map((g) => {
+    const o = offsets.get(frameKey(g.parentId))
+    if (o) for (const id of g.memberIds) frameOf.set(id, o)
+    return o ? { ...g, x: g.x + o.x, y: g.y + o.y } : g
+  })
+  const positions = new Map<string, Point>()
+  const movedIds = new Set<string>()
+  for (const [id, p] of basePositions) {
+    const own = offsets.get(id)
+    const frame = frameOf.get(id)
+    if (own) movedIds.add(id)
+    positions.set(id, { x: p.x + (own?.x ?? 0) + (frame?.x ?? 0), y: p.y + (own?.y ?? 0) + (frame?.y ?? 0) })
+  }
+  return { positions, groups, movedIds }
 }
