@@ -11,6 +11,7 @@ const isExternal = (role) => normalizeRoleKey(role) === "client";
 const ROLES = {
   owner: "Owner",
   admin: "Admin",
+  sa: "Super Admin",
   mgrA: "Manager",
   mgrB: "Manager",
   empA: "Employee",
@@ -70,6 +71,14 @@ test("a manager must outrank, or equal, the member", () => {
   assert.equal(plan("mgrA", "intern").code, MOVE_ERROR.RANK);
   assert.equal(plan("admin", "mgrA").code, MOVE_ERROR.RANK);
   assert.equal(plan("intern", "empA").ok, true);
+});
+
+test("Super Admins and Admins can only report to the Owner", () => {
+  assert.equal(plan("admin", "sa").code, MOVE_ERROR.ADMIN_TO_OWNER, "an Admin cannot be put under a Super Admin");
+  assert.equal(plan("sa", "admin").code, MOVE_ERROR.RANK, "refused on rank first");
+  assert.equal(plan("admin", "owner").ok, true);
+  assert.equal(plan("sa", "owner").ok, true);
+  assert.equal(plan("mgrA", "sa").ok, true, "a Manager can still be moved under a Super Admin");
 });
 
 test("unknown members and missing input are refused", () => {

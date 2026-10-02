@@ -11,6 +11,8 @@ import {
   isExcludedFromHierarchy,
 } from "./hierarchy-placement.js";
 import { syncMemberHierarchyStatus } from "./hierarchy-sync.js";
+import { findOwnerIds, planAdminAnchors } from "./admin-anchor.js";
+import { logSafeWarn } from "../../http/sanitize-error.js";
 
 
 /**
@@ -286,6 +288,74 @@ export async function repairOwnerUnderOwnerRelationships(db, options = {}) {
     removed: toRemove,
     separated_owners: separatedOwners,
   };
+}
+
+/**
+ * Puts every Super Admin and Admin directly under an Owner. They used to hang under whoever added
+ * them, or under the admin that invited them before they were promoted. Their teams move with
+ * them (only their own manager edge changes). Safe to run repeatedly: a member already under an
+ * Owner is left alone.
+ */
+export async function anchorAdminsToOwner(db, options = {}) {
+  const dryRun = options.dryRun === true;
+  const actorMemberId = typeof options.actorMemberId === "string" ? options.actorMemberId : "system";
+  const [{ members, roleNameByMemberId }, edges, ownerIds] = await Promise.all([
+    loadMembersWithRoleNames(db),
+    pgQuery("SELECT parent_member_id, child_member_id FROM member_relationships"),
+    findOwnerIds(db),
+  ]);
+  const parentOf = new Map();
+  for (const edge of edges) {
+    if (typeof edge.child_member_id === "string" && typeof edge.parent_member_id === "string") {
+      parentOf.set(edge.child_member_id, edge.parent_member_id);
+    }
+  }
+  const plan = planAdminAnchors({
+    memberIds: members.map((m) => String(m.id)),
+    roleOf: (id) => roleNameByMemberId.get(String(id)),
+    parentOf,
+    ownerIds,
+  });
+  if (dryRun || plan.length === 0) return { moved: [], plan, dryRun };
+
+  const moved = [];
+  for (const item of plan) {
+    try {
+      await removeMemberParentEdge(db, item.memberId);
+      try {
+        await recordMemberRelationship(db, {
+          parentMemberId: item.ownerId,
+          childMemberId: item.memberId,
+          relationshipType: "admin_create",
+          createdBy: actorMemberId,
+        });
+      } catch (error) {
+        if (item.fromParentId) {
+          await recordMemberRelationship(db, {
+            parentMemberId: item.fromParentId,
+            childMemberId: item.memberId,
+            relationshipType: "admin_create",
+            createdBy: actorMemberId,
+          }).catch(() => {});
+        }
+        throw error;
+      }
+      await syncMemberHierarchyStatus(db, item.memberId, roleNameByMemberId.get(item.memberId) ?? "Admin");
+      moved.push(item.memberId);
+    } catch (error) {
+      logSafeWarn("[hierarchy-repair] could not move an admin under the Owner", error);
+    }
+  }
+  return { moved, plan, dryRun };
+}
+
+let lastAdminAnchorAt = 0;
+
+export async function maybeAnchorAdminsOnTreeLoad(db, actorMemberId) {
+  const now = Date.now();
+  if (now - lastAdminAnchorAt < ORPHAN_REPAIR_COOLDOWN_MS) return { skipped: true, reason: "cooldown" };
+  lastAdminAnchorAt = now;
+  return anchorAdminsToOwner(db, { actorMemberId });
 }
 
 export async function maybeSeparateOwnersOnTreeLoad(db) {

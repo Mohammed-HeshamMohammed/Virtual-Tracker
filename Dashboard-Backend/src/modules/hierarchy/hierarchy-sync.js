@@ -48,7 +48,29 @@ export async function applyRoleChangeHierarchyEffects(db, {
   }
 
   const memberData = memberDataInput ?? ((await getMemberByIdPg(memberId)) || {});
-  const existingParentId = await getMemberParentId(db, memberId);
+  let existingParentId = await getMemberParentId(db, memberId);
+
+  // Promoted to Super Admin / Admin: they now report to the Owner, whoever they were under.
+  const { isAdminTierRole, findPrimaryOwnerId } = await import("./admin-anchor.js");
+  if (isAdminTierRole(nextRoleName)) {
+    const { removeMemberParentEdge } = await import("../member-relationships/service.js");
+    const { resolveMemberRoleName } = await import("../activity/activity-scope.js");
+    const parentRole = existingParentId ? await resolveMemberRoleName(db, existingParentId) : "";
+    if (normalizeRoleKey(parentRole) !== "owner") {
+      const ownerId = await findPrimaryOwnerId(db, memberId);
+      if (ownerId) {
+        if (existingParentId) await removeMemberParentEdge(db, memberId);
+        await recordMemberRelationship(db, {
+          parentMemberId: ownerId,
+          childMemberId: memberId,
+          relationshipType: "admin_create",
+          createdBy: actorMemberId || ownerId,
+          deferTreeCache: deferBackground,
+        });
+        existingParentId = ownerId;
+      }
+    }
+  }
 
   let parentAssigned = false;
 
