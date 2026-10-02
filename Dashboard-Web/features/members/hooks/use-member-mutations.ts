@@ -265,7 +265,10 @@ export function useMemberMutations({
     setMembers(refreshed)
   }
 
-  async function handleBatchRemoveFromTree(ids: string[]) {
+  /** Each batch handler returns how many members it actually changed - the
+   *  selection can include rows the viewer may not touch, and the server
+   *  reports its own count - so callers never announce more than happened. */
+  async function handleBatchRemoveFromTree(ids: string[]): Promise<number> {
     if (!canUseBatchMemberActions) {
       return Promise.reject(new Error(BATCH_ACTIONS_DENIED_MESSAGE))
     }
@@ -281,13 +284,17 @@ export function useMemberMutations({
       return Promise.reject(new Error("No eligible members selected for removal from tree."))
     }
 
-    await batchRemoveMembersFromTree(allowedIds)
-    allowedIds.forEach((id) => invalidateMemberProfileCache(id))
-    const refreshed = await refreshMembersFromApi()
-    setMembers(refreshed)
+    try {
+      const { removed } = await batchRemoveMembersFromTree(allowedIds)
+      return removed
+    } finally {
+      // Also after a half-applied batch, so the list shows what really changed.
+      allowedIds.forEach((id) => invalidateMemberProfileCache(id))
+      await refreshMembersFromApi().then(setMembers).catch(() => {})
+    }
   }
 
-  async function handleRemoveMembers(ids: string[]) {
+  async function handleRemoveMembers(ids: string[]): Promise<number> {
     if (!canUseBatchMemberActions) {
       return Promise.reject(new Error(BATCH_ACTIONS_DENIED_MESSAGE))
     }
@@ -303,12 +310,19 @@ export function useMemberMutations({
       return Promise.reject(new Error("No eligible members selected for removal."))
     }
 
-    await batchDeleteMembers(allowedIds)
-    allowedIds.forEach((id) => invalidateMemberProfileCache(id))
-    setMembers((prev) => prev.filter((m) => !allowedIds.includes(m.id)))
+    try {
+      const { deleted } = await batchDeleteMembers(allowedIds)
+      allowedIds.forEach((id) => invalidateMemberProfileCache(id))
+      setMembers((prev) => prev.filter((m) => !allowedIds.includes(m.id)))
+      return deleted
+    } catch (err) {
+      // A half-applied batch: re-read the list rather than guess who is gone.
+      await refreshMembersFromApi().then(setMembers).catch(() => {})
+      throw err
+    }
   }
 
-  async function handleBatchUpdateMembers(ids: string[], patch: BatchMemberUpdatePayload) {
+  async function handleBatchUpdateMembers(ids: string[], patch: BatchMemberUpdatePayload): Promise<number> {
     if (!canUseBatchMemberActions) {
       return Promise.reject(new Error(BATCH_ACTIONS_DENIED_MESSAGE))
     }
@@ -319,10 +333,13 @@ export function useMemberMutations({
     if (allowedIds.length === 0) {
       return Promise.reject(new Error("No eligible members selected."))
     }
-    await batchUpdateMembers(allowedIds, patch)
-    allowedIds.forEach((id) => invalidateMemberProfileCache(id))
-    const refreshed = await refreshMembersFromApi()
-    setMembers(refreshed)
+    try {
+      const { updated } = await batchUpdateMembers(allowedIds, patch)
+      return updated
+    } finally {
+      allowedIds.forEach((id) => invalidateMemberProfileCache(id))
+      await refreshMembersFromApi().then(setMembers).catch(() => {})
+    }
   }
 
   async function handleCreateShareLink(payload: { role: MemberRole }) {

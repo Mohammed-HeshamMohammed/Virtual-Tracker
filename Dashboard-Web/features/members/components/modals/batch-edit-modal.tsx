@@ -116,7 +116,9 @@ export function BatchEditModal({
 
   const meta = ACTION_META[action]
   const effectiveIds =
-    action === "removeFromTree" || action === "remove" ? removableMembers.map((m) => m.id) : selectedIds
+    action === "removeFromTree" || action === "remove"
+      ? removableMembers.map((m) => m.id)
+      : selectedMembers.map((m) => m.id)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()

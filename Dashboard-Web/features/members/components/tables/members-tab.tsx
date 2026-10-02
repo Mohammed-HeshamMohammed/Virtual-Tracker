@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, type Dispatch, type SetStateAction } from "react"
+import { useEffect, useMemo, useRef, type Dispatch, type SetStateAction } from "react"
 import { ChevronUp, ChevronDown } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { formatDateAdded } from "@/features/members/utils/member-utils"
@@ -266,11 +266,27 @@ export function MembersTab({
   )
 
   const selectableVisibleRows = visibleRows.filter(isBatchSelectable)
-  const allSelected = selectableVisibleRows.length > 0 && selectableVisibleRows.every((m) => selected.has(m.id))
+  // Everything the current search + filters match, on every page - not just the
+  // page on screen. "Select all" with a filter applied is read as "all of these".
+  const selectableFilteredRows = useMemo(() => filtered.filter(isBatchSelectable), [filtered, showSelectColumn, isRowManageable])
+  const allSelected = selectableFilteredRows.length > 0 && selectableFilteredRows.every((m) => selected.has(m.id))
+
+  // A batch action must only touch rows the user can see. When the search or a
+  // filter hides a ticked row, its tick goes too - otherwise "Edit pay rate"
+  // would still be applied to people no longer in the list.
+  useEffect(() => {
+    if (!showSelectColumn) return
+    const listed = new Set(selectableFilteredRows.map((m) => m.id))
+    setSelected((prev) => {
+      if (prev.size === 0) return prev
+      const next = new Set([...prev].filter((id) => listed.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [selectableFilteredRows, showSelectColumn, setSelected])
 
   function toggleAll() {
     if (allSelected) setSelected(new Set())
-    else setSelected(new Set(selectableVisibleRows.map((m) => m.id)))
+    else setSelected(new Set(selectableFilteredRows.map((m) => m.id)))
   }
   const rangeToggle = useRangeSelect()
   function toggleOne(id: string, shiftKey = false) {
