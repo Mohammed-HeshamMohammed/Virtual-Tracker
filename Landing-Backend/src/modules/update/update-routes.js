@@ -232,8 +232,14 @@ export async function routeUpdateFeed(req, res, url, origin) {
       res.end(body);
       return true;
     }
-    if (!manifestHealth.ok) throw new Error(manifestHealth.error);
+    // The latest-version metadata only reports a version number, so it needs a
+    // valid version, not every platform's signed updater. Requiring all of them
+    // made one platform's failed build (e.g. macOS) take the dashboard's
+    // "latest published tracker" view down for Windows and Linux too. Per-platform
+    // gaps are still enforced where an installer is actually served, below.
     if (isLatestMetadata) {
+      const versionCheck = validateUpdateManifest(manifest, []);
+      if (!versionCheck.ok) throw new Error(versionCheck.error);
       const body = JSON.stringify({
         version: manifest.version,
         notes: manifest.notes ?? "",
