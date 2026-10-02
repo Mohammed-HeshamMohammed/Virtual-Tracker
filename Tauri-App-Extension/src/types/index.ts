@@ -45,10 +45,11 @@ export type ForgotState = {
 export type ThemePreference = "system" | "light" | "dark";
 
 /** A concrete arrangement of the window - see window_layout.rs. */
-export type LayoutKind = "standard" | "wide" | "extended" | "focus";
+/** "easy" is Easy read: large text and only what is needed to track, for low vision. */
+export type LayoutKind = "standard" | "wide" | "extended" | "focus" | "easy";
 
 /** Auto keeps Standard wherever it fits and picks Focus on screens too small
- *  even for that. */
+ *  even for that. It never picks Easy read - that is a choice someone makes. */
 export type LayoutPreference = "auto" | LayoutKind;
 
 /** What get_window_layout reports: the layout the window was actually sized for. */

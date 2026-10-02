@@ -8,6 +8,7 @@ const FRAMES: Record<LayoutKind, { width: number; height: number; column: number
   wide: { width: 1420, height: 820, column: 374 },
   extended: { width: 1100, height: 750, column: 0 },
   focus: { width: 1100, height: 600, column: 0 },
+  easy: { width: 900, height: 760, column: 0 },
 };
 
 const LARGEST = 1420;
@@ -28,6 +29,7 @@ export function LayoutPreview({
   auto?: boolean;
 }) {
   const frame = FRAMES[kind];
+  if (kind === "easy") return <EasyPreview frame={frame} auto={auto} />;
   const hasColumn = frame.column > 0;
   // Switching apps & screenshots off takes the column's width off the window
   // too, so the preview narrows by the same amount the real window does.
@@ -150,6 +152,33 @@ export function LayoutPreview({
             />
           </>
         ) : null}
+      </svg>
+    </span>
+  );
+}
+
+/**
+ * Easy read: no sidebar and no stat tiles, just one column - what you are working on,
+ * a big time, and a big button.
+ */
+function EasyPreview({ frame, auto }: { frame: { width: number; height: number }; auto: boolean }) {
+  const scale = frame.width / LARGEST;
+  const w = 100;
+  const h = (frame.height / frame.width) * 100;
+  const pad = 6;
+  return (
+    <span
+      className={`layout-preview${auto ? " is-auto" : ""}`}
+      style={{ width: `${Math.round(scale * 100)}%` }}
+      aria-hidden="true"
+    >
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet">
+        <rect className="lp-window" x="0.5" y="0.5" width={w - 1} height={h - 1} rx="3" />
+        <rect className="lp-pane" x={pad} y={pad + 3} width={w - pad * 2} height={h - pad * 2 - 3} rx="2.5" />
+        <rect className="lp-block" x={pad + 3} y={pad + 6} width={w - pad * 2 - 6} height="6" rx="1" />
+        <rect className="lp-block" x={pad + 3} y={pad + 14} width={w - pad * 2 - 6} height="6" rx="1" />
+        <rect className="lp-insights" x={pad + 14} y={pad + 24} width={w - pad * 2 - 28} height="13" rx="1.5" />
+        <rect className="lp-accent" x={pad + 3} y={h - pad - 18} width={w - pad * 2 - 6} height="10" rx="2" />
       </svg>
     </span>
   );

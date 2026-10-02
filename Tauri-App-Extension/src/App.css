@@ -5894,3 +5894,286 @@ select.modal-input {
 .vt-tour-next:hover {
   background: #e0e7ff;
 }
+
+/* ── Easy read layout ───────────────────────────────────────────────────
+   For people who cannot see small text: one column, large type, strong
+   borders and a big focus ring, with only what is needed to track. Sizes
+   are multiples of --easy-scale (A- / A+ in the footer), and everything
+   uses the same theme tokens as the rest of the app, so Light and Dark
+   both work. The titlebar still sits over the top 38px. */
+.layout-easy .agent-view {
+  overflow: hidden;
+}
+
+.easy-view {
+  --s: var(--easy-scale, 1);
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  box-sizing: border-box;
+  padding: 46px 28px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: calc(14px * var(--s));
+  overflow-y: auto;
+  font-size: calc(22px * var(--s));
+  line-height: 1.35;
+  color: var(--on-surface-bright);
+}
+
+.easy-view :focus-visible {
+  outline: 4px solid rgb(var(--c-primary));
+  outline-offset: 3px;
+}
+
+.easy-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.easy-clock {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  column-gap: 14px;
+}
+
+.easy-clock strong {
+  font-size: calc(34px * var(--s));
+  font-weight: 800;
+}
+
+.easy-clock span {
+  font-size: calc(20px * var(--s));
+  color: var(--on-surface-variant);
+}
+
+.easy-status {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: calc(8px * var(--s)) calc(18px * var(--s));
+  border: 3px solid currentColor;
+  border-radius: 999px;
+  font-size: calc(26px * var(--s));
+  font-weight: 800;
+}
+
+.easy-status-dot {
+  width: calc(18px * var(--s));
+  height: calc(18px * var(--s));
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.easy-status.is-tracking {
+  color: rgb(var(--c-good));
+}
+
+.easy-status.is-paused {
+  color: rgb(var(--c-warn));
+}
+
+.easy-status.is-idle {
+  color: var(--on-surface-variant);
+}
+
+.easy-card {
+  display: flex;
+  flex-direction: column;
+  gap: calc(12px * var(--s));
+  padding: calc(16px * var(--s));
+  border: 3px solid rgb(var(--c-overlay) / 0.4);
+  border-radius: 20px;
+  background: rgb(var(--c-surface-high));
+}
+
+.easy-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The browser's own dropdown arrow is tiny; this one scales with the text. */
+.easy-field::after {
+  content: "";
+  position: absolute;
+  right: calc(26px * var(--s));
+  bottom: calc(30px * var(--s) - 2px);
+  width: calc(12px * var(--s));
+  height: calc(12px * var(--s));
+  border-right: 4px solid var(--on-surface-bright);
+  border-bottom: 4px solid var(--on-surface-bright);
+  transform: translateY(-50%) rotate(45deg);
+  pointer-events: none;
+}
+
+.easy-label {
+  font-size: calc(22px * var(--s));
+  font-weight: 800;
+}
+
+.easy-field select {
+  width: 100%;
+  min-height: calc(60px * var(--s));
+  padding: 0 calc(64px * var(--s)) 0 16px;
+  appearance: none;
+  border: 3px solid rgb(var(--c-overlay) / 0.55);
+  border-radius: 14px;
+  background: rgb(var(--c-surface));
+  color: var(--on-surface-bright);
+  font: inherit;
+  font-size: calc(26px * var(--s));
+  font-weight: 600;
+}
+
+.easy-field select:disabled {
+  /* Locked while a session is open, but still fully readable - washed-out text
+     is the one thing this layout must not have. */
+  opacity: 1;
+  color: var(--on-surface-bright);
+  -webkit-text-fill-color: var(--on-surface-bright);
+  background: rgb(var(--c-well));
+}
+
+.easy-note,
+.easy-blocked {
+  margin: 0;
+  font-size: calc(21px * var(--s));
+  color: var(--on-surface-variant);
+}
+
+.easy-blocked {
+  color: rgb(var(--c-warn));
+  font-weight: 700;
+}
+
+.easy-timer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+}
+
+.easy-timer-value {
+  font-size: min(calc(80px * var(--s)), 14vw);
+  font-weight: 800;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.easy-timer-label {
+  font-size: calc(26px * var(--s));
+  font-weight: 700;
+}
+
+.easy-timer-limit {
+  font-size: calc(22px * var(--s));
+  color: var(--on-surface-variant);
+}
+
+.easy-actions {
+  display: flex;
+  gap: calc(16px * var(--s));
+  flex-wrap: wrap;
+}
+
+.easy-actions .easy-btn {
+  flex: 1 1 calc(220px * var(--s));
+}
+
+.easy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: calc(68px * var(--s));
+  padding: 0 calc(24px * var(--s));
+  border: 3px solid transparent;
+  border-radius: 18px;
+  font: inherit;
+  font-size: calc(30px * var(--s));
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.easy-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.easy-btn .vt-icon {
+  width: 1em;
+  height: 1em;
+}
+
+.easy-btn-wide {
+  flex-basis: 100%;
+}
+
+.easy-btn-primary {
+  background: rgb(var(--c-primary));
+  color: rgb(var(--c-on-primary));
+}
+
+.easy-btn-danger {
+  background: rgb(var(--c-bad));
+  color: rgb(var(--c-on-primary));
+}
+
+.easy-btn-secondary {
+  background: transparent;
+  border-color: rgb(var(--c-overlay) / 0.6);
+  color: var(--on-surface-bright);
+}
+
+.easy-btn-quiet {
+  min-height: calc(52px * var(--s));
+  padding: 0 calc(18px * var(--s));
+  border-color: rgb(var(--c-overlay) / 0.3);
+  background: transparent;
+  color: var(--on-surface-bright);
+  font-size: calc(22px * var(--s));
+  font-weight: 700;
+}
+
+.easy-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: calc(16px * var(--s)) calc(20px * var(--s));
+  border: 3px solid rgb(var(--c-warn));
+  border-radius: 16px;
+  font-weight: 700;
+}
+
+.easy-alert .easy-btn {
+  min-height: calc(56px * var(--s));
+  font-size: calc(22px * var(--s));
+}
+
+.easy-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(12px * var(--s));
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.easy-size {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: auto;
+}

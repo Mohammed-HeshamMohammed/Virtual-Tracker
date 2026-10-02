@@ -43,6 +43,7 @@ const LAYOUTS: { id: LayoutPreference; label: string; forScreens: string }[] = [
   { id: "wide", label: "Wide", forScreens: "Large monitors" },
   { id: "extended", label: "Extended", forScreens: "Desktop monitors, the original size" },
   { id: "focus", label: "Focus", forScreens: "Small laptops and high scaling" },
+  { id: "easy", label: "Easy read", forScreens: "Large text and only what you need. For low vision" },
 ];
 
 /** Each layout's window size on a screen with room for it - mirrors
@@ -54,6 +55,7 @@ function layoutSize(kind: LayoutKind, showInsights: boolean): string {
     wide: [1420, 820, 374],
     extended: [1100, 750, 0],
     focus: [1100, 600, 0],
+    easy: [900, 760, 0],
   };
   const [width, height, column] = sizes[kind];
   return `${showInsights ? width : width - column} × ${height}`;
@@ -64,6 +66,7 @@ const LAYOUT_NAMES: Record<LayoutKind, string> = {
   wide: "Wide",
   extended: "Extended",
   focus: "Focus",
+  easy: "Easy read",
 };
 
 export function SettingsPanel({

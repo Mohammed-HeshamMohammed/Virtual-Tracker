@@ -76,6 +76,7 @@ import { Icon } from "./components/common/Icon";
 import { applyTheme } from "./utils/theme";
 import { notify } from "./utils/notify";
 import { SettingsPanel } from "./components/views/SettingsPanel";
+import { EasyView } from "./components/views/EasyView";
 import { ProfilePanel } from "./components/views/ProfilePanel";
 import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
 import { MonitoringNoticePanel } from "./components/views/MonitoringNoticePanel";
@@ -2216,6 +2217,9 @@ function MainApp() {
   // Focus puts the tasks (and the time zone) in a column of their own on the
   // right, and the tracking card gets the play/pause circle instead.
   const isFocus = layoutKind === "focus";
+  // Easy read replaces the whole home screen with a large-type one (EasyView);
+  // nothing below it is rendered in that layout except the stop-note prompt.
+  const isEasy = layoutKind === "easy";
   // Standard and Wide moved what used to fill the bottom of the main pane
   // into the side column (or switched it off), which left the pane empty
   // under the stat tiles; the week chart takes that space. Focus only needs
@@ -2310,7 +2314,7 @@ function MainApp() {
         theme={themePref}
         onCycleTheme={handleCycleTheme}
         stats={
-          signedIn && memberLimits ? (
+          signedIn && memberLimits && !isEasy ? (
             <TitleBarStats
               weekly={{
                 percent: weekActivityPercent,
@@ -2462,6 +2466,55 @@ function MainApp() {
           onSignOut={() => void handleSignOut()}
           signingOut={signingOut}
         />
+      ) : isEasy && signedIn ? (
+        <>
+          <EasyView
+            projects={orderedProjects}
+            selectedProjectId={selectedProjectId}
+            onSelectProject={(projectId) => {
+              const project = projects.find((p) => p.id === projectId);
+              if (project) jumpToProject(project);
+            }}
+            tasks={assignedTasks.filter((task) => task.projectId === selectedProjectId)}
+            selectedTaskId={selectedTaskId}
+            onSelectTask={(taskId) => {
+              if (busy || sessionOpen) return;
+              const task = assignedTasks.find((t) => t.id === taskId);
+              if (task) jumpToAssignedTask(task);
+              else setSelectedTaskId("");
+            }}
+            taskRequired={taskRequired}
+            tracking={tracking}
+            paused={paused}
+            busy={busy}
+            seconds={liveActiveSeconds}
+            dailyLimitHours={memberLimits?.dailyHours ?? 0}
+            workedTodaySeconds={memberLimits ? memberLimits.workedTodaySeconds : null}
+            startBlockedReason={startBlockedReason}
+            connection={connection}
+            reconnecting={reconnecting}
+            onReconnect={() => void handleReconnect()}
+            wallClock={fmtWallClock(wallClockNow, projectTimezone || undefined)}
+            wallDate={fmtWallDate(wallClockNow, projectTimezone || undefined)}
+            onStart={() => void handleStart()}
+            onPause={() => void handlePause()}
+            onResume={() => void handleResume()}
+            onStop={handleStopClick}
+            onOpenSettings={() => setView("settings")}
+            onOpenProfile={() => setView("profile")}
+            onOpenDashboard={() => void invoke("open_web_app")}
+          />
+          {/* Projects can require a note before the timer stops, so the prompt has to
+              exist here too. */}
+          <StopNoteModal
+            open={stopNoteOpen}
+            draft={stopNoteDraft}
+            busy={busy}
+            onDraftChange={setStopNoteDraft}
+            onKeepTracking={() => setStopNoteOpen(false)}
+            onStop={() => void handleStop(stopNoteDraft.trim())}
+          />
+        </>
       ) : (
       <div className={`app-body${signedIn ? "" : " app-body-auth-only"}`}>
         <aside className="side-panel">

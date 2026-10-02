@@ -37,7 +37,7 @@ pub struct UserPreferences {
     /// truth once it loads).
     #[serde(default)]
     pub member_timezone: String,
-    /// "auto" | "standard" | "wide" | "extended" | "focus".
+    /// "auto" | "standard" | "wide" | "extended" | "focus" | "easy".
     #[serde(default = "default_layout")]
     pub layout: String,
     /// Whether the week's top apps and the screenshots are shown in Standard and Wide - off

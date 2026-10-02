@@ -13,6 +13,8 @@ pub enum LayoutKind {
     Wide,
     Extended,
     Focus,
+    /// Large text and only what is needed to track - for low vision. Never picked by Auto.
+    Easy,
 }
 
 impl LayoutKind {
@@ -22,6 +24,7 @@ impl LayoutKind {
             "wide" => Some(Self::Wide),
             "extended" => Some(Self::Extended),
             "focus" => Some(Self::Focus),
+            "easy" => Some(Self::Easy),
             "compact" => Some(Self::Standard),
             _ => None,
         }
@@ -33,7 +36,16 @@ impl LayoutKind {
         match self {
             Self::Wide => 360.0 + 14.0,
             Self::Standard => 296.0 + 14.0,
-            Self::Extended | Self::Focus => 0.0,
+            Self::Extended | Self::Focus | Self::Easy => 0.0,
+        }
+    }
+
+    /// The least width this layout can be squeezed to. Easy has no sidebar or stat tiles to
+    /// fit across, so it can sit well under the others' floor.
+    fn narrowest(self) -> f64 {
+        match self {
+            Self::Easy => 640.0,
+            _ => NARROWEST,
         }
     }
 
@@ -44,6 +56,7 @@ impl LayoutKind {
             Self::Wide => (1420.0, 820.0),
             Self::Extended => (1100.0, 750.0),
             Self::Focus => (1100.0, 600.0),
+            Self::Easy => (900.0, 760.0),
         }
     }
 
@@ -55,6 +68,7 @@ impl LayoutKind {
             Self::Wide => (1300.0, 700.0),
             Self::Extended => (1100.0, 750.0),
             Self::Focus => (960.0, 520.0),
+            Self::Easy => (680.0, 480.0),
         }
     }
 }
@@ -125,7 +139,7 @@ pub fn resolve(
     };
     let (width, height) = kind.preferred_size();
     let (min_width, min_height) = kind.min_size();
-    let (width, min_width) = (width - dropped, (min_width - dropped).max(NARROWEST));
+    let (width, min_width) = (width - dropped, (min_width - dropped).max(kind.narrowest()));
 
     // The others shrink to fit the screen they're on, down to the smallest size their
     // columns still fit in.
@@ -418,6 +432,38 @@ mod tests {
             resolve("standard", false, Some((800.0, 480.0))).width,
             NARROWEST
         );
+    }
+
+    // Easy read is for low vision: big text in a window that is not squeezed onto small screens
+    // as hard as the others, and chosen on purpose - never by Auto, which would otherwise
+    // surprise someone with a layout they did not ask for.
+    #[test]
+    fn easy_has_no_side_column_and_opens_at_its_preferred_size_with_room() {
+        let easy = resolve("easy", true, Some(BIG_MONITOR));
+        assert_eq!(easy.kind, LayoutKind::Easy);
+        assert!(!easy.side_column, "nothing to put in a column");
+        assert_eq!(size(easy), (900.0, 760.0));
+        assert_eq!(size(resolve("easy", true, None)), (900.0, 760.0));
+    }
+
+    #[test]
+    fn easy_fits_every_screen_and_stays_under_the_other_layouts_width_floor() {
+        for area in EVERY_SCREEN {
+            let easy = resolve("easy", true, Some(area));
+            assert!(fits(area, easy), "{area:?} -> {:?}", size(easy));
+            assert!(easy.width >= 680.0 && easy.height >= 480.0, "{area:?}");
+        }
+        let squeezed = resolve("easy", true, Some((600.0, 440.0)));
+        assert_eq!(size(squeezed), (680.0, 480.0), "never below its own minimum");
+        assert!(squeezed.width < NARROWEST);
+    }
+
+    #[test]
+    fn auto_never_picks_easy() {
+        for area in EVERY_SCREEN {
+            assert_ne!(resolve("auto", true, Some(area)).kind, LayoutKind::Easy, "{area:?}");
+        }
+        assert_ne!(resolve("auto", true, None).kind, LayoutKind::Easy);
     }
 
     #[test]
