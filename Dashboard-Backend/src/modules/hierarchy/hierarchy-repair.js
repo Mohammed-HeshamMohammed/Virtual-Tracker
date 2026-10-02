@@ -4,7 +4,7 @@ import { listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 import { recordMemberRelationship, removeMemberParentEdge } from "../member-relationships/service.js";
 import { planOwnerRootSeparationRepairs } from "../member-relationships/relationship-integrity.js";
 import { syncMemberPrimaryRole } from "../members/services/relation-sync.js";
-import { normalizeRoleKey } from "../members/services/relation-sync.js";
+import { loadRoleNameById, normalizeRoleKey, pickHighestPrivilegeRoleName } from "../members/services/relation-sync.js";
 import {
   classifyHierarchyPlacement,
   isOrphanEmployeeViolation,
@@ -13,14 +13,34 @@ import {
 import { syncMemberHierarchyStatus } from "./hierarchy-sync.js";
 
 
+/**
+ * Every member with their role name, from one members read and the cached role table.
+ *
+ * These repairs run every time the organization tree is opened, and each used to ask
+ * resolveMemberRoleName about every member in turn - a database read per person, per pass, over
+ * three passes. With the database a network hop away that was tens of seconds for ~80 people,
+ * and the Members tree sat on its loading skeleton. Same answer as resolveMemberRoleName
+ * (the member's role, "Viewer" when it has none), without the round trips.
+ */
+export async function loadMembersWithRoleNames(db) {
+  const [members, roleNameById] = await Promise.all([listMembersPg({ limit: 5000 }), loadRoleNameById(db)]);
+  const roleNameByMemberId = new Map();
+  for (const member of members) {
+    const roleId = typeof member.role_id === "string" ? member.role_id : "";
+    const roleName = roleId ? roleNameById.get(roleId) || "Viewer" : "Viewer";
+    roleNameByMemberId.set(String(member.id), pickHighestPrivilegeRoleName([roleName]));
+  }
+  return { members, roleNameByMemberId };
+}
+
 export async function resolveOrganizationRootMemberId(db) {
-  const membersDocs = await listMembersPg({ limit: 5000 });
+  const { members: membersDocs, roleNameByMemberId } = await loadMembersWithRoleNames(db);
   let fallbackId = null;
   let fallbackRank = -1;
   const rank = { superadmin: 90, admin: 80 };
 
   for (const data of membersDocs) {
-    const roleName = await resolveMemberRoleName(db, data.id);
+    const roleName = roleNameByMemberId.get(String(data.id)) ?? "Viewer";
     const key = normalizeRoleKey(roleName);
     if (key === "owner") {
       return data.id;
@@ -36,8 +56,8 @@ export async function resolveOrganizationRootMemberId(db) {
 }
 
 export async function findOrphanHierarchyViolations(db) {
-  const [membersDocs, relsDocs] = await Promise.all([
-    listMembersPg({ limit: 5000 }),
+  const [{ members: membersDocs, roleNameByMemberId }, relsDocs] = await Promise.all([
+    loadMembersWithRoleNames(db),
     pgQuery("SELECT * FROM member_relationships"),
   ]);
 
@@ -52,7 +72,7 @@ export async function findOrphanHierarchyViolations(db) {
 
   for (const data of membersDocs) {
     const memberId = data.id;
-    const roleName = await resolveMemberRoleName(db, memberId);
+    const roleName = roleNameByMemberId.get(String(memberId)) ?? "Viewer";
     const parentId = childToParent.get(memberId) ?? null;
     const placement = classifyHierarchyPlacement(roleName, parentId, data);
 
@@ -201,12 +221,12 @@ export async function maybeRepairOrphansOnTreeLoad(db, actorMemberId) {
 
 export async function cleanupExternalEntityHierarchyEdges(db) {
   const { removeMemberHierarchyRelationships } = await import("../member-relationships/service.js");
-  const membersDocs = await listMembersPg({ limit: 5000 });
+  const { members: membersDocs, roleNameByMemberId } = await loadMembersWithRoleNames(db);
   let removedEdges = 0;
   let membersCleaned = 0;
 
   for (const data of membersDocs) {
-    const roleName = await resolveMemberRoleName(db, data.id);
+    const roleName = roleNameByMemberId.get(String(data.id)) ?? "Viewer";
     if (!isExcludedFromHierarchy(roleName)) continue;
     const count = await removeMemberHierarchyRelationships(db, data.id);
     if (count > 0) {
@@ -229,10 +249,10 @@ export async function repairOwnerUnderOwnerRelationships(db, options = {}) {
     if (typeof edge.child_member_id === "string") memberIds.add(edge.child_member_id);
   }
 
+  const { roleNameByMemberId } = await loadMembersWithRoleNames(db);
   const roleKeyByMemberId = new Map();
   for (const memberId of memberIds) {
-    const roleName = await resolveMemberRoleName(db, memberId);
-    roleKeyByMemberId.set(memberId, normalizeRoleKey(roleName));
+    roleKeyByMemberId.set(memberId, normalizeRoleKey(roleNameByMemberId.get(String(memberId)) ?? "Viewer"));
   }
 
   const toRemove = planOwnerRootSeparationRepairs(edges, roleKeyByMemberId);
