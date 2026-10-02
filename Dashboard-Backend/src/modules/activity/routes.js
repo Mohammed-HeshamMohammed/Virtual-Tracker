@@ -403,13 +403,16 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      const memberZone = await getMemberTimezone(member.memberId);
-      const { todayDay, weekStartDay } = currentDayRange(memberZone);
       const projectId = (url.searchParams.get("projectId") || "").trim();
-      // Limits and "is today a working day" follow the project's calendar when
-      // it has one, else the member's own; the activity figures below stay on
-      // the member's calendar because they are bucketed there.
-      const limitZone = projectId ? await resolveProjectTimeZone(projectId, member.memberId) : memberZone;
+      // One calendar for the whole response: the project's when it has one (this
+      // member's override on it first), else the member's own. The limits, today's
+      // and the week's totals, the activity and idle breakdown and "is today a
+      // working day" are all cut in it, so none of them can disagree about
+      // what "today" is.
+      const limitZone = projectId
+        ? await resolveProjectTimeZone(projectId, member.memberId)
+        : await getMemberTimezone(member.memberId);
+      const { todayDay, weekStartDay } = currentDayRange(limitZone);
       const [
         dailyHours,
         weeklyHours,
@@ -428,12 +431,16 @@ export async function routeActivity(req, res, url, origin) {
         computeMemberTimerAllowance(db, member.memberId, { timeZone: limitZone }),
         computeAssignedTodayDemand(member.memberId),
         getMemberTodayWorkStatus(db, member.memberId, limitZone),
-        sumMemberActiveIdleSeconds(member.memberId, { fromDay: todayDay, toDay: todayDay }),
+        sumMemberActiveIdleSeconds(member.memberId, { fromDay: todayDay, toDay: todayDay, timeZone: limitZone }),
         projectId
-          ? sumMemberActiveIdleSecondsForProject(member.memberId, projectId, { fromDay: todayDay, toDay: todayDay })
+          ? sumMemberActiveIdleSecondsForProject(member.memberId, projectId, {
+              fromDay: todayDay,
+              toDay: todayDay,
+              timeZone: limitZone,
+            })
           : null,
-        listDailyMemberActiveSeconds(member.memberId, { fromDay: weekStartDay, toDay: todayDay }),
-        listMemberIdleSecondsByDay(member.memberId, { fromDay: weekStartDay, toDay: todayDay }),
+        listDailyMemberActiveSeconds(member.memberId, { fromDay: weekStartDay, toDay: todayDay, timeZone: limitZone }),
+        listMemberIdleSecondsByDay(member.memberId, { fromDay: weekStartDay, toDay: todayDay, timeZone: limitZone }),
       ]);
       const capLeftToday = usesShifts ? null : timerAllowance.allowedRemainingSeconds;
       // `total` is the whole open workload, not a property of today, so it

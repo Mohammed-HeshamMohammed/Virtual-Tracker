@@ -171,10 +171,12 @@ test("CQ-2: a rewind is attributed to the day the session started, not today", a
 
   const rollupCall = calls.find((c) => c.sql.includes("INSERT INTO daily_member_active_seconds"));
   assert.ok(rollupCall, "expected a rollup delta insert for the rewind");
+  // Compared as plain YYYY-MM-DD strings: the member's zone here is UTC, and parsing the day
+  // back through `new Date(...)` shifted it by whatever zone the machine running the test is in.
   const dayParam = rollupCall.params[1];
   assert.equal(
-    new Date(dayParam).toDateString(),
-    startedYesterday.toDateString(),
+    dayParam,
+    startedYesterday.toISOString().slice(0, 10),
     "the delta must land on the day the session started, not the day the rewind happened",
   );
 });

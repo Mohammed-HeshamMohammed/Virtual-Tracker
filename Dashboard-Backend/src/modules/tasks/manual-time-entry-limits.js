@@ -1,4 +1,5 @@
 import { query } from "../../lib/postgres/client.js";
+import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
 import { getMemberLimitHours, memberUsesShiftsForLimits } from "./task-workload-validation.js";
 import {
   computeProjectSpentPg,
@@ -45,8 +46,10 @@ function projectLimitWindowFor(limit, entryDate) {
   return { notStarted: false, fromDay: periodStart ?? startDate };
 }
 
-async function sumMemberTrackedAndManualSecondsPg(memberId, fromDay, toDay, excludeEntryId) {
-  const params = [memberId, fromDay, toDay];
+async function sumMemberTrackedAndManualSecondsPg(memberId, fromDay, toDay, excludeEntryId, timeZone) {
+  // Tracked sessions are cut at midnights of `timeZone` - the calendar the entry's own date is a
+  // day of - not at UTC's, which put a session on a different day than the entry beside it.
+  const params = [memberId, fromDay, toDay, timeZone];
   let entryWhere = "member_id = $1 AND date >= $2::date AND date <= $3::date AND status != 'rejected'";
   if (excludeEntryId) {
     params.push(excludeEntryId);
@@ -55,7 +58,9 @@ async function sumMemberTrackedAndManualSecondsPg(memberId, fromDay, toDay, excl
   const rows = await query(
     `SELECT COALESCE(SUM(secs), 0) AS total_seconds FROM (
        SELECT active_seconds AS secs FROM activity_sessions
-       WHERE member_id = $1 AND started_at::date >= $2::date AND started_at::date <= $3::date
+       WHERE member_id = $1
+         AND (started_at AT TIME ZONE $4::text)::date >= $2::date
+         AND (started_at AT TIME ZONE $4::text)::date <= $3::date
        UNION ALL
        SELECT duration AS secs FROM time_entries WHERE ${entryWhere}
      ) tracked`,
@@ -67,6 +72,10 @@ async function sumMemberTrackedAndManualSecondsPg(memberId, fromDay, toDay, excl
 export async function assertManualTimeEntryWithinLimits(db, { memberId, projectId, date, durationSeconds, excludeEntryId }) {
   if (!memberId || !date || !(durationSeconds > 0)) return;
 
+  // The calendar the entry's date belongs to: the project's when it has one (this member's override
+  // first), else the member's own - the same one the live timer's limits are measured in.
+  const timeZone = await resolveProjectTimeZone(projectId ?? null, memberId);
+
   const usesShifts = await memberUsesShiftsForLimits(db, memberId);
   if (!usesShifts) {
     const [dailyLimitHours, weeklyLimitHours] = await Promise.all([
@@ -76,7 +85,7 @@ export async function assertManualTimeEntryWithinLimits(db, { memberId, projectI
 
     if (dailyLimitHours > 0) {
       const capSeconds = Math.floor(dailyLimitHours * 3600);
-      const workedSeconds = await sumMemberTrackedAndManualSecondsPg(memberId, date, date, excludeEntryId);
+      const workedSeconds = await sumMemberTrackedAndManualSecondsPg(memberId, date, date, excludeEntryId, timeZone);
       const totalSeconds = workedSeconds + durationSeconds;
       if (totalSeconds > capSeconds) {
         const err = new Error(
@@ -91,7 +100,7 @@ export async function assertManualTimeEntryWithinLimits(db, { memberId, projectI
       const weekStart = mondayOfWeek(date);
       const weekEnd = addDays(weekStart, 6);
       const capSeconds = Math.floor(weeklyLimitHours * 3600);
-      const workedSeconds = await sumMemberTrackedAndManualSecondsPg(memberId, weekStart, weekEnd, excludeEntryId);
+      const workedSeconds = await sumMemberTrackedAndManualSecondsPg(memberId, weekStart, weekEnd, excludeEntryId, timeZone);
       const totalSeconds = workedSeconds + durationSeconds;
       if (totalSeconds > capSeconds) {
         const err = new Error(
@@ -129,9 +138,11 @@ export async function assertManualTimeEntryWithinLimits(db, { memberId, projectI
   }
   if (!(capSeconds > 0)) return;
 
+  // The limit's window starts on a day of the project's calendar, so tracked
+  // sessions are cut at that calendar's midnights too.
   const spentSeconds = await getProjectTrackedSecondsPg(projectId, {
     memberId,
-    ...(fromDay ? { fromDate: fromDay } : {}),
+    ...(fromDay ? { fromDate: fromDay, timeZone } : {}),
   });
   const totalSeconds = spentSeconds + durationSeconds;
   if (totalSeconds > capSeconds) {

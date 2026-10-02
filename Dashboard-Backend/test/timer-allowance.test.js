@@ -20,7 +20,24 @@ const stub = {
   taskTrackingRows: [],
   projectBudget: null,
   memberProjectSpentSeconds: 0,
+  memberZone: "UTC",
+  projectZone: null,
+  sumCalls: [],
+  trackedCalls: [],
 };
+
+// Which calendar each figure is cut in: the project's when it has one, else the member's own.
+// resolveProjectTimeZone falls back to the member's zone, so the stub does the same.
+mock.module("../src/modules/reports/member-timezones.js", {
+  namedExports: {
+    getMemberTimezone: async () => stub.memberZone,
+    getMemberTimezones: async () => new Map(),
+    __clearMemberTimezoneCache: () => {},
+  },
+});
+mock.module("../src/lib/time/resolve-time-zone.js", {
+  namedExports: { resolveProjectTimeZone: async () => stub.projectZone ?? stub.memberZone },
+});
 
 mock.module("../src/modules/tasks/task-workload-validation.js", {
   namedExports: {
@@ -39,7 +56,8 @@ mock.module("../src/modules/tasks/task-workload-validation.js", {
 
 mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
   namedExports: {
-    sumDailyMemberActiveSeconds: async () => {
+    sumDailyMemberActiveSeconds: async (_id, opts) => {
+      stub.sumCalls.push(opts);
       // First call in loadMemberCapContext is for workedToday, second call is for workedWeek
       const val = stub._callToggle ? stub.workedWeek : stub.workedToday;
       stub._callToggle = !stub._callToggle;
@@ -133,7 +151,10 @@ mock.module("../src/lib/postgres/projects-postgres.service.js", {
     deleteTeamProjectsForTeamPg: async () => null,
     listTeamIdsForProjectPg: async () => [],
     listProjectIdsForTeamPg: async () => [],
-    getProjectTrackedSecondsPg: async () => stub.memberProjectSpentSeconds,
+    getProjectTrackedSecondsPg: async (_id, opts) => {
+      stub.trackedCalls.push(opts);
+      return stub.memberProjectSpentSeconds;
+    },
     computeProjectSpentCostPg: async () => 0,
     computeProjectSpentPg: async () => 0,
     computeProjectSpentForAllPg: async () => new Map(),
@@ -163,6 +184,10 @@ function reset(patch = {}) {
     memberProjectSpentSeconds: 0,
     projectMemberLimit: null,
     memberHourlyRate: 0,
+    memberZone: "UTC",
+    projectZone: null,
+    sumCalls: [],
+    trackedCalls: [],
     _callToggle: false,
   }, patch);
 }
@@ -410,4 +435,84 @@ test("member limit also applies to task-anchored timers, not just task-less ones
   const task = { id: "t1", project_id: "p1", duration_hours: 40 };
   const allowance = await computeTimerAllowance({}, "member-1", task);
   assert.equal(allowance.allowedRemainingSeconds, 1 * HOUR);
+});
+
+// ── One calendar per figure ──────────────────────────────────────────────────
+// Totals are summed from sessions at read time, so the calendar is chosen here: the project's
+// when it has one, otherwise the member's own. Nothing is bucketed ahead of time, so a person on
+// projects in different zones, or a zone that just changed, cannot end up with mixed days.
+
+test("a project's zone decides the day and week the member's daily and weekly limits are summed over", async () => {
+  reset({ daily: 8, weekly: 40, memberZone: "America/New_York", projectZone: "Pacific/Auckland" });
+  const task = { id: "t1", project_id: "p1" };
+  await computeTimerAllowance({}, "member-1", task, { currentCumulativeActiveSeconds: 0 });
+  assert.ok(stub.sumCalls.length >= 2);
+  for (const call of stub.sumCalls) assert.equal(call.timeZone, "Pacific/Auckland");
+});
+
+test("with no project zone the member's own zone decides", async () => {
+  reset({ daily: 8, memberZone: "America/New_York", projectZone: null });
+  await computeTimerAllowance({}, "member-1", { id: "t1", project_id: "p1" }, { currentCumulativeActiveSeconds: 0 });
+  for (const call of stub.sumCalls) assert.equal(call.timeZone, "America/New_York");
+});
+
+test("a task-less timer on a project follows that project's zone too", async () => {
+  reset({ daily: 8, memberZone: "America/New_York", projectZone: "Asia/Tokyo" });
+  await computeMemberTimerAllowance({}, "member-1", { projectId: "p1" });
+  for (const call of stub.sumCalls) assert.equal(call.timeZone, "Asia/Tokyo");
+});
+
+test("a caller that already resolved the calendar can pass it straight in", async () => {
+  reset({ daily: 8, memberZone: "America/New_York", projectZone: "Asia/Tokyo" });
+  await computeMemberTimerAllowance({}, "member-1", { timeZone: "Europe/Berlin" });
+  for (const call of stub.sumCalls) assert.equal(call.timeZone, "Europe/Berlin");
+});
+
+test("with no project in play, the member's own zone is used", async () => {
+  reset({ daily: 8, memberZone: "Africa/Cairo", projectZone: "Asia/Tokyo" });
+  await computeMemberTimerAllowance({}, "member-1");
+  for (const call of stub.sumCalls) assert.equal(call.timeZone, "Africa/Cairo");
+});
+
+test("a project member limit's window is cut in the project's calendar", async () => {
+  reset({
+    memberZone: "America/New_York",
+    projectZone: "Asia/Tokyo",
+    projectMemberLimit: { cost: 10, type: "Hours limit", resets: "Weekly" },
+  });
+  await computeTimerAllowance({}, "member-1", { id: "t1", project_id: "p1" }, { currentCumulativeActiveSeconds: 0 });
+  const windowed = stub.trackedCalls.filter((c) => c?.fromDate);
+  assert.ok(windowed.length > 0, "a weekly limit asks for tracked time since the start of the week");
+  for (const call of windowed) assert.equal(call.timeZone, "Asia/Tokyo");
+});
+
+test("a monthly limit resets on the first of the month in the limit's calendar, not the server's", async () => {
+  reset({
+    memberZone: "UTC",
+    projectZone: "Pacific/Kiritimati", // UTC+14: it is already the next day (and sometimes month) there
+    projectMemberLimit: { cost: 10, type: "Hours limit", resets: "Monthly" },
+  });
+  await computeTimerAllowance({}, "member-1", { id: "t1", project_id: "p1" }, { currentCumulativeActiveSeconds: 0 });
+  const call = stub.trackedCalls.find((c) => c?.fromDate);
+  const todayThere = new Intl.DateTimeFormat("en-CA", { timeZone: "Pacific/Kiritimati" }).format(new Date());
+  assert.equal(call.fromDate, `${todayThere.slice(0, 8)}01`);
+  assert.equal(call.timeZone, "Pacific/Kiritimati");
+});
+
+test("a limit's start date is read as the calendar day it is, whatever zone the server runs in", async () => {
+  // node-pg hands a DATE back as a Date at local midnight; its day is the local one.
+  const start = new Date(2030, 0, 15); // 15 Jan 2030, 00:00 local
+  reset({
+    memberZone: "UTC",
+    projectMemberLimit: { cost: 10, type: "Hours limit", resets: "Never", start_date: start },
+  });
+  await computeTimerAllowance({}, "member-1", { id: "t1", project_id: "p1" }, { currentCumulativeActiveSeconds: 0 });
+  // Not started yet (2030) - so it does not apply and no tracked-time lookup is made.
+  assert.equal(stub.trackedCalls.length, 0);
+  reset({
+    memberZone: "UTC",
+    projectMemberLimit: { cost: 10, type: "Hours limit", resets: "Never", start_date: new Date(2020, 0, 15) },
+  });
+  await computeTimerAllowance({}, "member-1", { id: "t1", project_id: "p1" }, { currentCumulativeActiveSeconds: 0 });
+  assert.equal(stub.trackedCalls.find((c) => c?.fromDate).fromDate, "2020-01-15");
 });

@@ -29,7 +29,8 @@ function dayKey(ms, timeZone = "UTC") {
 }
 
 /**
- * "Today" and the start of today's week, in the member's own timezone.
+ * "Today" and the start of today's week, in `timeZone` - the calendar a member's
+ * limits are measured in (the project's, else their own).
  *
  * `timeZone` is not optional in spirit - it defaults to UTC only so callers
  * that genuinely have no member context (and therefore no correct answer)
@@ -45,6 +46,8 @@ export function currentDayRange(timeZone = "UTC") {
   return {
     todayDay,
     weekStartDay: addLocalDays(todayDay, -weekdayIndexForLocalDay(todayDay)),
+    // The calendar these days belong to, so whatever is summed over them is cut in the same one.
+    timeZone,
   };
 }
 
@@ -65,13 +68,14 @@ async function loadMemberCapContext(db, memberId, timeZone) {
     getMemberLimitHours(db, memberId, "daily"),
   ]);
 
-  // The member's own calendar decides when their daily/weekly allowance
-  // resets - not the server's. Someone in Cairo rolls over to a new day
-  // hours before a UTC-clocked server thinks they do.
+  // `timeZone` is the calendar the allowance resets in - the project's when it
+  // has one, else the member's own (see resolveProjectTimeZone) - and not the
+  // server's: someone in Cairo rolls over to a new day hours before a
+  // UTC-clocked server thinks they do. The totals are cut in it at read time.
   const { todayDay, weekStartDay } = currentDayRange(timeZone);
   const [workedTodaySeconds, workedWeekSeconds] = await Promise.all([
-    sumDailyMemberActiveSeconds(memberId, { fromDay: todayDay, toDay: todayDay }),
-    sumDailyMemberActiveSeconds(memberId, { fromDay: weekStartDay, toDay: todayDay }),
+    sumDailyMemberActiveSeconds(memberId, { fromDay: todayDay, toDay: todayDay, timeZone }),
+    sumDailyMemberActiveSeconds(memberId, { fromDay: weekStartDay, toDay: todayDay, timeZone }),
   ]);
 
   return {
@@ -139,10 +143,11 @@ async function resolveWorkedTodayOnTaskSeconds(memberId, taskId, task, todayDay,
       return sumDailyMemberTaskActiveSecondsRange(memberId, taskId, {
         fromDay: sessionStartDay,
         toDay: todayDay,
+        timeZone,
       });
     }
   }
-  return sumDailyMemberTaskActiveSeconds(memberId, taskId, todayDay);
+  return sumDailyMemberTaskActiveSeconds(memberId, taskId, todayDay, timeZone);
 }
 
 export async function sumOtherAssigneesActiveSeconds(taskId, memberId) {
@@ -189,18 +194,26 @@ function memberLimitWindow(limit, todayDay, weekStartDay) {
   if (resets === "weekly") {
     periodStart = weekStartDay;
   } else if (resets === "monthly") {
-    const now = new Date();
-    periodStart = toDayKey(new Date(now.getFullYear(), now.getMonth(), 1));
+    // The first of the month it is *in the limit's calendar* (todayDay is already a day
+    // of that calendar) - not the server's own month, which can be the other one.
+    periodStart = `${todayDay.slice(0, 8)}01`;
   }
 
   if (periodStart && startDate) return { notStarted: false, fromDay: periodStart > startDate ? periodStart : startDate };
   return { notStarted: false, fromDay: periodStart ?? startDate };
 }
 
+/**
+ * A calendar day (YYYY-MM-DD) for a stored date. A DATE column comes back from
+ * node-pg as a Date at *local* midnight, so its day is read with local getters
+ * - going through UTC moves it a day on any server east of Greenwich.
+ */
 function toDayKey(value) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) return value.slice(0, 10);
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return dayKey(date.getTime());
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
 async function loadProjectMemberLimitRemainderSeconds(db, projectId, memberId, dayRange) {
@@ -225,7 +238,7 @@ async function loadProjectMemberLimitRemainderSeconds(db, projectId, memberId, d
 
   const spentSeconds = await getProjectTrackedSecondsPg(projectId, {
     memberId,
-    ...(fromDay ? { fromDate: fromDay } : {}),
+    ...(fromDay ? { fromDate: fromDay, timeZone: dayRange.timeZone } : {}),
   });
   return Math.max(0, capSeconds - spentSeconds);
 }
