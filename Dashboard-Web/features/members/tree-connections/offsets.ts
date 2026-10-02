@@ -64,17 +64,18 @@ export function saveOffsets(key: string, offsets: Offsets): void {
   }
 }
 
-/** Key under which a packed team's frame is stored: the frame moves, and takes its members with it. */
-export function frameKey(parentId: string): string {
-  return `group:${parentId}`
+/** Key under which a packed team's frame (GroupFrame.key) is stored: it moves, and takes its members with it. */
+export function frameKey(groupKey: string): string {
+  return `group:${groupKey}`
 }
 
-/** Offsets worth keeping: members still in the tree, and frames of managers still in the tree. */
+/** Offsets worth keeping: members still in the tree, and the frames of managers still in the tree. */
 export function presentOffsetKeys(memberIds: Iterable<string>): Set<string> {
   const keys = new Set<string>()
   for (const id of memberIds) {
     keys.add(id)
     keys.add(frameKey(id))
+    for (let tier = 0; tier <= 3; tier++) keys.add(frameKey(`${id}|${tier}`))
   }
   return keys
 }
@@ -92,7 +93,7 @@ export function applyOffsets(
 ): { positions: Map<string, Point>; groups: GroupFrame[]; movedIds: Set<string> } {
   const frameOf = new Map<string, Point>()
   const groups = baseGroups.map((g) => {
-    const o = offsets.get(frameKey(g.parentId))
+    const o = offsets.get(frameKey(g.key))
     if (o) for (const id of g.memberIds) frameOf.set(id, o)
     return o ? { ...g, x: g.x + o.x, y: g.y + o.y } : g
   })

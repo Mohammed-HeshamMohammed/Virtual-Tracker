@@ -74,7 +74,8 @@ export function buildTreeSvg(input: SvgExportInput): string {
 
   for (const g of groups) {
     parts.push(`<rect x="${g.x}" y="${g.y}" width="${g.width}" height="${g.height}" rx="12" fill="${palette.frame}" stroke="${palette.border}" stroke-dasharray="4 4"/>`)
-    parts.push(`<text x="${g.x + 12}" y="${g.y + 16}" font-size="11" font-weight="600" fill="${palette.muted}">${g.memberIds.length} direct reports</text>`)
+    const heading = g.label ? `${g.label} · ${g.memberIds.length}` : `${g.memberIds.length} direct reports`
+    parts.push(`<text x="${g.x + 12}" y="${g.y + 16}" font-size="11" font-weight="600" fill="${palette.muted}">${escapeXml(heading)}</text>`)
   }
 
   for (const link of buildLinks({

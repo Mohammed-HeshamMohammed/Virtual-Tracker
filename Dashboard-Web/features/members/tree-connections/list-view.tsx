@@ -84,9 +84,13 @@ export function MemberTreeListView(props: MemberTreeListViewProps) {
     model,
     onReassign: props.onReassign,
     notify: showToast,
-    onMoved: (memberId, newParentId) => {
-      setMoves((prev) => new Map(prev).set(memberId, newParentId))
-      setSelectedId(memberId)
+    onMoved: (memberIds, newParentId) => {
+      setMoves((prev) => {
+        const next = new Map(prev)
+        for (const id of memberIds) next.set(id, newParentId)
+        return next
+      })
+      setSelectedId(memberIds[0])
     },
   })
 
@@ -330,7 +334,8 @@ export function MemberTreeListView(props: MemberTreeListViewProps) {
         <ConfirmMove
           theme={theme}
           model={model}
-          memberId={reassign.pending.memberId}
+          memberIds={reassign.pending.memberIds}
+          skipped={reassign.pending.skipped}
           newParentId={reassign.pending.newParentId}
           busy={reassign.busy}
           error={reassign.error}

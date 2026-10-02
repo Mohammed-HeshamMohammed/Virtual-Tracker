@@ -22,7 +22,7 @@ import {
 import type { MemberTreeEdge, MemberTreeNode, MemberTreeScope } from "@/features/members/services/member-tree"
 import { TreeChartControls, type TreeChartDisplaySettings } from "@/shared/ui/tree-chart"
 import { buildTreeSvg } from "./export-svg"
-import { computeLayout, layoutOptionsFor, type CardStyle, type LayoutOptions, type Point } from "./layout"
+import { computeLayout, layoutOptionsFor, type CardStyle, type GroupFrame, type LayoutOptions, type Point } from "./layout"
 import { buildLinks } from "./link-set"
 import {
   allParents,
@@ -38,10 +38,10 @@ import {
 import { NodeCard, type DropState } from "./node-card"
 import { applyOffsets, frameKey, loadOffsets, offsetsKey, presentOffsetKeys, pruneOffsets, saveOffsets, type Offsets } from "./offsets"
 import { ConfirmMove, DetailsPanel, IconButton, Legend, Minimap, OrphanTray, SearchBox, Surface, ToastBar } from "./panels"
-import { roleKey, roleRank } from "./roles"
+import { roleKey, roleRank, roleTier, TIER_LABELS } from "./roles"
 import { canReassign } from "./rules"
 import { chartTheme } from "./theme"
-import { useReassignFlow } from "./use-reassign"
+import { useReassignFlow, type BulkResult } from "./use-reassign"
 import { useToast } from "./use-toast"
 
 type Transform = { x: number; y: number; scale: number }
@@ -82,13 +82,15 @@ export type MemberTreeConnectionsViewProps = {
   onAddHere?: (node: MemberTreeNode) => void
   /** Carries out a reassignment; throw an Error with a readable message to refuse. */
   onReassign?: (memberId: string, newParentId: string) => Promise<void>
+  /** Carries out several reassignments to one manager (a whole group dragged onto them). */
+  onReassignMany?: (memberIds: string[], newParentId: string) => Promise<BulkResult>
   /** Layout, orientation and link style are edited from the chart's own toolbar. */
   onSettingsChange?: (patch: Partial<TreeChartDisplaySettings>) => void
   /** Select and centre a member (the List view's "show in chart"). A new `nonce` repeats the request. */
   focusRequest?: { id: string; nonce: number } | null
 }
 
-type Ghost = { id: string; x: number; y: number; targetId: string | null; ok: boolean; reason: string }
+type Ghost = { id: string; count: number; x: number; y: number; targetId: string | null; ok: boolean; reason: string }
 
 export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps) {
   const { nodes, edges, validRootMemberIds, scope, viewerId, isDark, settings } = props
@@ -135,7 +137,13 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
   const nodeSizeRef = useRef({ w: nodeW, h: nodeH })
   nodeSizeRef.current = { w: nodeW, h: nodeH }
   const layoutInput = useMemo(
-    () => ({ roots: focusRootId && model.nodeById.has(focusRootId) ? [focusRootId] : model.roots, childrenOf: model.childrenOf }),
+    () => ({
+      roots: focusRootId && model.nodeById.has(focusRootId) ? [focusRootId] : model.roots,
+      childrenOf: model.childrenOf,
+      // A packed team reads as a ladder: administrators, then managers, then the people who do the work.
+      tierOf: (id: string) => roleTier(model.nodeById.get(id)?.role),
+      tierLabels: TIER_LABELS,
+    }),
     [model, focusRootId],
   )
   const base = useMemo(() => computeLayout(layoutInput, collapsed, layoutOptions), [layoutInput, collapsed, layoutOptions])
@@ -400,16 +408,21 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
   const reassign = useReassignFlow({
     model,
     onReassign: props.onReassign,
+    onReassignMany: props.onReassignMany,
     notify: showToast,
-    onMoved: (memberId, newParentId) => {
-      setMoves((prev) => new Map(prev).set(memberId, newParentId))
-      setOffsets((prev) => {
-        if (!prev.has(memberId)) return prev
+    onMoved: (memberIds, newParentId) => {
+      setMoves((prev) => {
         const next = new Map(prev)
-        next.delete(memberId)
+        for (const id of memberIds) next.set(id, newParentId)
         return next
       })
-      select(memberId, { center: true })
+      setOffsets((prev) => {
+        if (!memberIds.some((id) => prev.has(id))) return prev
+        const next = new Map(prev)
+        for (const id of memberIds) next.delete(id)
+        return next
+      })
+      select(memberIds.length === 1 ? memberIds[0] : newParentId, { center: true })
     },
   })
   const requestMove = reassign.request
@@ -435,10 +448,10 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
     return { x: (clientX - (rect?.left ?? 0) - t.x) / t.scale, y: (clientY - (rect?.top ?? 0) - t.y) / t.scale }
   }, [])
 
-  const targetAt = useCallback((point: Point, draggedId: string): string | null => {
+  const targetAt = useCallback((point: Point, dragged: ReadonlySet<string>): string | null => {
     let found: string | null = null
     for (const [id, p] of positionsRef.current) {
-      if (id === draggedId) continue
+      if (dragged.has(id)) continue
       if (Math.abs(point.x - p.x) <= nodeSizeRef.current.w / 2 && Math.abs(point.y - p.y) <= nodeSizeRef.current.h / 2) found = id
     }
     return found
@@ -446,9 +459,11 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
 
   /** Starts a drag of one card (or, from the tray, one member). `reassign` decides what dropping means. */
   const beginDrag = useCallback(
-    (event: { clientX: number; clientY: number; shiftKey: boolean }, id: string, reassign: boolean, onClick: () => void) => {
+    (event: { clientX: number; clientY: number; shiftKey: boolean }, id: string, reassign: boolean, onClick: () => void, group?: string[]) => {
       const startX = event.clientX
       const startY = event.clientY
+      // A group (a frame's header dragged in reassign mode) moves as many; a card moves alone.
+      const dragged = new Set(group ?? [id])
       const ids = reassign ? [id] : event.shiftKey ? [id, ...descendantsOf(modelRef.current, id).filter((d) => positionsRef.current.has(d))] : [id]
       const origin = new Map(ids.map((i) => [i, offsetsRef.current.get(i) ?? { x: 0, y: 0 }]))
       let moved = false
@@ -463,15 +478,20 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
         }
         if (reassign) {
           const point = toCanvas(e.clientX, e.clientY)
-          const target = targetAt(point, id)
-          const verdict = target ? canReassign(modelRef.current, id, target) : null
+          const target = targetAt(point, dragged)
+          const verdicts = target ? [...dragged].map((member) => canReassign(modelRef.current, member, target)) : []
+          // A group can move if at least one of them can; the rest stay and are listed on confirmation.
+          const movable = verdicts.some((v) => v.ok && !v.noop)
+          const blocked = verdicts.find((v) => !v.ok)
+          const allThere = verdicts.length > 0 && verdicts.every((v) => v.ok && v.noop)
           setGhost({
             id,
+            count: dragged.size,
             x: point.x,
             y: point.y,
             targetId: target,
-            ok: verdict ? verdict.ok && !verdict.noop : false,
-            reason: verdict ? (verdict.ok ? (verdict.noop ? "Already their manager" : "") : verdict.reason) : "",
+            ok: movable,
+            reason: !target || movable ? "" : allThere ? "Already their manager" : blocked && !blocked.ok ? blocked.reason : "",
           })
         } else {
           const k = transformRef.current.scale
@@ -493,8 +513,8 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
           return
         }
         if (reassign && e) {
-          const target = targetAt(toCanvas(e.clientX, e.clientY), id)
-          if (target) requestMoveRef.current(id, target)
+          const target = targetAt(toCanvas(e.clientX, e.clientY), dragged)
+          if (target) requestMoveRef.current(group ?? id, target)
         }
       }
       const onUp = (e: PointerEvent) => finish(e)
@@ -508,11 +528,16 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
 
   /** Drags a packed team's frame - and every card in it - as one. */
   const [dragFrameId, setDragFrameId] = useState<string | null>(null)
-  const beginFrameDrag = useCallback((event: React.PointerEvent<HTMLElement>, parentId: string) => {
+  const beginFrameDrag = useCallback((event: React.PointerEvent<HTMLElement>, frame: GroupFrame) => {
     if (event.button !== 0) return
-    if (modeRef.current === "reassign" && canReassignRef.current) return
     event.stopPropagation()
     viewportRef.current?.focus({ preventScroll: true })
+    // Reassigning: the frame's header carries the whole group onto a manager.
+    if (modeRef.current === "reassign" && canReassignRef.current) {
+      beginDrag(event, frame.memberIds[0], true, () => {}, frame.memberIds)
+      return
+    }
+    const parentId = frame.key
     const key = frameKey(parentId)
     const origin = offsetsRef.current.get(key) ?? { x: 0, y: 0 }
     const startX = event.clientX
@@ -538,7 +563,7 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
     window.addEventListener("pointermove", onMove)
     window.addEventListener("pointerup", finish)
     window.addEventListener("pointercancel", finish)
-  }, [])
+  }, [beginDrag])
 
   const onNodePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>, id: string) => {
@@ -771,7 +796,6 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
 
   const selectedNode = selectedId ? model.nodeById.get(selectedId) : null
   const reassignAllowed = props.canReassign && Boolean(props.onReassign)
-
   return (
     <div
       ref={viewportRef}
@@ -805,15 +829,15 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
         <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={1} height={1}>
           {groups.map((g) => (
             <rect
-              key={`frame-${g.parentId}`}
+              key={`frame-${g.key}`}
               x={g.x}
               y={g.y}
               width={g.width}
               height={g.height}
               rx={16}
               fill={theme.frame}
-              stroke={dragFrameId === g.parentId ? theme.accent : theme.border}
-              strokeDasharray={dragFrameId === g.parentId ? undefined : "5 5"}
+              stroke={dragFrameId === g.key ? theme.accent : theme.border}
+              strokeDasharray={dragFrameId === g.key ? undefined : "5 5"}
             />
           ))}
           {links.map((link) => {
@@ -835,14 +859,14 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
 
         {groups.map((g) => (
           <div
-            key={`frame-handle-${g.parentId}`}
-            onPointerDown={(event) => beginFrameDrag(event, g.parentId)}
-            title={mode === "reassign" ? undefined : "Drag to move this whole team"}
-            className="absolute z-[5] flex select-none items-center gap-1.5 px-3 text-[11px] font-semibold"
-            style={{ left: g.x, top: g.y, width: g.width, height: 28, color: theme.muted, cursor: mode === "reassign" ? "default" : dragFrameId === g.parentId ? "grabbing" : "grab", touchAction: "none" }}
+            key={`frame-handle-${g.key}`}
+            onPointerDown={(event) => beginFrameDrag(event, g)}
+            title={mode === "reassign" && reassignAllowed ? "Drag onto a manager to move all of them" : "Drag to move this whole group"}
+            className="absolute z-[5] flex select-none items-center gap-1.5 whitespace-nowrap px-3 text-[11px] font-semibold"
+            style={{ left: g.x, top: g.y, width: g.width, height: 28, color: theme.muted, cursor: dragFrameId === g.key ? "grabbing" : "grab", touchAction: "none" }}
           >
-            {mode === "reassign" ? null : <GripHorizontal className="h-3.5 w-3.5" />}
-            {g.memberIds.length} direct reports
+            <GripHorizontal className="h-3.5 w-3.5" />
+            {g.label ?? "Direct reports"} · {g.memberIds.length}
           </div>
         ))}
 
@@ -887,7 +911,7 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
               className="rounded-xl border px-3 py-2 text-xs font-semibold"
               style={{ background: theme.card, borderColor: ghost.targetId ? (ghost.ok ? theme.accent : theme.danger) : theme.borderStrong, color: theme.text, boxShadow: theme.shadow }}
             >
-              {model.nodeById.get(ghost.id)?.name}
+              {ghost.count > 1 ? `${ghost.count} members` : model.nodeById.get(ghost.id)?.name}
               {ghost.targetId ? (
                 <span className="ml-2 font-normal" style={{ color: ghost.ok ? theme.accent : theme.danger }}>
                   {ghost.ok ? `→ under ${model.nodeById.get(ghost.targetId)?.name}` : ghost.reason}
@@ -1004,7 +1028,7 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
             <li>
               <kbd>/</kbd> find · <kbd>F</kbd> fit · <kbd>+</kbd> <kbd>-</kbd> zoom · <kbd>Esc</kbd> deselect
             </li>
-            {reassignAllowed ? <li>Reassign mode: drag a member onto their new manager</li> : null}
+            {reassignAllowed ? <li>Reassign mode: drag a member - or a group&apos;s heading - onto their new manager</li> : null}
           </ul>
         </Surface>
       ) : null}
@@ -1054,7 +1078,7 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
 
       {mode === "reassign" ? (
         <div className="pointer-events-none absolute left-1/2 top-[58px] z-30 -translate-x-1/2 rounded-full px-3 py-1 text-[11px] font-semibold" style={{ background: theme.accentSoft, color: theme.accent }}>
-          Reassign: drag a member onto their new manager
+          Reassign: drag a member - or a group&apos;s heading - onto their new manager
         </div>
       ) : null}
 
@@ -1064,7 +1088,8 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
         <ConfirmMove
           theme={theme}
           model={model}
-          memberId={reassign.pending.memberId}
+          memberIds={reassign.pending.memberIds}
+          skipped={reassign.pending.skipped}
           newParentId={reassign.pending.newParentId}
           busy={reassign.busy}
           error={reassign.error}

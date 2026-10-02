@@ -26,7 +26,7 @@ import {
   resolveAvatarUrlsForMembers,
 } from "./service.js";
 import { planRelationshipRepairs, RelationshipIntegrityError } from "./relationship-integrity.js";
-import { moveMemberToParent } from "./move-service.js";
+import { MAX_BULK_MOVE, moveMemberToParent, moveMembersToParent } from "./move-service.js";
 import { MOVE_ERROR } from "./move-plan.js";
 import { initializeMemberRelationships, forceReinitializeRelationships } from "./migrate.js";
 import { maybeRepairOrphansOnTreeLoad, cleanupExternalEntityHierarchyEdges, maybeSeparateOwnersOnTreeLoad, maybeAnchorAdminsOnTreeLoad } from "../hierarchy/hierarchy-repair.js";
@@ -492,12 +492,37 @@ export async function routeMemberRelationships(req, res, url, origin) {
     let body;
     try {
       body = await readJsonBody(req);
-      rejectUnknownFields(body, ["member_id", "new_parent_id"]);
+      rejectUnknownFields(body, ["member_id", "member_ids", "new_parent_id"]);
     } catch (e) {
       sendJson(res, origin, 400, { success: false, error: e.message });
       return true;
     }
     const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    // Several at once: a whole group dragged onto a manager.
+    if (body.member_ids !== undefined) {
+      const ids = Array.isArray(body.member_ids) ? body.member_ids : [];
+      if (ids.length === 0 || ids.length > MAX_BULK_MOVE || !ids.every((id) => uuid.test(String(id))) || !uuid.test(String(body.new_parent_id ?? ""))) {
+        sendJson(res, origin, 400, { success: false, error: `member_ids must be 1 to ${MAX_BULK_MOVE} member ids and new_parent_id a member id.`, code: MOVE_ERROR.INVALID });
+        return true;
+      }
+      try {
+        const viewer = getAuthContext(req);
+        const summary = await moveMembersToParent(db, { memberIds: ids, newParentId: body.new_parent_id, actorMemberId: viewer?.memberId });
+        sendJson(res, origin, 200, {
+          success: true,
+          data: {
+            moved: summary.moved,
+            unchanged: summary.unchanged,
+            skipped: summary.skipped.map((item) => ({ member_id: item.memberId, code: item.code, message: item.message })),
+            parent_id: body.new_parent_id,
+          },
+        });
+      } catch (e) {
+        logSafeError("[member-relationships/move bulk]", e);
+        sendJson(res, origin, 500, { success: false, error: "Could not move these members." });
+      }
+      return true;
+    }
     if (!uuid.test(String(body.member_id ?? "")) || !uuid.test(String(body.new_parent_id ?? ""))) {
       sendJson(res, origin, 400, { success: false, error: "member_id and new_parent_id must be member ids.", code: MOVE_ERROR.INVALID });
       return true;

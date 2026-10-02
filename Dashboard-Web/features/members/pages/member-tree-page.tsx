@@ -7,7 +7,7 @@ import { useTheme } from "@/shared/providers/app"
 import { useAuth } from "@/shared/providers/app"
 import { usePermissions } from "@/features/auth/hooks/use-permissions"
 import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
-import { moveMemberInTree, type MemberTreeNode, type MemberTreeScope } from "@/features/members/services/member-tree"
+import { moveMemberInTree, moveMembersInTree, type MemberTreeNode, type MemberTreeScope } from "@/features/members/services/member-tree"
 import { AddMemberAtNodeModal } from "@/features/members/components/modals/add-member-at-node-modal"
 import { buildMemberTreeBranches, countTreeMembers, maxTreeDepth } from "@/features/members/utils/build-tree"
 import { MemberTreeConnectionsView } from "@/features/members/tree-connections/connections-view"
@@ -173,16 +173,29 @@ function MemberTreeScopeView({
     }
   }, [isRefreshing, refetch, setError])
 
+  // The server has changed the hierarchy: reload both views of it so neither shows the old one.
+  const reloadTrees = useCallback(
+    () =>
+      Promise.allSettled([
+        organizationTree.refetch({ forceRefetch: true, showLoading: false }),
+        teamTree.refetch({ forceRefetch: true, showLoading: false }),
+      ]),
+    [organizationTree, teamTree],
+  )
   const handleReassign = useCallback(
     async (movedId: string, newParentId: string) => {
       await moveMemberInTree(movedId, newParentId)
-      // The server has changed the hierarchy: reload both views of it so neither shows the old one.
-      await Promise.allSettled([
-        organizationTree.refetch({ forceRefetch: true, showLoading: false }),
-        teamTree.refetch({ forceRefetch: true, showLoading: false }),
-      ])
+      await reloadTrees()
     },
-    [organizationTree, teamTree],
+    [reloadTrees],
+  )
+  const handleReassignMany = useCallback(
+    async (movedIds: string[], newParentId: string) => {
+      const result = await moveMembersInTree(movedIds, newParentId)
+      await reloadTrees()
+      return result
+    },
+    [reloadTrees],
   )
 
   const tree = useMemo(
@@ -313,6 +326,7 @@ function MemberTreeScopeView({
                   canReassign={canReassign}
                   onAddHere={canManageMembers ? setAddUnder : undefined}
                   onReassign={canReassign ? handleReassign : undefined}
+                  onReassignMany={canReassign ? handleReassignMany : undefined}
                   focusRequest={focusRequest}
                 />
               ) : (

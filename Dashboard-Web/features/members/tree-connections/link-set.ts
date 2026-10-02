@@ -41,10 +41,10 @@ export function buildLinks(input: {
     if (!from) continue
     const frame = frameOfMember.get(id)
     if (frame && frame.parentId === parentId && !input.movedIds?.has(id)) {
-      if (framesDone.has(frame.parentId)) continue
-      framesDone.add(frame.parentId)
+      if (framesDone.has(frame.key)) continue
+      framesDone.add(frame.key)
       links.push({
-        key: `group:${frame.parentId}`,
+        key: `group:${frame.key}`,
         fromId: parentId,
         toId: null,
         d: linkPath(from, { x: frame.x, y: frame.y, width: frame.width, height: frame.height }, options),

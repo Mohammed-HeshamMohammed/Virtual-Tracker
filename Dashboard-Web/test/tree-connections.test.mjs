@@ -321,9 +321,9 @@ test("wiring: the page uses the new view, only Owner/Super Admin can reassign, a
 test("wiring: the view keeps its promises - Shift moves a team, drops are checked, nothing is saved until confirmed", () => {
   const view = read("features/members/tree-connections/connections-view.tsx")
   assert.match(view, /event\.shiftKey \? \[id, \.\.\.descendantsOf/)
-  assert.match(view, /canReassign\(modelRef\.current, id, target\)/)
+  assert.match(view, /canReassign\(modelRef\.current, member, target\)/)
   assert.match(view, /useReassignFlow\(/)
-  assert.match(read("features/members/tree-connections/use-reassign.ts"), /await onReassign\(pending\.memberId, pending\.newParentId\)/)
+  assert.match(read("features/members/tree-connections/use-reassign.ts"), /await onReassign\(memberIds\[0\], newParentId\)/)
   assert.match(view, /overflow-clip/)
 })
 
@@ -439,9 +439,90 @@ test("frame: offsets for managers who left are dropped, frames of present manage
   assert.deepEqual([...stored.keys()], [frameKey("boss")])
 })
 
-test("wiring: the frame has a drag handle that only works in Arrange mode", () => {
+test("wiring: the frame has a drag handle; in Reassign mode it carries the whole group onto a manager", () => {
   const view = read("features/members/tree-connections/connections-view.tsx")
-  assert.match(view, /onPointerDown=\{\(event\) => beginFrameDrag\(event, g\.parentId\)\}/)
-  assert.match(view, /if \(modeRef\.current === "reassign" && canReassignRef\.current\) return/)
-  assert.match(view, /Drag to move this whole team/)
+  assert.match(view, /onPointerDown=\{\(event\) => beginFrameDrag\(event, g\)\}/)
+  assert.match(view, /if \(modeRef\.current === "reassign" && canReassignRef\.current\) \{/)
+  assert.match(view, /Drag to move this whole group/)
+})
+
+// ---- tiers inside a team, and moving a group ------------------------------------------------------
+
+import { roleTier, TIER_LABELS } from "../features/members/tree-connections/roles.ts"
+
+function tieredTeam() {
+  const nodes = [
+    node("boss", "Owner"),
+    node("sa1", "Super Admin"),
+    node("sa2", "Super Admin"),
+    node("sm", "Super Manager"),
+    node("m1", "Manager"),
+    node("t1", "Team Lead"),
+    node("e1", "Employee"),
+    node("e2", "Employee"),
+    node("i1", "Intern"),
+    node("c1", "Client"),
+  ]
+  const edges = nodes.slice(1).map((n) => edge("boss", n.id))
+  return buildTreeModel({ nodes, edges })
+}
+const tierInput = (m) => ({ roots: m.roots, childrenOf: m.childrenOf, tierOf: (id) => roleTier(m.nodeById.get(id)?.role), tierLabels: TIER_LABELS })
+
+test("tiers: administrators, managers, team members and others each get their own frame, in that order", () => {
+  const { groups, positions } = computeLayout(tierInput(tieredTeam()), new Set(), O)
+  assert.deepEqual(groups.map((g) => g.label), ["Administrators", "Managers", "Team members", "Others"])
+  assert.deepEqual(groups.map((g) => g.memberIds.length), [2, 2, 4, 1])
+  assert.equal(new Set(groups.map((g) => g.key)).size, 4, "every frame has its own key")
+  const xs = groups.map((g) => g.x)
+  assert.deepEqual([...xs].sort((a, b) => a - b), xs, "left to right: administrators first")
+  for (const g of groups) for (const id of g.memberIds) assert.ok(positions.has(id))
+})
+
+test("tiers: a manager with a team of their own sits among the managers, before the team members", () => {
+  const nodes = [node("boss", "Owner"), node("sm", "Super Manager"), node("e1", "Employee"), node("e2", "Employee"), node("a1", "Admin"), node("w1", "Employee"), node("w2", "Employee"), node("w3", "Employee")]
+  const edges = [edge("boss", "sm"), edge("boss", "e1"), edge("boss", "e2"), edge("boss", "a1"), edge("boss", "w1"), edge("boss", "w2"), edge("boss", "w3"), edge("sm", "x")]
+  const m = buildTreeModel({ nodes: [...nodes, node("x", "Employee")], edges })
+  const { positions, groups } = computeLayout(tierInput(m), new Set(), O)
+  assert.ok(positions.get("a1").x < positions.get("sm").x, "administrator left of the manager")
+  assert.ok(positions.get("sm").x < positions.get("e1").x, "manager left of the team members")
+  assert.equal(groups.some((g) => g.label === "Team members" && g.memberIds.includes("e1")), true)
+  assert.equal(positions.get("x").y > positions.get("sm").y, true, "the manager's own employee is below them")
+})
+
+test("tiers: without a tier function the old single frame is unchanged, and a small team stays a row", () => {
+  const m = tieredTeam()
+  const plain = computeLayout({ roots: m.roots, childrenOf: m.childrenOf }, new Set(), O)
+  assert.equal(plain.groups.length, 1)
+  assert.equal(plain.groups[0].key, "boss")
+  const small = buildTreeModel({ nodes: [node("boss", "Owner"), node("a", "Admin"), node("b", "Manager")], edges: [edge("boss", "a"), edge("boss", "b")] })
+  assert.equal(computeLayout(tierInput(small), new Set(), O).groups.length, 0)
+})
+
+test("tiers: each frame moves on its own, with its own members, and links join each to the manager once", () => {
+  const m = tieredTeam()
+  const layout = computeLayout(tierInput(m), new Set(), O)
+  const admins = layout.groups.find((g) => g.label === "Administrators")
+  const moved = applyOffsets(layout.positions, layout.groups, new Map([[frameKey(admins.key), { x: 0, y: 300 }]]))
+  const base = applyOffsets(layout.positions, layout.groups, new Map())
+  for (const id of admins.memberIds) assert.equal(moved.positions.get(id).y, base.positions.get(id).y + 300)
+  assert.deepEqual(moved.positions.get("t1"), base.positions.get("t1"), "the other frames stay")
+  const links = buildLinks({ model: m, positions: moved.positions, groups: moved.groups, movedIds: moved.movedIds, nodeWidth: O.nodeWidth, nodeHeight: O.nodeHeight, orientation: "vertical", type: "curve", stepPercent: 0.5 })
+  assert.equal(links.filter((l) => l.fromId === "boss").length, 4, "one line per frame")
+  assert.equal(new Set(links.map((l) => l.key)).size, links.length)
+  assert.ok(presentOffsetKeys(["boss"]).has(frameKey("boss|0")))
+})
+
+test("tiers: roles fall on the ladder administrators > managers > team > others", () => {
+  assert.deepEqual(["Super Admin", "Admin", "Super Manager", "Manager", "Team Lead", "Employee", "Intern", "Client", "Viewer"].map(roleTier), [0, 0, 1, 1, 2, 2, 2, 3, 3])
+})
+
+test("group move: the flow takes many members, skips the ones the rules refuse, and the page calls the bulk endpoint", () => {
+  const flow = read("features/members/tree-connections/use-reassign.ts")
+  assert.match(flow, /request = useCallback\(\s*\(members: string \| string\[\]/)
+  assert.match(flow, /await onReassignMany\(memberIds, newParentId\)/)
+  assert.match(read("features/members/services/member-tree.ts"), /member_ids: memberIds/)
+  assert.match(read("features/members/pages/member-tree-page.tsx"), /onReassignMany=\{canReassign \? handleReassignMany : undefined\}/)
+  const view = read("features/members/tree-connections/connections-view.tsx")
+  assert.match(view, /beginDrag\(event, frame\.memberIds\[0\], true, \(\) => \{\}, frame\.memberIds\)/)
+  assert.match(view, /tierOf: \(id: string\) => roleTier/)
 })

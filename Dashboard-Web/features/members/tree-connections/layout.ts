@@ -56,14 +56,25 @@ export function layoutOptionsFor(style: CardStyle, base: Pick<LayoutOptions, "la
 export type LayoutInput = {
   roots: string[]
   childrenOf: Map<string, string[]>
+  /**
+   * 0 administrators, 1 managers, 2 team members, 3 others. When given, a team with enough people
+   * who manage nobody is laid out as one frame per tier - administrators alone, then managers, then
+   * the team - instead of one mixed grid, and teams are ordered by tier.
+   */
+  tierOf?: (id: string) => number
+  tierLabels?: Record<number, string>
 }
 
 export type Point = { x: number; y: number }
 
 /** A frame drawn around a packed team, with the count in its header. */
 export type GroupFrame = {
+  /** Identifies the frame: the manager plus, when a team is split by role, the tier. */
+  key: string
   /** The manager whose team this is. */
   parentId: string
+  /** Heading shown on the frame, e.g. "Administrators". Absent for a plain "direct reports" frame. */
+  label?: string
   memberIds: string[]
   x: number
   y: number
@@ -81,10 +92,13 @@ export type LayoutResult = {
 
 const MARGIN = 80
 const GRID_PAD = 10
+const LABEL_MIN_WIDTH = 130
+/** Air between two neighbouring frames (or a frame and a card beside it). */
+const FRAME_GAP = 16
 const GRID_HEADER = 24
 
 type Placed = { id: string; b: number; d: number }
-type Frame = { parentId: string; memberIds: string[]; b: number; d: number; w: number; h: number }
+type Frame = { key: string; parentId: string; label?: string; memberIds: string[]; b: number; d: number; w: number; h: number }
 type Block = { width: number; height: number; placed: Placed[]; frames: Frame[]; rootB: number }
 
 function visibleChildren(input: LayoutInput, collapsed: ReadonlySet<string>, id: string): string[] {
@@ -117,11 +131,13 @@ function layoutCartesian(input: LayoutInput, collapsed: ReadonlySet<string>, o: 
     rootB: slotB / 2,
   })
 
-  const gridBlock = (parentId: string, ids: string[]): Block => {
-    const columns = Math.min(o.gridMaxColumns, Math.max(2, Math.ceil(Math.sqrt(ids.length * 1.5))))
+  const gridBlock = (parentId: string, ids: string[], frameKey: string, label?: string): Block => {
+    const columns = Math.max(1, Math.min(ids.length, o.gridMaxColumns, Math.max(2, Math.ceil(Math.sqrt(ids.length * 1.5)))))
     const rows = Math.ceil(ids.length / columns)
     const innerWidth = columns * colPitch - o.gridGap
-    const width = Math.max(slotB, innerWidth + GRID_PAD * 2)
+    // A heading ("Administrators · 2") must fit on one line even over a single narrow avatar.
+    const frameInner = Math.max(innerWidth, label ? LABEL_MIN_WIDTH : 0)
+    const width = Math.max(slotB, frameInner + GRID_PAD * 2 + FRAME_GAP)
     const left = (width - innerWidth) / 2
     const placed = ids.map((id, index) => ({
       id,
@@ -133,7 +149,7 @@ function layoutCartesian(input: LayoutInput, collapsed: ReadonlySet<string>, o: 
       width,
       height: frameHeight + o.levelGap,
       placed,
-      frames: [{ parentId, memberIds: ids, b: left - GRID_PAD, d: 0, w: innerWidth + GRID_PAD * 2, h: frameHeight }],
+      frames: [{ key: frameKey, parentId, label, memberIds: ids, b: (width - frameInner) / 2 - GRID_PAD, d: 0, w: frameInner + GRID_PAD * 2, h: frameHeight }],
       rootB: width / 2,
     }
   }
@@ -144,18 +160,34 @@ function layoutCartesian(input: LayoutInput, collapsed: ReadonlySet<string>, o: 
 
     const leaves = kids.filter((kid) => isVisibleLeaf(input, collapsed, kid))
     const useGrid = leaves.length >= o.gridMin
-    const items: Block[] = []
-    if (useGrid) items.push(gridBlock(id, leaves))
+    const tierOf = input.tierOf
+    const labels = input.tierLabels ?? {}
+    // [tier, block] so the team can be ordered administrators -> managers -> team members -> others.
+    const items: { tier: number; block: Block }[] = []
+    if (useGrid) {
+      if (tierOf) {
+        const byTier = new Map<number, string[]>()
+        for (const leaf of leaves) {
+          const tier = tierOf(leaf)
+          byTier.set(tier, [...(byTier.get(tier) ?? []), leaf])
+        }
+        for (const [tier, ids] of byTier) items.push({ tier, block: gridBlock(id, ids, `${id}|${tier}`, labels[tier]) })
+      } else {
+        items.push({ tier: 0, block: gridBlock(id, leaves, id) })
+      }
+    }
     for (const kid of kids) {
       if (useGrid && isVisibleLeaf(input, collapsed, kid)) continue
-      items.push(subtree(kid))
+      items.push({ tier: tierOf ? tierOf(kid) : 0, block: subtree(kid) })
     }
+    if (tierOf) items.sort((a, b) => a.tier - b.tier)
+    const blocks = items.map((item) => item.block)
 
     let cursor = 0
     let childHeight = 0
     const placed: Placed[] = []
     const frames: Frame[] = []
-    for (const item of items) {
+    for (const item of blocks) {
       for (const p of item.placed) placed.push({ id: p.id, b: p.b + cursor, d: p.d + slotD })
       for (const f of item.frames) frames.push({ ...f, b: f.b + cursor, d: f.d + slotD })
       cursor += item.width
@@ -169,11 +201,11 @@ function layoutCartesian(input: LayoutInput, collapsed: ReadonlySet<string>, o: 
     }
     // Over the middle of the first and last member of the team, so a lopsided team does not drag
     // its manager off to one side.
-    const first = items[0]
-    const last = items[items.length - 1]
+    const first = blocks[0]
+    const last = blocks[blocks.length - 1]
     const firstCentre = shift + first.rootB
     const lastCentre = shift + (cursor - last.width) + last.rootB
-    const rootB = items.length === 1 ? shift + first.rootB : (firstCentre + lastCentre) / 2
+    const rootB = blocks.length === 1 ? shift + first.rootB : (firstCentre + lastCentre) / 2
     placed.unshift({ id, b: rootB, d: nodeD / 2 })
     return { width, height: slotD + childHeight, placed, frames, rootB }
   }
@@ -188,7 +220,9 @@ function layoutCartesian(input: LayoutInput, collapsed: ReadonlySet<string>, o: 
     for (const f of block.frames) {
       const topLeft = toPoint(f.b + cursor, f.d)
       groups.push({
+        key: f.key,
         parentId: f.parentId,
+        label: f.label,
         memberIds: f.memberIds,
         x: topLeft.x,
         y: topLeft.y,

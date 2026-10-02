@@ -142,7 +142,7 @@ mock.module("../src/modules/member-relationships/service.js", {
   },
 });
 
-const { moveMemberToParent } = await import("../src/modules/member-relationships/move-service.js");
+const { moveMemberToParent, moveMembersToParent } = await import("../src/modules/member-relationships/move-service.js");
 
 function reset() {
   calls.length = 0;
@@ -175,4 +175,28 @@ test("service: if adding the new edge fails, the previous manager is put back", 
   failRecordFor = "mgrB";
   await assert.rejects(moveMemberToParent(null, { memberId: "empA", newParentId: "mgrB", actorMemberId: "owner" }), /insert failed/);
   assert.deepEqual(calls, [["remove", "empA"], ["record", "mgrB", "empA"], ["record", "mgrA", "empA"]]);
+});
+
+test("service: moving a group skips the ones the rules refuse and moves the rest", async () => {
+  reset();
+  const out = await moveMembersToParent(null, { memberIds: ["empA", "empB", "owner", "client", "empA"], newParentId: "mgrB", actorMemberId: "owner" });
+  assert.equal(out.moved, 1, "empA moved (the duplicate is counted once)");
+  assert.equal(out.unchanged, 1, "empB already reports to mgrB");
+  assert.deepEqual(out.skipped.map((s) => s.memberId).sort(), ["client", "owner"]);
+  assert.equal(out.skipped.find((s) => s.memberId === "owner").code, "owner_cannot_move");
+  assert.deepEqual(calls.filter((c) => c[0] === "record"), [["record", "mgrB", "empA"]]);
+});
+
+test("service: members already under that manager are counted as unchanged, not moved", async () => {
+  reset();
+  const out = await moveMembersToParent(null, { memberIds: ["empA"], newParentId: "mgrA", actorMemberId: "owner" });
+  assert.deepEqual([out.moved, out.unchanged, out.skipped.length], [0, 1, 0]);
+  assert.deepEqual(calls, []);
+});
+
+test("the route accepts a list of members and caps its size", async () => {
+  const { readFileSync } = await import("node:fs");
+  const route = readFileSync(new URL("../src/modules/member-relationships/routes.js", import.meta.url), "utf8");
+  assert.match(route, /rejectUnknownFields\(body, \["member_id", "member_ids", "new_parent_id"\]\)/);
+  assert.match(route, /ids\.length > MAX_BULK_MOVE/);
 });
