@@ -19,6 +19,10 @@ ARG NEXT_PUBLIC_AUTH_API_URL
 ENV NEXT_PUBLIC_AUTH_API_URL=${NEXT_PUBLIC_AUTH_API_URL}
 ARG NEXT_PUBLIC_DASHBOARD_API_URL
 ENV NEXT_PUBLIC_DASHBOARD_API_URL=${NEXT_PUBLIC_DASHBOARD_API_URL}
+# Same-origin mode: the browser calls /api on this host and this server forwards it to the
+# backends above (for networks whose web filter blocks the separate API hostnames).
+ARG NEXT_PUBLIC_API_SAME_ORIGIN
+ENV NEXT_PUBLIC_API_SAME_ORIGIN=${NEXT_PUBLIC_API_SAME_ORIGIN}
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
