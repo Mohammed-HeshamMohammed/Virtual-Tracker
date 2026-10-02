@@ -619,6 +619,30 @@ export const TIME_ZONES: string[] = (() => {
     .map((entry) => `${gmtOffsetLabel(entry.offset)} ${entry.id}`)
 })()
 
+export type TimeZoneSelectOption = { value: string; label: string; keywords: string }
+
+const TIME_ZONE_SELECT_OPTIONS: TimeZoneSelectOption[] = TIME_ZONES.map((label) => {
+  const id = ianaIdFromTimeZoneLabel(label)
+  return { value: id, label, keywords: id }
+})
+
+/**
+ * Options for a searchable time zone picker: any `leading` rows (e.g. "Each
+ * member's own time zone"), then the saved value if it is not in the list (an
+ * older or unusual zone must still display), then every zone.
+ */
+export function timeZoneSelectOptions(
+  leading: { value: string; label: string }[] = [],
+  current = "",
+): { value: string; label: string; keywords?: string }[] {
+  const known = !current || TIME_ZONE_SELECT_OPTIONS.some((o) => o.value === current)
+  return [
+    ...leading,
+    ...(known ? [] : [{ value: current, label: current, keywords: current }]),
+    ...TIME_ZONE_SELECT_OPTIONS,
+  ]
+}
+
 export function ianaIdFromTimeZoneLabel(label: string): string {
   const idx = label.indexOf(") ")
   return idx === -1 ? label : label.slice(idx + 2)

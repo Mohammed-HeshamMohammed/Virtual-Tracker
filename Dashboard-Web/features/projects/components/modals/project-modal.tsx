@@ -24,7 +24,8 @@ import {
   derivedLimitType,
 } from "@/features/projects/components/modals/member-limits-editor"
 import { projectTypeDef } from "@/features/projects/config/project-types"
-import { TIME_ZONES, ianaIdFromTimeZoneLabel } from "@/features/settings/components/shared/constants"
+import { timeZoneSelectOptions } from "@/features/settings/components/shared/constants"
+import { FormSearchSelect } from "@/shared/ui/forms/form-search-select"
 import { isManagementRole } from "@/features/auth"
 import { useAuth } from "@/shared/providers/auth/auth-context"
 import { ManagerClockInList } from "@/features/projects/components/modals/manager-clock-in-list"
@@ -1278,26 +1279,17 @@ export function ProjectModal({
                       : "Set by a manager. This project's days are counted in this calendar."
                   }
                 >
-                  <select
+                  <FormSearchSelect
                     value={addForm.timezone}
                     disabled={readOnly || !canSetTimezone}
-                    onChange={(e) => setAddForm((p) => ({ ...p, timezone: e.target.value }))}
-                    className={formTheme.control}
-                  >
-                    <option value="">Each member's own time zone</option>
-                    {addForm.timezone &&
-                      !TIME_ZONES.some((label) => ianaIdFromTimeZoneLabel(label) === addForm.timezone) && (
-                        <option value={addForm.timezone}>{addForm.timezone}</option>
-                      )}
-                    {TIME_ZONES.map((label) => {
-                      const id = ianaIdFromTimeZoneLabel(label)
-                      return (
-                        <option key={id} value={id}>
-                          {label}
-                        </option>
-                      )
-                    })}
-                  </select>
+                    onChange={(zone) => setAddForm((p) => ({ ...p, timezone: zone }))}
+                    options={timeZoneSelectOptions(
+                      [{ value: "", label: "Each member's own time zone" }],
+                      addForm.timezone,
+                    )}
+                    placeholder="Each member's own time zone"
+                    searchPlaceholder="Search time zones"
+                  />
                 </FormField>
                 <FormField label="Budget start date" hint="When the budget's own tracking period begins">
                   <DatePickerField
@@ -1343,10 +1335,13 @@ export function ProjectModal({
                               <span className={cn("min-w-0 flex-1 text-xs font-medium", formTheme.mutedText)}>
                                 Set everyone to
                               </span>
-                              <select
+                              <FormSearchSelect
+                                className="w-56 shrink-0"
                                 value=""
-                                onChange={(e) => {
-                                  const zone = e.target.value
+                                placeholder="Choose a time zone"
+                                searchPlaceholder="Search time zones"
+                                options={timeZoneSelectOptions([{ value: INHERIT_ALL, label: "Inherit (clear all)" }])}
+                                onChange={(zone) => {
                                   if (!zone) return
                                   setAddForm((p) => ({
                                     ...p,
@@ -1358,19 +1353,7 @@ export function ProjectModal({
                                     },
                                   }))
                                 }}
-                                className={cn(formTheme.control, "w-56 shrink-0")}
-                              >
-                                <option value="">Choose a time zone…</option>
-                                <option value={INHERIT_ALL}>Inherit (clear all)</option>
-                                {TIME_ZONES.map((label) => {
-                                  const id = ianaIdFromTimeZoneLabel(label)
-                                  return (
-                                    <option key={id} value={id}>
-                                      {label}
-                                    </option>
-                                  )
-                                })}
-                              </select>
+                              />
                             </div>
                           ) : null}
                           {projectMemberIds.map((memberId) => {
@@ -1380,30 +1363,20 @@ export function ProjectModal({
                                 <span className={cn("min-w-0 flex-1 truncate text-sm", formTheme.bodyText)}>
                                   {memberLabelById[memberId] ?? memberId}
                                 </span>
-                                <select
+                                <FormSearchSelect
+                                  className="w-56 shrink-0"
                                   value={value}
                                   disabled={readOnly}
-                                  onChange={(e) =>
+                                  placeholder="Inherit"
+                                  searchPlaceholder="Search time zones"
+                                  options={timeZoneSelectOptions([{ value: "", label: "Inherit" }], value)}
+                                  onChange={(zone) =>
                                     setAddForm((p) => ({
                                       ...p,
-                                      memberTimeZones: { ...p.memberTimeZones, [memberId]: e.target.value },
+                                      memberTimeZones: { ...p.memberTimeZones, [memberId]: zone },
                                     }))
                                   }
-                                  className={cn(formTheme.control, "w-56 shrink-0")}
-                                >
-                                  <option value="">Inherit</option>
-                                  {value && !TIME_ZONES.some((label) => ianaIdFromTimeZoneLabel(label) === value) && (
-                                    <option value={value}>{value}</option>
-                                  )}
-                                  {TIME_ZONES.map((label) => {
-                                    const id = ianaIdFromTimeZoneLabel(label)
-                                    return (
-                                      <option key={id} value={id}>
-                                        {label}
-                                      </option>
-                                    )
-                                  })}
-                                </select>
+                                />
                               </div>
                             )
                           })}
