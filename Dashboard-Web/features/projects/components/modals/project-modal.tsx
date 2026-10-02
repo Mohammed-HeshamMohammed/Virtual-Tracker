@@ -1360,7 +1360,7 @@ export function ProjectModal({
                                 }}
                                 className={cn(formTheme.control, "w-56 shrink-0")}
                               >
-                                <option value="">Choose a time zone…</option>
+                                <option value="">Choose a time zoneâ€¦</option>
                                 <option value={INHERIT_ALL}>Inherit (clear all)</option>
                                 {TIME_ZONES.map((label) => {
                                   const id = ianaIdFromTimeZoneLabel(label)
