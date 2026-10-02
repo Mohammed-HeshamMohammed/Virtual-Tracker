@@ -9,6 +9,7 @@ import {
   FileImage,
   HelpCircle,
   CircleUserRound,
+  GripHorizontal,
   Hand,
   LocateFixed,
   Maximize2,
@@ -35,7 +36,7 @@ import {
   type TreeModel,
 } from "./model"
 import { NodeCard, type DropState } from "./node-card"
-import { loadOffsets, offsetsKey, pruneOffsets, saveOffsets, type Offsets } from "./offsets"
+import { applyOffsets, frameKey, loadOffsets, offsetsKey, presentOffsetKeys, pruneOffsets, saveOffsets, type Offsets } from "./offsets"
 import { ConfirmMove, DetailsPanel, IconButton, Legend, Minimap, OrphanTray, SearchBox, Surface, ToastBar } from "./panels"
 import { roleKey, roleRank } from "./roles"
 import { canReassign } from "./rules"
@@ -151,18 +152,13 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
   }, [storageKey])
   useEffect(() => {
     if (offsetsLoadedFor.current !== storageKey) return
-    saveOffsets(storageKey, pruneOffsets(offsets, new Set(model.nodeById.keys())))
+    saveOffsets(storageKey, pruneOffsets(offsets, presentOffsetKeys(model.nodeById.keys())))
   }, [offsets, storageKey, model])
 
-  const positions = useMemo(() => {
-    const out = new Map<string, Point>()
-    for (const [id, p] of base.positions) {
-      const o = offsets.get(id)
-      out.set(id, o ? { x: p.x + o.x, y: p.y + o.y } : p)
-    }
-    return out
-  }, [base.positions, offsets])
-  const movedIds = useMemo(() => new Set(offsets.keys()), [offsets])
+  const arranged = useMemo(() => applyOffsets(base.positions, base.groups, offsets), [base.positions, base.groups, offsets])
+  const positions = arranged.positions
+  const groups = arranged.groups
+  const movedIds = arranged.movedIds
 
   const contentBounds = useMemo(() => {
     let minX = 0
@@ -510,6 +506,40 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
     [toCanvas, targetAt],
   )
 
+  /** Drags a packed team's frame - and every card in it - as one. */
+  const [dragFrameId, setDragFrameId] = useState<string | null>(null)
+  const beginFrameDrag = useCallback((event: React.PointerEvent<HTMLElement>, parentId: string) => {
+    if (event.button !== 0) return
+    if (modeRef.current === "reassign" && canReassignRef.current) return
+    event.stopPropagation()
+    viewportRef.current?.focus({ preventScroll: true })
+    const key = frameKey(parentId)
+    const origin = offsetsRef.current.get(key) ?? { x: 0, y: 0 }
+    const startX = event.clientX
+    const startY = event.clientY
+    let moved = false
+    const onMove = (e: PointerEvent) => {
+      const dx = e.clientX - startX
+      const dy = e.clientY - startY
+      if (!moved) {
+        if (Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+        moved = true
+        setDragFrameId(parentId)
+      }
+      const k = transformRef.current.scale
+      setOffsets((prev) => new Map(prev).set(key, { x: origin.x + dx / k, y: origin.y + dy / k }))
+    }
+    const finish = () => {
+      window.removeEventListener("pointermove", onMove)
+      window.removeEventListener("pointerup", finish)
+      window.removeEventListener("pointercancel", finish)
+      setDragFrameId(null)
+    }
+    window.addEventListener("pointermove", onMove)
+    window.addEventListener("pointerup", finish)
+    window.addEventListener("pointercancel", finish)
+  }, [])
+
   const onNodePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>, id: string) => {
       if (event.button !== 0) return
@@ -663,7 +693,7 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
     buildTreeSvg({
       model,
       positions,
-      groups: base.groups,
+      groups,
       movedIds,
       nodeWidth: nodeW,
       nodeHeight: nodeH,
@@ -708,7 +738,7 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
       buildLinks({
         model,
         positions,
-        groups: base.groups,
+        groups,
         movedIds,
         nodeWidth: nodeW,
         nodeHeight: nodeH,
@@ -716,7 +746,7 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
         type: settings.linkType,
         stepPercent: settings.stepPercent,
       }),
-    [model, positions, base.groups, movedIds, nodeW, nodeH, settings.orientation, settings.linkType, settings.stepPercent],
+    [model, positions, groups, movedIds, nodeW, nodeH, settings.orientation, settings.linkType, settings.stepPercent],
   )
 
   const compact = transform.scale < COMPACT_BELOW
@@ -773,13 +803,18 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
         }}
       >
         <svg className="pointer-events-none absolute left-0 top-0 overflow-visible" width={1} height={1}>
-          {base.groups.map((g) => (
-            <g key={`frame-${g.parentId}`}>
-              <rect x={g.x} y={g.y} width={g.width} height={g.height} rx={16} fill={theme.frame} stroke={theme.border} strokeDasharray="5 5" />
-              <text x={g.x + 14} y={g.y + 17} fontSize={11} fontWeight={600} fill={theme.muted}>
-                {g.memberIds.length} direct reports
-              </text>
-            </g>
+          {groups.map((g) => (
+            <rect
+              key={`frame-${g.parentId}`}
+              x={g.x}
+              y={g.y}
+              width={g.width}
+              height={g.height}
+              rx={16}
+              fill={theme.frame}
+              stroke={dragFrameId === g.parentId ? theme.accent : theme.border}
+              strokeDasharray={dragFrameId === g.parentId ? undefined : "5 5"}
+            />
           ))}
           {links.map((link) => {
             const active = traced ? Boolean(traced.has(link.fromId) && (link.toId ? traced.has(link.toId) : true)) : false
@@ -797,6 +832,19 @@ export function MemberTreeConnectionsView(props: MemberTreeConnectionsViewProps)
             )
           })}
         </svg>
+
+        {groups.map((g) => (
+          <div
+            key={`frame-handle-${g.parentId}`}
+            onPointerDown={(event) => beginFrameDrag(event, g.parentId)}
+            title={mode === "reassign" ? undefined : "Drag to move this whole team"}
+            className="absolute z-[5] flex select-none items-center gap-1.5 px-3 text-[11px] font-semibold"
+            style={{ left: g.x, top: g.y, width: g.width, height: 28, color: theme.muted, cursor: mode === "reassign" ? "default" : dragFrameId === g.parentId ? "grabbing" : "grab", touchAction: "none" }}
+          >
+            {mode === "reassign" ? null : <GripHorizontal className="h-3.5 w-3.5" />}
+            {g.memberIds.length} direct reports
+          </div>
+        ))}
 
         {[...positions].map(([id, p]) => {
           const node = model.nodeById.get(id)
