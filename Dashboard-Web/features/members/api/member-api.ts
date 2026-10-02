@@ -45,6 +45,17 @@ function asString(value: unknown, fallback = ""): string {
   return String(value ?? fallback)
 }
 
+/** `projects` / `teams` arrive as arrays of {id, name} from the database view, or as plain strings. */
+function relationIds(list: unknown[]): string[] {
+  const ids = list.map((item) => (typeof item === "string" ? item : (item as { id?: unknown } | null)?.id))
+  return [...new Set(ids.filter((id): id is string => typeof id === "string" && id.length > 0))]
+}
+
+function relationNames(list: unknown[]): string[] {
+  const names = list.map((item) => (typeof item === "string" ? item : (item as { name?: unknown } | null)?.name))
+  return [...new Set(names.filter((name): name is string => typeof name === "string" && name.length > 0))]
+}
+
 function asNumber(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback
 }
@@ -139,7 +150,7 @@ function normalizeMember(input: Partial<Member> & Record<string, unknown>): Memb
     status: (asString(input.status, "active") as MemberStatus),
     role: extractRoleFromRecord(input) as MemberRole,
     role_name: extractRoleFromRecord(input),
-    projects: asNumber(input.projects, 0),
+    projects: Array.isArray(input.projects) ? relationIds(input.projects).length : asNumber(input.projects, 0),
     payment: formatPaymentFromRecord(input),
     limits: formatLimitsFromRecord(input),
     trackingStatus: (asString(input.trackingStatus || input.tracking_status, "offline") as Member["trackingStatus"]),
@@ -150,9 +161,13 @@ function normalizeMember(input: Partial<Member> & Record<string, unknown>): Memb
     teamNames: asStringArray(input.team_names ?? input.teamNames).length
       ? asStringArray(input.team_names ?? input.teamNames)
       : Array.isArray(input.teams)
-        ? asStringArray(input.teams)
+        ? relationNames(input.teams)
         : [],
-    projectIds: asStringArray(input.project_ids ?? input.projectIds),
+    projectIds: asStringArray(input.project_ids ?? input.projectIds).length
+      ? asStringArray(input.project_ids ?? input.projectIds)
+      : Array.isArray(input.projects)
+        ? relationIds(input.projects)
+        : [],
     weeklyLimit: asString(input.weeklyLimit || input.weekly_limit) || "",
     privileges:
       input.privileges && typeof input.privileges === "object"
