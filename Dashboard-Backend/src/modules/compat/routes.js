@@ -33,6 +33,7 @@ import {
 import { listMeta } from "../../http/list-truncation.js";
 import { query as pgQuery } from "../../lib/postgres/client.js";
 import { resolveEffectivePresence } from "../members/services/presence-status.js";
+import { dropInvitesOfJoinedMembers } from "../members/services/invite-completion.js";
 import { normalizeDoc } from "../schema/services/schema-crud.service.js";
 import { assertEmailCanUseMemberInviteOrPreprovision } from "../members/services/eligibility.js";
 import {
@@ -76,6 +77,7 @@ import {
   fetchMemberRelationSnaps,
   fetchPayRatesForMembers,
   fetchWeeklyLimitsForMembers,
+  flattenViewRelations,
 } from "../members/services/member-list-enrichment.js";
 
 function pgRowToDocShim(row) {
@@ -557,7 +559,7 @@ export async function routeCompatibility(req, res, url, db, origin) {
           visibleIds,
           cursorId,
         });
-        let members = enrichedRows.map((row) => normalizeDoc(row));
+        let members = enrichedRows.map((row) => flattenViewRelations(normalizeDoc(row)));
         if (needsPresence) {
           const { enrichMembersWithPresenceBatch } = await import("../members/services/member-presence.service.js");
           members = await enrichMembersWithPresenceBatch(db, members);
@@ -1491,6 +1493,9 @@ export async function routeCompatibility(req, res, url, db, origin) {
           });
         }
       }
+      // Invites whose person has since joined some other way (signing in from the tracker) are
+      // closed here rather than left as "Awaiting signup".
+      invites = await dropInvitesOfJoinedMembers(invites, viewer?.tenantId || MAIN_TENANT_ID);
       invites = invites
         .filter((row) => !shouldHideInviteFromActiveList(row))
         .map((row) => {
