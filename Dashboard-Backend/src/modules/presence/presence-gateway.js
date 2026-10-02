@@ -3,12 +3,14 @@ import { WebSocketServer } from "ws";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { readBearerToken } from "../../http/auth-token.js";
 import { readSessionCookie } from "../auth/session-cookie.js";
+import { recordPresenceEvent } from "./presence-event-log.js";
 
 const WS_PATH = "/api/presence/ws";
 
 const connectionsByMember = new Map();
 
 export function sendToMember(memberId, message) {
+  recordPresenceEvent(memberId, message);
   const sockets = connectionsByMember.get(memberId);
   if (!sockets || sockets.size === 0) return;
   const payload = JSON.stringify(message);
@@ -22,6 +24,7 @@ export function sendToMember(memberId, message) {
 }
 
 export function broadcastToAll(message) {
+  recordPresenceEvent("*", message);
   const payload = JSON.stringify(message);
   for (const sockets of connectionsByMember.values()) {
     for (const ws of sockets) {

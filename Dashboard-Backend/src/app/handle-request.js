@@ -17,7 +17,7 @@ import { routeMemberTransferRequests } from "../modules/hierarchy/routes.js";
 import { routeMemberOnboarding } from "../modules/member-onboarding/routes.js";
 import { routeSchemaCrud } from "../modules/schema/routes.js";
 import { routeCompatibility } from "../modules/compat/routes.js";
-import { routePresenceEvents } from "../modules/presence/index.js";
+import { routePresenceEvents, routePresencePoll } from "../modules/presence/index.js";
 import { routeActivity } from "../modules/activity/routes.js";
 import { routeCompliance } from "../modules/compliance/routes.js";
 import { routeClassification } from "../modules/classification/routes.js";
@@ -219,6 +219,7 @@ export async function handleRequest(req, res) {
     if (await routeReports(req, res, url, origin)) return;
     if (await routeNotifications(req, res, url, origin)) return;
     if (await routePresenceEvents(req, res, url, origin)) return;
+    if (await routePresencePoll(req, res, url, origin)) return;
     if (await routeCompatibility(req, res, url, db, origin)) return;
     if (await routeSchemaCrud(req, res, url, db, origin)) return;
   }
