@@ -1,5 +1,6 @@
 
 import crypto from "node:crypto";
+import { isProjectTrackerRow } from "../../modules/projects/project-trackers.js";
 import { query, withTransaction } from "./client.js";
 import { getSingleByMemberId } from "./member-data-store.js";
 import { getClientBudgetPg } from "./clients-postgres.service.js";
@@ -909,12 +910,20 @@ export async function computeProjectBudgetTargetForAllPg(db, budgetRows) {
   if (!perPersonRows.length) return result;
 
   const ids = perPersonRows.map((r) => r.id);
+  // Only people who can clock in count: a per-person budget is spent by tracked
+  // time, so viewers - and managers the project keeps from clocking in - add
+  // nothing to it (see project-trackers.js).
   const memberRows = await query(
-    "SELECT project_id, member_id FROM project_members WHERE project_id = ANY($1::uuid[])",
+    `SELECT pm.project_id, pm.member_id, pm.project_role, pm.manager_can_track,
+            p.allow_project_tracking, p.restrict_manager_tracking
+       FROM project_members pm
+       JOIN projects p ON p.id = pm.project_id
+      WHERE pm.project_id = ANY($1::uuid[])`,
     [ids],
   );
   const membersByProject = new Map();
   for (const row of memberRows) {
+    if (!isProjectTrackerRow(row)) continue;
     if (!membersByProject.has(row.project_id)) membersByProject.set(row.project_id, []);
     membersByProject.get(row.project_id).push(row.member_id);
   }
