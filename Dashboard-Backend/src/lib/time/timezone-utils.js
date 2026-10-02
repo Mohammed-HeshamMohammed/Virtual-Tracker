@@ -50,7 +50,9 @@ export function offsetMinutesAt(date, timeZone) {
   const parts = {};
   for (const p of dtf.formatToParts(date)) parts[p.type] = p.value;
   const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
-  return (asUtc - date.getTime()) / 60000;
+  // `parts` is only known to the second; compare against the instant truncated to
+  // the second, or the milliseconds in `date` leak in as a fractional offset.
+  return (asUtc - Math.floor(date.getTime() / 1000) * 1000) / 60000;
 }
 
 /** The local calendar day (`YYYY-MM-DD`) that `date` falls on in `timeZone`. */

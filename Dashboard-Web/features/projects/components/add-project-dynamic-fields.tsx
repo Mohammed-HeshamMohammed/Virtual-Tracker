@@ -8,6 +8,7 @@ import { FORM_STACK, useClientFormTheme } from "@/shared/ui/forms/form-styles"
 import { Skeleton } from "@/shared/ui/skeleton"
 import { FormField } from "@/shared/ui/forms/form-field"
 import { MultiSelectField } from "@/shared/ui/forms/multi-select-field"
+import { MemberOptionAvatar } from "@/features/projects/components/member-option-avatar"
 import { QuickAddClientPopover } from "@/features/projects/components/quick-add-client-popover"
 
 export type AddProjectRelationFields = {
@@ -37,11 +38,7 @@ export function memberOptionsToSelect(options: ProjectFormOption[]) {
   return options.map((m) => ({
     label: m.label,
     value: m.id,
-    meta: (
-      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600 dark:bg-[#2e3447] dark:text-[#bccbb9]">
-        {m.initials ?? m.label.slice(0, 2).toUpperCase()}
-      </span>
-    ),
+    meta: <MemberOptionAvatar member={m} />,
   }))
 }
 

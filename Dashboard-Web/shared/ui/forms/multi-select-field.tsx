@@ -70,6 +70,10 @@ export function MultiSelectField({
     return options.find((o) => o.value === value)?.label ?? value
   }
 
+  function getMeta(value: string): React.ReactNode {
+    return options.find((o) => o.value === value)?.meta ?? null
+  }
+
   function toggleValue(value: string) {
     onChange(selected.includes(value) ? selected.filter((x) => x !== value) : [...selected, value])
   }
@@ -99,6 +103,9 @@ export function MultiSelectField({
                 )}
                 onClick={(e) => e.stopPropagation()}
               >
+                {getMeta(value) ? (
+                  <span className="flex shrink-0 [&>*]:h-4 [&>*]:w-4 [&>*]:text-[8px]">{getMeta(value)}</span>
+                ) : null}
                 <span className="truncate">{getLabel(value)}</span>
                 <span
                   role="button"

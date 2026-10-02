@@ -20,6 +20,7 @@ import { sendPgConstraintError } from "../../http/api-error.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { listClientsEnriched } from "../clients/services/client-service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
+import { loadMemberPhotoUrls } from "../members/services/member-photo-urls.js";
 import { getOverviewCore, getOverviewPanels } from "./services/overview-service.js";
 import { PROJECT_FORM_FIELDS, PROJECT_FORM_TABS } from "./form-config.js";
 import { memberDisplayLabel } from "../members/services/member-display-name.js";
@@ -610,6 +611,8 @@ export async function routeProjects(req, res, url, db, origin) {
         .filter(Boolean);
 
       const enrichedMembers = await enrichMembersWithRoleNames(db, rawMembers);
+      // A photo is cosmetic: if the profile lookup fails the picker shows initials.
+      const photoByMemberId = await loadMemberPhotoUrls(db, enrichedMembers).catch(() => new Map());
 
       const members = enrichedMembers
         .map((m) => {
@@ -620,7 +623,8 @@ export async function routeProjects(req, res, url, db, origin) {
               : typeof m.role_name === "string" && m.role_name.trim()
                 ? m.role_name.trim()
                 : "Viewer";
-          return { id: m.id, label: name, initials, role };
+          const avatarUrl = photoByMemberId.get(String(m.id));
+          return { id: m.id, label: name, initials, role, ...(avatarUrl ? { avatarUrl } : {}) };
         })
         .sort((a, b) => a.label.localeCompare(b.label));
 
