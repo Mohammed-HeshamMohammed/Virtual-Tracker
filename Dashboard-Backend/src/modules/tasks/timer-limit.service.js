@@ -89,17 +89,18 @@ export async function computeMemberTimerAllowance(db, memberId, options = {}) {
     0,
     Math.floor(Number(options.currentCumulativeActiveSeconds ?? 0)),
   );
-  const timeZone = await getMemberTimezone(memberId);
+  // The calendar the member's limits reset on: the project's when it has one,
+  // else their own (resolveProjectTimeZone falls back to it). `options.timeZone`
+  // lets a caller that already resolved it skip the lookup.
+  const timeZone =
+    options.timeZone ??
+    (options.projectId
+      ? await resolveProjectTimeZone(options.projectId, memberId)
+      : await getMemberTimezone(memberId));
   const [ctx, projectBudgetRemainder, memberLimitRemainder] = await Promise.all([
     loadMemberCapContext(db, memberId, timeZone),
     loadPerPersonProjectBudgetRemainderSeconds(options.projectId ?? null, memberId),
-    loadProjectMemberLimitRemainderSeconds(
-      db,
-      options.projectId ?? null,
-      memberId,
-      // A limit on a project resets on that project's calendar (lib/time/resolve-time-zone.js).
-      currentDayRange(options.projectId ? await resolveProjectTimeZone(options.projectId, memberId) : timeZone),
-    ),
+    loadProjectMemberLimitRemainderSeconds(db, options.projectId ?? null, memberId, currentDayRange(timeZone)),
   ]);
 
   const remainders = [];
@@ -240,17 +241,16 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
   const totalTaskSeconds = estimateAssignmentSeconds(task);
   const taskId = typeof task.id === "string" ? task.id : String(task.id ?? task.task_id ?? "");
   const projectId = task.project_id ?? task.projectId ?? null;
-  const timeZone = await getMemberTimezone(memberId);
-  const dayRange = currentDayRange(timeZone);
-  const { todayDay } = dayRange;
-
-  // Task-scoped totals are bucketed in the project's calendar (see
-  // lib/time/resolve-time-zone.js), so they have to be *read* in it too -
+  // Everything is bucketed in the project's calendar when it has one (see
+  // lib/time/resolve-time-zone.js), so it has to be *read* in it too -
   // reading a project-day bucket with a member-day key would miss the row
-  // whenever the two zones disagree. Identical unless the project declares
-  // its own zone.
+  // whenever the two zones disagree. Falls back to the member's own zone,
+  // so nothing changes for a project that declares none.
   const projectTimeZone = await resolveProjectTimeZone(projectId, memberId);
-  const taskTodayDay = currentDayRange(projectTimeZone).todayDay;
+  const timeZone = projectTimeZone;
+  const dayRange = currentDayRange(projectTimeZone);
+  const { todayDay } = dayRange;
+  const taskTodayDay = todayDay;
 
   const [ctx, workedTodayOnTaskSeconds, othersActiveSeconds, projectBudgetRemainder, memberLimitRemainder] =
     await Promise.all([
@@ -259,7 +259,7 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
       task?.shared_task_budget ? sumOtherAssigneesActiveSeconds(taskId, memberId) : Promise.resolve(0),
       loadPerPersonProjectBudgetRemainderSeconds(projectId, memberId),
       // Project-scoped, so it resets on the project's calendar like the task totals above.
-      loadProjectMemberLimitRemainderSeconds(db, projectId, memberId, currentDayRange(projectTimeZone)),
+      loadProjectMemberLimitRemainderSeconds(db, projectId, memberId, dayRange),
     ]);
   const totalTaskConsumedSeconds = othersActiveSeconds + currentCumulativeActiveSeconds;
 

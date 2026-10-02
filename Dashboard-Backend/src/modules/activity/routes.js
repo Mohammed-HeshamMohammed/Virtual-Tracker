@@ -82,6 +82,7 @@ import {
 } from "../tasks/timer-limit.service.js";
 import { localDayFor, weekdayIndexForLocalDay } from "../../lib/time/timezone-utils.js";
 import { getMemberTimezone } from "../reports/member-timezones.js";
+import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
 import { adoptReportedTimezone } from "./adopt-reported-timezone.js";
 import { clientMayTrackProject, getViewerProjectIds, isProjectMemberForTimer } from "../../http/project-access.js";
 import { isAdminLevelRole, isClientRole } from "../../http/role-hierarchy.js";
@@ -136,7 +137,7 @@ import { effectiveIdleTimeSeconds } from "../projects/idle-time-limit.service.js
 import { breakSettingsOf } from "../projects/break-time.js";
 import { resolveTenantGrantCached } from "../customer-accounts/tenant-grant-cache.js";
 
-async function getMemberTodayWorkStatus(db, memberId) {
+async function getMemberTodayWorkStatus(db, memberId, timeZone = null) {
   if (await memberUsesShiftsForLimits(db, memberId)) {
     return { workingToday: true, isMakeupDay: false };
   }
@@ -144,7 +145,7 @@ async function getMemberTodayWorkStatus(db, memberId) {
   const workDays = Array.isArray(timeSettings?.work_days) ? timeSettings.work_days : [0, 1, 2, 3, 4];
   const makeupDays = Array.isArray(timeSettings?.makeup_days) ? timeSettings.makeup_days : [];
   // The member's own calendar, not the server's - they can be a day apart.
-  const memberTimeZone = await getMemberTimezone(memberId);
+  const memberTimeZone = timeZone || (await getMemberTimezone(memberId));
   const today = weekdayIndexForLocalDay(localDayFor(new Date(), memberTimeZone));
   const isMakeupDay = makeupDays.includes(today);
   return { workingToday: isMakeupDay || workDays.includes(today), isMakeupDay };
@@ -402,8 +403,13 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      const { todayDay, weekStartDay } = currentDayRange(await getMemberTimezone(member.memberId));
+      const memberZone = await getMemberTimezone(member.memberId);
+      const { todayDay, weekStartDay } = currentDayRange(memberZone);
       const projectId = (url.searchParams.get("projectId") || "").trim();
+      // Limits and "is today a working day" follow the project's calendar when
+      // it has one, else the member's own; the activity figures below stay on
+      // the member's calendar because they are bucketed there.
+      const limitZone = projectId ? await resolveProjectTimeZone(projectId, member.memberId) : memberZone;
       const [
         dailyHours,
         weeklyHours,
@@ -419,9 +425,9 @@ export async function routeActivity(req, res, url, origin) {
         getMemberLimitHours(db, member.memberId, "daily"),
         getMemberLimitHours(db, member.memberId, "weekly"),
         memberUsesShiftsForLimits(db, member.memberId),
-        computeMemberTimerAllowance(db, member.memberId),
+        computeMemberTimerAllowance(db, member.memberId, { timeZone: limitZone }),
         computeAssignedTodayDemand(member.memberId),
-        getMemberTodayWorkStatus(db, member.memberId),
+        getMemberTodayWorkStatus(db, member.memberId, limitZone),
         sumMemberActiveIdleSeconds(member.memberId, { fromDay: todayDay, toDay: todayDay }),
         projectId
           ? sumMemberActiveIdleSecondsForProject(member.memberId, projectId, { fromDay: todayDay, toDay: todayDay })
@@ -697,7 +703,12 @@ export async function routeActivity(req, res, url, origin) {
         if (action === "start" && !(await memberUsesShiftsForLimits(db, member.memberId))) {
           const workDays = Array.isArray(timeSettings?.work_days) ? timeSettings.work_days : [0, 1, 2, 3, 4];
           const makeupDays = Array.isArray(timeSettings?.makeup_days) ? timeSettings.makeup_days : [];
-          const memberTimeZone = await getMemberTimezone(member.memberId);
+          // The project's calendar when the session is for a project that has one, else
+          // the member's own (resolveProjectTimeZone falls back to it).
+          const gateTaskId = taskId || open?.task_id || null;
+          const gateProjectId =
+            sessionProjectId || (gateTaskId ? (await getTaskPg(gateTaskId))?.project_id : null) || null;
+          const memberTimeZone = await resolveProjectTimeZone(gateProjectId, member.memberId);
           const today = weekdayIndexForLocalDay(localDayFor(now, memberTimeZone));
           if (!workDays.includes(today) && !makeupDays.includes(today)) {
             sendJson(res, origin, 403, {

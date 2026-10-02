@@ -806,16 +806,13 @@ async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, att
   const startedAt = attributedTo ? new Date(attributedTo) : new Date();
   const anchor = Number.isNaN(startedAt.getTime()) ? new Date() : startedAt;
 
-  // Two calendars on purpose (see lib/time/resolve-time-zone.js):
-  //   - the member's own, for their personal daily/weekly totals, because a
-  //     person cannot be having two different "todays" at once;
-  //   - the project's, for task-scoped totals, so work on a client's timeline
-  //     lines up with that client's days rather than the worker's.
-  // They are the same value unless a project declares its own zone.
-  const memberZone = await getMemberTimezone(memberId);
-  const memberDay = localDayFor(anchor, memberZone);
-  const taskDay = taskId ? localDayFor(anchor, await resolveProjectTimeZone(projectId, memberId)) : memberDay;
-  const dayStr = memberDay;
+  // One calendar for both totals: the project's when it has one (this member's
+  // own override on it first), otherwise the member's personal zone - which is
+  // exactly what resolveProjectTimeZone falls back to. Work on a client's
+  // project therefore lands on that client's day, and the daily/weekly limits
+  // read it back in the same calendar (modules/tasks/timer-limit.service.js).
+  const dayStr = localDayFor(anchor, await resolveProjectTimeZone(projectId, memberId));
+  const taskDay = dayStr;
 
   await pgQuery(
     `INSERT INTO daily_member_active_seconds (member_id, day, active_seconds)
