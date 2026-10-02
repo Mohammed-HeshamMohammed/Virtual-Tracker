@@ -2,7 +2,7 @@
 // POST /member-relationships/move (move-plan.js), so the canvas can show a green or red target
 // while dragging instead of letting someone drop and then be told no. The server still decides.
 import { descendantsOf, type TreeModel } from "./model.ts"
-import { isClientRole, isOwnerRole, roleRank } from "./roles.ts"
+import { isClientRole, isOwnerRole, roleKey, roleRank } from "./roles.ts"
 
 export type ReassignVerdict = { ok: true; noop: boolean } | { ok: false; reason: string }
 
@@ -17,6 +17,10 @@ export function canReassign(model: TreeModel, memberId: string, newParentId: str
   if (isClientRole(parent.role)) return { ok: false, reason: "A Client cannot be a manager." }
   if (roleRank(parent.role) < roleRank(member.role)) {
     return { ok: false, reason: `A ${parent.role} cannot manage a ${member.role}.` }
+  }
+  // Super Admins and Admins report straight to the Owner, whoever added them.
+  if (["superadmin", "admin"].includes(roleKey(member.role)) && !isOwnerRole(parent.role)) {
+    return { ok: false, reason: `A ${member.role} reports directly to the Owner.` }
   }
   if (model.parentOf.get(memberId) === newParentId) return { ok: true, noop: true }
   if (descendantsOf(model, memberId).includes(newParentId)) {

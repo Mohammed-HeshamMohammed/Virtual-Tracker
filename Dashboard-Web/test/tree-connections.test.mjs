@@ -221,6 +221,21 @@ test("rules: a valid move, a no-op, and the refusals", () => {
   assert.equal(canReassign(m, "ghost", "mgrA").ok, false)
 })
 
+test("rules: Super Admins and Admins can only report to the Owner", () => {
+  const m = buildTreeModel({
+    nodes: [node("o", "Owner"), node("sa", "Super Admin"), node("ad", "Admin"), node("mg", "Manager")],
+    edges: [edge("o", "sa"), edge("o", "ad"), edge("sa", "mg")],
+  })
+  const verdict = canReassign(m, "ad", "sa")
+  assert.equal(verdict.ok, false)
+  assert.match(verdict.reason, /reports directly to the Owner/)
+  assert.equal(canReassign(m, "mg", "o").ok, true, "a Manager may report to the Owner")
+  assert.equal(canReassign(m, "ad", "o").ok, true, "already there: a no-op")
+  assert.equal(canReassign(m, "ad", "o").noop, true)
+  // Nobody offers an Admin a Super Admin as a manager.
+  assert.deepEqual(validManagersFor(m, "ad"), [])
+})
+
 test("rules: a manager cannot be put under their own team", () => {
   const chain = buildTreeModel({
     nodes: [node("a", "Manager"), node("b", "Manager"), node("c", "Manager")],
