@@ -4,14 +4,22 @@ An isolated React + Tauri-ready UI project for the Soft Fix Workplace design. It
 
 ## Current scope
 
-The window keeps Windows' own title bar (`decorations: true`), so its minimize / maximize /
-close buttons are the real ones and keep everything the system gives them: the Snap Layouts
-flyout on hover over maximize, the system menu, double-click to maximize, drag-to-snap. The
-Rust shell (`match_title_bar` in `src-tauri/src/lib.rs`) only recolours that bar to the app's
-navy on Windows 11, so the native bar and the toolbar under it - the Lounge / Work / Dashboard
-switch and Settings - read as one header. Tauri, wry and tao have no way to put the native
-caption buttons on the same row as web content, and drawing look-alike buttons would lose
-those features; that is why the switch sits directly under the bar rather than in it.
+The window keeps Windows' own title bar machinery (`decorations: true`), so minimize / maximize /
+close are the real buttons and keep everything the system gives them: the Snap Layouts flyout
+on hover over maximize, hover / pressed states, the system menu, double-click to maximize,
+drag-to-snap. Only those three buttons are Windows'; the rest of the title-bar row is the app's
+own header - the Lounge / Work / Dashboard switch and Settings - and its empty space drags the
+window.
+
+How (`caption` module in `src-tauri/src/lib.rs`, Windows only): the client area is extended up
+over the old title bar (`WM_NCCALCSIZE`), DWM keeps painting the caption buttons and hit-tests
+them through `DwmDefWindowProc`, and the web view gets a region with the buttons' rectangle cut
+out so they show and receive the mouse instead of the page. A 5px strip along the top is cut
+out too and answered as the window's top resize edge. The buttons' size reaches the frontend
+through the `caption_inset` command / `caption-inset` event, and `AppToolbar` pads itself
+clear of them. If any step fails (no web-view child window, DWM refusing the bounds) the window
+stays exactly as Windows made it and the header simply sits under the normal, recoloured
+(`match_title_bar`) title bar. Not verified on Windows 10 or on multi-monitor DPI changes.
 
 - **Lounge** - the original `Nova Vanguard / #general-orbit` Figma frame: a Coworkers/DM view and a project-channels view (their own toggle, top-left), mission card, crew roster, and the voice/profile dock. Channel switching, squad joining, message composition, mute, and deafen all work locally.
 - **Work** - a time-tracking mode restyled from Tauri-App-Extension's real screens into this design system: a project/task picker, a live clock and a timer that actually ticks while "tracking" is on (Start/Pause/Stop), today/week/activity/budget stat tiles, and who else on the team is tracking. The timer only resets when you change project or task - not when you switch mode (see below).

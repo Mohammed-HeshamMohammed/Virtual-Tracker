@@ -56,6 +56,11 @@ button { color: inherit; border: 0; cursor: pointer; }
   background: var(--title-bg);
   border-bottom: 1px solid #171c2a;
 }
+/* Sharing the window's top row with the native caption buttons: the buttons sit at the right
+   (the header's padding-right keeps clear of them), so the header is only as tall as they are
+   plus a little air, and the row below needs no divider of its own. */
+.app-toolbar.in-title-bar { flex-basis: var(--caption-h, 32px); height: var(--caption-h, 32px); padding-top: 0; padding-bottom: 0; border-bottom: 0; }
+.in-title-bar .app-toolbar-mode, .in-title-bar .toolbar-btn { height: 26px; }
 .app-toolbar-modes { display: flex; align-items: center; gap: 4px; }
 .app-toolbar-mode { display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 13px; border-radius: 8px; background: transparent; color: #8a91a5; font-size: 11px; font-weight: 600; transition: background .15s ease, color .15s ease, transform .15s ease; }
 .app-toolbar-mode svg { width: 15px; height: 15px; }
