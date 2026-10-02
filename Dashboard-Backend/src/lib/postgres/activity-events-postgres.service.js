@@ -806,13 +806,16 @@ async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, att
   const startedAt = attributedTo ? new Date(attributedTo) : new Date();
   const anchor = Number.isNaN(startedAt.getTime()) ? new Date() : startedAt;
 
-  // One calendar for both totals: the project's when it has one (this member's
-  // own override on it first), otherwise the member's personal zone - which is
-  // exactly what resolveProjectTimeZone falls back to. Work on a client's
-  // project therefore lands on that client's day, and the daily/weekly limits
-  // read it back in the same calendar (modules/tasks/timer-limit.service.js).
-  const dayStr = localDayFor(anchor, await resolveProjectTimeZone(projectId, memberId));
-  const taskDay = dayStr;
+  // Two calendars here (see lib/time/resolve-time-zone.js):
+  //   - the member's own for this rollup, which the reports, counter
+  //     reconciliation and capture settings all read as "that person's day";
+  //   - the project's for the task-scoped rollup.
+  // No *limit* reads either table any more: they are summed from the sessions
+  // in whichever calendar applies when they are read (see
+  // sumDailyMemberActiveSeconds), so nothing here depends on that choice.
+  const memberZone = await getMemberTimezone(memberId);
+  const dayStr = localDayFor(anchor, memberZone);
+  const taskDay = taskId ? localDayFor(anchor, await resolveProjectTimeZone(projectId, memberId)) : dayStr;
 
   await pgQuery(
     `INSERT INTO daily_member_active_seconds (member_id, day, active_seconds)
@@ -836,18 +839,60 @@ async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, att
   }
 }
 
-export async function sumDailyMemberActiveSeconds(memberId, { fromDay, toDay }) {
-  const id = parseProgressUuid(memberId);
-  if (!id) return 0;
+/**
+ * Everything below sums the member's *sessions* in the calendar the caller
+ * asks for, instead of reading pre-bucketed days.
+ *
+ * A stored day key is fixed at write time in whichever zone applied then, so a
+ * person on projects in different zones ended up with one total made of
+ * differently-keyed days, and a change of zone left the old rows on the old
+ * calendar. Computing the day when it is read removes both: the same sessions
+ * are simply cut at that calendar's midnights. A session counts on the day it
+ * started - the rule the rollup always used, so figures do not move.
+ *
+ * `timeZone` is the calendar to cut in (an IANA id the caller already
+ * resolved); without one the member's own zone is used.
+ */
+const SESSION_ZONE_SQL = (param) => `COALESCE(NULLIF(${param}::text, ''), NULLIF(m.timezone, ''), 'UTC')`;
+const SESSION_DAY_SQL = (param) => `(s.started_at AT TIME ZONE ${SESSION_ZONE_SQL(param)})::date`;
+// Lets the (member_id, started_at) index narrow the rows before the exact per-zone date test;
+// a day in any zone is within a day either side of the same UTC date.
+const SESSION_RANGE_SQL = (from, to) =>
+  `s.started_at >= ($${from}::date - 1) AND s.started_at < ($${to}::date + 2)`;
+
+async function sumTaskSessionSecondsInZone(memberId, taskId, fromDay, toDay, timeZone) {
   const result = await pgQuery(
-    `SELECT COALESCE(SUM(active_seconds), 0) AS total FROM daily_member_active_seconds
-     WHERE member_id = $1 AND day >= $2::date AND day <= $3::date`,
-    [id, fromDay, toDay],
+    `SELECT COALESCE(SUM(s.active_seconds), 0) AS total
+     FROM activity_sessions s
+     LEFT JOIN members m ON m.id = s.member_id
+     WHERE s.member_id = $1
+       AND s.task_id = $5
+       AND ${SESSION_RANGE_SQL(2, 3)}
+       AND ${SESSION_DAY_SQL("$4")} >= $2::date
+       AND ${SESSION_DAY_SQL("$4")} <= $3::date`,
+    [memberId, fromDay, toDay, timeZone, taskId],
   );
   return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
 }
 
-export async function sumMemberActiveIdleSeconds(memberId, { fromDay, toDay }) {
+/** Active seconds for the member over the days `fromDay`..`toDay` (inclusive) in `timeZone`. */
+export async function sumDailyMemberActiveSeconds(memberId, { fromDay, toDay, timeZone = null }) {
+  const id = parseProgressUuid(memberId);
+  if (!id) return 0;
+  const result = await pgQuery(
+    `SELECT COALESCE(SUM(s.active_seconds), 0) AS total
+     FROM activity_sessions s
+     LEFT JOIN members m ON m.id = s.member_id
+     WHERE s.member_id = $1
+       AND ${SESSION_RANGE_SQL(2, 3)}
+       AND ${SESSION_DAY_SQL("$4")} >= $2::date
+       AND ${SESSION_DAY_SQL("$4")} <= $3::date`,
+    [id, fromDay, toDay, timeZone],
+  );
+  return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
+}
+
+export async function sumMemberActiveIdleSeconds(memberId, { fromDay, toDay, timeZone = null }) {
   const id = parseProgressUuid(memberId);
   if (!id) return { activeSeconds: 0, idleSeconds: 0 };
   const result = await pgQuery(
@@ -856,9 +901,10 @@ export async function sumMemberActiveIdleSeconds(memberId, { fromDay, toDay }) {
      FROM activity_sessions s
      LEFT JOIN members m ON m.id = s.member_id
      WHERE s.member_id = $1
-       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date >= $2::date
-       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date <= $3::date`,
-    [id, fromDay, toDay],
+       AND ${SESSION_RANGE_SQL(2, 3)}
+       AND ${SESSION_DAY_SQL("$4")} >= $2::date
+       AND ${SESSION_DAY_SQL("$4")} <= $3::date`,
+    [id, fromDay, toDay, timeZone],
   );
   const row = result?.rows?.[0] ?? {};
   return {
@@ -867,40 +913,47 @@ export async function sumMemberActiveIdleSeconds(memberId, { fromDay, toDay }) {
   };
 }
 
-/** Active seconds per local day, from the same rollup sumDailyMemberActiveSeconds reads. */
-export async function listDailyMemberActiveSeconds(memberId, { fromDay, toDay }) {
+/** Active seconds per day in `timeZone`, from the same sessions the sums above read. */
+export async function listDailyMemberActiveSeconds(memberId, { fromDay, toDay, timeZone = null }) {
   const id = parseProgressUuid(memberId);
   if (!id) return [];
   // to_char, not the DATE itself - node-pg turns a DATE into a local-midnight
   // Date object, which shifts the day for any server not running at UTC.
   const result = await pgQuery(
-    `SELECT to_char(day, 'YYYY-MM-DD') AS day, active_seconds
-     FROM daily_member_active_seconds
-     WHERE member_id = $1 AND day >= $2::date AND day <= $3::date`,
-    [id, fromDay, toDay],
+    `SELECT to_char(${SESSION_DAY_SQL("$4")}, 'YYYY-MM-DD') AS day,
+            COALESCE(SUM(s.active_seconds), 0) AS active_seconds
+     FROM activity_sessions s
+     LEFT JOIN members m ON m.id = s.member_id
+     WHERE s.member_id = $1
+       AND ${SESSION_RANGE_SQL(2, 3)}
+       AND ${SESSION_DAY_SQL("$4")} >= $2::date
+       AND ${SESSION_DAY_SQL("$4")} <= $3::date
+     GROUP BY 1`,
+    [id, fromDay, toDay, timeZone],
   );
   return result?.rows ?? [];
 }
 
-/** Idle seconds per local day a session started on - the same basis as sumMemberActiveIdleSeconds. */
-export async function listMemberIdleSecondsByDay(memberId, { fromDay, toDay }) {
+/** Idle seconds per day in `timeZone` - the same basis as everything above. */
+export async function listMemberIdleSecondsByDay(memberId, { fromDay, toDay, timeZone = null }) {
   const id = parseProgressUuid(memberId);
   if (!id) return [];
   const result = await pgQuery(
-    `SELECT to_char((s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date, 'YYYY-MM-DD') AS day,
+    `SELECT to_char(${SESSION_DAY_SQL("$4")}, 'YYYY-MM-DD') AS day,
             COALESCE(SUM(s.idle_seconds), 0) AS idle_seconds
      FROM activity_sessions s
      LEFT JOIN members m ON m.id = s.member_id
      WHERE s.member_id = $1
-       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date >= $2::date
-       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date <= $3::date
+       AND ${SESSION_RANGE_SQL(2, 3)}
+       AND ${SESSION_DAY_SQL("$4")} >= $2::date
+       AND ${SESSION_DAY_SQL("$4")} <= $3::date
      GROUP BY 1`,
-    [id, fromDay, toDay],
+    [id, fromDay, toDay, timeZone],
   );
   return result?.rows ?? [];
 }
 
-export async function sumMemberActiveIdleSecondsForProject(memberId, projectId, { fromDay, toDay }) {
+export async function sumMemberActiveIdleSecondsForProject(memberId, projectId, { fromDay, toDay, timeZone = null }) {
   const id = parseProgressUuid(memberId);
   const pId = projectId ? parseProgressUuid(projectId) : null;
   if (!id || !pId) return { activeSeconds: 0, idleSeconds: 0 };
@@ -910,10 +963,11 @@ export async function sumMemberActiveIdleSecondsForProject(memberId, projectId, 
      FROM activity_sessions s
      LEFT JOIN members m ON m.id = s.member_id
      WHERE s.member_id = $1
-       AND s.project_id = $4
-       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date >= $2::date
-       AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date <= $3::date`,
-    [id, fromDay, toDay, pId],
+       AND s.project_id = $5
+       AND ${SESSION_RANGE_SQL(2, 3)}
+       AND ${SESSION_DAY_SQL("$4")} >= $2::date
+       AND ${SESSION_DAY_SQL("$4")} <= $3::date`,
+    [id, fromDay, toDay, timeZone, pId],
   );
   const row = result?.rows?.[0] ?? {};
   return {
@@ -922,10 +976,16 @@ export async function sumMemberActiveIdleSecondsForProject(memberId, projectId, 
   };
 }
 
-export async function sumDailyMemberTaskActiveSeconds(memberId, taskId, day) {
+/**
+ * With `timeZone` the day is cut from the task's sessions in that calendar (same rule as
+ * sumDailyMemberActiveSeconds), so a zone that changed mid-day cannot leave the figure keyed to
+ * the old one. Without it, the stored per-task rollup is read as before.
+ */
+export async function sumDailyMemberTaskActiveSeconds(memberId, taskId, day, timeZone = null) {
   const id = parseProgressUuid(memberId);
   const tId = taskId ? parseProgressUuid(taskId) : null;
   if (!id || !tId) return 0;
+  if (timeZone) return sumTaskSessionSecondsInZone(id, tId, day, day, timeZone);
   const result = await pgQuery(
     `SELECT COALESCE(active_seconds, 0) AS total FROM daily_member_task_active_seconds
      WHERE member_id = $1 AND task_id = $2 AND day = $3::date`,
@@ -934,10 +994,11 @@ export async function sumDailyMemberTaskActiveSeconds(memberId, taskId, day) {
   return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
 }
 
-export async function sumDailyMemberTaskActiveSecondsRange(memberId, taskId, { fromDay, toDay }) {
+export async function sumDailyMemberTaskActiveSecondsRange(memberId, taskId, { fromDay, toDay, timeZone = null }) {
   const id = parseProgressUuid(memberId);
   const tId = taskId ? parseProgressUuid(taskId) : null;
   if (!id || !tId) return 0;
+  if (timeZone) return sumTaskSessionSecondsInZone(id, tId, fromDay, toDay, timeZone);
   const result = await pgQuery(
     `SELECT COALESCE(SUM(active_seconds), 0) AS total FROM daily_member_task_active_seconds
      WHERE member_id = $1 AND task_id = $2 AND day >= $3::date AND day <= $4::date`,

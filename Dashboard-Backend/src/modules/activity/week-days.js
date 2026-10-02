@@ -7,12 +7,13 @@ function seconds(value) {
 }
 
 /**
- * The member's current week, Monday first, one entry per local day.
+ * The member's current week, Monday first, one entry per day.
  *
- * Active time comes from the daily rollup (daily_member_active_seconds) - the
- * same table workedTodaySeconds/workedWeekSeconds sum, so the seven days add up
- * to exactly the "This week" figure. Idle time has no rollup, so it comes from
- * sessions by the local day they started, the same basis as todayActivity.
+ * Active and idle time both come from the member's sessions, cut at the days of
+ * one calendar (the project's when it has one, else the member's own) - the same
+ * sessions and the same calendar workedTodaySeconds/workedWeekSeconds and
+ * todayActivity use, so the seven days add up to exactly the "This week" figure
+ * and today's entry is today's figure.
  * Days with no rows are zero rather than missing, so the week always has seven.
  *
  * @param {string} weekStartDay Monday of the member's week, "YYYY-MM-DD".

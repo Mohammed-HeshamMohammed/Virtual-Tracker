@@ -676,15 +676,24 @@ export async function getProjectTrackedSecondsPg(projectId, options = {}) {
   let sessionWhere = "project_id = $1";
   let entryWhere = "project_id = $2 AND status != 'rejected'";
 
+  // The day a session counts on is the day it started in `options.timeZone`
+  // (the project's calendar for its limits); without one it is the database
+  // session's, which is UTC - right only for people living there.
+  let sessionDay = "started_at::date";
+  if (options.timeZone) {
+    params.push(options.timeZone);
+    sessionDay = `(started_at AT TIME ZONE $${params.length}::text)::date`;
+  }
+
   if (options.fromDate) {
     params.push(options.fromDate);
-    sessionWhere += ` AND started_at::date >= $${params.length}`;
+    sessionWhere += ` AND ${sessionDay} >= $${params.length}`;
     params.push(options.fromDate);
     entryWhere += ` AND date >= $${params.length}`;
   }
   if (options.toDate) {
     params.push(options.toDate);
-    sessionWhere += ` AND started_at::date <= $${params.length}`;
+    sessionWhere += ` AND ${sessionDay} <= $${params.length}`;
     params.push(options.toDate);
     entryWhere += ` AND date <= $${params.length}`;
   }

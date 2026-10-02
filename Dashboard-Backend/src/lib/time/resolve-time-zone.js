@@ -20,28 +20,27 @@ function declaredZoneOrNull(raw) {
 }
 
 /**
- * Which calendar governs which decision.
+ * Which calendar a project's work is measured in.
  *
- * There are two legitimately different answers, and using one for both would
- * be wrong in opposite directions:
+ * In order: this member's own override for *this* project (the rare case of
+ * one person working different regions on different projects in the same week
+ * - see project_members.timezone), then the project's own declared zone, then
+ * the member's personal zone. Every level defaults to "not set", so nothing
+ * changes for a project/member pair until someone explicitly sets one.
  *
- * - **A member's personal daily/weekly limit** is a fact about that person -
- *   they cannot work two different "todays" at once. It is always measured in
- *   the member's own zone, even when their work spans projects in several
- *   regions. Bucketing personal totals per project would make a personal cap
- *   incoherent (two projects could each grant a fresh day).
+ * That one answer is used for everything measured while working on the
+ * project: the member's daily and weekly limits, today's and the week's
+ * totals and the activity/idle breakdown beside them, the project's own member
+ * limits and the working-day check. Someone in Cairo working a US client's
+ * hours sees that project's days line up with the client's calendar.
  *
- * - **A project's own caps, schedule and reporting** belong to that project's
- *   timeline. Someone in Cairo working a US client's hours should see that
- *   project's days line up with the client's calendar, not their own.
- *
- * Hence: personal totals use the member's zone; project/task-scoped totals
- * use, in order: this member's own override for *this* project (the rare
- * case of one person working different regions on different projects in the
- * same week - see project_members.timezone), then the project's own
- * declared zone, then the member's personal zone. Every level defaults to
- * "not set", so nothing changes for the project/member pair until someone
- * explicitly sets an override at that specific level.
+ * It is applied *when a figure is read*, not when time is recorded: totals are
+ * summed from the member's sessions and cut at that calendar's midnights
+ * (see sumDailyMemberActiveSeconds). So a person on projects in different
+ * zones never has one total made of differently-keyed days, and changing a
+ * zone re-cuts history instead of leaving old rows on the old calendar. (The
+ * per-day rollup tables are still written, for the reports that read them,
+ * but no limit reads them.)
  */
 export async function resolveProjectTimeZone(projectId, memberId) {
   const memberZone = await getMemberTimezone(memberId);
