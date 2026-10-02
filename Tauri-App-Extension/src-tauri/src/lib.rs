@@ -6,6 +6,7 @@ mod config;
 mod constants;
 mod prefs;
 mod queue;
+mod tray_menu;
 #[cfg(test)]
 mod test_support;
 mod types;
@@ -20,10 +21,7 @@ use tauri::{AppHandle, Manager, WindowEvent};
 // Tray-icon is a non-Linux-only Cargo feature (see Cargo.toml) - these types don't exist in
 // the dependency graph at all when building for Linux.
 #[cfg(not(target_os = "linux"))]
-use tauri::{
-    menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_deep_link::DeepLinkExt;
 
@@ -37,19 +35,6 @@ pub mod commands;
 pub struct AppState {
     controller: Arc<AgentController>,
 }
-
-/// Handles to the tray menu's live-status items, so set_tray_status (called from the
-/// frontend's own existing 5s session poll - see App.tsx's refresh() - can update them in
-#[cfg(not(target_os = "linux"))]
-pub struct TrayStatusItems {
-    status: MenuItem<tauri::Wry>,
-    pause: MenuItem<tauri::Wry>,
-    resume: MenuItem<tauri::Wry>,
-    stop: MenuItem<tauri::Wry>,
-}
-
-#[cfg(not(target_os = "linux"))]
-pub type TrayStatusState = std::sync::Mutex<Option<TrayStatusItems>>;
 
 // Commands that touch the network are declared `#[tauri::command(async)]`.
 pub(crate) async fn run_blocking<T, F>(f: F) -> T
@@ -398,6 +383,9 @@ pub fn run() {
             commands::inbox::reply_to_message_thread,
             commands::inbox::mark_all_agent_notifications_read,
             commands::shell::set_tray_status,
+            tray_menu::get_tray_state,
+            tray_menu::tray_menu_resize,
+            tray_menu::tray_action,
             commands::app_info::get_profile,
             commands::app_info::get_link_status,
             commands::app_info::get_app_settings,
@@ -523,68 +511,25 @@ pub fn run() {
             // for why (RUSTSEC-2024-0429, accepted risk documented in release.yml).
             #[cfg(not(target_os = "linux"))]
             {
-                // Disabled by design - a label, not a control.
-                let status_i =
-                    MenuItem::with_id(app, "status", "Not tracking", false, None::<&str>)?;
-                let pause_i = MenuItem::with_id(app, "pause", "Pause", false, None::<&str>)?;
-                let resume_i = MenuItem::with_id(app, "resume", "Resume", false, None::<&str>)?;
-                let stop_i = MenuItem::with_id(app, "stop", "Stop", false, None::<&str>)?;
-                let sep_i = PredefinedMenuItem::separator(app)?;
-                let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
-                let sign_in_i = MenuItem::with_id(app, "sign_in", "Sign in", true, None::<&str>)?;
-                let open_i =
-                    MenuItem::with_id(app, "open", "Open My Virtual Tracker", true, None::<&str>)?;
-                let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-                let menu = Menu::with_items(
-                    app,
-                    &[
-                        &status_i, &pause_i, &resume_i, &stop_i, &sep_i, &show_i, &sign_in_i,
-                        &open_i, &quit_i,
-                    ],
-                )?;
+                // Right-click opens our own menu window (tray_menu.rs) instead of the OS menu,
+                // which cannot be styled; left-click still just shows the app.
+                tray_menu::create(app.handle())?;
 
-                app.manage(std::sync::Mutex::new(Some(TrayStatusItems {
-                    status: status_i,
-                    pause: pause_i,
-                    resume: resume_i,
-                    stop: stop_i,
-                })));
-
-                let tray_controller = Arc::clone(&controller);
                 let mut tray_builder = TrayIconBuilder::new()
-                    .menu(&menu)
                     .tooltip("My Virtual Tracker")
-                    .on_menu_event(move |app, event| match event.id.as_ref() {
-                        "show" => show_main_window(app),
-                        "sign_in" => {
-                            let _ = tray_controller.open_sign_in(None);
-                        }
-                        "open" => tray_controller.open_web_app(),
-                        // No stop-note prompt here (P6/handleStopClick's dialog is a
-                        // webview form the tray menu can't show)
-                        "pause" => {
-                            let _ = tray_controller.pause_session();
-                        }
-                        "resume" => {
-                            let _ = tray_controller.resume_session();
-                        }
-                        "stop" => {
-                            let _ = tray_controller.stop_session(None);
-                        }
-                        "quit" => {
-                            tray_controller.stop();
-                            app.exit(0);
-                        }
-                        _ => {}
-                    })
                     .on_tray_icon_event(|tray, event| {
                         if let TrayIconEvent::Click {
-                            button: MouseButton::Left,
+                            button,
                             button_state: MouseButtonState::Up,
+                            position,
                             ..
                         } = event
                         {
-                            show_main_window(tray.app_handle());
+                            match button {
+                                MouseButton::Left => show_main_window(tray.app_handle()),
+                                MouseButton::Right => tray_menu::open_at(tray.app_handle(), position),
+                                _ => {}
+                            }
                         }
                     });
                 if let Some(icon) = app.default_window_icon().cloned() {

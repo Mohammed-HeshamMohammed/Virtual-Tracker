@@ -6,10 +6,6 @@ use crate::run_blocking;
 use crate::AppState;
 use tauri::Manager;
 use tauri::AppHandle;
-// The type itself only exists off Linux, where the tray carries menu items;
-// the Linux set_tray_status below is a no-op that never names it.
-#[cfg(not(target_os = "linux"))]
-use crate::TrayStatusState;
 use crate::window_layout;
 
 #[tauri::command]
@@ -39,28 +35,22 @@ pub fn close_window(
     Ok(())
 }
 
-/// Pushed from the frontend's own existing 5s session poll (App.tsx's refresh()) rather
-/// than driven by a second poller here - see TrayStatusItems's own doc comment for why.
+/// Pushed from the frontend's own existing 5s session poll (App.tsx's effect) rather than
+/// driven by a second poller here. The tray menu window (tray_menu.rs) renders from it.
 #[tauri::command]
-#[cfg(not(target_os = "linux"))]
 pub fn set_tray_status(
-    state: tauri::State<'_, TrayStatusState>,
+    app: AppHandle,
     label: String,
     tracking: bool,
     paused: bool,
     session_open: bool,
+    signed_in: bool,
 ) {
-    let guard = state.lock().unwrap();
-    let Some(items) = guard.as_ref() else { return };
-    let _ = items.status.set_text(&label);
-    let _ = items.pause.set_enabled(tracking);
-    let _ = items.resume.set_enabled(paused);
-    let _ = items.stop.set_enabled(session_open);
+    crate::tray_menu::set_state(
+        &app,
+        crate::tray_menu::TrayState { label, tracking, paused, session_open, signed_in },
+    );
 }
-
-#[tauri::command]
-#[cfg(target_os = "linux")]
-pub fn set_tray_status(_label: String, _tracking: bool, _paused: bool, _session_open: bool) {}
 
 /// The layout the window is using, so the frontend can arrange itself to match the size the
 /// window was given.

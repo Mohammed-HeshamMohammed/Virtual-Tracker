@@ -2022,11 +2022,12 @@ function MainApp() {
       tracking,
       paused,
       sessionOpen,
+      signedIn,
     }).catch(() => {
       /* Tray may not exist yet (early startup) or at all (Linux) - the
          command itself already no-ops there; nothing to recover from here. */
     });
-  }, [sessionOpen, tracking, paused, trackingLabel, session?.activeSeconds]);
+  }, [sessionOpen, tracking, paused, signedIn, trackingLabel, session?.activeSeconds]);
 
   const projectNameById = new Map(projects.map((p) => [p.id, p.name]));
   const jumpToAssignedTask = (task: AgentTask) => {
