@@ -1,13 +1,13 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState as useComponentState } from "react"
-import { GitBranch, LayoutList, Maximize2, Minus, Network, Plus, Share2, ShieldAlert, UserPlus, Users } from "lucide-react"
+import { GitBranch, LayoutList, Network, Share2, ShieldAlert, UserPlus, Users } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useTheme } from "@/shared/providers/app"
 import { useAuth } from "@/shared/providers/app"
 import { usePermissions } from "@/features/auth/hooks/use-permissions"
 import { PEOPLE_THEME_DARK as dark, PEOPLE_THEME_LIGHT as light } from "@/shared/ui/shared/constants"
-import { type MemberTreeNode, type MemberTreeScope } from "@/features/members/services/member-tree"
+import { moveMemberInTree, type MemberTreeNode, type MemberTreeScope } from "@/features/members/services/member-tree"
 import { AddMemberAtNodeModal } from "@/features/members/components/modals/add-member-at-node-modal"
 import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import {
@@ -19,15 +19,10 @@ import {
   type MemberTreeBranch,
 } from "@/features/members/utils/build-tree"
 import { Avatar } from "@/shared/ui/avatar"
-import {
-  MemberTreeConnectionsView,
-  DEFAULT_TREE_CHART_TRANSFORM,
-  zoomTreeChartIn,
-  zoomTreeChartOut,
-} from "@/features/members/pages/member-tree-connections-view"
+import { MemberTreeConnectionsView } from "@/features/members/tree-connections/connections-view"
 import { useMemberTreeData } from "@/features/members/hooks/use-member-tree-data"
 import { MemberTreeContentSkeleton } from "@/features/members/components/skeletons/member-tree-page-skeleton"
-import { TableRefreshButton, TableToolbarIconButton } from "@/shared/tables/ui"
+import { TableRefreshButton } from "@/shared/tables/ui"
 import {
   DEFAULT_TREE_CHART_SETTINGS,
   TreeChartControls,
@@ -254,7 +249,10 @@ function MemberTreeScopeView({
   onScopeChange: (scope: MemberTreeScope) => void
 }) {
   const { memberId } = useAuth()
-  const { canManageMembers } = usePermissions()
+  const { canManageMembers, isOwner, isSuperAdmin } = usePermissions()
+  // Who reports to whom decides who can see whom, so only Owner and Super Admin change it, and
+  // only from the organization view (the team view shows upline members they cannot edit).
+  const canReassign = viewScope === "organization" && (isOwner || isSuperAdmin)
   const t = isDark ? dark : light
   // "Add member here" (item 16): which node the invite modal is open for.
   const [addUnder, setAddUnder] = useComponentState<MemberTreeNode | null>(null)
@@ -274,7 +272,6 @@ function MemberTreeScopeView({
     [viewScope],
   )
   const [chartSettings, setChartSettings] = useComponentState<TreeChartDisplaySettings>(DEFAULT_TREE_CHART_SETTINGS)
-  const [chartTransform, setChartTransform] = useComponentState(DEFAULT_TREE_CHART_TRANSFORM)
 
   const handleOrgError = useCallback((err: unknown) => {
     setScopeErrors((prev) => ({ ...prev, organization: err instanceof Error ? err.message : "Failed to load member tree" }))
@@ -307,10 +304,6 @@ function MemberTreeScopeView({
     if (nodes.length > 0) setError("")
   }, [viewScope, nodes.length, setError])
 
-  useEffect(() => {
-    setChartTransform(DEFAULT_TREE_CHART_TRANSFORM)
-  }, [viewScope, nodes.length, chartSettings.layout, chartSettings.orientation, chartSettings.linkType, chartSettings.stepPercent])
-
   const updateChartSettings = useCallback((patch: Partial<TreeChartDisplaySettings>) => {
     setChartSettings((current) => ({ ...current, ...patch }))
   }, [])
@@ -326,6 +319,18 @@ function MemberTreeScopeView({
       setIsRefreshing(false)
     }
   }, [isRefreshing, refetch, setError])
+
+  const handleReassign = useCallback(
+    async (memberId: string, newParentId: string) => {
+      await moveMemberInTree(memberId, newParentId)
+      // The server has changed the hierarchy: reload both views of it so neither shows the old one.
+      await Promise.allSettled([
+        organizationTree.refetch({ forceRefetch: true, showLoading: false }),
+        teamTree.refetch({ forceRefetch: true, showLoading: false }),
+      ])
+    },
+    [organizationTree, teamTree],
+  )
 
   const tree = useMemo(
     () =>
@@ -430,31 +435,6 @@ function MemberTreeScopeView({
             </div>
           )}
           <div className="flex items-center gap-2">
-            {viewMode === "connections" ? (
-              <>
-                <TableToolbarIconButton
-                  onClick={() => setChartTransform((current) => zoomTreeChartOut(current))}
-                  isDark={isDark}
-                  title="Zoom out"
-                >
-                  <Minus className="h-4 w-4" />
-                </TableToolbarIconButton>
-                <TableToolbarIconButton
-                  onClick={() => setChartTransform((current) => zoomTreeChartIn(current))}
-                  isDark={isDark}
-                  title="Zoom in"
-                >
-                  <Plus className="h-4 w-4" />
-                </TableToolbarIconButton>
-                <TableToolbarIconButton
-                  onClick={() => setChartTransform(DEFAULT_TREE_CHART_TRANSFORM)}
-                  isDark={isDark}
-                  title="Reset view"
-                >
-                  <Maximize2 className="h-4 w-4" />
-                </TableToolbarIconButton>
-              </>
-            ) : null}
             <TableRefreshButton
               onClick={() => void handleRefresh()}
               isRefreshing={isRefreshing || (isLoading && nodes.length > 0)}
@@ -508,13 +488,14 @@ function MemberTreeScopeView({
               <MemberTreeConnectionsView
                 nodes={nodes}
                 edges={edges}
-                rootMemberId={null}
-                currentMemberId={memberId}
-                isDark={isDark}
                 validRootMemberIds={viewScope === "organization" ? validRootIds : null}
+                scope={viewScope}
+                viewerId={memberId}
+                isDark={isDark}
                 settings={chartSettings}
-                transform={chartTransform}
-                onTransformChange={setChartTransform}
+                canReassign={canReassign}
+                onAddHere={canManageMembers ? setAddUnder : undefined}
+                onReassign={canReassign ? handleReassign : undefined}
               />
             ) : tree.length ? (
               <div className="space-y-6">
@@ -558,19 +539,8 @@ function MemberTreeScopeView({
                 ) : null}
               </div>
             ) : (
-              <div className="p-5">
-                <MemberTreeConnectionsView
-                  nodes={nodes}
-                  edges={edges}
-                  rootMemberId={null}
-                  currentMemberId={memberId}
-                  isDark={isDark}
-                  validRootMemberIds={viewScope === "organization" ? validRootIds : null}
-                  settings={chartSettings}
-                  transform={chartTransform}
-                  onTransformChange={setChartTransform}
-                  onAddHere={canManageMembers ? setAddUnder : undefined}
-                />
+              <div className="p-5 text-sm" style={{ color: isDark ? "#bccbb9" : "#64748b" }}>
+                No members found for this view.
               </div>
             )}
           </div>
