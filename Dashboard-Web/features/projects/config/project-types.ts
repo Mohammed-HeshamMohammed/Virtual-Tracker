@@ -72,7 +72,7 @@ export const PROJECT_TYPE_DEFS: ProjectTypeDef[] = [
     requiresTask: false,
     forcesHours: false,
     billable: true,
-    defaultResets: "Monthly",
+    defaultResets: "Never",
     membersRoleFilter: null,
     hasSubProjects: false,
   },

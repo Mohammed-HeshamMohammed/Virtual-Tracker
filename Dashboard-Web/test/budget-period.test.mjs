@@ -24,3 +24,13 @@ test("an end day caps the period, and a future start has not begun", () => {
   assert.equal(budgetPeriodWindow({ resets: "Monthly", startDate: "2026-01-15", endDate: "2026-03-01" }, "2026-02-20").toDay, "2026-03-01")
   assert.equal(budgetPeriodWindow({ resets: "Monthly", startDate: "2026-05-10" }, "2026-04-01").notStarted, true)
 })
+
+// A budget is for the whole job, which can run past a month and may have no end day, so no project
+// type starts out resetting - a reset is only ever something someone picks.
+import { PROJECT_TYPE_DEFS } from "../features/projects/config/project-types.ts"
+
+test("every project type's budget starts out as Never resets", () => {
+  const defs = Object.values(PROJECT_TYPE_DEFS ?? {})
+  assert.ok(defs.length >= 7, "found the project types")
+  for (const def of defs) assert.equal(def.defaultResets, "Never", def.label)
+})
