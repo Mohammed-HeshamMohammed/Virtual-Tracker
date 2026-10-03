@@ -134,4 +134,71 @@ if (!PGlite) {
     const spent = (await proj.computeProjectSpentForAllPg({}, [{ id: P2, type: "Hours based" }])).get(P2);
     assert.equal(spent, 0.5, "only the current window's half hour");
   });
+
+  // ── "When used up" ───────────────────────────────────────────────────────────
+  async function usedUpBudget(id, { type = "Hours based", cost = 10, scope = "per_project", start, end = null }) {
+    await db.query("INSERT INTO projects (id) VALUES ($1) ON CONFLICT DO NOTHING", [id]);
+    await db.query("DELETE FROM project_budgets WHERE project_id = $1", [id]);
+    await db.query("DELETE FROM activity_sessions WHERE project_id = $1", [id]);
+    await db.query(
+      "INSERT INTO project_budgets VALUES ($1, $2, NULL, $3, $4, 'When used up', $5, $6, true)",
+      [id, type, scope, cost, start, end],
+    );
+  }
+  const sessionAt = (id, offset, hours) =>
+    db.query("INSERT INTO activity_sessions VALUES ($1, $2, $3, $4)", [M, id, `${addLocalDays(today, offset)}T12:00:00Z`, Math.round(hours * 3600)]);
+  const spentOf = async (id) => (await proj.computeProjectSpentForAllPg({}, [{ id, type: "Hours based" }])).get(id);
+
+  test("When used up: spend starts over the day after the budget is used up", async () => {
+    const U = "44444444-4444-4444-8444-444444444444";
+    await usedUpBudget(U, { cost: 10, start: addLocalDays(today, -10) });
+    await sessionAt(U, -8, 6);
+    await sessionAt(U, -6, 5); // 11 >= 10: used up at the end of day -6
+    await sessionAt(U, -3, 2); // new period
+    await sessionAt(U, -1, 1.5);
+    assert.equal(await spentOf(U), 3.5, "only the hours since the budget was used up");
+  });
+
+  test("When used up: used up today, it stays full until midnight", async () => {
+    const U = "55555555-5555-4555-8555-555555555555";
+    await usedUpBudget(U, { cost: 4, start: addLocalDays(today, -3) });
+    await sessionAt(U, -2, 1);
+    await sessionAt(U, 0, 3.5); // 4.5 >= 4, but today is not rolled over
+    assert.equal(await spentOf(U), 4.5);
+  });
+
+  test("When used up: it can happen more than once, and the end day still caps it", async () => {
+    const U = "66666666-6666-4666-8666-666666666666";
+    await usedUpBudget(U, { cost: 5, start: addLocalDays(today, -20), end: addLocalDays(today, 20) });
+    await sessionAt(U, -15, 5); // used up -> period 2 from -14
+    await sessionAt(U, -10, 6); // used up -> period 3 from -9
+    await sessionAt(U, -4, 1);
+    assert.equal(await spentOf(U), 1);
+  });
+
+  test("When used up: a cost based budget walks money, not hours", async () => {
+    const U = "77777777-7777-4777-8777-777777777777";
+    await db.exec("CREATE TABLE IF NOT EXISTS client_projects (project_id uuid, client_id uuid, assigned_at timestamptz DEFAULT now())");
+    await db.exec("CREATE TABLE IF NOT EXISTS client_budgets (client_id uuid, cost numeric)");
+    const client = "88888888-8888-4888-8888-888888888888";
+    await db.query("DELETE FROM client_projects WHERE project_id = $1", [U]);
+    await db.query("INSERT INTO client_projects (project_id, client_id) VALUES ($1, $2)", [U, client]);
+    await db.query("DELETE FROM client_budgets WHERE client_id = $1", [client]);
+    await db.query("INSERT INTO client_budgets VALUES ($1, 50)", [client]); // $50 / hour
+    await usedUpBudget(U, { type: "Cost based", cost: 200, start: addLocalDays(today, -10) });
+    await db.query("UPDATE project_budgets SET based_on = 'Bill rate' WHERE project_id = $1", [U]);
+    await sessionAt(U, -7, 5); // $250 >= $200: used up
+    await sessionAt(U, -2, 2); // $100 in the new period
+    const spent = (await proj.computeProjectSpentForAllPg({}, [{ id: U, type: "Cost based", based_on: "Bill rate" }])).get(U);
+    assert.equal(spent, 100);
+  });
+
+  test("When used up: a per-person budget is not walked - it counts everything, like Never", async () => {
+    const U = "99999999-9999-4999-8999-999999999990";
+    await usedUpBudget(U, { cost: 5, scope: "per_person", start: addLocalDays(today, -10) });
+    await sessionAt(U, -8, 6);
+    await sessionAt(U, -2, 2);
+    assert.equal(await spentOf(U), 8);
+  });
+
 }
