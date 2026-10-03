@@ -107,3 +107,20 @@ test("a budget's sessions are cut in its project's own calendar", async () => {
   assert.deepEqual(calls.at(-1).params[4], ["Asia/Tokyo"]);
   storedBudgets = [];
 });
+
+// Postgres rejects a bind parameter the statement never references, so a zone passed with no date
+// bound must not be sent: it made every undated budget's spend fail.
+const unreferencedParams = ({ sql, params }) => {
+  const used = new Set([...sql.matchAll(/[$](\d+)/g)].map((m) => Number(m[1])));
+  return params.map((_, i) => i + 1).filter((n) => !used.has(n));
+};
+
+test("a time zone with no date bound is not sent as an unused parameter", async () => {
+  calls.length = 0;
+  await getProjectTrackedSecondsPg("p1", { timeZone: "Asia/Tokyo" });
+  assert.deepEqual(unreferencedParams(calls.at(-1)), []);
+  calls.length = 0;
+  await getProjectTrackedSecondsPg("p1", { timeZone: "Asia/Tokyo", fromDate: "2026-03-01" });
+  assert.deepEqual(unreferencedParams(calls.at(-1)), []);
+  assert.ok(calls.at(-1).params.includes("Asia/Tokyo"), "still used when there is a bound");
+});

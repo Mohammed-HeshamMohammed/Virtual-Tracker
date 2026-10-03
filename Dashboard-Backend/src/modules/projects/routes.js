@@ -37,6 +37,7 @@ import {
   getProjectBudgetPg,
   getProjectBudgetRowPg,
   getAllProjectBudgetsPg,
+  budgetWindowsForProjectsPg,
   toDayStrOrNull,
   upsertProjectBudgetPg,
   computeProjectSpentPg,
@@ -115,6 +116,30 @@ function memberLabel(data) {
 }
 
 export { PROJECT_TYPES };
+
+/**
+ * Tells everyone on a project - over the presence WebSocket their desktop tracker and open
+ * dashboards hold - that something the tracker shows or enforces changed: the budget and its
+ * period, member limits, or a project rule. The tracker re-reads on receiving it instead of
+ * waiting for its next poll. Best effort and fire-and-forget: a push that does not arrive costs
+ * nothing, since the tracker polls anyway.
+ *
+ * `resource` is "project-budgets", "project-member-limits" or "projects".
+ */
+function notifyProjectTrackers(projectId, resource) {
+  if (!projectId) return;
+  void (async () => {
+    try {
+      const members = await listProjectMembersPg(projectId);
+      const at = Date.now();
+      for (const memberId of new Set((members ?? []).map((m) => String(m.member_id ?? "")).filter(Boolean))) {
+        sendToMember(memberId, { type: "changed", resource, id: String(projectId), action: "updated", at });
+      }
+    } catch {
+      /* the tracker's own polling covers it */
+    }
+  })();
+}
 
 function normalizeProjectType(value) {
   if (value === undefined || value === null || value === "") return "normal";
@@ -303,6 +328,8 @@ export async function routeProjects(req, res, url, db, origin) {
             })()
           : computeProjectSpentPg(db, projectId, budget).then((hours) => Math.floor(hours * 3600)),
       ]);
+      // Which period this spend is for, so the tracker can say when it resets.
+      const period = (await budgetWindowsForProjectsPg([projectId], new Date(), db)).get(String(projectId));
       sendJson(res, origin, 200, {
         success: true,
         data: {
@@ -310,6 +337,9 @@ export async function routeProjects(req, res, url, db, origin) {
           capSeconds,
           spentSeconds,
           remainingSeconds: Math.max(0, capSeconds - spentSeconds),
+          resets: period?.resets ?? "never",
+          periodStart: period?.periodStart ?? null,
+          periodEnd: period?.periodEnd ?? null,
         },
       });
     } catch (e) {
@@ -1051,6 +1081,7 @@ export async function routeProjects(req, res, url, db, origin) {
         if (Array.isArray(nextSubProjectIds) && projectTypeDef(project.type).hasSubProjects) {
           await setSubProjectsPg(projectId, nextSubProjectIds, viewer.memberId);
         }
+        notifyProjectTrackers(projectId, "projects");
         sendJson(res, origin, 200, { success: true, data: project });
       } catch (e) {
         if (e?.code !== "FORBIDDEN") logSafeError("[projects/:id PATCH]", e);
@@ -1240,6 +1271,7 @@ export async function routeProjects(req, res, url, db, origin) {
         },
         body.created_by ?? body.createdBy ?? viewer.memberId,
       );
+      notifyProjectTrackers(projectId, "project-budgets");
       sendJson(res, origin, 200, { success: true, data: row });
     } catch (e) {
       logSafeError("[project-budgets POST]", e);
@@ -1318,6 +1350,7 @@ export async function routeProjects(req, res, url, db, origin) {
         });
         return true;
       }
+      notifyProjectTrackers(existing.project_id, "project-budgets");
       sendJson(res, origin, 200, { success: true, data: row });
     } catch (e) {
       logSafeError("[project-budgets/:id PATCH]", e);
@@ -1374,6 +1407,7 @@ export async function routeProjects(req, res, url, db, origin) {
         },
         viewer.memberId,
       );
+      notifyProjectTrackers(projectId, "project-budgets");
       sendJson(res, origin, 200, { success: true, data: row });
     } catch (e) {
       logSafeError("[projects/:id/budget-anchor PATCH]", e);
@@ -1420,6 +1454,7 @@ export async function routeProjects(req, res, url, db, origin) {
         },
         body.created_by ?? body.createdBy ?? viewer.memberId,
       );
+      notifyProjectTrackers(projectId, "project-member-limits");
       sendJson(res, origin, 200, { success: true, data: row });
     } catch (e) {
       logSafeError("[project-member-limits POST]", e);
@@ -1442,6 +1477,7 @@ export async function routeProjects(req, res, url, db, origin) {
       const viewer = await assertProjectDomainWrite(projectId, memberId, "memberLimits");
       if (!viewer) return true;
       const removed = await deleteProjectMemberLimitPg(projectId, memberId);
+      notifyProjectTrackers(projectId, "project-member-limits");
       sendJson(res, origin, 200, { success: true, data: { removed } });
     } catch (e) {
       logSafeError("[project-member-limits DELETE]", e);
