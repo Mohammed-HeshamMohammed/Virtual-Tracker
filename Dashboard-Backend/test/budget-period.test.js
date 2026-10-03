@@ -65,3 +65,34 @@ test("a Date from the database is read as the calendar day it is", () => {
 function pick(r) {
   return { fromDay: r.fromDay, toDay: r.toDay };
 }
+
+// "At end date": when the end day passes, the same-length window starts over.
+test("At end date repeats the start..end window, inclusive, forever", () => {
+  const b = { resets: "At end date", start_date: "2026-01-01", end_date: "2026-01-10" }; // 10 days
+  assert.deepEqual(pick(w(b, "2026-01-05")), { fromDay: "2026-01-01", toDay: "2026-01-10" });
+  assert.deepEqual(pick(w(b, "2026-01-10")), { fromDay: "2026-01-01", toDay: "2026-01-10" });
+  assert.deepEqual(pick(w(b, "2026-01-11")), { fromDay: "2026-01-11", toDay: "2026-01-20" });
+  assert.deepEqual(pick(w(b, "2026-03-05")), { fromDay: "2026-03-02", toDay: "2026-03-11" });
+  assert.equal(w(b, "2026-03-05").ended, false, "it never ends");
+});
+
+test("At end date before the first period begins has not started", () => {
+  const r = w({ resets: "At end date", start_date: "2026-05-01", end_date: "2026-05-31" }, "2026-04-10");
+  assert.equal(r.notStarted, true);
+  assert.deepEqual(pick(r), { fromDay: "2026-05-01", toDay: "2026-05-31" });
+});
+
+test("At end date needs both days - without them it behaves like Never", () => {
+  assert.deepEqual(pick(w({ resets: "At end date", start_date: "2026-01-01" }, "2026-06-01")), { fromDay: "2026-01-01", toDay: null });
+  assert.deepEqual(pick(w({ resets: "At end date", end_date: "2026-01-31" }, "2026-06-01")), { fromDay: null, toDay: "2026-01-31" });
+  assert.deepEqual(
+    pick(w({ resets: "At end date", start_date: "2026-02-10", end_date: "2026-02-01" }, "2026-06-01")),
+    { fromDay: "2026-02-10", toDay: "2026-02-01" },
+    "an end before the start is not a window to repeat",
+  );
+});
+
+test("a one-day window repeats every day", () => {
+  const b = { resets: "At end date", start_date: "2026-01-01", end_date: "2026-01-01" };
+  assert.deepEqual(pick(w(b, "2026-01-04")), { fromDay: "2026-01-04", toDay: "2026-01-04" });
+});

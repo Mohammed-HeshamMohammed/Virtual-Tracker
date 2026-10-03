@@ -1,9 +1,11 @@
 // Which days a project budget's spend counts over right now.
 //
-// A budget has a reset period (Never / Weekly / Monthly), the day it starts on and an optional day
-// it ends on. With a reset, periods roll over from the start day - weekly every 7 days, monthly on
+// A budget has a reset period (Never / Weekly / Monthly / At end date), the day it starts on and an
+// optional day it ends on. With a reset, periods roll over from the start day - weekly every 7 days, monthly on
 // the same day of each month (the 31st falls back to the month's last day) - and only the current
-// period counts. Without one, everything from the start day to the end day counts, as before.
+// period counts. "At end date" repeats the start..end window itself: when the end day passes, the
+// budget starts over for another period of the same length (it needs both days; without both it
+// behaves like Never). Without a reset, everything from the start day to the end day counts.
 //
 // Days are plain "YYYY-MM-DD" strings of the project's own calendar; `todayDay` is today in it.
 // Mirrored for display in Dashboard-Web/features/projects/utils/budget-period.ts.
@@ -41,7 +43,7 @@ export function addDays(day, n) {
   return fmt(t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate());
 }
 
-function daysBetween(from, to) {
+export function daysBetween(from, to) {
   return Math.round((utc(to) - utc(from)) / DAY_MS);
 }
 
@@ -60,13 +62,14 @@ export function addMonths(anchor, n) {
 
 function normalizeResets(resets) {
   const key = String(resets ?? "").trim().toLowerCase();
-  return key === "weekly" || key === "monthly" ? key : "never";
+  if (key === "weekly" || key === "monthly") return key;
+  return key === "at end date" ? "repeat" : "never";
 }
 
 /**
  * The window the budget's spend is counted over.
  *
- * @returns {{ resets: "never"|"weekly"|"monthly", fromDay: string|null, toDay: string|null,
+ * @returns {{ resets: "never"|"weekly"|"monthly"|"repeat", fromDay: string|null, toDay: string|null,
  *             periodStart: string|null, periodEnd: string|null, notStarted: boolean, ended: boolean }}
  *   fromDay/toDay are what to sum (inclusive; null = unbounded). periodStart/periodEnd are the
  *   current period for display (periodEnd is the day before the next reset, or the end day).
@@ -74,7 +77,20 @@ function normalizeResets(resets) {
 export function budgetPeriodWindow({ resets, start_date, end_date, startDate, endDate } = {}, todayDay) {
   const start = toDay(start_date ?? startDate);
   const end = toDay(end_date ?? endDate);
-  const kind = normalizeResets(resets);
+  let kind = normalizeResets(resets);
+  // "At end date" repeats the window between the two days, so it needs both.
+  if (kind === "repeat" && !(start && end && end >= start)) kind = "never";
+
+  if (kind === "repeat") {
+    const length = daysBetween(start, end) + 1; // inclusive
+    if (todayDay < start) {
+      return { resets: kind, fromDay: start, toDay: end, periodStart: start, periodEnd: end, notStarted: true, ended: false };
+    }
+    const k = Math.floor(daysBetween(start, todayDay) / length);
+    const periodStart = addDays(start, k * length);
+    const periodEnd = addDays(periodStart, length - 1);
+    return { resets: kind, fromDay: periodStart, toDay: periodEnd, periodStart, periodEnd, notStarted: false, ended: false };
+  }
 
   if (kind === "never") {
     return {

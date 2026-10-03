@@ -34,3 +34,13 @@ test("every project type's budget starts out as Never resets", () => {
   assert.ok(defs.length >= 7, "found the project types")
   for (const def of defs) assert.equal(def.defaultResets, "Never", def.label)
 })
+
+test("At end date repeats the window, and needs both days (same rule as the server)", () => {
+  const b = { resets: "At end date", startDate: "2026-01-01", endDate: "2026-01-10" }
+  assert.deepEqual(pick(budgetPeriodWindow(b, "2026-01-11")), { fromDay: "2026-01-11", toDay: "2026-01-20" })
+  assert.deepEqual(pick(budgetPeriodWindow(b, "2026-03-05")), { fromDay: "2026-03-02", toDay: "2026-03-11" })
+  assert.deepEqual(pick(budgetPeriodWindow({ resets: "At end date", startDate: "2026-01-01" }, "2026-06-01")), {
+    fromDay: "2026-01-01",
+    toDay: null,
+  })
+})
