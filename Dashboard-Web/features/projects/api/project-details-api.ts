@@ -100,6 +100,8 @@ export interface CreateProjectFormPayload {
   budgetWhoToNotify: string
   budgetStopTimersAt: string
   budgetStartDate: string
+  /** Last day the budget counts; empty = no end. */
+  budgetEndDate?: string
   budgetIncludeNonBillable: boolean
   budgetNotifyMembers: boolean
   memberLimitNotifyAt: string
@@ -122,6 +124,8 @@ export interface ProjectBudgetRow {
   stopTimersAtPct: number | null
   resets: string
   startDate: string
+  /** Last day the budget counts; empty = no end. */
+  endDate?: string
   includeNonBillableTime: boolean
   spent?: number
   target?: number
@@ -274,6 +278,7 @@ async function updateProjectBudget(
   if (data.stopTimersAtPct !== undefined) body.stop_timers_at_pct = data.stopTimersAtPct
   if (data.resets !== undefined) body.resets = data.resets
   if (data.startDate !== undefined) body.start_date = data.startDate || null
+  if (data.endDate !== undefined) body.end_date = data.endDate || null
   if (data.includeNonBillableTime !== undefined) body.include_non_billable_time = data.includeNonBillableTime
   if (data.updatedBy && isValidUuid(data.updatedBy)) body.updated_by = data.updatedBy
   if (data.expectedUpdatedAt) body.expected_updated_at = data.expectedUpdatedAt
@@ -320,6 +325,7 @@ function mapBudgetRow(row: Record<string, unknown>): ProjectBudgetRow {
           : null,
     resets: String(row.resets ?? "Never"),
     startDate: String(row.start_date ?? row.startDate ?? ""),
+    endDate: String(row.end_date ?? row.endDate ?? ""),
     includeNonBillableTime: Boolean(row.include_non_billable_time ?? row.includeNonBillableTime ?? true),
     spent: Number(row.spent ?? 0),
     target: row.target != null ? Number(row.target) : Number(row.cost ?? 0),
@@ -345,6 +351,7 @@ async function createProjectBudget(
       stop_timers_at_pct: data.stopTimersAtPct,
       resets: data.resets,
       start_date: data.startDate || undefined,
+      end_date: data.endDate || undefined,
       include_non_billable_time: data.includeNonBillableTime,
       ...(data.createdBy && isValidUuid(data.createdBy) ? { created_by: data.createdBy } : {}),
     }),
@@ -524,6 +531,7 @@ function buildBudgetFields(payload: CreateProjectFormPayload) {
     stopTimersAtPct: parseOptionalNumber(payload.budgetStopTimersAt),
     resets: payload.budgetResets || "Never",
     startDate: payload.budgetStartDate,
+    endDate: payload.budgetEndDate ?? "",
     includeNonBillableTime: payload.budgetIncludeNonBillable,
   }
 }

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Anchor, Archive, MoreHorizontal, Pencil, Trash2 } from "lucide-react"
+import { Archive, MoreHorizontal, Pencil, RotateCw, Trash2 } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import {
   TABLE_ROW_MENU_ITEM_BASE,
@@ -35,7 +35,7 @@ export function ProjectRowMenu({
       action: () => { onArchive(); setOpen(false) },
     },
     ...(onAnchor
-      ? [{ icon: <Anchor className="h-3.5 w-3.5" />, label: "Anchor", action: () => { onAnchor(); setOpen(false) } }]
+      ? [{ icon: <RotateCw className="h-3.5 w-3.5" />, label: "Restart budget period", action: () => { onAnchor(); setOpen(false) } }]
       : []),
     { icon: <Trash2 className="h-3.5 w-3.5" />, label: "Delete", action: () => { onDelete(); setOpen(false) }, danger: true },
   ]
