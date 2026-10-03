@@ -854,15 +854,70 @@ function projectBudgetZone(raw) {
 }
 
 /**
+ * What a whole-project budget has spent each day from `fromDay`, in the budget's own unit (hours for
+ * an Hours based budget, money for a Cost based one), with each day cut in the project's calendar.
+ * This is what "When used up" walks to find where a period ends - see lib/time/budget-period.js.
+ * Same sources and rules as the spend totals: tracked sessions plus approved manual entries, billable
+ * only when the budget says so, money from pay rates or the client's bill rate.
+ */
+export async function dailyBudgetSpendPg(db, projectId, budgetRow, zone, fromDay, toDay = null) {
+  const params = [projectId, zone, fromDay];
+  let sessionTo = "";
+  let entryTo = "";
+  if (toDay) {
+    params.push(toDay);
+    sessionTo = ` AND (started_at AT TIME ZONE $2::text)::date <= $${params.length}`;
+    entryTo = ` AND date <= $${params.length}`;
+  }
+  const billable = budgetRow.include_non_billable_time === false ? " AND billable = true" : "";
+  const rows = await query(
+    `SELECT day, member_id, SUM(secs) AS secs FROM (
+       SELECT to_char((started_at AT TIME ZONE $2::text)::date, 'YYYY-MM-DD') AS day, member_id, active_seconds AS secs
+         FROM activity_sessions
+        WHERE project_id = $1 AND (started_at AT TIME ZONE $2::text)::date >= $3::date${sessionTo}
+       UNION ALL
+       SELECT to_char(date, 'YYYY-MM-DD') AS day, member_id, duration AS secs
+         FROM time_entries
+        WHERE project_id = $1 AND status != 'rejected' AND date >= $3::date${entryTo}${billable}
+     ) tracked
+     GROUP BY day, member_id`,
+    params,
+  );
+
+  const isHours = String(budgetRow.type) === "Hours based";
+  const basedOnPay = String(budgetRow.based_on || "").toLowerCase().includes("pay");
+  let rateForMember = () => 1;
+  if (!isHours) {
+    if (basedOnPay) {
+      const rates = await memberHourlyRatesInDisplayCurrency([...new Set(rows.map((r) => r.member_id))], db);
+      rateForMember = (memberId) => rates.get(String(memberId)) ?? 0;
+    } else {
+      const clientIds = await listClientIdsForProjectPg(projectId);
+      const clientRate = clientIds.length ? Number((await getClientBudgetPg(clientIds[0]))?.cost ?? 0) : 0;
+      rateForMember = () => clientRate;
+    }
+  }
+  const daily = new Map();
+  for (const row of rows) {
+    const hours = Math.max(0, Number(row.secs ?? 0)) / 3600;
+    const amount = isHours ? hours : hours * rateForMember(row.member_id);
+    if (amount > 0) daily.set(row.day, (daily.get(row.day) ?? 0) + amount);
+  }
+  return daily;
+}
+
+/**
  * Each budgeted project's spend window right now (lib/time/budget-period.js), from the stored
  * budget - so a caller that passes only start/end still gets the reset period applied.
+ * "When used up" budgets walk their day-by-day spend to find where the current period began.
  */
-export async function budgetWindowsForProjectsPg(projectIds, now = new Date()) {
+export async function budgetWindowsForProjectsPg(projectIds, now = new Date(), db = null) {
   const ids = [...new Set((projectIds ?? []).filter(Boolean).map(String))];
   const out = new Map();
   if (ids.length === 0) return out;
   const rows = await query(
-    `SELECT pb.project_id, pb.resets, pb.start_date, pb.end_date, p.timezone
+    `SELECT pb.project_id, pb.resets, pb.start_date, pb.end_date, pb.cost, pb.type, pb.based_on, pb.scope,
+            pb.include_non_billable_time, p.timezone
        FROM project_budgets pb
        JOIN projects p ON p.id = pb.project_id
       WHERE pb.project_id = ANY($1::uuid[])`,
@@ -870,7 +925,20 @@ export async function budgetWindowsForProjectsPg(projectIds, now = new Date()) {
   );
   for (const row of rows ?? []) {
     const zone = projectBudgetZone(row.timezone);
-    out.set(String(row.project_id), { ...budgetPeriodWindow(row, localDayFor(now, zone)), zone });
+    const todayDay = localDayFor(now, zone);
+    let dailySpend = null;
+    // Only whole-project budgets: a per-person budget would have to be walked person by person.
+    if (
+      String(row.resets ?? "").trim().toLowerCase() === "when used up" &&
+      row.scope !== "per_person" &&
+      Number(row.cost) > 0 &&
+      row.start_date
+    ) {
+      const start = toDayStrOrNull(row.start_date);
+      const end = toDayStrOrNull(row.end_date);
+      dailySpend = await dailyBudgetSpendPg(db, row.project_id, row, zone, start, end && end < todayDay ? end : todayDay);
+    }
+    out.set(String(row.project_id), { ...budgetPeriodWindow(row, todayDay, { dailySpend }), zone });
   }
   return out;
 }
@@ -879,7 +947,7 @@ export async function computeProjectSpentPg(db, projectId, budgetRow) {
   if (!budgetRow) return 0;
   const includeNonBillable = budgetRow.include_non_billable_time !== false;
   // Only the current period counts when the budget resets (see budget-period.js).
-  const window = (await budgetWindowsForProjectsPg([projectId])).get(String(projectId));
+  const window = (await budgetWindowsForProjectsPg([projectId], new Date(), db)).get(String(projectId));
   const fromDate = window ? window.fromDay : toDayStrOrNull(budgetRow.start_date);
   const toDate = window ? window.toDay : toDayStrOrNull(budgetRow.end_date);
   const timeZone = window?.zone;
@@ -902,7 +970,7 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
 
   // The current period of each budget, from the stored row - several callers build these rows
   // by hand with only start/end, so the reset period is looked up here rather than trusted to them.
-  const windows = await budgetWindowsForProjectsPg(budgetRows.map((r) => r.id));
+  const windows = await budgetWindowsForProjectsPg(budgetRows.map((r) => r.id), new Date(), db);
   budgetRows = budgetRows.map((r) => {
     const w = windows.get(String(r.id));
     return w ? { ...r, start_date: w.fromDay, end_date: w.toDay, zone: w.zone } : { ...r, zone: "UTC" };

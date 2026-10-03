@@ -5,7 +5,11 @@
 // the same day of each month (the 31st falls back to the month's last day) - and only the current
 // period counts. "At end date" repeats the start..end window itself: when the end day passes, the
 // budget starts over for another period of the same length (it needs both days; without both it
-// behaves like Never). Without a reset, everything from the start day to the end day counts.
+// behaves like Never). "When used up" starts over the day after the budget has been used up (spend
+// reaching the budget total), however soon that is; it needs the day-by-day spend, which only the
+// database layer has, so here it takes `dailySpend` (day -> amount in the budget's own unit) and
+// without it counts everything like Never. Without a reset, everything from the start day to the
+// end day counts.
 //
 // Days are plain "YYYY-MM-DD" strings of the project's own calendar; `todayDay` is today in it.
 // Mirrored for display in Dashboard-Web/features/projects/utils/budget-period.ts.
@@ -63,7 +67,8 @@ export function addMonths(anchor, n) {
 function normalizeResets(resets) {
   const key = String(resets ?? "").trim().toLowerCase();
   if (key === "weekly" || key === "monthly") return key;
-  return key === "at end date" ? "repeat" : "never";
+  if (key === "at end date") return "repeat";
+  return key === "when used up" ? "usedup" : "never";
 }
 
 /**
@@ -74,10 +79,21 @@ function normalizeResets(resets) {
  *   fromDay/toDay are what to sum (inclusive; null = unbounded). periodStart/periodEnd are the
  *   current period for display (periodEnd is the day before the next reset, or the end day).
  */
-export function budgetPeriodWindow({ resets, start_date, end_date, startDate, endDate } = {}, todayDay) {
+export function budgetPeriodWindow(
+  { resets, start_date, end_date, startDate, endDate, cost } = {},
+  todayDay,
+  { dailySpend = null } = {},
+) {
   const start = toDay(start_date ?? startDate);
   const end = toDay(end_date ?? endDate);
   let kind = normalizeResets(resets);
+
+  if (kind === "usedup") {
+    const cap = Number(cost);
+    // It needs a start day, a budget total and the daily spend to walk; without them it is Never.
+    if (!(start && cap > 0 && dailySpend)) kind = "never";
+    else return usedUpWindow({ start, end, cap, dailySpend }, todayDay);
+  }
   // "At end date" repeats the window between the two days, so it needs both.
   if (kind === "repeat" && !(start && end && end >= start)) kind = "never";
 
@@ -135,4 +151,36 @@ export function budgetPeriodWindow({ resets, start_date, end_date, startDate, en
   const naturalEnd = addDays(nextStart, -1);
   const periodEnd = end && end < naturalEnd ? end : naturalEnd;
   return { resets: kind, fromDay: periodStart, toDay: periodEnd, periodStart, periodEnd, notStarted: false, ended };
+}
+
+/**
+ * "When used up": walk the days from the start, adding each day's spend; when the total reaches the
+ * budget at the end of a day, the next period starts the following day with nothing counted. Today
+ * is never rolled over - a budget used up today stays full until midnight, so "stop timers when
+ * reached" holds for the rest of the day. Spend past the cap on the day it was used up stays in
+ * that period (the budget is cut at day boundaries).
+ *
+ * @param {{ start: string, end: string|null, cap: number, dailySpend: Map<string, number> | Record<string, number> }} input
+ */
+function usedUpWindow({ start, end, cap, dailySpend }, todayDay) {
+  const spendOn = (day) => Number(dailySpend instanceof Map ? dailySpend.get(day) : dailySpend[day]) || 0;
+  const ended = Boolean(end && todayDay > end);
+  const last = ended ? end : todayDay;
+
+  if (todayDay < start) {
+    return { resets: "usedup", fromDay: start, toDay: end, periodStart: start, periodEnd: end, notStarted: true, ended: false };
+  }
+
+  let periodStart = start;
+  let total = 0;
+  let periods = 1;
+  for (let day = start; day < last; day = addDays(day, 1)) {
+    total += spendOn(day);
+    if (total >= cap) {
+      periodStart = addDays(day, 1);
+      total = 0;
+      periods += 1;
+    }
+  }
+  return { resets: "usedup", fromDay: periodStart, toDay: end, periodStart, periodEnd: end, notStarted: false, ended, periods };
 }

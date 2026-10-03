@@ -96,3 +96,55 @@ test("a one-day window repeats every day", () => {
   const b = { resets: "At end date", start_date: "2026-01-01", end_date: "2026-01-01" };
   assert.deepEqual(pick(w(b, "2026-01-04")), { fromDay: "2026-01-04", toDay: "2026-01-04" });
 });
+
+// "When used up": the period restarts the day after the budget is used up.
+const usedUp = (spendByDay, today, extra = {}) =>
+  budgetPeriodWindow(
+    { resets: "When used up", start_date: "2026-01-01", cost: 10, ...extra },
+    today,
+    { dailySpend: new Map(Object.entries(spendByDay)) },
+  );
+
+test("When used up: before the budget is used up, everything since the start counts", () => {
+  const r = usedUp({ "2026-01-01": 3, "2026-01-02": 4 }, "2026-01-05");
+  assert.equal(r.fromDay, "2026-01-01");
+});
+
+test("When used up: the day after it is used up, a new period starts from nothing", () => {
+  const spend = { "2026-01-01": 4, "2026-01-02": 6 }; // 10 = used up at the end of Jan 2
+  assert.equal(usedUp(spend, "2026-01-03").fromDay, "2026-01-03");
+  assert.equal(usedUp(spend, "2026-01-20").fromDay, "2026-01-03");
+});
+
+test("When used up: a budget used up TODAY stays full until midnight", () => {
+  const spend = { "2026-01-01": 4, "2026-01-02": 6 };
+  assert.equal(usedUp(spend, "2026-01-02").fromDay, "2026-01-01", "still the same period today");
+});
+
+test("When used up: it can be used up again, and again, sooner each time", () => {
+  const spend = { "2026-01-01": 10, "2026-01-02": 10, "2026-01-03": 3, "2026-01-04": 8 };
+  // used up end of Jan 1 -> period 2 starts Jan 2; used up end of Jan 2 -> period 3 starts Jan 3;
+  // Jan 3 + Jan 4 = 11 -> used up end of Jan 4 -> period 4 starts Jan 5.
+  assert.equal(usedUp(spend, "2026-01-05").fromDay, "2026-01-05");
+  assert.equal(usedUp(spend, "2026-01-05").periods, 4);
+  assert.equal(usedUp(spend, "2026-01-04").fromDay, "2026-01-03");
+});
+
+test("When used up: spend over the cap on the day it is used up stays in that period", () => {
+  assert.equal(usedUp({ "2026-01-01": 25 }, "2026-01-02").fromDay, "2026-01-02");
+  assert.equal(usedUp({ "2026-01-01": 25, "2026-01-02": 1 }, "2026-01-02").fromDay, "2026-01-02");
+});
+
+test("When used up: it stops at the end day, and has not begun before the start", () => {
+  const ended = usedUp({ "2026-01-01": 10 }, "2026-06-01", { end_date: "2026-01-31" });
+  assert.equal(ended.ended, true);
+  assert.equal(ended.toDay, "2026-01-31");
+  assert.equal(usedUp({}, "2025-12-01").notStarted, true);
+});
+
+test("When used up needs a start day, a budget total and the daily spend - otherwise it is Never", () => {
+  const never = (budget, opts) => pick(budgetPeriodWindow(budget, "2026-06-01", opts));
+  assert.deepEqual(never({ resets: "When used up", cost: 10 }, { dailySpend: new Map() }), { fromDay: null, toDay: null });
+  assert.deepEqual(never({ resets: "When used up", start_date: "2026-01-01", cost: 0 }, { dailySpend: new Map() }), { fromDay: "2026-01-01", toDay: null });
+  assert.deepEqual(never({ resets: "When used up", start_date: "2026-01-01", cost: 10 }), { fromDay: "2026-01-01", toDay: null });
+});

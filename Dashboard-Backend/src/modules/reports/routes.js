@@ -26,8 +26,6 @@ import {
 import { convertAmount } from "../../lib/currency/convert.js";
 import { getAllCategories } from "../classification/activity-categories.js";
 import { localDayFor } from "../../lib/time/timezone-utils.js";
-import { budgetPeriodWindow } from "../../lib/time/budget-period.js";
-import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
 import { buildTimeAndActivityCsv, buildTimeAndActivityPdf } from "./build-report-files.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { insertReportSchedulePg } from "../../lib/postgres/report-schedules-postgres.service.js";
@@ -54,6 +52,7 @@ import {
   getAllProjectBudgetsPg,
   getProjectTrackedSecondsPg,
   computeProjectSpentCostPg,
+  budgetWindowsForProjectsPg,
   toDayStrOrNull,
 } from "../../lib/postgres/projects-postgres.service.js";
 import { listClientsPg, getAllClientBudgetsPg } from "../../lib/postgres/clients-postgres.service.js";
@@ -1234,18 +1233,22 @@ export async function routeReports(req, res, url, origin) {
       const projects =
         requestedSet === null ? visibleProjects : visibleProjects.filter((project) => requestedSet.has(String(project.id)));
 
+      // Each budget's current period (its reset, start and end), in the project's calendar.
+      const windows = await budgetWindowsForProjectsPg(
+        projects.filter((project) => budgetByProject.get(project.id)).map((project) => project.id),
+        new Date(),
+        getDb(),
+      );
       const rows = await Promise.all(
         projects.map(async (project) => {
           const budget = budgetByProject.get(project.id);
           const cost = budget ? Number(budget.cost) || 0 : 0;
-          // The budget's current period (its reset period, start and end), in the project's calendar.
-          const zone = budget ? await resolveProjectTimeZone(project.id, null) : null;
-          const window = budget ? budgetPeriodWindow(budget, localDayFor(new Date(), zone)) : null;
+          const window = budget ? windows.get(String(project.id)) : null;
           const range = window
             ? {
                 ...(window.fromDay ? { fromDate: window.fromDay } : {}),
                 ...(window.toDay ? { toDate: window.toDay } : {}),
-                timeZone: zone,
+                timeZone: window.zone,
               }
             : {};
           const spentSeconds = await getProjectTrackedSecondsPg(project.id, range);

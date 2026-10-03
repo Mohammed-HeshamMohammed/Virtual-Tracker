@@ -1516,7 +1516,7 @@ GROUP BY task_id`,
   // length (lib/time/budget-period.js). The original constraint only allowed three values.
   `ALTER TABLE project_budgets
      DROP CONSTRAINT IF EXISTS project_budgets_resets_check,
-     ADD CONSTRAINT project_budgets_resets_check CHECK (resets IN ('Never', 'Weekly', 'Monthly', 'At end date'))`,
+     ADD CONSTRAINT project_budgets_resets_check CHECK (resets IN ('Never', 'Weekly', 'Monthly', 'At end date', 'When used up'))`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS managers_can_edit_budget BOOLEAN NOT NULL DEFAULT true`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS managers_can_edit_member_limits BOOLEAN NOT NULL DEFAULT true`,
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS managers_can_edit_members BOOLEAN NOT NULL DEFAULT true`,
