@@ -1,3 +1,4 @@
+import { EasyTextSize } from "../common/EasyTextSize";
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { AuthView, ForgotState, SignUpFields, SignUpState, ThemePreference } from "../../types";
@@ -168,6 +169,8 @@ export function SignInPanel({
         </section>
 
         <section className="auth-form-panel">
+          {/* Before signing in is when someone who needs bigger text needs the buttons most. */}
+          <EasyTextSize className="auth-text-size" />
           <div className="auth-form-card">
             {authView === "signup" ? (
               <div key="signup" className="auth-form-view">

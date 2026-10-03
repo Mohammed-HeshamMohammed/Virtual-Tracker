@@ -1,3 +1,4 @@
+import { EasyTextSize } from "../common/EasyTextSize";
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ProfileInfo } from "../../types";
@@ -29,6 +30,7 @@ export function WelcomeBackPanel({
     <main className="agent-tray view-home">
       <TitleBar title="My Virtual Tracker" onClose={() => void invoke("close_window")} />
       <div className="reconnect-body">
+        <EasyTextSize className="auth-text-size" />
         <div className="reconnect-card">
           <div className="avatar-wrap reconnect-avatar">
             {profile?.avatarUrl && !avatarBroken ? (

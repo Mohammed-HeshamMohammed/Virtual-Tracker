@@ -6304,3 +6304,45 @@ select.modal-input {
 .easy-read .modal-actions .btn {
   padding: 0 18px;
 }
+
+/* Text on the danger (pink / crimson) button: the dark-on-pink, white-on-crimson pair that clears
+   4.5:1 in each theme - the default white on the pink missed it. */
+.easy-read .btn-danger {
+  color: rgb(var(--c-on-primary));
+}
+
+/* Hint text inside fields, readable too. */
+.easy-read ::placeholder {
+  color: var(--on-surface-variant);
+  opacity: 0.85;
+}
+
+/* The size buttons on the pre-sign-in screens sit at the top-right of the form, in the flow so they never cover a field. */
+.easy-read .auth-text-size {
+  align-self: flex-end;
+  margin: 0 0 12px;
+}
+
+.easy-read .auth-text-size .easy-btn {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+.easy-read .reconnect-body {
+  flex-direction: column;
+}
+
+.easy-read .reconnect-body > .auth-text-size {
+  align-self: flex-end;
+}
+
+/* Centre when it fits, start at the top when it does not - plain centring pushes the top of an
+   overflowing form above the scroll area, out of reach. */
+.easy-read .auth-form-panel,
+.easy-read .reconnect-body {
+  justify-content: safe center;
+}
+.easy-read .reconnect-body {
+  align-items: safe center;
+}
