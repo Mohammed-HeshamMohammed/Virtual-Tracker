@@ -742,7 +742,8 @@ export async function getProjectTrackedSecondsPg(projectId, options = {}) {
   // (the project's calendar for its limits); without one it is the database
   // session's, which is UTC - right only for people living there.
   let sessionDay = "started_at::date";
-  if (options.timeZone) {
+  // Only sent when a date bound uses it: Postgres rejects a parameter the query never references.
+  if (options.timeZone && (options.fromDate || options.toDate)) {
     params.push(options.timeZone);
     sessionDay = `(started_at AT TIME ZONE $${params.length}::text)::date`;
   }
@@ -790,7 +791,8 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
   // Same rule as getProjectTrackedSecondsPg: a session counts on the day it started in
   // `options.timeZone` (the project's calendar), else in the database's (UTC).
   let sessionDay = "started_at::date";
-  if (options.timeZone) {
+  // Only sent when a date bound uses it: Postgres rejects a parameter the query never references.
+  if (options.timeZone && (options.fromDate || options.toDate)) {
     params.push(options.timeZone);
     sessionDay = `(started_at AT TIME ZONE $${params.length}::text)::date`;
   }
