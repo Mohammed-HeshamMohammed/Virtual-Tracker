@@ -50,7 +50,10 @@ async function fetchFreshBase(db) {
   const [projectRows, budgetRows, projectMemberRows, taskRows] = await Promise.all([
     pgQuery("SELECT id, status, name, updated_at, created_at FROM projects LIMIT 300"),
     pgQuery(
-      "SELECT id, project_id, cost, type, based_on, scope, include_non_billable_time, start_date, end_date FROM project_budgets LIMIT 300",
+      `SELECT pb.id, pb.project_id, pb.cost, pb.type, pb.based_on, pb.scope, pb.include_non_billable_time, pb.start_date, pb.end_date
+         FROM project_budgets pb JOIN projects p ON p.id = pb.project_id
+        WHERE p.budget_enabled IS NOT FALSE
+        LIMIT 300`,
     ),
     pgQuery("SELECT id, project_id, member_id FROM project_members LIMIT 3000"),
     listTasksPg({ limit: 800 }),

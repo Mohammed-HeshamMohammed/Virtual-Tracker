@@ -72,6 +72,9 @@ import { validateBreakTimeSeconds } from "./break-time.js";
 import { listMeta } from "../../http/list-truncation.js";
 import { resolveIdleTimeLimit } from "./idle-time-limit.service.js";
 import { resolveProjectTimezoneInput, canSetProjectTimezone } from "./project-timezone.js";
+import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
+import { localDayFor } from "../../lib/time/timezone-utils.js";
+import { budgetPeriodWindow } from "../../lib/time/budget-period.js";
 import {
   canManageProjectRules,
   isProjectAreaLocked,
@@ -285,10 +288,18 @@ export async function routeProjects(req, res, url, db, origin) {
           ? Promise.resolve(Math.floor(Number(budget.cost ?? 0) * 3600))
           : computeProjectBudgetTargetPg(db, projectId, budget).then((hours) => Math.floor(hours * 3600)),
         perPerson
-          ? getProjectTrackedSecondsPg(projectId, {
-              memberId: viewer.memberId,
-              includeNonBillable: budget.include_non_billable_time !== false,
-            })
+          ? (async () => {
+              // This person's hours over the budget's current period, in the project's calendar.
+              const zone = await resolveProjectTimeZone(projectId, null);
+              const window = budgetPeriodWindow(budget, localDayFor(new Date(), zone));
+              return getProjectTrackedSecondsPg(projectId, {
+                memberId: viewer.memberId,
+                includeNonBillable: budget.include_non_billable_time !== false,
+                ...(window.fromDay ? { fromDate: window.fromDay } : {}),
+                ...(window.toDay ? { toDate: window.toDay } : {}),
+                timeZone: zone,
+              });
+            })()
           : computeProjectSpentPg(db, projectId, budget).then((hours) => Math.floor(hours * 3600)),
       ]);
       sendJson(res, origin, 200, {
@@ -460,6 +471,7 @@ export async function routeProjects(req, res, url, db, origin) {
                 ? String(budget.stopTimersAtPct)
                 : "",
           budgetStartDate: budget ? toIso(budget.start_date || budget.startDate).slice(0, 10) : "",
+          budgetEndDate: budget ? toIso(budget.end_date || budget.endDate).slice(0, 10) : "",
           budgetIncludeNonBillable: budget
             ? Boolean(budget.include_non_billable_time ?? budget.includeNonBillableTime ?? true)
             : true,
@@ -1222,6 +1234,7 @@ export async function routeProjects(req, res, url, db, origin) {
           stopTimersAtPct: body.stop_timers_at_pct ?? body.stopTimersAtPct,
           resets: body.resets,
           startDate: body.start_date ?? body.startDate,
+          endDate: body.end_date ?? body.endDate,
           includeNonBillableTime: body.include_non_billable_time ?? body.includeNonBillableTime,
         },
         body.created_by ?? body.createdBy ?? viewer.memberId,
@@ -1287,6 +1300,8 @@ export async function routeProjects(req, res, url, db, origin) {
           stopTimersAtPct: body.stop_timers_at_pct ?? body.stopTimersAtPct ?? current?.stop_timers_at_pct,
           resets: body.resets ?? current?.resets,
           startDate: "start_date" in body ? body.start_date : body.startDate ?? current?.start_date,
+          // Kept unless the body changes it - an edit used to clear the end day every time.
+          endDate: "end_date" in body ? body.end_date : body.endDate !== undefined ? body.endDate : current?.end_date,
           includeNonBillableTime:
             body.include_non_billable_time ?? body.includeNonBillableTime ?? current?.include_non_billable_time,
         },
