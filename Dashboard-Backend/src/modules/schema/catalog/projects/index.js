@@ -73,6 +73,7 @@ export const projectSchemas = [
       stop_timers_at_pct: "decimal",
       resets: "string",
       start_date: "date",
+      end_date: "date",
       include_non_billable_time: "boolean",
       created_at: "timestamp",
       created_by: "uuid",

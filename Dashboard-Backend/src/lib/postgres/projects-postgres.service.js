@@ -15,7 +15,8 @@ import {
   memberHourlyRateInDisplayCurrency,
   memberHourlyRatesInDisplayCurrency,
 } from "../currency/member-rate.js";
-import { canonicalizeTimeZone } from "../time/timezone-utils.js";
+import { canonicalizeTimeZone, localDayFor } from "../time/timezone-utils.js";
+import { budgetPeriodWindow } from "../time/budget-period.js";
 
 function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -786,14 +787,21 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
   const params = [projectId];
   let sessionDateClause = "";
   let entryDateClause = "";
+  // Same rule as getProjectTrackedSecondsPg: a session counts on the day it started in
+  // `options.timeZone` (the project's calendar), else in the database's (UTC).
+  let sessionDay = "started_at::date";
+  if (options.timeZone) {
+    params.push(options.timeZone);
+    sessionDay = `(started_at AT TIME ZONE $${params.length}::text)::date`;
+  }
   if (options.fromDate) {
     params.push(options.fromDate);
-    sessionDateClause += ` AND started_at::date >= $${params.length}`;
+    sessionDateClause += ` AND ${sessionDay} >= $${params.length}`;
     entryDateClause += ` AND date >= $${params.length}`;
   }
   if (options.toDate) {
     params.push(options.toDate);
-    sessionDateClause += ` AND started_at::date <= $${params.length}`;
+    sessionDateClause += ` AND ${sessionDay} <= $${params.length}`;
     entryDateClause += ` AND date <= $${params.length}`;
   }
 
@@ -833,23 +841,56 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
     includeNonBillable: options.includeNonBillable,
     fromDate: options.fromDate,
     toDate: options.toDate,
+    timeZone: options.timeZone,
   });
   const hours = seconds / 3600;
   return Math.round(hours * rate * 100) / 100;
 }
 
+/** A project's own calendar for its budget periods: its declared zone, else UTC. */
+function projectBudgetZone(raw) {
+  const declared = typeof raw === "string" ? raw.trim() : "";
+  return declared ? canonicalizeTimeZone(declared) : "UTC";
+}
+
+/**
+ * Each budgeted project's spend window right now (lib/time/budget-period.js), from the stored
+ * budget - so a caller that passes only start/end still gets the reset period applied.
+ */
+export async function budgetWindowsForProjectsPg(projectIds, now = new Date()) {
+  const ids = [...new Set((projectIds ?? []).filter(Boolean).map(String))];
+  const out = new Map();
+  if (ids.length === 0) return out;
+  const rows = await query(
+    `SELECT pb.project_id, pb.resets, pb.start_date, pb.end_date, p.timezone
+       FROM project_budgets pb
+       JOIN projects p ON p.id = pb.project_id
+      WHERE pb.project_id = ANY($1::uuid[])`,
+    [ids],
+  );
+  for (const row of rows ?? []) {
+    const zone = projectBudgetZone(row.timezone);
+    out.set(String(row.project_id), { ...budgetPeriodWindow(row, localDayFor(now, zone)), zone });
+  }
+  return out;
+}
+
 export async function computeProjectSpentPg(db, projectId, budgetRow) {
   if (!budgetRow) return 0;
   const includeNonBillable = budgetRow.include_non_billable_time !== false;
-  const fromDate = toDayStrOrNull(budgetRow.start_date);
-  const toDate = toDayStrOrNull(budgetRow.end_date);
+  // Only the current period counts when the budget resets (see budget-period.js).
+  const window = (await budgetWindowsForProjectsPg([projectId])).get(String(projectId));
+  const fromDate = window ? window.fromDay : toDayStrOrNull(budgetRow.start_date);
+  const toDate = window ? window.toDay : toDayStrOrNull(budgetRow.end_date);
+  const timeZone = window?.zone;
   if (String(budgetRow.type) === "Hours based") {
-    const seconds = await getProjectTrackedSecondsPg(projectId, { includeNonBillable, fromDate, toDate });
+    const seconds = await getProjectTrackedSecondsPg(projectId, { includeNonBillable, fromDate, toDate, timeZone });
     return Math.round((seconds / 3600) * 100) / 100;
   }
   return computeProjectSpentCostPg(db, projectId, {
     fromDate,
     toDate,
+    timeZone,
     basedOn: budgetRow.based_on,
     includeNonBillable,
   });
@@ -858,6 +899,14 @@ export async function computeProjectSpentPg(db, projectId, budgetRow) {
 export async function computeProjectSpentForAllPg(db, budgetRows) {
   const result = new Map();
   if (!budgetRows.length) return result;
+
+  // The current period of each budget, from the stored row - several callers build these rows
+  // by hand with only start/end, so the reset period is looked up here rather than trusted to them.
+  const windows = await budgetWindowsForProjectsPg(budgetRows.map((r) => r.id));
+  budgetRows = budgetRows.map((r) => {
+    const w = windows.get(String(r.id));
+    return w ? { ...r, start_date: w.fromDay, end_date: w.toDay, zone: w.zone } : { ...r, zone: "UTC" };
+  });
 
   const hoursRows = budgetRows.filter((r) => String(r.type) === "Hours based");
   const costRows = budgetRows.filter((r) => String(r.type) !== "Hours based");
@@ -870,16 +919,17 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
     const includeFlags = rows.map((r) => r.include_non_billable_time !== false);
     const startDates = rows.map((r) => toDayStrOrNull(r.start_date));
     const endDates = rows.map((r) => toDayStrOrNull(r.end_date));
+    const zones = rows.map((r) => r.zone || "UTC");
     const dbRows = await query(
       `WITH proj_flags AS (
-         SELECT * FROM UNNEST($1::uuid[], $2::boolean[], $3::date[], $4::date[]) AS t(project_id, include_non_billable, start_date, end_date)
+         SELECT * FROM UNNEST($1::uuid[], $2::boolean[], $3::date[], $4::date[], $5::text[]) AS t(project_id, include_non_billable, start_date, end_date, zone)
        )
        SELECT project_id, SUM(secs) AS total_seconds FROM (
          SELECT s.project_id, s.active_seconds AS secs
          FROM activity_sessions s
          JOIN proj_flags f ON f.project_id = s.project_id
-         WHERE (f.start_date IS NULL OR s.started_at::date >= f.start_date)
-           AND (f.end_date IS NULL OR s.started_at::date <= f.end_date)
+         WHERE (f.start_date IS NULL OR (s.started_at AT TIME ZONE f.zone)::date >= f.start_date)
+           AND (f.end_date IS NULL OR (s.started_at AT TIME ZONE f.zone)::date <= f.end_date)
          UNION ALL
          SELECT te.project_id, te.duration AS secs
          FROM time_entries te
@@ -890,7 +940,7 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
            AND (f.end_date IS NULL OR te.date <= f.end_date)
        ) tracked
        GROUP BY project_id`,
-      [ids, includeFlags, startDates, endDates],
+      [ids, includeFlags, startDates, endDates, zones],
     );
     return new Map(dbRows.map((r) => [r.project_id, Math.max(0, Number(r.total_seconds ?? 0))]));
   }
@@ -905,16 +955,17 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
     const includeFlags = payRateCostRows.map((r) => r.include_non_billable_time !== false);
     const startDates = payRateCostRows.map((r) => toDayStrOrNull(r.start_date));
     const endDates = payRateCostRows.map((r) => toDayStrOrNull(r.end_date));
+    const zones = payRateCostRows.map((r) => r.zone || "UTC");
     const memberRows = await query(
       `WITH proj_flags AS (
-         SELECT * FROM UNNEST($1::uuid[], $2::boolean[], $3::date[], $4::date[]) AS t(project_id, include_non_billable, start_date, end_date)
+         SELECT * FROM UNNEST($1::uuid[], $2::boolean[], $3::date[], $4::date[], $5::text[]) AS t(project_id, include_non_billable, start_date, end_date, zone)
        )
        SELECT project_id, member_id, SUM(secs) AS secs FROM (
          SELECT s.project_id, s.member_id, s.active_seconds AS secs
          FROM activity_sessions s
          JOIN proj_flags f ON f.project_id = s.project_id
-         WHERE (f.start_date IS NULL OR s.started_at::date >= f.start_date)
-           AND (f.end_date IS NULL OR s.started_at::date <= f.end_date)
+         WHERE (f.start_date IS NULL OR (s.started_at AT TIME ZONE f.zone)::date >= f.start_date)
+           AND (f.end_date IS NULL OR (s.started_at AT TIME ZONE f.zone)::date <= f.end_date)
          UNION ALL
          SELECT te.project_id, te.member_id, te.duration AS secs
          FROM time_entries te
@@ -925,7 +976,7 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
            AND (f.end_date IS NULL OR te.date <= f.end_date)
        ) tracked
        GROUP BY project_id, member_id`,
-      [ids, includeFlags, startDates, endDates],
+      [ids, includeFlags, startDates, endDates, zones],
     );
     const distinctMemberIds = [...new Set(memberRows.map((r) => r.member_id))];
     const rateByMember = await memberHourlyRatesInDisplayCurrency(distinctMemberIds, db);

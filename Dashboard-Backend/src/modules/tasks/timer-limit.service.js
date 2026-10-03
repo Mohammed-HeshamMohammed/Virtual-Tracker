@@ -8,6 +8,7 @@ import {
 import { addLocalDays, localDayFor, weekdayIndexForLocalDay } from "../../lib/time/timezone-utils.js";
 import { getMemberTimezone } from "../reports/member-timezones.js";
 import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
+import { budgetPeriodWindow } from "../../lib/time/budget-period.js";
 import {
   sumDailyMemberActiveSeconds,
   sumDailyMemberTaskActiveSeconds,
@@ -173,9 +174,16 @@ export async function loadPerPersonProjectBudgetTotals(projectId, memberId) {
   if (!budget || budget.type !== "Hours based" || budget.scope !== "per_person") return null;
   const capSeconds = Math.floor(Number(budget.cost ?? 0) * 3600);
   if (capSeconds <= 0) return null;
+  // Each person's hours count over the budget's current period, in the project's calendar
+  // (its declared zone - with no member passed, resolveProjectTimeZone falls back to UTC).
+  const zone = await resolveProjectTimeZone(projectId, null);
+  const window = budgetPeriodWindow(budget, localDayFor(new Date(), zone));
   const spentSeconds = await getProjectTrackedSecondsPg(projectId, {
     memberId,
     includeNonBillable: budget.include_non_billable_time !== false,
+    ...(window.fromDay ? { fromDate: window.fromDay } : {}),
+    ...(window.toDay ? { toDate: window.toDay } : {}),
+    timeZone: zone,
   });
   return { capSeconds, spentSeconds };
 }

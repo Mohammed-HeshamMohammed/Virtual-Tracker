@@ -80,7 +80,7 @@ SELECT
 FROM projects p
 LEFT JOIN task_counts     tc  ON tc.project_id = p.id
 LEFT JOIN member_counts   mc  ON mc.project_id = p.id
-LEFT JOIN project_budgets pb  ON pb.project_id = p.id
+LEFT JOIN project_budgets pb  ON pb.project_id = p.id AND p.budget_enabled IS NOT FALSE
 LEFT JOIN member_limit_agg mla ON mla.project_id = p.id
 WHERE ($1::uuid[] IS NULL OR p.id = ANY($1::uuid[]))
 ORDER BY p.created_at`;
@@ -213,7 +213,7 @@ export async function getOverviewPanels(db, options = {}) {
       `SELECT p.id, p.name, pb.cost AS budget_total, pb.type AS budget_type,
               pb.based_on, pb.scope AS budget_scope, pb.include_non_billable_time, pb.start_date, pb.end_date
        FROM projects p
-       LEFT JOIN project_budgets pb ON pb.project_id = p.id
+       LEFT JOIN project_budgets pb ON pb.project_id = p.id AND p.budget_enabled IS NOT FALSE
        ORDER BY p.created_at`,
     ),
     includeClientBudgets ? pgQuery("SELECT id, status, name, email_addresses FROM clients ORDER BY id LIMIT 2000") : [],
@@ -346,8 +346,9 @@ export async function getOverviewPanels(db, options = {}) {
   const clientLinkedProjectIds = [...new Set(clientProjectRows.map((r) => r.project_id).filter(Boolean))];
   const clientProjectBudgetRows = clientLinkedProjectIds.length
     ? await pgQuery(
-        `SELECT project_id, cost, type, based_on, scope, include_non_billable_time, start_date, end_date
-         FROM project_budgets WHERE project_id = ANY($1::uuid[]) AND cost > 0`,
+        `SELECT pb.project_id, pb.cost, pb.type, pb.based_on, pb.scope, pb.include_non_billable_time, pb.start_date, pb.end_date
+           FROM project_budgets pb JOIN projects p ON p.id = pb.project_id
+          WHERE pb.project_id = ANY($1::uuid[]) AND pb.cost > 0 AND p.budget_enabled IS NOT FALSE`,
         [clientLinkedProjectIds],
       )
     : [];

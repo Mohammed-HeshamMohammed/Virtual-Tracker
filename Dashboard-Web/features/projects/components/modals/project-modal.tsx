@@ -36,6 +36,7 @@ import {
   DEFAULT_PROJECT_RULE_SWITCHES,
   type ProjectRuleSwitches,
 } from "@/features/projects/api/project-details-api"
+import { budgetPeriodWindow } from "@/features/projects/utils/budget-period"
 import { ManagerClockInList } from "@/features/projects/components/modals/manager-clock-in-list"
 import { SubProjectsPicker, type SubProjectOption } from "@/features/projects/components/modals/sub-projects-picker"
 import { getProjectMembers, getProjects } from "@/features/projects/api/project-api"
@@ -126,6 +127,7 @@ interface AddProjectFormState {
   budgetWhoToNotify: string
   budgetStopTimersAt: string
   budgetStartDate: string
+  budgetEndDate: string
   budgetIncludeNonBillable: boolean
   budgetNotifyMembers: boolean
   memberLimitNotifyAt: string
@@ -266,6 +268,7 @@ function createDefaultAddForm(): AddProjectFormState {
     budgetWhoToNotify: "",
     budgetStopTimersAt: "",
     budgetStartDate: "",
+    budgetEndDate: "",
     budgetIncludeNonBillable: true,
     budgetNotifyMembers: false,
     memberLimitNotifyAt: "80",
@@ -422,6 +425,7 @@ function formStateToPayload(
     budgetWhoToNotify: addForm.budgetWhoToNotify,
     budgetStopTimersAt: addForm.budgetStopTimersAt,
     budgetStartDate: addForm.budgetStartDate,
+    budgetEndDate: addForm.budgetEndDate,
     budgetIncludeNonBillable: addForm.budgetIncludeNonBillable,
     budgetNotifyMembers: addForm.budgetNotifyMembers,
     memberLimits: memberLimitMemberIds.map((memberId) => ({
@@ -800,6 +804,7 @@ export function ProjectModal({
           budgetWhoToNotify: payload.budgetWhoToNotify,
           budgetStopTimersAt: payload.budgetStopTimersAt,
           budgetStartDate: payload.budgetStartDate,
+          budgetEndDate: payload.budgetEndDate ?? "",
           budgetIncludeNonBillable: payload.budgetIncludeNonBillable,
           budgetNotifyMembers: payload.budgetNotifyMembers,
           memberLimitNotifyAt: payload.memberLimitNotifyAt,
@@ -1384,13 +1389,6 @@ export function ProjectModal({
                     )}
                     placeholder="Each member's own time zone"
                     searchPlaceholder="Search time zones"
-                  />
-                </FormField>
-                <FormField label="Budget start date" hint="When the budget's own tracking period begins">
-                  <DatePickerField
-                    value={addForm.budgetStartDate}
-                    onChange={(date) => setAddForm((p) => ({ ...p, budgetStartDate: date }))}
-                    placeholder="Select date"
                   />
                 </FormField>
               </div>
@@ -2050,16 +2048,74 @@ export function ProjectModal({
 
                   <BudgetSection
                     icon={<RotateCw className="h-3.5 w-3.5" />}
-                    title="Reset period"
-                    sub="When the budget total starts counting over from zero."
+                    title="Period"
+                    sub="Which days count toward the budget, and when it starts over from zero."
                   >
-                    <FormField label="Resets" required className="max-w-xs">
-                      <ProjectModalSelect
-                        value={addForm.budgetResets}
-                        onChange={(value) => setAddForm((p) => ({ ...p, budgetResets: value }))}
-                        options={["Never", "Weekly", "Monthly"]}
-                      />
-                    </FormField>
+                    <div className={FORM_GRID}>
+                      <FormField label="Resets" required>
+                        <ProjectModalSelect
+                          value={addForm.budgetResets}
+                          onChange={(value) => setAddForm((p) => ({ ...p, budgetResets: value }))}
+                          options={["Never", "Weekly", "Monthly"]}
+                        />
+                      </FormField>
+                      <FormField
+                        label="Starts on"
+                        hint={
+                          addForm.budgetResets === "Never"
+                            ? "Time before this day doesn't count. Leave empty to count everything."
+                            : "Each period begins on this day. Leave empty to line up with the calendar."
+                        }
+                      >
+                        <DatePickerField
+                          value={addForm.budgetStartDate}
+                          onChange={(date) => setAddForm((p) => ({ ...p, budgetStartDate: date }))}
+                          placeholder="Select date"
+                        />
+                      </FormField>
+                      <FormField label="Ends on" hint="Optional. Nothing after this day counts.">
+                        <DatePickerField
+                          value={addForm.budgetEndDate}
+                          onChange={(date) => setAddForm((p) => ({ ...p, budgetEndDate: date }))}
+                          placeholder="No end"
+                        />
+                      </FormField>
+                    </div>
+                    {(() => {
+                      // The same period the server counts (budget-period.ts mirrors it), in the
+                      // project's calendar - its own zone, else this device's.
+                      const zone = addForm.timezone || undefined
+                      let today: string
+                      try {
+                        today = new Intl.DateTimeFormat("en-CA", { timeZone: zone }).format(new Date())
+                      } catch {
+                        today = new Intl.DateTimeFormat("en-CA").format(new Date())
+                      }
+                      const period = budgetPeriodWindow(
+                        { resets: addForm.budgetResets, startDate: addForm.budgetStartDate, endDate: addForm.budgetEndDate },
+                        today,
+                      )
+                      const fmt = (day: string) =>
+                        new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, {
+                          month: "short",
+                          day: "numeric",
+                          year: day.slice(0, 4) === today.slice(0, 4) ? undefined : "numeric",
+                          timeZone: "UTC",
+                        })
+                      const text =
+                        period.resets === "never"
+                          ? period.fromDay && period.toDay
+                            ? `Counts ${fmt(period.fromDay)} – ${fmt(period.toDay)}`
+                            : period.fromDay
+                              ? `Counts from ${fmt(period.fromDay)}, never resets`
+                              : period.toDay
+                                ? `Counts until ${fmt(period.toDay)}, never resets`
+                                : "Counts all time, never resets"
+                          : period.notStarted
+                            ? `First period starts ${fmt(period.fromDay ?? today)}`
+                            : `${period.ended ? "Ended" : "This period"}: ${fmt(period.fromDay ?? today)} – ${fmt(period.toDay ?? today)}`
+                      return <p className={cn("text-xs font-medium", formTheme.mutedText)}>{text}</p>
+                    })()}
                     <SettingToggleRow
                       checked={addForm.budgetIncludeNonBillable}
                       onChange={(next) => setAddForm((p) => ({ ...p, budgetIncludeNonBillable: next }))}

@@ -49,7 +49,7 @@ export function AnchorBudgetDialog({
   async function submit() {
     setError(null)
     if (!startDate) {
-      setError("Pick a start date for the next reset period.")
+      setError("Pick the day to restart from.")
       return
     }
     if (endDate && endDate < startDate) {
@@ -62,7 +62,7 @@ export function AnchorBudgetDialog({
       onSaved?.()
       onOpenChange(false)
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not anchor the reset period.")
+      setError(e instanceof Error ? e.message : "Could not restart the budget period.")
     } finally {
       setSaving(false)
     }
@@ -72,10 +72,11 @@ export function AnchorBudgetDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
-          <DialogTitle>Anchor reset period</DialogTitle>
+          <DialogTitle>Restart budget period</DialogTitle>
           <DialogDescription>
-            Set when {projectName || "this project"}&apos;s next budget period starts (and optionally ends) -
-            time tracked outside that window won&apos;t count toward spend.
+            Start {projectName || "this project"}&apos;s budget counting again from this day. If it resets weekly
+            or monthly, later periods follow on from it. This is the same &quot;Starts on&quot; as in the
+            project&apos;s Budget tab.
           </DialogDescription>
         </DialogHeader>
 
@@ -123,7 +124,7 @@ export function AnchorBudgetDialog({
             className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50 dark:bg-blue-600"
           >
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-            Anchor
+            Restart
           </button>
         </DialogFooter>
       </DialogContent>

@@ -26,6 +26,8 @@ import {
 import { convertAmount } from "../../lib/currency/convert.js";
 import { getAllCategories } from "../classification/activity-categories.js";
 import { localDayFor } from "../../lib/time/timezone-utils.js";
+import { budgetPeriodWindow } from "../../lib/time/budget-period.js";
+import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
 import { buildTimeAndActivityCsv, buildTimeAndActivityPdf } from "./build-report-files.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { insertReportSchedulePg } from "../../lib/postgres/report-schedules-postgres.service.js";
@@ -1236,16 +1238,19 @@ export async function routeReports(req, res, url, origin) {
         projects.map(async (project) => {
           const budget = budgetByProject.get(project.id);
           const cost = budget ? Number(budget.cost) || 0 : 0;
-          const spentSeconds = await getProjectTrackedSecondsPg(project.id, {
-            fromDate: budget ? toDayStrOrNull(budget.start_date) || undefined : undefined,
-            toDate: budget ? toDayStrOrNull(budget.end_date) || undefined : undefined,
-          });
+          // The budget's current period (its reset period, start and end), in the project's calendar.
+          const zone = budget ? await resolveProjectTimeZone(project.id, null) : null;
+          const window = budget ? budgetPeriodWindow(budget, localDayFor(new Date(), zone)) : null;
+          const range = window
+            ? {
+                ...(window.fromDay ? { fromDate: window.fromDay } : {}),
+                ...(window.toDay ? { toDate: window.toDay } : {}),
+                timeZone: zone,
+              }
+            : {};
+          const spentSeconds = await getProjectTrackedSecondsPg(project.id, range);
           const spentAmount = budget && cost > 0
-            ? await computeProjectSpentCostPg(getDb(), project.id, {
-                basedOn: budget.based_on,
-                fromDate: toDayStrOrNull(budget.start_date) || undefined,
-                toDate: toDayStrOrNull(budget.end_date) || undefined,
-              })
+            ? await computeProjectSpentCostPg(getDb(), project.id, { basedOn: budget.based_on, ...range })
             : 0;
           return {
             projectId: project.id,
