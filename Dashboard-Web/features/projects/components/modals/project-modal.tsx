@@ -2052,7 +2052,11 @@ export function ProjectModal({
                     sub="Which days count toward the budget, and when it starts over from zero."
                   >
                     <div className={FORM_GRID}>
-                      <FormField label="Resets" required>
+                      <FormField
+                        label="Resets"
+                        required
+                        hint="Never keeps counting until the project is done. Pick Weekly or Monthly only for a budget that really starts over each period."
+                      >
                         <ProjectModalSelect
                           value={addForm.budgetResets}
                           onChange={(value) => setAddForm((p) => ({ ...p, budgetResets: value }))}
