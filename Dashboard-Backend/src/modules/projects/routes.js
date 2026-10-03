@@ -35,6 +35,7 @@ import {
   removeProjectMemberPg,
   listProjectMembersPg,
   getProjectBudgetPg,
+  getProjectBudgetRowPg,
   getAllProjectBudgetsPg,
   upsertProjectBudgetPg,
   computeProjectSpentPg,
@@ -71,6 +72,12 @@ import { validateBreakTimeSeconds } from "./break-time.js";
 import { listMeta } from "../../http/list-truncation.js";
 import { resolveIdleTimeLimit } from "./idle-time-limit.service.js";
 import { resolveProjectTimezoneInput, canSetProjectTimezone } from "./project-timezone.js";
+import {
+  canManageProjectRules,
+  isProjectAreaLocked,
+  projectAreaLockedMessage,
+  readProjectRuleFields,
+} from "./project-area-locks.js";
 
 function validateProjectDomainBody(entityKey, body, isUpdate) {
   const entity = schemaByKey.get(entityKey);
@@ -411,6 +418,11 @@ export async function routeProjects(req, res, url, db, origin) {
           endDate: toIso(project.end_date || project.endDate).slice(0, 10),
           timezone: project.timezone || null,
           canSetTimezone: canSetProjectTimezone(getAuthContext(req)?.roleName),
+          managersCanEditBudget: project.managers_can_edit_budget !== false,
+          managersCanEditMemberLimits: project.managers_can_edit_member_limits !== false,
+          managersCanEditMembers: project.managers_can_edit_members !== false,
+          budgetEnabled: project.budget_enabled !== false,
+          memberLimitsEnabled: project.member_limits_enabled !== false,
           subProjectIds: projectTypeDef(project.type).hasSubProjects
             ? await listSubProjectIdsPg(projectId)
             : [],
@@ -647,7 +659,11 @@ export async function routeProjects(req, res, url, db, origin) {
   }
 
 
-  async function assertProjectDomainWrite(projectId, memberId) {
+  /**
+   * `area` ("budget" | "memberLimits" | "members") is the part of the project being written; a
+   * plain manager is refused when the project's Management tab has locked it (project-area-locks.js).
+   */
+  async function assertProjectDomainWrite(projectId, memberId, area = null) {
     const viewer = getAuthContext(req);
     if (!viewer) {
       sendJson(res, origin, 401, { success: false, error: "Authorization required." });
@@ -664,6 +680,8 @@ export async function routeProjects(req, res, url, db, origin) {
         return null;
       }
     }
+    // A locked area refuses before the per-member check: the lock is the reason, whoever it is about.
+    if (area && projectId && !(await assertProjectAreaEditable(viewer, projectId, area))) return null;
     if (memberId) {
       const allowed = await canAccessMember(db, viewer.memberId, viewer.roleName, memberId);
       if (!allowed) {
@@ -675,6 +693,28 @@ export async function routeProjects(req, res, url, db, origin) {
       }
     }
     return viewer;
+  }
+
+  async function assertProjectAreaEditable(viewer, projectId, area) {
+    if (canManageProjectRules(viewer.roleName)) return true;
+    const project = await getProjectPg(projectId);
+    if (!isProjectAreaLocked(project, area, viewer.roleName)) return true;
+    sendJson(res, origin, 403, { success: false, error: projectAreaLockedMessage(area), code: "PROJECT_AREA_LOCKED" });
+    return false;
+  }
+
+  /** The Management switches in a body, or a 403 sent and `null` if this viewer may not set them. */
+  function readRuleFieldsOrRefuse(viewer, body) {
+    const fields = readProjectRuleFields(body);
+    if (Object.keys(fields).length > 0 && !canManageProjectRules(viewer.roleName)) {
+      sendJson(res, origin, 403, {
+        success: false,
+        error: "Only admins and super managers can change a project's Management settings.",
+        code: "FORBIDDEN",
+      });
+      return null;
+    }
+    return fields;
   }
 
   async function assertTeamProjectWrite(teamId) {
@@ -817,6 +857,8 @@ export async function routeProjects(req, res, url, db, origin) {
       if (!viewer) return true;
       const body = await readJsonBody(req);
       validateProjectDomainBody("projects", body, false);
+      const ruleFields = readRuleFieldsOrRefuse(viewer, body);
+      if (!ruleFields) return true;
       const newIdleTimeSeconds = body.idle_time_seconds ?? body.idleTimeSeconds;
       const newIdleTimeError = newIdleTimeSeconds === undefined ? null : validateIdleTimeSeconds(newIdleTimeSeconds);
       if (newIdleTimeError) {
@@ -852,6 +894,7 @@ export async function routeProjects(req, res, url, db, origin) {
         clientCanManage: (body.client_can_manage ?? body.clientCanManage) === true,
         clientCanTrack: (body.client_can_track ?? body.clientCanTrack) === true,
         timezone: resolveProjectTimezoneInput(body.timezone, viewer.roleName) ?? null,
+        ...ruleFields,
         createdBy: body.created_by ?? body.createdBy ?? viewer.memberId,
       });
       const subProjectIds = body.sub_project_ids ?? body.subProjectIds;
@@ -896,6 +939,8 @@ export async function routeProjects(req, res, url, db, origin) {
         if (!viewer) return true;
         const body = await readJsonBody(req);
         validateProjectDomainBody("projects", body, true);
+        const ruleFields = readRuleFieldsOrRefuse(viewer, body);
+        if (!ruleFields) return true;
         if (body.type !== undefined) {
           const existing = await getProjectPg(projectId);
           if (existing && normalizeProjectType(body.type) !== String(existing.type || "normal")) {
@@ -947,6 +992,7 @@ export async function routeProjects(req, res, url, db, origin) {
           clientCanManage: body.client_can_manage ?? body.clientCanManage,
           clientCanTrack: body.client_can_track ?? body.clientCanTrack,
           timezone: resolveProjectTimezoneInput(body.timezone, viewer.roleName),
+          ...ruleFields,
           updatedBy: body.updated_by ?? body.updatedBy ?? viewer.memberId,
         };
         for (const key of Object.keys(patch)) {
@@ -1045,7 +1091,7 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 400, { success: false, error: "project_id and member_id are required" });
         return true;
       }
-      const viewer = await assertProjectDomainWrite(projectId, memberId);
+      const viewer = await assertProjectDomainWrite(projectId, memberId, "members");
       if (!viewer) return true;
       const targetProject = await getProjectPg(projectId);
       const roleFilter = projectTypeDef(targetProject?.type).membersRoleFilter;
@@ -1083,7 +1129,7 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 200, { success: true, data: null });
         return true;
       }
-      const viewer = await assertProjectDomainWrite(existing.project_id, existing.member_id);
+      const viewer = await assertProjectDomainWrite(existing.project_id, existing.member_id, "members");
       if (!viewer) return true;
       await removeProjectMemberPg(existing.project_id, existing.member_id, viewer.memberId);
       sendToMember(existing.member_id, { type: "scope-changed", reason: "project-access", at: Date.now() });
@@ -1160,7 +1206,7 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 400, { success: false, error: endDateError });
         return true;
       }
-      const viewer = await assertProjectDomainWrite(projectId, null);
+      const viewer = await assertProjectDomainWrite(projectId, null, "budget");
       if (!viewer) return true;
       const row = await upsertProjectBudgetPg(
         projectId,
@@ -1199,11 +1245,12 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 404, { success: false, error: "Project budget not found" });
         return true;
       }
-      const viewer = await assertProjectDomainWrite(existing.project_id, null);
+      const viewer = await assertProjectDomainWrite(existing.project_id, null, "budget");
       if (!viewer) return true;
       const body = await readJsonBody(req);
       validateProjectDomainBody("project-budgets", body, true);
-      const current = await getProjectBudgetPg(existing.project_id);
+      // The stored row, even while the project has its budget switched off.
+      const current = await getProjectBudgetRowPg(existing.project_id);
       const effectiveCost = Number(body.cost ?? current?.cost);
       if (!(effectiveCost > 0)) {
         sendJson(res, origin, 400, { success: false, error: "cost must be greater than 0" });
@@ -1268,12 +1315,12 @@ export async function routeProjects(req, res, url, db, origin) {
   if (projectAnchorMatch && req.method === "PATCH") {
     try {
       const projectId = projectAnchorMatch[1];
-      const current = await getProjectBudgetPg(projectId);
+      const current = await getProjectBudgetRowPg(projectId);
       if (!current) {
         sendJson(res, origin, 404, { success: false, error: "Set up a budget for this project before anchoring its reset period." });
         return true;
       }
-      const viewer = await assertProjectDomainWrite(projectId, null);
+      const viewer = await assertProjectDomainWrite(projectId, null, "budget");
       if (!viewer) return true;
       const body = await readJsonBody(req);
       const startDate = String(body.start_date ?? body.startDate ?? "").trim();
@@ -1335,7 +1382,7 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 400, { success: false, error: "project_id is required" });
         return true;
       }
-      const viewer = await assertProjectDomainWrite(projectId, memberId || null);
+      const viewer = await assertProjectDomainWrite(projectId, memberId || null, "memberLimits");
       if (!viewer) return true;
       const row = await upsertProjectMemberLimitPg(
         projectId,
@@ -1370,7 +1417,7 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 400, { success: false, error: "project_id and member_id are required" });
         return true;
       }
-      const viewer = await assertProjectDomainWrite(projectId, memberId);
+      const viewer = await assertProjectDomainWrite(projectId, memberId, "memberLimits");
       if (!viewer) return true;
       const removed = await deleteProjectMemberLimitPg(projectId, memberId);
       sendJson(res, origin, 200, { success: true, data: { removed } });
@@ -1480,6 +1527,7 @@ export async function routeProjects(req, res, url, db, origin) {
       const authViewer = getAuthContext(req);
       const viewer = authViewer && requireManagementRole(authViewer) ? authViewer : await assertTeamProjectWrite(teamId);
       if (!viewer) return true;
+      if (!(await assertProjectAreaEditable(viewer, projectId, "members"))) return true;
       const row = await linkTeamProjectPg(teamId, projectId, body.assigned_by ?? body.assignedBy ?? viewer.memberId);
       sendJson(res, origin, 200, { success: true, data: row });
     } catch (e) {
@@ -1504,6 +1552,7 @@ export async function routeProjects(req, res, url, db, origin) {
       const viewer =
         authViewer && requireManagementRole(authViewer) ? authViewer : await assertTeamProjectWrite(existing.team_id);
       if (!viewer) return true;
+      if (!(await assertProjectAreaEditable(viewer, existing.project_id, "members"))) return true;
       await unlinkTeamProjectPg(existing.team_id, existing.project_id);
       sendJson(res, origin, 200, { success: true, data: { id: teamProjectIdMatch[1] } });
     } catch (e) {

@@ -1510,6 +1510,13 @@ GROUP BY task_id`,
   // to only the project_members rows this project has marked manager_can_track.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS restrict_manager_tracking BOOLEAN NOT NULL DEFAULT false`,
   `ALTER TABLE project_members ADD COLUMN IF NOT EXISTS manager_can_track BOOLEAN NOT NULL DEFAULT false`,
+  // The Management tab's switches (modules/projects/project-area-locks.js). All
+  // on by default, so every existing project behaves exactly as before.
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS managers_can_edit_budget BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS managers_can_edit_member_limits BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS managers_can_edit_members BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS budget_enabled BOOLEAN NOT NULL DEFAULT true`,
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS member_limits_enabled BOOLEAN NOT NULL DEFAULT true`,
   // NULL = inherit (fall through to the project's own timezone, then the
   // member's own). Only set for the rare case of one member working a
   // different region's schedule on this specific project than on their

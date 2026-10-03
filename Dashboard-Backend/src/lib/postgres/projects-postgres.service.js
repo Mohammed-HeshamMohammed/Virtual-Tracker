@@ -41,8 +41,11 @@ export async function createProjectPg(data) {
        id, name, status, billable, disable_activity, allow_project_tracking, restrict_manager_tracking, disable_idle_time,
        idle_time_seconds, break_time_seconds, disable_break_limit, client_id, managers_notes, users_notes, viewers_notes, type, end_date,
        require_task_to_track, restrict_task_creation, require_stop_note, client_can_manage, client_can_track,
-       timezone, created_by, updated_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$24)
+       timezone, created_by, updated_by,
+       managers_can_edit_budget, managers_can_edit_member_limits, managers_can_edit_members,
+       budget_enabled, member_limits_enabled
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$24,
+               $25,$26,$27,$28,$29)
      RETURNING *`,
     [
       id,
@@ -69,6 +72,11 @@ export async function createProjectPg(data) {
       data.clientCanTrack === true,
       data.timezone ?? null,
       uuidOrNull(data.createdBy),
+      data.managersCanEditBudget !== false,
+      data.managersCanEditMemberLimits !== false,
+      data.managersCanEditMembers !== false,
+      data.budgetEnabled !== false,
+      data.memberLimitsEnabled !== false,
     ],
   );
   const project = rows[0] ?? null;
@@ -104,8 +112,20 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
     clientCanManage: "client_can_manage",
     clientCanTrack: "client_can_track",
     timezone: "timezone",
+    managersCanEditBudget: "managers_can_edit_budget",
+    managersCanEditMemberLimits: "managers_can_edit_member_limits",
+    managersCanEditMembers: "managers_can_edit_members",
+    budgetEnabled: "budget_enabled",
+    memberLimitsEnabled: "member_limits_enabled",
     updatedBy: "updated_by",
   };
+  const RULE_SWITCHES = new Set([
+    "managersCanEditBudget",
+    "managersCanEditMemberLimits",
+    "managersCanEditMembers",
+    "budgetEnabled",
+    "memberLimitsEnabled",
+  ]);
   const sets = [];
   const params = [id];
   for (const [key, column] of Object.entries(columns)) {
@@ -121,7 +141,9 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
               ? toStoredBreakTimeSeconds(patch[key])
               : key === "clientCanManage" || key === "clientCanTrack" || key === "disableBreakLimit"
                 ? patch[key] === true
-                : patch[key],
+                : RULE_SWITCHES.has(key)
+                  ? patch[key] !== false
+                  : patch[key],
     );
     sets.push(`${column} = $${params.length}`);
   }
@@ -456,17 +478,39 @@ export async function countMembersByProjectPg() {
 }
 
 
+/**
+ * The project's budget as everything that *uses* a budget should see it: none at
+ * all while the project's Management tab has "Use a budget" off. The row is kept
+ * (getProjectBudgetRowPg still reads it), so switching it back on restores it.
+ */
 export async function getProjectBudgetPg(projectId) {
+  const rows = await query(
+    `SELECT b.* FROM project_budgets b
+       JOIN projects p ON p.id = b.project_id
+      WHERE b.project_id = $1 AND p.budget_enabled IS NOT FALSE
+      LIMIT 1`,
+    [projectId],
+  );
+  return rows[0] ?? null;
+}
+
+/** The stored budget row whatever the switch says - for editing it, never for enforcing it. */
+export async function getProjectBudgetRowPg(projectId) {
   const rows = await query("SELECT * FROM project_budgets WHERE project_id = $1 LIMIT 1", [projectId]);
   return rows[0] ?? null;
 }
 
 export async function getAllProjectBudgetsPg() {
-  return query("SELECT * FROM project_budgets");
+  return query(
+    `SELECT b.* FROM project_budgets b
+       JOIN projects p ON p.id = b.project_id
+      WHERE p.budget_enabled IS NOT FALSE`,
+  );
 }
 
 export async function upsertProjectBudgetPg(projectId, data, actorId, expectedUpdatedAt) {
-  const existing = await getProjectBudgetPg(projectId);
+  // The raw row: a budget switched off still exists, and must be updated, not duplicated.
+  const existing = await getProjectBudgetRowPg(projectId);
 
   if (existing && expectedUpdatedAt) {
     const rows = await query(
@@ -496,7 +540,7 @@ export async function upsertProjectBudgetPg(projectId, data, actorId, expectedUp
       ],
     );
     if (rows.length === 0) {
-      return { conflict: true, current: await getProjectBudgetPg(projectId) };
+      return { conflict: true, current: await getProjectBudgetRowPg(projectId) };
     }
     const budget = rows[0];
     void publishChange("project-budgets", projectId, "updated", uuidOrNull(actorId) ?? undefined);
@@ -543,20 +587,37 @@ export async function upsertProjectBudgetPg(projectId, data, actorId, expectedUp
 }
 
 
+/**
+ * Member limits as everything that enforces or reports them should see them:
+ * none while the project's Management tab has "Use member limits" off. The rows
+ * are kept, so switching it back on restores them.
+ */
 export async function getProjectMemberLimitPg(projectId, memberId) {
   const rows = await query(
-    "SELECT * FROM project_member_limits WHERE project_id = $1 AND member_id = $2 LIMIT 1",
+    `SELECT l.* FROM project_member_limits l
+       JOIN projects p ON p.id = l.project_id
+      WHERE l.project_id = $1 AND l.member_id = $2 AND p.member_limits_enabled IS NOT FALSE
+      LIMIT 1`,
     [projectId, memberId],
   );
   return rows[0] ?? null;
 }
 
 export async function listProjectMemberLimitsPg(projectId) {
-  return query("SELECT * FROM project_member_limits WHERE project_id = $1", [projectId]);
+  return query(
+    `SELECT l.* FROM project_member_limits l
+       JOIN projects p ON p.id = l.project_id
+      WHERE l.project_id = $1 AND p.member_limits_enabled IS NOT FALSE`,
+    [projectId],
+  );
 }
 
 export async function getAllProjectMemberLimitsPg() {
-  return query("SELECT * FROM project_member_limits");
+  return query(
+    `SELECT l.* FROM project_member_limits l
+       JOIN projects p ON p.id = l.project_id
+      WHERE p.member_limits_enabled IS NOT FALSE`,
+  );
 }
 
 export async function resolveMemberHourlyRatePg(db, projectId, memberId, basedOn) {
