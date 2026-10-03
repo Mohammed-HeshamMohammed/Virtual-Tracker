@@ -1,22 +1,8 @@
-import { useState } from "react";
 import { Icon } from "../common/Icon";
+import { EasyTextSize } from "../common/EasyTextSize";
 import { fmtClock, fmtHours } from "../../utils/formatters";
 import { budgetResetNote } from "../../utils/budgetPeriod";
 import type { AgentTask, ConnectionState, ProjectBudgetStatus, ProjectInfo } from "../../types";
-
-/** Text sizes the member can step through, as a multiple of the layout's own large base. */
-export const EASY_TEXT_SCALES = [1, 1.25, 1.5, 1.75] as const;
-const SCALE_KEY = "vt-easy-text-scale";
-
-function readScaleIndex(): number {
-  try {
-    const stored = Number(localStorage.getItem(SCALE_KEY));
-    const index = EASY_TEXT_SCALES.findIndex((s) => s === stored);
-    return index === -1 ? 0 : index;
-  } catch {
-    return 0;
-  }
-}
 
 type EasyViewProps = {
   projects: ProjectInfo[];
@@ -74,19 +60,7 @@ export function EasyView(props: EasyViewProps) {
     busy,
     startBlockedReason,
   } = props;
-  const [scaleIndex, setScaleIndex] = useState(readScaleIndex);
-  const scale = EASY_TEXT_SCALES[scaleIndex];
   const sessionOpen = tracking || paused;
-
-  function changeScale(next: number) {
-    const index = Math.min(EASY_TEXT_SCALES.length - 1, Math.max(0, next));
-    setScaleIndex(index);
-    try {
-      localStorage.setItem(SCALE_KEY, String(EASY_TEXT_SCALES[index]));
-    } catch {
-      /* Storage can be unavailable - the size still applies for this run. */
-    }
-  }
 
   const status = tracking ? "Tracking" : paused ? "On a break" : "Not tracking";
   const showTaskPicker = tasks.length > 0 || taskRequired;
@@ -99,7 +73,7 @@ export function EasyView(props: EasyViewProps) {
   const budgetResets = budgetResetNote(budget);
 
   return (
-    <div className="easy-view" style={{ ["--easy-scale" as string]: scale }}>
+    <div className="easy-view">
       <header className="easy-top">
         <div className="easy-clock" data-help="The current time and date.">
           <strong>{props.wallClock}</strong>
@@ -230,28 +204,7 @@ export function EasyView(props: EasyViewProps) {
           Dashboard
           <Icon name="external" />
         </button>
-        <span className="easy-size" role="group" aria-label="Text size">
-          <button
-            data-tip="Make the text smaller"
-            type="button"
-            className="easy-btn easy-btn-quiet"
-            aria-label="Smaller text"
-            disabled={scaleIndex === 0}
-            onClick={() => changeScale(scaleIndex - 1)}
-          >
-            A−
-          </button>
-          <button
-            data-tip="Make the text larger"
-            type="button"
-            className="easy-btn easy-btn-quiet"
-            aria-label="Larger text"
-            disabled={scaleIndex === EASY_TEXT_SCALES.length - 1}
-            onClick={() => changeScale(scaleIndex + 1)}
-          >
-            A+
-          </button>
-        </span>
+        <EasyTextSize />
       </nav>
     </div>
   );

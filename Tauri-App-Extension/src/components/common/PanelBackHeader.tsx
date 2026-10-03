@@ -1,4 +1,5 @@
 import { Icon } from "./Icon";
+import { EasyTextSize } from "./EasyTextSize";
 
 export function PanelBackHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (
@@ -8,6 +9,7 @@ export function PanelBackHeader({ title, onBack }: { title: string; onBack: () =
         Back
       </button>
       <h2 className="panel-back-title">{title}</h2>
+      <EasyTextSize className="panel-text-size" />
     </div>
   );
 }

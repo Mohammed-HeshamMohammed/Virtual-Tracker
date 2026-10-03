@@ -6193,3 +6193,114 @@ select.modal-input {
 .side-weekly-ring .activity-ring-value {
   font-size: 12px;
 }
+
+/* ── Easy read, everywhere ──────────────────────────────────────────────
+   Easy read is a whole-app mode: the layout choice puts `easy-read` on <html> and sets
+   --easy-scale (utils/easyRead.ts), and everything below restyles every screen from that - so a
+   screen added later is covered without touching it. The home screen has its own purpose-built
+   layout (.easy-view, above); this block is the rest: Settings, Profile, Privacy, dialogs, toasts,
+   banners and the sign-in screens.
+
+   How it scales: CSS `zoom` on each screen's container (the app is built in px, so a root font
+   size would change nothing). Cost-free for layout - children reflow into the narrower space.
+   What it adds on top: stronger contrast (faint text is lifted to the readable tone), thicker
+   borders, a big focus ring, no animation, and the rarely-needed bits left out. */
+:root.easy-read.easy-read.easy-read {
+  --easy-zoom: calc(1.6 * (0.4 + 0.6 * var(--easy-scale, 1)));
+  /* Faint and fainter text are the first to fail 4.5:1 - give them the readable tone. */
+  --on-surface-faint: var(--on-surface-variant);
+  --on-surface-fainter: var(--on-surface-variant);
+}
+
+.easy-read .agent-view.settings-window,
+.easy-read .reconnect-body > *,
+.easy-read .auth-form-panel,
+.easy-read .modal-card,
+.easy-read .vt-toast-wrapper,
+.easy-read .tracker-update-banner,
+.easy-read .reconnect-banner {
+  zoom: var(--easy-zoom);
+}
+
+/* The title bar's own controls, a little larger - its height is fixed at 38px. */
+.easy-read .titlebar {
+  zoom: 1.2;
+}
+
+/* The sign-in screen's brand panel is decoration: leave it out and give the form the window. */
+.easy-read .auth-brand {
+  display: none;
+}
+
+/* Parts only wanted occasionally (the log file path, and the like). */
+.easy-read [data-easy-hide] {
+  display: none !important;
+}
+
+.easy-read .panel-back-title {
+  font-size: 18px;
+}
+
+.easy-read .panel-back-header {
+  flex-wrap: wrap;
+}
+
+.easy-read .panel-text-size {
+  margin-left: auto;
+}
+
+/* The panels' text-size buttons are the same buttons as on the home screen, smaller. */
+.easy-read .panel-text-size .easy-btn {
+  min-height: 34px;
+  padding: 0 10px;
+  font-size: 14px;
+}
+
+/* Cards and buttons read as separate objects by their edge, not by a faint tint. */
+.easy-read .settings-card,
+.easy-read .modal-card {
+  border: 2px solid rgb(var(--c-overlay) / 0.4);
+}
+
+.easy-read .btn,
+.easy-read .btn-back {
+  min-height: 44px;
+}
+
+.easy-read .btn.btn-secondary,
+.easy-read .btn.btn-tertiary,
+.easy-read .btn-back {
+  border: 2px solid rgb(var(--c-overlay) / 0.5);
+}
+
+.easy-read input,
+.easy-read select,
+.easy-read textarea {
+  border: 2px solid rgb(var(--c-overlay) / 0.5);
+  color: var(--on-surface-bright);
+}
+
+/* A focus ring that cannot be missed, on every control. */
+.easy-read :focus-visible {
+  outline: 4px solid rgb(var(--c-primary));
+  outline-offset: 3px;
+}
+
+/* No animation: nothing slides in or fades, and nothing keeps moving. */
+.easy-read *,
+.easy-read *::before,
+.easy-read *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Buttons take the app's font (a native button does not inherit it) and room to breathe. */
+.easy-read button {
+  font-family: inherit;
+}
+
+.easy-read .modal-actions .btn {
+  padding: 0 18px;
+}

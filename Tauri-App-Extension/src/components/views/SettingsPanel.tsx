@@ -288,7 +288,7 @@ export function SettingsPanel({
           ) : null}
         </section>
 
-        <section data-help="Diagnostics: the log file that support may ask you for." className="settings-card">
+        <section data-help="Diagnostics: the log file that support may ask you for." data-easy-hide className="settings-card">
           <h3 className="settings-section-label">Diagnostics</h3>
           <span className="settings-row-sub">Log file</span>
           <code className="settings-code">{settings?.logPath || "—"}</code>

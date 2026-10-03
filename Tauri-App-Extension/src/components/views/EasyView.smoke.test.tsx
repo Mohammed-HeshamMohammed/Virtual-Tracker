@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { EasyView } from "./EasyView";
+import { EasyView } from "./EasyView";
+import { resetEasyReadForTests, setEasyReadActive } from "../../utils/easyRead";
 import type { AgentTask, ConnectionState, ProjectBudgetStatus, ProjectInfo } from "../../types";
 
 const noop = () => {};
@@ -105,6 +106,9 @@ describe("EasyView", () => {
   });
 
   it("keeps the text size controls and the few places you can go", () => {
+    // The size buttons follow the app-wide Easy read mode, which the layout switches on.
+    resetEasyReadForTests();
+    setEasyReadActive(true);
     const html = render();
     expect(html).toContain("Smaller text");
     expect(html).toContain("Larger text");

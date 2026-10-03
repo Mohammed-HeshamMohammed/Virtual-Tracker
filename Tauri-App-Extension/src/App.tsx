@@ -78,6 +78,7 @@ import { applyTheme } from "./utils/theme";
 import { notify } from "./utils/notify";
 import { SettingsPanel } from "./components/views/SettingsPanel";
 import { EasyView } from "./components/views/EasyView";
+import { setEasyReadActive } from "./utils/easyRead";
 import { ProfilePanel } from "./components/views/ProfilePanel";
 import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
 import { MonitoringNoticePanel } from "./components/views/MonitoringNoticePanel";
@@ -300,6 +301,10 @@ function MainApp() {
     height: 750,
   });
   const layoutKind: LayoutKind = windowLayout.kind;
+  // Easy read restyles every screen, not just the home one (see utils/easyRead.ts).
+  useEffect(() => {
+    setEasyReadActive(layoutKind === "easy");
+  }, [layoutKind]);
   const agentViewRef = useRef<HTMLDivElement>(null);
   // The window itself eases to its new size (window_layout.rs); this settles
   // the content into the new arrangement alongside it rather than snapping.
