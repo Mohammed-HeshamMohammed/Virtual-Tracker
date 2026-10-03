@@ -2055,12 +2055,12 @@ export function ProjectModal({
                       <FormField
                         label="Resets"
                         required
-                        hint="Never keeps counting until the project is done. Weekly and Monthly start over on a schedule. At end date starts over for another period of the same length when the end date passes."
+                        hint="Never keeps counting until the project is done. Weekly and Monthly start over on a schedule. At end date starts over for another period of the same length when the end date passes. When used up starts over the day after the budget is used up."
                       >
                         <ProjectModalSelect
                           value={addForm.budgetResets}
                           onChange={(value) => setAddForm((p) => ({ ...p, budgetResets: value }))}
-                          options={["Never", "Weekly", "Monthly", "At end date"]}
+                          options={["Never", "Weekly", "Monthly", "At end date", "When used up"]}
                         />
                       </FormField>
                       <FormField
@@ -2070,7 +2070,9 @@ export function ProjectModal({
                             ? "Time before this day doesn't count. Leave empty to count everything."
                             : addForm.budgetResets === "At end date"
                               ? "Required: the first period begins on this day."
-                              : "Each period begins on this day. Leave empty to line up with the calendar."
+                              : addForm.budgetResets === "When used up"
+                                ? "Required: the first period begins on this day."
+                                : "Each period begins on this day. Leave empty to line up with the calendar."
                         }
                       >
                         <DatePickerField
@@ -2117,7 +2119,14 @@ export function ProjectModal({
                         })
                       const needsBothDays =
                         addForm.budgetResets === "At end date" && !(addForm.budgetStartDate && addForm.budgetEndDate)
-                      const text = needsBothDays
+                      const usedUp = addForm.budgetResets === "When used up"
+                      const text = usedUp
+                        ? addForm.budgetScope === "per_person"
+                          ? "When used up works on whole-project budgets - a per-person budget counts everything, like Never."
+                          : !addForm.budgetStartDate
+                            ? "Pick a start day - until then this counts everything, like Never."
+                            : "Starts over the day after the budget is used up, as often as that happens."
+                        : needsBothDays
                         ? "Pick both a start and an end day - until then this counts everything, like Never."
                         : period.resets === "never"
                           ? period.fromDay && period.toDay

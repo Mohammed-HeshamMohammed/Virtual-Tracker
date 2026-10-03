@@ -44,3 +44,10 @@ test("At end date repeats the window, and needs both days (same rule as the serv
     toDay: null,
   })
 })
+
+test("the form can't see spend, so 'When used up' there is the never-like window (the server decides the real one)", () => {
+  assert.deepEqual(pick(budgetPeriodWindow({ resets: "When used up", startDate: "2026-01-01" }, "2026-06-01")), {
+    fromDay: "2026-01-01",
+    toDay: null,
+  })
+})
