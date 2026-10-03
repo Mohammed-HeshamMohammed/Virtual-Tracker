@@ -103,3 +103,19 @@ test("the table is wired to it: column, cell, sort, data", () => {
   assert.match(api, /"manager_can_track"/)
   assert.match(api, /"restrict_manager_tracking"/)
 })
+
+// The Management tab's own switches, as the Projects table shows them.
+test("a switched-off budget or member limits shows as such, and locked parts are named", () => {
+  assert.deepEqual(labels({ budgetEnabled: false }).filter((l) => l === "No budget"), ["No budget"])
+  assert.ok(labels({ memberLimitsEnabled: false }).includes("No member limits"))
+  assert.ok(labels({ managersCanEditBudget: false, managersCanEditMembers: false }).includes("Locked: budget, members"))
+  // A locked budget that is also switched off is just "No budget" - there is nothing to lock.
+  const offAndLocked = labels({ budgetEnabled: false, managersCanEditBudget: false })
+  assert.ok(offAndLocked.includes("No budget"))
+  assert.ok(!offAndLocked.some((l) => l.startsWith("Locked")))
+})
+
+test("projects that predate the switches show none of these chips", () => {
+  const plain = labels({})
+  assert.ok(!plain.some((l) => l === "No budget" || l === "No member limits" || l.startsWith("Locked")))
+})

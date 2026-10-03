@@ -152,4 +152,31 @@ if (!PGlite) {
     assert.equal(await svc.sumDailyMemberTaskActiveSeconds(m, T, "2026-02-02", "America/New_York"), 300);
     assert.equal(await svc.sumDailyMemberTaskActiveSecondsRange(m, T, { fromDay: "2026-02-01", toDay: "2026-02-02", timeZone: "America/New_York" }), 900);
   });
+
+  test("turning a project's budget or member limits off hides them from everything that enforces them, and keeps the rows", async () => {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS projects (id uuid PRIMARY KEY, budget_enabled boolean NOT NULL DEFAULT true, member_limits_enabled boolean NOT NULL DEFAULT true);
+      CREATE TABLE IF NOT EXISTS project_budgets (id uuid DEFAULT gen_random_uuid(), project_id uuid, cost numeric);
+      CREATE TABLE IF NOT EXISTS project_member_limits (id uuid DEFAULT gen_random_uuid(), project_id uuid, member_id uuid, cost numeric);
+    `);
+    const p = "88888888-8888-4888-8888-888888888888";
+    await db.query("INSERT INTO projects (id) VALUES ($1)", [p]);
+    await db.query("INSERT INTO project_budgets (project_id, cost) VALUES ($1, 40)", [p]);
+    await db.query("INSERT INTO project_member_limits (project_id, member_id, cost) VALUES ($1, $2, 10)", [p, M]);
+
+    assert.equal(Number((await proj.getProjectBudgetPg(p)).cost), 40);
+    assert.equal(Number((await proj.getProjectMemberLimitPg(p, M)).cost), 10);
+
+    await db.query("UPDATE projects SET budget_enabled = false, member_limits_enabled = false WHERE id = $1", [p]);
+    assert.equal(await proj.getProjectBudgetPg(p), null, "no budget while it is off");
+    assert.equal((await proj.getAllProjectBudgetsPg()).some((b) => b.project_id === p), false);
+    assert.equal(await proj.getProjectMemberLimitPg(p, M), null, "no member limit while they are off");
+    assert.equal((await proj.listProjectMemberLimitsPg(p)).length, 0);
+    assert.equal((await proj.getAllProjectMemberLimitsPg()).some((l) => l.project_id === p), false);
+    assert.equal(Number((await proj.getProjectBudgetRowPg(p)).cost), 40, "the stored row is kept for the editor");
+
+    await db.query("UPDATE projects SET budget_enabled = true, member_limits_enabled = true WHERE id = $1", [p]);
+    assert.equal(Number((await proj.getProjectBudgetPg(p)).cost), 40, "switching it back on restores it");
+    assert.equal(Number((await proj.getProjectMemberLimitPg(p, M)).cost), 10);
+  });
 }

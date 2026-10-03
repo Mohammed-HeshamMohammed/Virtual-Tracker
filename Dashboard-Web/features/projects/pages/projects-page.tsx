@@ -75,6 +75,11 @@ function mapApiProject(
       requireStopNote: p.requireStopNote ?? false,
       clientCanManage: p.clientCanManage ?? false,
       clientCanTrack: p.clientCanTrack ?? false,
+      managersCanEditBudget: p.managersCanEditBudget,
+      managersCanEditMemberLimits: p.managersCanEditMemberLimits,
+      managersCanEditMembers: p.managersCanEditMembers,
+      budgetEnabled: p.budgetEnabled,
+      memberLimitsEnabled: p.memberLimitsEnabled,
     }),
   }
 }
