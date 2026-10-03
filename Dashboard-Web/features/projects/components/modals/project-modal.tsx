@@ -2055,12 +2055,12 @@ export function ProjectModal({
                       <FormField
                         label="Resets"
                         required
-                        hint="Never keeps counting until the project is done. Pick Weekly or Monthly only for a budget that really starts over each period."
+                        hint="Never keeps counting until the project is done. Weekly and Monthly start over on a schedule. At end date starts over for another period of the same length when the end date passes."
                       >
                         <ProjectModalSelect
                           value={addForm.budgetResets}
                           onChange={(value) => setAddForm((p) => ({ ...p, budgetResets: value }))}
-                          options={["Never", "Weekly", "Monthly"]}
+                          options={["Never", "Weekly", "Monthly", "At end date"]}
                         />
                       </FormField>
                       <FormField
@@ -2068,7 +2068,9 @@ export function ProjectModal({
                         hint={
                           addForm.budgetResets === "Never"
                             ? "Time before this day doesn't count. Leave empty to count everything."
-                            : "Each period begins on this day. Leave empty to line up with the calendar."
+                            : addForm.budgetResets === "At end date"
+                              ? "Required: the first period begins on this day."
+                              : "Each period begins on this day. Leave empty to line up with the calendar."
                         }
                       >
                         <DatePickerField
@@ -2077,7 +2079,14 @@ export function ProjectModal({
                           placeholder="Select date"
                         />
                       </FormField>
-                      <FormField label="Ends on" hint="Optional. Nothing after this day counts.">
+                      <FormField
+                        label="Ends on"
+                        hint={
+                          addForm.budgetResets === "At end date"
+                            ? "Required: the first period ends on this day, and the same length repeats after it."
+                            : "Optional. Nothing after this day counts."
+                        }
+                      >
                         <DatePickerField
                           value={addForm.budgetEndDate}
                           onChange={(date) => setAddForm((p) => ({ ...p, budgetEndDate: date }))}
@@ -2106,8 +2115,11 @@ export function ProjectModal({
                           year: day.slice(0, 4) === today.slice(0, 4) ? undefined : "numeric",
                           timeZone: "UTC",
                         })
-                      const text =
-                        period.resets === "never"
+                      const needsBothDays =
+                        addForm.budgetResets === "At end date" && !(addForm.budgetStartDate && addForm.budgetEndDate)
+                      const text = needsBothDays
+                        ? "Pick both a start and an end day - until then this counts everything, like Never."
+                        : period.resets === "never"
                           ? period.fromDay && period.toDay
                             ? `Counts ${fmt(period.fromDay)} – ${fmt(period.toDay)}`
                             : period.fromDay
@@ -2117,7 +2129,7 @@ export function ProjectModal({
                                 : "Counts all time, never resets"
                           : period.notStarted
                             ? `First period starts ${fmt(period.fromDay ?? today)}`
-                            : `${period.ended ? "Ended" : "This period"}: ${fmt(period.fromDay ?? today)} – ${fmt(period.toDay ?? today)}`
+                            : `${period.ended ? "Ended" : "This period"}: ${fmt(period.fromDay ?? today)} – ${fmt(period.toDay ?? today)}${period.resets === "repeat" ? ", then starts over" : ""}`
                       return <p className={cn("text-xs font-medium", formTheme.mutedText)}>{text}</p>
                     })()}
                     <SettingToggleRow
