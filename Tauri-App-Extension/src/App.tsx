@@ -1220,6 +1220,22 @@ function MainApp() {
         if (touchesOpenTask) void refreshTaskTracking();
         return;
       }
+      // Pushed by the server when a project's budget (or its period), member limits or rules are
+      // edited: re-read what the tracker shows and enforces now, instead of at the next poll.
+      if (
+        frame.type === "changed" &&
+        (frame.resource === "project-budgets" ||
+          frame.resource === "project-member-limits" ||
+          frame.resource === "projects")
+      ) {
+        void refreshProjects();
+        void refreshMemberLimits();
+        if (frame.id === selectedProjectId) {
+          void refreshProjectBudget();
+          if (selectedTaskId) void refreshTaskTracking();
+        }
+        return;
+      }
       if (frame.type === "changed" && frame.resource === "task-assignments") {
         void refreshAssignedTasks();
         void refreshMemberLimits();
@@ -1242,6 +1258,7 @@ function MainApp() {
     return () => window.removeEventListener("vt-live-changed", onLiveChanged);
   }, [
     selectedTaskId,
+    selectedProjectId,
     refreshTaskTracking,
     refreshMemberLimits,
     refreshProjectBudget,
@@ -2479,6 +2496,7 @@ function MainApp() {
             paused={paused}
             busy={busy}
             seconds={liveActiveSeconds}
+            projectBudget={projectBudget}
             dailyLimitHours={memberLimits?.dailyHours ?? 0}
             workedTodaySeconds={memberLimits ? memberLimits.workedTodaySeconds : null}
             startBlockedReason={startBlockedReason}

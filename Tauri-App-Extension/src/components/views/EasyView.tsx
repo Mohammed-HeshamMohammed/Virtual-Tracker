@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Icon } from "../common/Icon";
 import { fmtClock, fmtHours } from "../../utils/formatters";
-import type { AgentTask, ConnectionState, ProjectInfo } from "../../types";
+import { budgetResetNote } from "../../utils/budgetPeriod";
+import type { AgentTask, ConnectionState, ProjectBudgetStatus, ProjectInfo } from "../../types";
 
 /** Text sizes the member can step through, as a multiple of the layout's own large base. */
 export const EASY_TEXT_SCALES = [1, 1.25, 1.5, 1.75] as const;
@@ -31,6 +32,8 @@ type EasyViewProps = {
   busy: boolean;
   /** Time worked today, live. */
   seconds: number;
+  /** The selected project's budget, when it has one - shown as one plain line. */
+  projectBudget?: ProjectBudgetStatus | null;
   dailyLimitHours: number;
   workedTodaySeconds: number | null;
   /** Why Start is unavailable right now; empty when it is available. */
@@ -92,6 +95,8 @@ export function EasyView(props: EasyViewProps) {
       ? Math.max(0, props.dailyLimitHours * 3600 - props.workedTodaySeconds)
       : null;
   const selectionLocked = busy || sessionOpen;
+  const budget = props.projectBudget ?? null;
+  const budgetResets = budgetResetNote(budget);
 
   return (
     <div className="easy-view" style={{ ["--easy-scale" as string]: scale }}>
@@ -161,6 +166,14 @@ export function EasyView(props: EasyViewProps) {
           {fmtClock(props.seconds)}
         </span>
         <span className="easy-timer-label">Worked today</span>
+        {budget && budget.capSeconds > 0 ? (
+          <span className="easy-timer-limit">
+            {budget.remainingSeconds > 0
+              ? `Project budget: ${fmtHours(budget.remainingSeconds)} left of ${fmtHours(budget.capSeconds)}`
+              : "Project budget used up"}
+            {budgetResets ? ` · ${budgetResets}` : ""}
+          </span>
+        ) : null}
         {limitLeft != null ? (
           <span className="easy-timer-limit">
             {limitLeft > 0 ? `${fmtHours(limitLeft)} left of your ${props.dailyLimitHours}h daily limit` : "Daily limit reached"}

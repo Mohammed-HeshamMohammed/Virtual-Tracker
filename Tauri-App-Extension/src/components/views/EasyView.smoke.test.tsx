@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EasyView } from "./EasyView";
-import type { AgentTask, ConnectionState, ProjectInfo } from "../../types";
+import type { AgentTask, ConnectionState, ProjectBudgetStatus, ProjectInfo } from "../../types";
 
 const noop = () => {};
 
@@ -31,6 +31,7 @@ const base = {
   paused: false,
   busy: false,
   seconds: 3725,
+  projectBudget: null as ProjectBudgetStatus | null,
   dailyLimitHours: 8,
   workedTodaySeconds: 3725,
   startBlockedReason: "",
@@ -109,5 +110,17 @@ describe("EasyView", () => {
     expect(html).toContain("Larger text");
     expect(html).toContain("Settings");
     expect(html).toContain("Dashboard");
+  });
+
+  it("shows the project budget as one plain line, with when it resets", () => {
+    const budget = { scope: "shared" as const, capSeconds: 36000, spentSeconds: 9000, remainingSeconds: 27000 };
+    expect(render({ projectBudget: budget })).toContain("Project budget: 7h 30m left of 10h");
+    expect(render({ projectBudget: { ...budget, resets: "monthly", periodEnd: "2026-11-14" } })).toContain("Resets Nov 15");
+    expect(render({ projectBudget: { ...budget, remainingSeconds: 0, spentSeconds: 36000 } })).toContain("Project budget used up");
+  });
+
+  it("shows no budget line for a project without one", () => {
+    expect(render({ projectBudget: null })).not.toContain("Project budget");
+    expect(render({})).not.toContain("Project budget");
   });
 });

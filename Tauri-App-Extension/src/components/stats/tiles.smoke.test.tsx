@@ -194,4 +194,14 @@ describe("AssignedToMeBadge", () => {
     expect(html).toContain("8h 0m");
     expect(html).toContain("4 open tasks");
   });
+
+  it("ProjectBudgetTile - says when a periodic budget resets, and nothing for one that never does", () => {
+    const tile = (status: ProjectBudgetStatus) =>
+      renderToStaticMarkup(
+        <ProjectBudgetTile projectBudget={status} projectBudgetReached={false} projectBudgetPercent={50} />,
+      );
+    expect(tile({ ...projectBudget, resets: "monthly", periodEnd: "2026-11-14" })).toContain("Resets Nov 15");
+    expect(tile({ ...projectBudget, resets: "usedup" })).toContain("Starts over once it&#x27;s used up");
+    expect(tile(projectBudget)).not.toContain("Resets");
+  });
 });

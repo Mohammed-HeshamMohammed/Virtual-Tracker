@@ -155,6 +155,14 @@ impl ApiClient {
             cap_seconds: data.get("capSeconds").and_then(|v| v.as_u64()).unwrap_or(0),
             spent_seconds: data.get("spentSeconds").and_then(|v| v.as_u64()).unwrap_or(0),
             remaining_seconds: data.get("remainingSeconds").and_then(|v| v.as_u64()).unwrap_or(0),
+            resets: data
+                .get("resets")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .unwrap_or("never")
+                .to_string(),
+            period_start: data.get("periodStart").and_then(|v| v.as_str()).map(str::to_string),
+            period_end: data.get("periodEnd").and_then(|v| v.as_str()).map(str::to_string),
         }))
     }
 

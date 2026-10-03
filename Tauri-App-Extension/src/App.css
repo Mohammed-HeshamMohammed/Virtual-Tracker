@@ -1491,6 +1491,12 @@ body {
   white-space: nowrap;
 }
 
+/* The budget's reset line sits under its bar, not up in the tile's header. */
+.capacity-bar + .stat-tile-note {
+  display: block;
+  margin-top: 5px;
+}
+
 .stat-tile-value-row {
   margin-top: 5px;
   display: flex;

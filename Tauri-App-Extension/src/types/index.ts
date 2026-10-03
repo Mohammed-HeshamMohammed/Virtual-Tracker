@@ -169,6 +169,11 @@ export type ProjectBudgetStatus = {
   capSeconds: number;
   spentSeconds: number;
   remainingSeconds: number;
+  /** How the budget starts over. Absent from an older server - treated as "never". */
+  resets?: "never" | "weekly" | "monthly" | "repeat" | "usedup";
+  /** The period the spend is for (YYYY-MM-DD); periodEnd is null while it never ends. */
+  periodStart?: string | null;
+  periodEnd?: string | null;
 };
 
 export type AssignedToday = {

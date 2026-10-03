@@ -159,6 +159,20 @@ pub struct ProjectBudgetStatus {
     pub cap_seconds: u64,
     pub spent_seconds: u64,
     pub remaining_seconds: u64,
+    /// How the budget starts over: "never", "weekly", "monthly", "repeat" (when its end date
+    /// passes) or "usedup" (the day after it is used up). Absent from an older server - "never".
+    #[serde(default = "default_budget_resets")]
+    pub resets: String,
+    /// The period the spend above is for, as YYYY-MM-DD. `period_end` is None while it never
+    /// ends (Never, or When used up - which ends only when the budget does).
+    #[serde(default)]
+    pub period_start: Option<String>,
+    #[serde(default)]
+    pub period_end: Option<String>,
+}
+
+fn default_budget_resets() -> String {
+    "never".to_string()
 }
 
 /// The viewer's own daily/weekly work-hour limits (People > member > Limits), for the

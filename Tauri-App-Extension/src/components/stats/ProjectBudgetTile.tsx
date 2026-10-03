@@ -1,4 +1,5 @@
 import { fmtHours } from "../../utils/formatters";
+import { budgetResetNote } from "../../utils/budgetPeriod";
 import type { ProjectBudgetStatus } from "../../types";
 
 type ProjectBudgetTileProps = {
@@ -29,6 +30,7 @@ export function ProjectBudgetTile({ loading, projectBudget, projectBudgetReached
     );
   }
   if (!projectBudget) return null;
+  const resetNote = budgetResetNote(projectBudget);
   return (
     <div data-help="Project budget: how much of this project's budget is left. &quot;yours&quot; is a personal budget, &quot;team&quot; is shared." className="stat-tile">
       <div className="stat-tile-head">
@@ -48,6 +50,7 @@ export function ProjectBudgetTile({ loading, projectBudget, projectBudgetReached
             style={{ width: `${projectBudgetPercent}%` }}
           />
         </div>
+        {resetNote ? <span className="stat-tile-note" data-help="When this project's budget starts counting from zero again.">{resetNote}</span> : null}
       </div>
     </div>
   );
