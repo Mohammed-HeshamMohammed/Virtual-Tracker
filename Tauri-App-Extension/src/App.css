@@ -280,21 +280,6 @@ body {
   color: var(--on-surface-faint);
 }
 
-.titlebar-stat-scope {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--on-surface-faint);
-}
-
-.titlebar-ring {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-  transform: rotate(-90deg);
-}
-
 /* Focus is the small layout: no room for a row of numbers beside the title. */
 .layout-focus .titlebar-stats {
   display: none;
@@ -6176,4 +6161,29 @@ select.modal-input {
   display: inline-flex;
   gap: 8px;
   margin-left: auto;
+}
+
+/* Weekly activity - same percentage as the web dashboard's own "Weekly
+   trends" widget, drawn as a ring (reusing .activity-ring/-value/-legend
+   from the main pane's Activity tile) instead of a second chart shape. */
+.side-weekly {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.side-weekly-ring-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.side-weekly-ring {
+  width: 48px;
+  height: 48px;
+}
+
+.side-weekly-ring .activity-ring-value {
+  font-size: 12px;
 }

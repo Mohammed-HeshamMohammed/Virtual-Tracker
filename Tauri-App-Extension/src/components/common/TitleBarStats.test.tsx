@@ -3,54 +3,37 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { TitleBarStats } from "./TitleBarStats";
 import { clampSeenTimesheets, timesheetNotification } from "../../utils/approvalNotification";
 
-const weekly = { percent: 62, dash: 40, activeSeconds: 3600, idleSeconds: 600 };
 const pulse = { totalActiveSecondsToday: 7200, trackingNowCount: 2, membersWorkedTodayCount: 5 };
 
 describe("TitleBarStats", () => {
-  it("renders nothing without either section", () => {
-    expect(renderToStaticMarkup(<TitleBarStats weekly={null} pulse={null} />)).toBe("");
+  it("renders nothing without a pulse", () => {
+    expect(renderToStaticMarkup(<TitleBarStats pulse={null} />)).toBe("");
   });
 
-  it("shows the percent and the week's active and idle time", () => {
-    const html = renderToStaticMarkup(<TitleBarStats weekly={weekly} pulse={null} />);
-    expect(html).toContain("62%");
-    expect(html).toContain("active");
-    expect(html).toContain("idle");
-    expect(html).not.toContain("worked today");
-  });
-
-  it("shows a dash rather than 0% before anything is tracked this week", () => {
-    const html = renderToStaticMarkup(
-      <TitleBarStats weekly={{ ...weekly, percent: null, dash: 0, activeSeconds: 0, idleSeconds: 0 }} pulse={null} />,
-    );
-    expect(html).toContain("—");
-    expect(html).not.toContain("0%");
-  });
-
-  it("shows the organization pulse for a manager", () => {
-    const html = renderToStaticMarkup(<TitleBarStats weekly={weekly} pulse={pulse} />);
+  it("shows the live team numbers", () => {
+    const html = renderToStaticMarkup(<TitleBarStats pulse={pulse} />);
     expect(html).toContain("tracking");
     expect(html).toContain("worked today");
     expect(html).toContain("total");
   });
 
-  it("labels the pulse with whom it covers, by the server's scope", () => {
-    const label = (scope: "organization" | "people" | "projects") =>
-      renderToStaticMarkup(<TitleBarStats weekly={null} pulse={{ ...pulse, scope }} />);
-    expect(label("organization")).toContain("Organization");
-    expect(label("people")).toContain("Your people");
-    expect(label("projects")).toContain("Your projects");
+  it("does not label whom the numbers cover on screen - only in the help text", () => {
+    for (const scope of ["organization", "people", "projects"] as const) {
+      const html = renderToStaticMarkup(<TitleBarStats pulse={{ ...pulse, scope }} />);
+      expect(html).not.toContain(">Organization<");
+      expect(html).not.toContain(">Your people<");
+      expect(html).not.toContain(">Your projects<");
+      expect(html).not.toContain("titlebar-stat-scope");
+    }
+    expect(renderToStaticMarkup(<TitleBarStats pulse={{ ...pulse, scope: "organization" }} />)).toContain(
+      "everyone in the organization",
+    );
   });
 
-  it("leaves the label off for an older server that sends no scope", () => {
-    const html = renderToStaticMarkup(<TitleBarStats weekly={null} pulse={pulse} />);
-    expect(html).not.toContain("titlebar-stat-scope");
-  });
-
-  it("renders the pulse alone when the week is not loaded", () => {
-    const html = renderToStaticMarkup(<TitleBarStats weekly={null} pulse={pulse} />);
-    expect(html).toContain("worked today");
+  it("no longer carries the week's own activity - that is back in the sidebar", () => {
+    const html = renderToStaticMarkup(<TitleBarStats pulse={pulse} />);
     expect(html).not.toContain("idle");
+    expect(html).not.toContain("titlebar-ring");
   });
 });
 

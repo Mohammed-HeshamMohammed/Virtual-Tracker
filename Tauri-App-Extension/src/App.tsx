@@ -57,6 +57,7 @@ import { AssignedTodayBadge, AssignedToMeBadge } from "./components/stats/Assign
 import { TaskProgressPanel } from "./components/stats/TaskProgressPanel";
 import { TitleBarStats } from "./components/common/TitleBarStats";
 import { TeamStatusCard } from "./components/sidebar/TeamStatusCard";
+import { WeeklyActivityCard } from "./components/sidebar/WeeklyActivityCard";
 import { clampSeenTimesheets, timesheetNotification, TIMESHEETS_NOTIFICATION_ID } from "./utils/approvalNotification";
 import { ProjectsList } from "./components/sidebar/ProjectsList";
 import { TasksList } from "./components/sidebar/TasksList";
@@ -2314,17 +2315,7 @@ function MainApp() {
         theme={themePref}
         onCycleTheme={handleCycleTheme}
         stats={
-          signedIn && memberLimits && !isEasy ? (
-            <TitleBarStats
-              weekly={{
-                percent: weekActivityPercent,
-                dash: weekActivityDash,
-                activeSeconds: weekActiveSeconds,
-                idleSeconds: weekIdleSeconds,
-              }}
-              pulse={workspace?.pulse ?? null}
-            />
-          ) : null
+          signedIn && !isEasy && workspace?.pulse ? <TitleBarStats pulse={workspace.pulse} /> : null
         }
         notifications={bellNotifications}
         unreadCount={bellUnreadCount}
@@ -2519,6 +2510,15 @@ function MainApp() {
       <div className={`app-body${signedIn ? "" : " app-body-auth-only"}`}>
         <aside className="side-panel">
         <div className="side-panel-scroll">
+          <WeeklyActivityCard
+            signedIn={signedIn}
+            loading={!memberLimits}
+            weekActivityPercent={weekActivityPercent}
+            weekActivityDash={weekActivityDash}
+            weekActiveSeconds={weekActiveSeconds}
+            weekIdleSeconds={weekIdleSeconds}
+          />
+
           <TeamStatusCard team={workspace?.team ?? null} />
 
           <ProjectsList
