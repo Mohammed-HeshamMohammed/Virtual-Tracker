@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState as useComponentState, type Fo
 import { useEntityLiveGuard } from "@/shared/hooks/use-entity-live-guard"
 import { changedEvent } from "@/infrastructure/api/change-events"
 import { AnimatePresence, motion } from "framer-motion"
-import { X, Info, Wallet, Users, Bell, TimerOff, RotateCw, ChevronDown } from "lucide-react"
+import { X, Info, Wallet, Users, Bell, TimerOff, RotateCw, ChevronDown, Lock } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import {
   fetchProjectForEdit,
@@ -32,6 +32,10 @@ import {
   nonTrackerIds,
   projectTrackerIds as computeTrackerIds,
 } from "@/features/projects/utils/project-trackers"
+import {
+  DEFAULT_PROJECT_RULE_SWITCHES,
+  type ProjectRuleSwitches,
+} from "@/features/projects/api/project-details-api"
 import { ManagerClockInList } from "@/features/projects/components/modals/manager-clock-in-list"
 import { SubProjectsPicker, type SubProjectOption } from "@/features/projects/components/modals/sub-projects-picker"
 import { getProjectMembers, getProjects } from "@/features/projects/api/project-api"
@@ -104,6 +108,8 @@ interface AddProjectFormState {
   breakTimeMinutes: string
   endDate: string
   timezone: string
+  /** The Management tab's switches - see ProjectRuleSwitches. */
+  rules: ProjectRuleSwitches
   clientIds: string[]
   teams: string[]
   managers: string[]
@@ -243,6 +249,7 @@ function createDefaultAddForm(): AddProjectFormState {
     breakTimeMinutes: String(DEFAULT_BREAK_TIME_SECONDS / 60),
     endDate: "",
     timezone: "",
+    rules: { ...DEFAULT_PROJECT_RULE_SWITCHES },
     clientIds: [],
     teams: [],
     managers: [],
@@ -398,6 +405,7 @@ function formStateToPayload(
     breakTimeSeconds: breakTimeMinutesToSeconds(addForm.breakTimeMinutes),
     endDate: addForm.endDate,
     timezone: addForm.timezone,
+    rules: addForm.rules,
     clientIds: addForm.clientIds,
     teamIds: addForm.teams,
     managerIds,
@@ -510,10 +518,38 @@ export function ProjectModal({
   ])
 
   const addProjectTabs = useMemo(() => {
-    const base = normalizeProjectModalTabs(formConfig?.tabs ?? DEFAULT_ADD_PROJECT_TABS)
+    // An area switched off in the Management tab has no tab: there is nothing to set.
+    const base = normalizeProjectModalTabs(formConfig?.tabs ?? DEFAULT_ADD_PROJECT_TABS).filter(
+      (tab) =>
+        (tab.key !== "budget" || addForm.rules.budgetEnabled) &&
+        (tab.key !== LIMITS_TAB_KEY || addForm.rules.memberLimitsEnabled),
+    )
     if (!canManageProjectTracking) return base
     return [...base, { key: MANAGEMENT_TAB_KEY, label: "MANAGEMENT" }]
-  }, [formConfig?.tabs, canManageProjectTracking])
+  }, [formConfig?.tabs, canManageProjectTracking, addForm.rules.budgetEnabled, addForm.rules.memberLimitsEnabled])
+
+  // Switching an area off while on its tab: fall back to General instead of an empty pane.
+  useEffect(() => {
+    if (!addProjectTabs.some((tab) => tab.key === addProjectTab)) setAddProjectTab("general")
+  }, [addProjectTabs, addProjectTab])
+
+  // Areas the Management tab has locked for this viewer. Only plain managers are ever locked out -
+  // the people who see the Management tab can always change everything (the server checks too).
+  const areaLocked = {
+    budget: !canManageProjectTracking && !addForm.rules.managersCanEditBudget,
+    memberLimits: !canManageProjectTracking && !addForm.rules.managersCanEditMemberLimits,
+    members: !canManageProjectTracking && !addForm.rules.managersCanEditMembers,
+  }
+  const currentTabLock =
+    addProjectTab === "budget" && areaLocked.budget
+      ? "the budget"
+      : addProjectTab === LIMITS_TAB_KEY && areaLocked.memberLimits
+        ? "member limits"
+        : addProjectTab === MEMBERS_TEAMS_TAB_KEY && areaLocked.members
+          ? "members and teams"
+          : null
+  const setRule = (key: keyof ProjectRuleSwitches, next: boolean) =>
+    setAddForm((p) => ({ ...p, rules: { ...p.rules, [key]: next } }))
 
   const memberLabelById = useMemo(
     () => Object.fromEntries((formConfig?.options.members ?? []).map((m) => [m.id, m.label])),
@@ -746,6 +782,7 @@ export function ProjectModal({
           breakTimeMinutes: String((payload.breakTimeSeconds || DEFAULT_BREAK_TIME_SECONDS) / 60),
           endDate: payload.endDate || "",
           timezone: payload.timezone || "",
+          rules: payload.rules ?? { ...DEFAULT_PROJECT_RULE_SWITCHES },
           clientIds: payload.clientIds,
           teams: payload.teamIds,
           managers: payload.managerIds,
@@ -1137,6 +1174,14 @@ export function ProjectModal({
       const payloads = projectNames.map((name) => ({
         ...formStateToPayload(sanitizedAddForm, name, memberRoleById),
         ...(canSetTimezone ? {} : { timezone: undefined }),
+        // Only the people who see the Management tab send its switches; the server refuses them otherwise.
+        ...(canManageProjectTracking ? {} : { rules: undefined }),
+        // Not written: a part locked for this viewer, or one switched off (its stored values are kept).
+        skip: {
+          budget: !sanitizedAddForm.rules.budgetEnabled || areaLocked.budget,
+          memberLimits: !sanitizedAddForm.rules.memberLimitsEnabled || areaLocked.memberLimits,
+          members: areaLocked.members,
+        },
       }))
       await onSave(projectId, payloads, editingBudgetId, editingUpdatedAt, editingBudgetUpdatedAt)
       onClose()
@@ -1253,6 +1298,22 @@ export function ProjectModal({
             />
           ) : (
             <>
+              {currentTabLock ? (
+                <p
+                  role="status"
+                  className={cn(
+                    "mb-4 flex items-center gap-2 rounded-xl border px-3 py-2.5 text-sm",
+                    formTheme.isDark
+                      ? "border-amber-400/30 bg-amber-400/10 text-amber-200"
+                      : "border-amber-200 bg-amber-50 text-amber-800",
+                  )}
+                >
+                  <Lock className="h-4 w-4 shrink-0" />
+                  An admin has locked {currentTabLock} on this project. You can see it, but only admins and super
+                  managers can change it.
+                </p>
+              ) : null}
+              <div inert={Boolean(currentTabLock)} className={currentTabLock ? "opacity-70" : undefined}>
               {formConfigError ? (
                 <p className={cn("mb-4 text-sm", formTheme.isDark ? "text-amber-300" : "text-amber-700")}>
                   {formConfigError} Some fields may be unavailable.
@@ -2093,6 +2154,55 @@ export function ProjectModal({
 
               {addProjectTab === MANAGEMENT_TAB_KEY && canManageProjectTracking ? (
                 <div className={FORM_STACK}>
+                  <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
+                    <div>
+                      <p className={cn("text-sm font-semibold", formTheme.modal.title)}>What managers can change</p>
+                      <p className={cn("mt-1 text-xs", formTheme.mutedText)}>
+                        Off makes that part read-only for the managers on this project. Admins and super managers
+                        can always change it.
+                      </p>
+                    </div>
+                    <SettingToggleRow
+                      checked={addForm.rules.managersCanEditBudget}
+                      onChange={(next) => setRule("managersCanEditBudget", next)}
+                      label="Budget"
+                    />
+                    {PROJECT_MEMBER_LIMITS_ENABLED ? (
+                      <SettingToggleRow
+                        checked={addForm.rules.managersCanEditMemberLimits}
+                        onChange={(next) => setRule("managersCanEditMemberLimits", next)}
+                        label="Member limits"
+                      />
+                    ) : null}
+                    <SettingToggleRow
+                      checked={addForm.rules.managersCanEditMembers}
+                      onChange={(next) => setRule("managersCanEditMembers", next)}
+                      label="Members & teams"
+                    />
+                  </div>
+
+                  <div className={cn("flex flex-col gap-3 rounded-xl border p-3", formTheme.card)}>
+                    <div>
+                      <p className={cn("text-sm font-semibold", formTheme.modal.title)}>What this project uses</p>
+                      <p className={cn("mt-1 text-xs", formTheme.mutedText)}>
+                        Off removes it from tracking, reports and the Projects table, and hides its tab. Its
+                        settings are kept and come back when you switch it on again.
+                      </p>
+                    </div>
+                    <SettingToggleRow
+                      checked={addForm.rules.budgetEnabled}
+                      onChange={(next) => setRule("budgetEnabled", next)}
+                      label="Use a budget"
+                    />
+                    {PROJECT_MEMBER_LIMITS_ENABLED ? (
+                      <SettingToggleRow
+                        checked={addForm.rules.memberLimitsEnabled}
+                        onChange={(next) => setRule("memberLimitsEnabled", next)}
+                        label="Use member limits"
+                      />
+                    ) : null}
+                  </div>
+
                   {canHaveSubProjects ? (
                     <div className="flex flex-col gap-2">
                       <p className={cn("text-sm font-semibold", formTheme.modal.title)}>
@@ -2215,6 +2325,7 @@ export function ProjectModal({
                   </div>
                 </div>
               ) : null}
+              </div>
             </>
           )}
           </motion.div>

@@ -30,6 +30,27 @@ export interface ProjectMemberLimitEntry {
   startDate: string
 }
 
+/**
+ * The Management tab's switches (Dashboard-Backend/src/modules/projects/project-area-locks.js).
+ * "Can edit" off: plain managers see that area read-only. "Enabled" off: the project has no
+ * budget / no member limits as far as tracking and reports go; the stored rows are kept.
+ */
+export interface ProjectRuleSwitches {
+  managersCanEditBudget: boolean
+  managersCanEditMemberLimits: boolean
+  managersCanEditMembers: boolean
+  budgetEnabled: boolean
+  memberLimitsEnabled: boolean
+}
+
+export const DEFAULT_PROJECT_RULE_SWITCHES: ProjectRuleSwitches = {
+  managersCanEditBudget: true,
+  managersCanEditMemberLimits: true,
+  managersCanEditMembers: true,
+  budgetEnabled: true,
+  memberLimitsEnabled: true,
+}
+
 export interface CreateProjectFormPayload {
   name: string
   type: ProjectType
@@ -49,6 +70,10 @@ export interface CreateProjectFormPayload {
   endDate: string
   /** Leave undefined to keep the saved zone (e.g. the viewer may not set one). */
   timezone?: string
+  /** Undefined = leave the saved switches alone (the viewer cannot see the Management tab). */
+  rules?: ProjectRuleSwitches
+  /** Parts of the project not to write on this save: locked for this viewer, or switched off. */
+  skip?: { budget?: boolean; memberLimits?: boolean; members?: boolean }
   subProjectIds: string[]
   clientIds: string[]
   teamIds: string[]
@@ -536,6 +561,17 @@ export async function fetchProjectForEdit(projectId: string): Promise<ProjectEdi
     memberLimitMemberIds: data.memberLimitMemberIds ?? [],
     memberLimits: data.memberLimits ?? [],
     memberOwnLimits: data.memberOwnLimits ?? {},
+    // The edit-state sends the switches flat; anything missing (an older server) is "on".
+    rules: (() => {
+      const flat = data as unknown as Partial<ProjectRuleSwitches>
+      return {
+        managersCanEditBudget: flat.managersCanEditBudget !== false,
+        managersCanEditMemberLimits: flat.managersCanEditMemberLimits !== false,
+        managersCanEditMembers: flat.managersCanEditMembers !== false,
+        budgetEnabled: flat.budgetEnabled !== false,
+        memberLimitsEnabled: flat.memberLimitsEnabled !== false,
+      }
+    })(),
   }
 }
 
@@ -867,22 +903,27 @@ export async function updateProjectWithDetails(
       breakTimeSeconds: payload.breakTimeSeconds,
       endDate: payload.endDate,
       timezone: payload.timezone,
+      ...(payload.rules ?? {}),
       clientId: primaryClientId || "",
       ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
       ...(options?.expectedUpdatedAt ? { expectedUpdatedAt: options.expectedUpdatedAt } : {}),
     }),
     syncClientLinks(projectId, clientIds, actorMemberId),
     // Member limits and manager tracking access are only accepted for members
-    // on the project, so they are saved once the members are.
-    syncProjectMembers(projectId, memberPayload, actorMemberId).then(() =>
+    // on the project, so they are saved once the members are. A part this
+    // viewer may not change (locked in the Management tab), or that is
+    // switched off, is not written at all - the server would refuse it, and a
+    // switched-off budget or limit keeps its stored values for when it is
+    // switched back on.
+    (payload.skip?.members ? Promise.resolve() : syncProjectMembers(projectId, memberPayload, actorMemberId)).then(() =>
       Promise.all([
-        syncProjectMemberLimits(projectId, payload, actorMemberId),
+        payload.skip?.memberLimits ? Promise.resolve() : syncProjectMemberLimits(projectId, payload, actorMemberId),
         syncManagerTrackingAccess(projectId, memberPayload),
         syncMemberTimeZones(projectId, memberPayload),
       ]),
     ),
-    syncTeamLinks(projectId, payload.teamIds, actorMemberId),
-    shouldPersistBudget(payload)
+    payload.skip?.members ? Promise.resolve() : syncTeamLinks(projectId, payload.teamIds, actorMemberId),
+    !payload.skip?.budget && shouldPersistBudget(payload)
       ? persistBudgetForProject(projectId, payload, actorMemberId, options?.budgetId, options?.expectedBudgetUpdatedAt)
       : Promise.resolve(),
   ])
@@ -944,6 +985,7 @@ export async function createProjectWithDetails(
     breakTimeSeconds: payload.breakTimeSeconds,
     endDate: payload.endDate,
     timezone: payload.timezone,
+    ...(payload.rules ?? {}),
     clientId: primaryClientId,
     ...(actorMemberId ? { createdBy: actorMemberId } : {}),
   }
@@ -952,7 +994,7 @@ export async function createProjectWithDetails(
 
   const memberPayload = ensureActorInMembers(payload, actorMemberId)
   await Promise.all([
-    shouldPersistBudget(payload)
+    !payload.skip?.budget && shouldPersistBudget(payload)
       ? createProjectBudget({
           projectId: created.id,
           ...buildBudgetFields(payload),
@@ -964,7 +1006,7 @@ export async function createProjectWithDetails(
     // on the project, so they are saved once the members are.
     addProjectMembersFast(created.id, memberPayload, actorMemberId).then(() =>
       Promise.all([
-        syncProjectMemberLimits(created.id, payload, actorMemberId),
+        payload.skip?.memberLimits ? Promise.resolve() : syncProjectMemberLimits(created.id, payload, actorMemberId),
         syncManagerTrackingAccess(created.id, memberPayload),
         syncMemberTimeZones(created.id, memberPayload),
       ]),

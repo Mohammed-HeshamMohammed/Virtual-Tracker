@@ -20,6 +20,11 @@ export type ProjectRules = {
   stopNote: boolean
   clientManages: boolean
   clientClocksIn: boolean
+  /** Switched off in the Management tab: the project has no budget / no member limits. */
+  budgetOff: boolean
+  memberLimitsOff: boolean
+  /** Parts plain managers on this project can't change, in display order. */
+  lockedForManagers: string[]
 }
 
 export type RuleChip = {
@@ -40,6 +45,12 @@ export function buildProjectRules(input: {
   requireStopNote: boolean
   clientCanManage: boolean
   clientCanTrack: boolean
+  /** The Management tab's switches; any left out count as on (the default). */
+  managersCanEditBudget?: boolean
+  managersCanEditMemberLimits?: boolean
+  managersCanEditMembers?: boolean
+  budgetEnabled?: boolean
+  memberLimitsEnabled?: boolean
 }): ProjectRules {
   const managers = new Set(input.managerIds)
   const allowed = new Set(input.trackingAllowedManagerIds.filter((id) => managers.has(id)))
@@ -53,6 +64,13 @@ export function buildProjectRules(input: {
     stopNote: input.requireStopNote,
     clientManages: input.clientCanManage,
     clientClocksIn: input.clientCanTrack,
+    budgetOff: input.budgetEnabled === false,
+    memberLimitsOff: input.memberLimitsEnabled === false,
+    lockedForManagers: [
+      ...(input.managersCanEditBudget === false && input.budgetEnabled !== false ? ["budget"] : []),
+      ...(input.managersCanEditMemberLimits === false && input.memberLimitsEnabled !== false ? ["member limits"] : []),
+      ...(input.managersCanEditMembers === false ? ["members"] : []),
+    ],
   }
 }
 
@@ -125,6 +143,26 @@ export function describeProjectRules(rules: ProjectRules, options: { hasTasks: b
   }
   if (rules.clientClocksIn) {
     chips.push({ key: "client-clock", label: "Client clocks in", tone: "info", detail: "The client can run a timer on this project." })
+  }
+
+  if (rules.lockedForManagers.length > 0) {
+    chips.push({
+      key: "locked",
+      label: `Locked: ${rules.lockedForManagers.join(", ")}`,
+      tone: "info",
+      detail: "Managers on this project can see these but not change them. Admins and super managers still can.",
+    })
+  }
+  if (rules.budgetOff) {
+    chips.push({ key: "budget-off", label: "No budget", tone: "muted", detail: "The budget is switched off in the Management tab." })
+  }
+  if (rules.memberLimitsOff) {
+    chips.push({
+      key: "limits-off",
+      label: "No member limits",
+      tone: "muted",
+      detail: "Member limits are switched off in the Management tab.",
+    })
   }
 
   return chips

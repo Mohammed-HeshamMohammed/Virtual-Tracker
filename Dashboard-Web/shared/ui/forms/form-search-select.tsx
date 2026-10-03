@@ -54,6 +54,12 @@ export function FormSearchSelect({
   const menuRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
+  // The row to bring into view on the next render, if any. Only opening the menu, typing a search
+  // and the arrow keys set it. The menu repositions on *every* scroll on the page - including
+  // scrolling this very list - and following the highlight on each of those snapped the list back
+  // to the selected row, so it could not be scrolled at all. It holds the index itself, not a
+  // flag: on the first open the effect below runs before the new highlight has rendered.
+  const revealIndexRef = useRef<number | null>(null)
   const theme = useClientFormTheme()
 
   const filtered = useMemo(() => {
@@ -92,19 +98,27 @@ export function FormSearchSelect({
   useEffect(() => {
     if (!open) return
     setSearch("")
-    setActive(Math.max(0, options.findIndex((o) => o.value === value)))
+    const selectedIndex = Math.max(0, options.findIndex((o) => o.value === value))
+    setActive(selectedIndex)
+    revealIndexRef.current = selectedIndex
     const frame = requestAnimationFrame(() => searchRef.current?.focus())
     return () => cancelAnimationFrame(frame)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   useEffect(() => {
+    if (!search) return
     setActive(0)
+    revealIndexRef.current = 0
   }, [search])
 
   useEffect(() => {
-    if (!open) return
-    listRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" })
+    const index = revealIndexRef.current
+    if (!open || !menuStyle || index === null) return
+    const row = listRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`)
+    if (!row) return // not rendered yet - try again on the next render
+    revealIndexRef.current = null
+    row.scrollIntoView({ block: "nearest" })
   }, [active, open, menuStyle])
 
   function toggle() {
@@ -122,10 +136,14 @@ export function FormSearchSelect({
   function onSearchKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "ArrowDown") {
       e.preventDefault()
-      setActive((i) => Math.min(filtered.length - 1, i + 1))
+      const next = Math.min(filtered.length - 1, active + 1)
+      revealIndexRef.current = next
+      setActive(next)
     } else if (e.key === "ArrowUp") {
       e.preventDefault()
-      setActive((i) => Math.max(0, i - 1))
+      const next = Math.max(0, active - 1)
+      revealIndexRef.current = next
+      setActive(next)
     } else if (e.key === "Enter") {
       e.preventDefault()
       const option = filtered[active]

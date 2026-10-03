@@ -25,6 +25,11 @@ function toProject(input: Record<string, unknown>): Project {
     requireStopNote: Boolean(input.require_stop_note ?? input.requireStopNote ?? false),
     clientCanManage: Boolean(input.client_can_manage ?? input.clientCanManage ?? false),
     clientCanTrack: Boolean(input.client_can_track ?? input.clientCanTrack ?? false),
+    managersCanEditBudget: (input.managers_can_edit_budget ?? input.managersCanEditBudget) !== false,
+    managersCanEditMemberLimits: (input.managers_can_edit_member_limits ?? input.managersCanEditMemberLimits) !== false,
+    managersCanEditMembers: (input.managers_can_edit_members ?? input.managersCanEditMembers) !== false,
+    budgetEnabled: (input.budget_enabled ?? input.budgetEnabled) !== false,
+    memberLimitsEnabled: (input.member_limits_enabled ?? input.memberLimitsEnabled) !== false,
     disableIdleTime: Boolean(input.disable_idle_time ?? input.disableIdleTime),
     idleTimeSeconds: Number(input.idle_time_seconds ?? input.idleTimeSeconds ?? 450),
     disableBreakLimit: Boolean(input.disable_break_limit ?? input.disableBreakLimit),
@@ -59,6 +64,11 @@ function toProjectPayload(
   if (input.requireStopNote !== undefined) out.require_stop_note = input.requireStopNote
   if (input.clientCanManage !== undefined) out.client_can_manage = input.clientCanManage
   if (input.clientCanTrack !== undefined) out.client_can_track = input.clientCanTrack
+  if (input.managersCanEditBudget !== undefined) out.managers_can_edit_budget = input.managersCanEditBudget
+  if (input.managersCanEditMemberLimits !== undefined) out.managers_can_edit_member_limits = input.managersCanEditMemberLimits
+  if (input.managersCanEditMembers !== undefined) out.managers_can_edit_members = input.managersCanEditMembers
+  if (input.budgetEnabled !== undefined) out.budget_enabled = input.budgetEnabled
+  if (input.memberLimitsEnabled !== undefined) out.member_limits_enabled = input.memberLimitsEnabled
   if (input.subProjectIds !== undefined) out.sub_project_ids = input.subProjectIds
   if (input.disableIdleTime !== undefined) out.disable_idle_time = input.disableIdleTime
   if (input.idleTimeSeconds !== undefined) out.idle_time_seconds = input.idleTimeSeconds
@@ -109,6 +119,11 @@ export interface Project {
   requireStopNote: boolean
   clientCanManage: boolean
   clientCanTrack: boolean
+  managersCanEditBudget: boolean
+  managersCanEditMemberLimits: boolean
+  managersCanEditMembers: boolean
+  budgetEnabled: boolean
+  memberLimitsEnabled: boolean
   disableIdleTime: boolean
   idleTimeSeconds?: number
   disableBreakLimit: boolean
@@ -148,6 +163,12 @@ export interface CreateProjectInput {
   requireStopNote?: boolean
   clientCanManage?: boolean
   clientCanTrack?: boolean
+  /** The Management tab's switches - see ProjectRuleSwitches. Only sent by those who may set them. */
+  managersCanEditBudget?: boolean
+  managersCanEditMemberLimits?: boolean
+  managersCanEditMembers?: boolean
+  budgetEnabled?: boolean
+  memberLimitsEnabled?: boolean
   subProjectIds?: string[]
   disableIdleTime?: boolean
   idleTimeSeconds?: number
@@ -175,6 +196,12 @@ export interface UpdateProjectInput {
   requireStopNote?: boolean
   clientCanManage?: boolean
   clientCanTrack?: boolean
+  /** The Management tab's switches - see ProjectRuleSwitches. Only sent by those who may set them. */
+  managersCanEditBudget?: boolean
+  managersCanEditMemberLimits?: boolean
+  managersCanEditMembers?: boolean
+  budgetEnabled?: boolean
+  memberLimitsEnabled?: boolean
   subProjectIds?: string[]
   /** null clears it back to each member's own zone. */
   timezone?: string | null

@@ -59,7 +59,22 @@ function applyOptimisticProjectEdit(prev: Project, payload: CreateProjectFormPay
       requireStopNote: payload.requireStopNote,
       clientCanManage: payload.clientCanManage,
       clientCanTrack: payload.clientCanTrack,
+      // A viewer who can't see the Management tab sends no switches - keep what the row showed.
+      ...(payload.rules ?? switchesFromRules(prev.rules)),
     }),
+  }
+}
+
+/** The Management switches as a row's existing summary records them. */
+function switchesFromRules(rules: Project["rules"]) {
+  if (!rules) return {}
+  const locked = new Set(rules.lockedForManagers ?? [])
+  return {
+    budgetEnabled: !rules.budgetOff,
+    memberLimitsEnabled: !rules.memberLimitsOff,
+    managersCanEditBudget: !locked.has("budget"),
+    managersCanEditMemberLimits: !locked.has("member limits"),
+    managersCanEditMembers: !locked.has("members"),
   }
 }
 
