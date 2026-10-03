@@ -82,6 +82,16 @@ export function enforcedWorkDays(settings) {
   return [...new Set([...days, ...makeup])];
 }
 
+/**
+ * Whether starting the timer on this weekday (0 = Monday) is refused. The same rule as capture:
+ * only when days off are actually enforced (see enforcedWorkDays) - never because of the Monday-Friday
+ * default every member has.
+ */
+export function isStartBlockedOnWeekday(settings, weekdayIndex) {
+  const days = enforcedWorkDays(settings);
+  return Boolean(days) && !days.includes(weekdayIndex);
+}
+
 const MAX_RECHECK_SEC = 30 * 60;
 
 /**

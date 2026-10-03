@@ -30,6 +30,7 @@ import {
   startPrivateBreak,
   endPrivateBreak,
   getMyCaptureSummary,
+  isStartBlockedOnWeekday,
 } from "./member-capture-settings.js";
 import { computeDHash } from "./perceptual-hash.js";
 import { getSessionIntegritySummary, getMemberIntegrityFlags, contestIntegrityFlag } from "./integrity-score.js";
@@ -707,9 +708,17 @@ export async function routeActivity(req, res, url, origin) {
         // underway. The day is resolved in the member's own timezone, since
         // "is today a working day" is a question about their calendar, not
         // the server's.
-        if (action === "start" && !(await memberUsesShiftsForLimits(db, member.memberId))) {
-          const workDays = Array.isArray(timeSettings?.work_days) ? timeSettings.work_days : [0, 1, 2, 3, 4];
-          const makeupDays = Array.isArray(timeSettings?.makeup_days) ? timeSettings.makeup_days : [];
+        //
+        // Only when the organization has actually switched on "block tracking on days off"
+        // (time_settings.disable_tracking_specific_days). Every member's work days default to
+        // Monday-Friday, so applying them without that opt-in refused the timer to everyone on
+        // default settings - an Owner included - every Saturday and Sunday. Capture already
+        // follows this rule (member-capture-settings.js enforcedWorkDays); this is the same one.
+        if (
+          action === "start" &&
+          timeSettings?.disable_tracking_specific_days === true &&
+          !(await memberUsesShiftsForLimits(db, member.memberId))
+        ) {
           // The project's calendar when the session is for a project that has one, else
           // the member's own (resolveProjectTimeZone falls back to it).
           const gateTaskId = taskId || open?.task_id || null;
@@ -717,10 +726,11 @@ export async function routeActivity(req, res, url, origin) {
             sessionProjectId || (gateTaskId ? (await getTaskPg(gateTaskId))?.project_id : null) || null;
           const memberTimeZone = await resolveProjectTimeZone(gateProjectId, member.memberId);
           const today = weekdayIndexForLocalDay(localDayFor(now, memberTimeZone));
-          if (!workDays.includes(today) && !makeupDays.includes(today)) {
+          if (isStartBlockedOnWeekday(timeSettings, today)) {
             sendJson(res, origin, 403, {
               success: false,
-              error: "Today is not a scheduled working day for this member.",
+              error:
+                "Today is not a scheduled working day for this member, and your organization blocks tracking on days off.",
             });
             return true;
           }

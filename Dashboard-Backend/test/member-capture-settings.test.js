@@ -34,6 +34,7 @@ const {
   secondsUntilWindowChange,
   mayAccessMemberCaptureSettings,
   enforcedWorkDays,
+  isStartBlockedOnWeekday,
 } = await import(
   "../src/modules/activity/member-capture-settings.js"
 );
@@ -287,4 +288,26 @@ test("an empty reach list denies rather than allowing everyone", () => {
 test("a missing viewer or target is denied", () => {
   assert.equal(mayAccessMemberCaptureSettings(null, "b", null), false);
   assert.equal(mayAccessMemberCaptureSettings(viewer("m", "Owner"), "", null), false);
+});
+
+// The timer's start check follows the same rule as capture: a day off only blocks when the
+// organization switched blocking on. The Monday-Friday default must never refuse anyone.
+test("starting the timer on a weekend is not refused on default settings - an Owner's included", () => {
+  const SATURDAY = 5;
+  const defaults = { work_days: [0, 1, 2, 3, 4], makeup_days: [], disable_tracking_specific_days: false, use_shifts_for_limits: false };
+  assert.equal(isStartBlockedOnWeekday(defaults, SATURDAY), false);
+  assert.equal(isStartBlockedOnWeekday(undefined, SATURDAY), false, "no settings row at all");
+  assert.equal(isStartBlockedOnWeekday({ work_days: [0, 1, 2, 3, 4] }, SATURDAY), false, "flag absent");
+});
+
+test("when days off are enforced, only days that are not work days or make-up days are refused", () => {
+  const enforced = { work_days: [0, 1, 2, 3, 4], makeup_days: [5], disable_tracking_specific_days: true, use_shifts_for_limits: false };
+  assert.equal(isStartBlockedOnWeekday(enforced, 2), false, "a work day");
+  assert.equal(isStartBlockedOnWeekday(enforced, 5), false, "a make-up day is a day off worked in lieu");
+  assert.equal(isStartBlockedOnWeekday(enforced, 6), true, "Sunday is a plain day off");
+});
+
+test("members scheduled by shifts have no fixed work days, so nothing is refused", () => {
+  const shifts = { work_days: [0], makeup_days: [], disable_tracking_specific_days: true, use_shifts_for_limits: true };
+  assert.equal(isStartBlockedOnWeekday(shifts, 6), false);
 });
