@@ -1076,7 +1076,7 @@ CREATE TABLE IF NOT EXISTS project_budgets (
   who_to_notify               VARCHAR(255),
   stop_timers_when_reached    BOOLEAN NOT NULL DEFAULT false,
   stop_timers_at_pct          NUMERIC(5, 2),
-  resets                      VARCHAR(20) NOT NULL DEFAULT 'Never' CHECK (resets IN ('Never', 'Weekly', 'Monthly')),
+  resets                      VARCHAR(20) NOT NULL DEFAULT 'Never' CHECK (resets IN ('Never', 'Weekly', 'Monthly', 'At end date')),
   start_date                  DATE,
   include_non_billable_time   BOOLEAN NOT NULL DEFAULT true,
   created_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),

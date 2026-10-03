@@ -101,4 +101,37 @@ if (!PGlite) {
     assert.equal(Math.round((tokyoSpent - utcSpent) * 3600), 900);
     await db.query("UPDATE projects SET timezone = NULL WHERE id = $1", [P]);
   });
+
+  test("the boot-time constraint change allows 'At end date', and can run every boot", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { fileURLToPath } = await import("node:url");
+    const source = readFileSync(fileURLToPath(new URL("../src/lib/postgres/ensure-lookup-schema.js", import.meta.url)), "utf8");
+    const match = source.match(/`(ALTER TABLE project_budgets\s+DROP CONSTRAINT IF EXISTS project_budgets_resets_check,[\s\S]*?)`/);
+    assert.ok(match, "found the statement in the schema file");
+    // The table as it was first created: an unnamed inline CHECK Postgres names project_budgets_resets_check.
+    await db.exec(`CREATE TABLE old_budgets (project_id uuid, resets varchar(20) NOT NULL DEFAULT 'Never' CHECK (resets IN ('Never', 'Weekly', 'Monthly')))`);
+    await db.exec(`ALTER TABLE old_budgets RENAME CONSTRAINT old_budgets_resets_check TO project_budgets_resets_check`);
+    const statement = match[1].replace(/project_budgets/g, "old_budgets").replace(/old_budgets_resets_check/g, "project_budgets_resets_check");
+    await db.exec(statement);
+    await db.exec(statement); // a second boot
+    await db.query("INSERT INTO old_budgets (project_id, resets) VALUES (gen_random_uuid(), 'At end date')");
+    await assert.rejects(db.query("INSERT INTO old_budgets (project_id, resets) VALUES (gen_random_uuid(), 'Daily')"));
+  });
+
+  test("an At end date budget counts only the current repeat of its window", async () => {
+    const P2 = "33333333-3333-4333-8333-333333333333";
+    await db.query("INSERT INTO projects (id) VALUES ($1)", [P2]);
+    // A 10-day window starting 25 days ago repeats: windows are days -25..-16, -15..-6, -5..+4 (today is in the last).
+    const day = (offset) => addLocalDays(today, offset);
+    await db.query(
+      "INSERT INTO project_budgets VALUES ($1, 'Hours based', NULL, 'per_project', 100, 'At end date', $2, $3, true)",
+      [P2, day(-25), day(-16)],
+    );
+    const add = (offset, secs) => db.query("INSERT INTO activity_sessions VALUES ($1, $2, $3, $4)", [M, P2, `${day(offset)}T12:00:00Z`, secs]);
+    await add(-20, 7200); // first window
+    await add(-10, 3600); // second window
+    await add(-2, 1800); // current window
+    const spent = (await proj.computeProjectSpentForAllPg({}, [{ id: P2, type: "Hours based" }])).get(P2);
+    assert.equal(spent, 0.5, "only the current window's half hour");
+  });
 }

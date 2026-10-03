@@ -37,6 +37,7 @@ import {
   getProjectBudgetPg,
   getProjectBudgetRowPg,
   getAllProjectBudgetsPg,
+  toDayStrOrNull,
   upsertProjectBudgetPg,
   computeProjectSpentPg,
   computeProjectBudgetTargetPg,
@@ -74,7 +75,7 @@ import { resolveIdleTimeLimit } from "./idle-time-limit.service.js";
 import { resolveProjectTimezoneInput, canSetProjectTimezone } from "./project-timezone.js";
 import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
 import { localDayFor } from "../../lib/time/timezone-utils.js";
-import { budgetPeriodWindow } from "../../lib/time/budget-period.js";
+import { addDays, budgetPeriodWindow, daysBetween } from "../../lib/time/budget-period.js";
 import {
   canManageProjectRules,
   isProjectAreaLocked,
@@ -1343,7 +1344,13 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 400, { success: false, error: "Pick a start date for the next reset period." });
         return true;
       }
-      const endDate = String(body.end_date ?? body.endDate ?? "").trim() || null;
+      let endDate = String(body.end_date ?? body.endDate ?? "").trim() || null;
+      // A repeating budget is its window, so restarting it moves the whole window: with no end day
+      // given it keeps the same length from the new start.
+      if (!endDate && String(current.resets).toLowerCase() === "at end date" && current.start_date && current.end_date) {
+        const length = daysBetween(toDayStrOrNull(current.start_date), toDayStrOrNull(current.end_date));
+        if (length >= 0) endDate = addDays(startDate, length);
+      }
       if (endDate && endDate < startDate) {
         sendJson(res, origin, 400, { success: false, error: "End date can't be before the start date." });
         return true;
