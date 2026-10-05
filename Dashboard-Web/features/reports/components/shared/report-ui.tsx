@@ -16,7 +16,7 @@ export function ReportCard({
   return (
     <div
       className={cn(
-        "rounded-xl border border-slate-100 bg-white shadow-sm dark:border-white/10 dark:bg-[#151b2d]",
+        "rounded-xl border border-slate-100 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900",
         className,
       )}
     >

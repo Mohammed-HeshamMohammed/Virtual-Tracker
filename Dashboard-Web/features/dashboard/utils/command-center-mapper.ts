@@ -50,6 +50,19 @@ function mapHealth(items: CommandCenterApiPayload["projects"][number]["health"])
 }
 
 function mapProject(project: CommandCenterApiPayload["projects"][number]): ProjectData {
+  const utilizationBreakdown = project.utilizationBreakdown ?? []
+  const utilizationTotalMembers =
+    project.utilizationTotalMembers ??
+    project.utilizationMembers.onTrack +
+      project.utilizationMembers.over +
+      project.utilizationMembers.under +
+      project.utilizationMembers.noLimit
+  const fallbackTrackedHours = utilizationBreakdown.reduce((sum, member) => sum + member.hours, 0)
+  const fallbackCapacityHours = utilizationBreakdown.reduce((sum, member) => sum + (member.capacityHours ?? 0), 0)
+  const fallbackCountedHours = utilizationBreakdown.reduce(
+    (sum, member) => sum + (member.capacityHours === null ? 0 : member.hours),
+    0,
+  )
   return {
     id: project.id,
     name: project.name,
@@ -67,7 +80,16 @@ function mapProject(project: CommandCenterApiPayload["projects"][number]): Proje
     // members, which the widget renders as "No weekly limits set" rather
     // than a misleading 0%.
     utilizationCounted: project.utilizationCounted ?? 0,
-    utilizationBreakdown: project.utilizationBreakdown ?? [],
+    utilizationTotalMembers,
+    utilizationTrackedHours: project.utilizationTrackedHours ?? fallbackTrackedHours,
+    utilizationCountedHours: project.utilizationCountedHours ?? fallbackCountedHours,
+    utilizationCapacityHours: project.utilizationCapacityHours ?? fallbackCapacityHours,
+    utilizationCoveragePercent:
+      project.utilizationCoveragePercent ??
+      (utilizationTotalMembers > 0
+        ? Math.round(((project.utilizationCounted ?? 0) / utilizationTotalMembers) * 100)
+        : 0),
+    utilizationBreakdown,
   }
 }
 

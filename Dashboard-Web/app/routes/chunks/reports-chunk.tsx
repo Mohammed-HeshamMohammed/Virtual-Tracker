@@ -31,7 +31,6 @@ import {
   AppsUrlsReport,
 } from "@/features/reports"
 import { SHIFT_STYLE_HUB_REPORTS } from "@/features/reports"
-import { RoutePlaceholder } from "@/app/routes/placeholder"
 import type { PageChunkProps } from "@/app/routes/types"
 
 export default function ReportsChunk({ pageId, onNavigate }: PageChunkProps) {
@@ -70,7 +69,14 @@ export default function ReportsChunk({ pageId, onNavigate }: PageChunkProps) {
     case "reports-all":
       return <ReportsHubPage onNavigate={onNavigate} />
     case "reports-custom":
-      return <RoutePlaceholder title="Customized Reports" />
+      return (
+        <StandardReportLayout title="Customized reports" onNavigate={onNavigate} showGroupBy={false}>
+          <ReportEmptyState
+            title="No customized reports yet"
+            subtitle="Save a configured report to keep its filters and columns ready to reuse."
+          />
+        </StandardReportLayout>
+      )
     case "reports-work-sessions":
       return <WorkSessionsReport onNavigate={onNavigate} />
     case "reports-manual-edits":

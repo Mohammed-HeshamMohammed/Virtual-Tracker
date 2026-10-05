@@ -102,7 +102,7 @@ export function ReportsHubPage({ onNavigate }: { onNavigate: (id: string) => voi
   return (
     <div
       className={cn(
-        "mx-auto w-full max-w-7xl space-y-12 px-4 py-8 sm:px-6 lg:px-8",
+        "mx-auto w-full max-w-[1400px] space-y-8 px-6 py-6",
         isDark ? "text-[#dce1fb]" : "text-slate-900",
       )}
     >
@@ -112,8 +112,8 @@ export function ReportsHubPage({ onNavigate }: { onNavigate: (id: string) => voi
         </h2>
         <div
           className={cn(
-            "flex w-full max-w-md shrink-0 items-center gap-2 rounded-full border px-4 py-2.5 sm:ml-auto sm:w-80 sm:max-w-none",
-            isDark ? "border-white/10 bg-[#191f31]" : "border-slate-200 bg-white",
+            "flex w-full max-w-md shrink-0 items-center gap-2 rounded-lg border px-4 py-2.5 shadow-sm sm:ml-auto sm:w-80 sm:max-w-none",
+            isDark ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white",
           )}
         >
           <Search className={cn("h-4 w-4 shrink-0", isDark ? "text-white/35" : "text-slate-400")} />
@@ -152,7 +152,7 @@ export function ReportsHubPage({ onNavigate }: { onNavigate: (id: string) => voi
                 key={row.id}
                 className={cn(
                   "relative flex min-w-[200px] max-w-xs flex-1 flex-col rounded-xl border p-4 transition-shadow hover:shadow-md",
-                  isDark ? "border-white/10 bg-white/5" : "border-slate-200 bg-white",
+                  isDark ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white",
                 )}
               >
                 <div className="flex items-start justify-between gap-2">

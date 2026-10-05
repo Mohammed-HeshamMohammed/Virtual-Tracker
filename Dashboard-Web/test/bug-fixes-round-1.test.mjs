@@ -140,3 +140,30 @@ test("Team Utilization: members with no weekly limit are still surfaced (item 20
   assert.match(src, /utilizationCounted/, "the ring must distinguish 'no limits set' from 0%")
   assert.doesNotMatch(src, /Optimal Load/, "renamed to 'On track'")
 })
+
+test("Project archive uses the member UUID and restore clears archive metadata", () => {
+  const hook = code(read("features/projects/hooks/use-project-mutations.ts"))
+  const api = code(read("features/projects/api/project-api.ts"))
+
+  assert.match(hook, /archiveProjectApi\(id, nextArchived, memberId \?\? undefined\)/)
+  assert.doesNotMatch(hook, /archiveProjectApi\(id, nextArchived, user\?\.uid\)/)
+  assert.match(api, /archivedBy: null/)
+  assert.match(api, /archivedAt: null/)
+})
+
+test("Command Center productivity chart separates active and idle and has an honest empty state", () => {
+  const src = code(read("features/dashboard/components/command-center/components/productivity-trends-section.tsx"))
+
+  assert.match(src, /areaBetween\(totalValues, activeValues/)
+  assert.match(src, /No tracked time yet this week/)
+  assert.match(src, /Activity rate/)
+})
+
+test("Report pages share the Time and Activity spacing and card treatment", () => {
+  const layout = code(read("features/reports/components/app/standard-report-layout.tsx"))
+  const cards = code(read("features/reports/components/shared/report-ui.tsx"))
+
+  assert.match(layout, /max-w-\[1400px\].*space-y-6.*px-6 py-6/)
+  assert.match(layout, /Date range/)
+  assert.match(cards, /dark:border-slate-700 dark:bg-slate-900/)
+})
