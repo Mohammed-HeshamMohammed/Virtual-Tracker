@@ -176,6 +176,17 @@ test("Dashboard sorting remains compatible with the Windows 7 and Windows 8 brow
   }
 })
 
+test("Dashboard explicitly targets and bootstraps Chromium 109", () => {
+  const pkg = JSON.parse(read("package.json"))
+  const bootstrap = code(read("instrumentation-client.ts"))
+
+  assert.deepEqual(pkg.browserslist, ["chrome 109", "edge 109"])
+  assert.equal(pkg.dependencies["core-js"], "^3.50.0")
+  for (const feature of ["to-reversed", "to-sorted", "to-spliced", "array/with", "promise/with-resolvers"]) {
+    assert.match(bootstrap, new RegExp(`core-js/features/(?:array/)?${feature}`))
+  }
+})
+
 test("Project archive uses the member UUID and restore clears archive metadata", () => {
   const hook = code(read("features/projects/hooks/use-project-mutations.ts"))
   const api = code(read("features/projects/api/project-api.ts"))
