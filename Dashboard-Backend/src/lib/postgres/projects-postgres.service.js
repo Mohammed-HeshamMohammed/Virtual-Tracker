@@ -119,6 +119,8 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
     budgetEnabled: "budget_enabled",
     memberLimitsEnabled: "member_limits_enabled",
     updatedBy: "updated_by",
+    archivedBy: "archived_by",
+    archivedAt: "archived_at",
   };
   const RULE_SWITCHES = new Set([
     "managersCanEditBudget",
@@ -132,7 +134,7 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
   for (const [key, column] of Object.entries(columns)) {
     if (!(key in patch)) continue;
     params.push(
-      key === "clientId"
+      key === "clientId" || key === "updatedBy" || key === "archivedBy"
         ? uuidOrNull(patch[key])
         : key === "endDate"
           ? dateOrNull(patch[key])

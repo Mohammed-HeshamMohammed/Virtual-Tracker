@@ -1037,6 +1037,12 @@ export async function routeProjects(req, res, url, db, origin) {
           timezone: resolveProjectTimezoneInput(body.timezone, viewer.roleName),
           ...ruleFields,
           updatedBy: body.updated_by ?? body.updatedBy ?? viewer.memberId,
+          archivedBy: Object.prototype.hasOwnProperty.call(body, "archived_by")
+            ? body.archived_by
+            : body.archivedBy,
+          archivedAt: Object.prototype.hasOwnProperty.call(body, "archived_at")
+            ? body.archived_at
+            : body.archivedAt,
         };
         for (const key of Object.keys(patch)) {
           if (patch[key] === undefined) delete patch[key];

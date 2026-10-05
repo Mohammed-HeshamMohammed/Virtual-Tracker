@@ -40,6 +40,27 @@ test("the percentage is computed only from members who have a limit", () => {
   assert.equal(result.utilizationPercent, 50, "20h of a 40h capacity");
   assert.equal(result.utilizationCounted, 1, "only the member with a capacity counts");
   assert.equal(result.utilizationMembers.noLimit, 1);
+  assert.equal(result.utilizationTrackedHours, 119, "the tracked-hours metric includes every member");
+  assert.equal(result.utilizationCountedHours, 20, "the utilization numerator only includes configured members");
+  assert.equal(result.utilizationCapacityHours, 40);
+  assert.equal(result.utilizationCoveragePercent, 50);
+});
+
+test("the headline percentage is weighted by capacity, not a mean of member percentages", () => {
+  const seconds = new Map([
+    ["m-under", 4 * HOUR],     // 4 / 40 = 10%
+    ["m-ontrack", 4 * HOUR],   // 4 / 5 = 80%
+  ]);
+  const capacity = new Map([
+    ["m-under", 40 * HOUR],
+    ["m-ontrack", 5 * HOUR],
+  ]);
+
+  const result = buildUtilization(seconds, capacity, meta);
+
+  assert.equal(result.utilizationPercent, 18, "8 tracked hours across 45 capacity hours");
+  assert.equal(result.utilizationCapacityHours, 45);
+  assert.equal(result.utilizationCountedHours, 8);
 });
 
 test("utilizationCounted is 0 when nobody has a limit, so the UI can say so instead of '0%'", () => {

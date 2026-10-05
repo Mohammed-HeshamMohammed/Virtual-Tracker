@@ -104,14 +104,17 @@ export function buildUtilization(memberSeconds, capacityByMember, memberMeta) {
   let over = 0;
   let under = 0;
   let noLimit = 0;
-  let pctSum = 0;
   let count = 0;
+  let trackedSeconds = 0;
+  let countedTrackedSeconds = 0;
+  let capacitySeconds = 0;
   const members = [];
 
   for (const [memberId, seconds] of memberSeconds.entries()) {
     const capacity = capacityByMember.get(memberId) ?? 0;
     const meta = memberMeta?.get(memberId) || { name: "Team member", initials: "??" };
     const hours = Math.round((seconds / 3600) * 10) / 10;
+    trackedSeconds += seconds;
 
     if (capacity <= 0) {
       noLimit += 1;
@@ -128,8 +131,9 @@ export function buildUtilization(memberSeconds, capacityByMember, memberMeta) {
     }
 
     count += 1;
+    countedTrackedSeconds += seconds;
+    capacitySeconds += capacity;
     const pct = Math.round((seconds / capacity) * 100);
-    pctSum += Math.min(150, pct);
     let load = "under";
     if (pct > 100) {
       over += 1;
@@ -162,8 +166,14 @@ export function buildUtilization(memberSeconds, capacityByMember, memberMeta) {
     return b.percent - a.percent;
   });
 
-  const utilizationPercent = count ? Math.round(pctSum / count) : 0;
+  // Weight the headline by actual capacity. Averaging each person's
+  // percentage made a 5-hour and a 40-hour weekly limit count equally,
+  // which could badly misstate the load of the group.
+  const utilizationPercent = capacitySeconds
+    ? Math.round((countedTrackedSeconds / capacitySeconds) * 100)
+    : 0;
   const utilizationOffset = Math.max(0, 251.2 - (Math.min(100, utilizationPercent) / 100) * 251.2);
+  const totalMembers = members.length;
   return {
     utilizationPercent,
     utilizationOffset,
@@ -172,6 +182,11 @@ export function buildUtilization(memberSeconds, capacityByMember, memberMeta) {
     // Members".
     utilizationMembers: { onTrack, optimal: onTrack, over, under, noLimit },
     utilizationCounted: count,
+    utilizationTotalMembers: totalMembers,
+    utilizationTrackedHours: Math.round((trackedSeconds / 3600) * 10) / 10,
+    utilizationCountedHours: Math.round((countedTrackedSeconds / 3600) * 10) / 10,
+    utilizationCapacityHours: Math.round((capacitySeconds / 3600) * 10) / 10,
+    utilizationCoveragePercent: totalMembers ? Math.round((count / totalMembers) * 100) : 0,
     utilizationBreakdown: members.slice(0, 8),
   };
 }
