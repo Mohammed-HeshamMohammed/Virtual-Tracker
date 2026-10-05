@@ -2,6 +2,10 @@
   "name": "virtual-tracker-dashboard-web",
   "version": "0.1.0",
   "private": true,
+  "browserslist": [
+    "chrome 109",
+    "edge 109"
+  ],
   "scripts": {
     "dev": "next dev",
     "dev:clean": "node scripts/clean-next.mjs && next dev",
@@ -55,6 +59,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "1.1.1",
+    "core-js": "^3.50.0",
     "critters": "^0.0.23",
     "d3-shape": "^3.2.0",
     "date-fns": "4.1.0",
