@@ -320,6 +320,7 @@ function LimitsReport({
       showGroupBy={true}
       groupByOptions={LIMITS_GROUP_BY_OPTIONS}
       defaultGroupBy="member"
+      toolbarFilters={{ options, value: filters, onChange: setFilters, showProjects: false }}
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}

@@ -436,6 +436,7 @@ export function ManualTimeEditsReport({ onNavigate }: { onNavigate?: (id: string
       showScopeTabs={false}
       showGroupBy={true}
       groupByOptions={WORK_SESSIONS_GROUP_BY_OPTIONS}
+      toolbarFilters={{ options, value: filters, onChange: setFilters }}
       filtersPanel={(close) => (
         <ReportFiltersPanel onClose={close} options={options} value={filters} onChange={setFilters} />
       )}

@@ -279,21 +279,25 @@ export const TABLE_METRIC_COLUMNS: { key: string; label: string; sortable: boole
   { key: "total_spent", label: "Total spent", sortable: true },
 ]
 
-export const TIME_ACTIVITY_TABLE_FIXED_WIDTH = 170
+// These widths are the complete rendered column widths (content + cell
+// padding + the sort affordance). Keep them in sync with the colgroup in the
+// Time & Activity table: the responsive auto-hide hook uses the same values
+// to decide whether a column really fits.
+export const TIME_ACTIVITY_TABLE_FIXED_WIDTH = 180
 
 export const TIME_ACTIVITY_TABLE_COL_MIN_WIDTH: Record<string, number> = {
-  client: 120,
+  client: 100,
   team: 100,
   todo: 130,
-  project: 130,
-  regular_hours: 110,
-  break_time: 100,
-  manual_hours: 110,
-  total_hours: 100,
-  activity_pct: 90,
-  idle_pct: 80,
-  idle_hr: 90,
-  total_spent: 100,
+  project: 120,
+  regular_hours: 125,
+  break_time: 110,
+  manual_hours: 135,
+  total_hours: 115,
+  activity_pct: 140,
+  idle_pct: 90,
+  idle_hr: 95,
+  total_spent: 120,
 }
 
 export const TIME_ACTIVITY_TABLE_COL_AUTO_HIDE_PRIORITY = [

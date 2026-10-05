@@ -398,6 +398,7 @@ export function WorkBreaksReport({ onNavigate }: { onNavigate?: (id: string) => 
       showScopeTabs={false}
       showGroupBy={true}
       groupByOptions={DATE_MEMBER_GROUP_BY_OPTIONS}
+      toolbarFilters={{ options, value: filters, onChange: setFilters, showProjects: false }}
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}

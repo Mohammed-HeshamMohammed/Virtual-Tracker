@@ -304,6 +304,7 @@ export function TimeOffBalancesReport({ onNavigate }: { onNavigate?: (id: string
       showGroupBy={true}
       groupByOptions={MEMBER_ONLY_GROUP_BY_OPTIONS}
       defaultGroupBy="member"
+      toolbarFilters={{ options, value: filters, onChange: setFilters, showProjects: false }}
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}
@@ -599,6 +600,7 @@ export function TimeOffTransactionsReport({ onNavigate }: { onNavigate?: (id: st
       showScopeTabs={false}
       showGroupBy={true}
       groupByOptions={DATE_MEMBER_GROUP_BY_OPTIONS}
+      toolbarFilters={{ options, value: filters, onChange: setFilters, showProjects: false }}
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}

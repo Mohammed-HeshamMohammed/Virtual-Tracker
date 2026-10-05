@@ -195,6 +195,10 @@ export function TimeActivityReportView({
       fixedWidth: TIME_ACTIVITY_TABLE_FIXED_WIDTH + (canDeleteDay ? 72 : 0),
     },
   )
+  const fittedTableMinWidth =
+    TIME_ACTIVITY_TABLE_FIXED_WIDTH +
+    (canDeleteDay ? 72 : 0) +
+    fittedMetricColumns.reduce((width, column) => width + (TIME_ACTIVITY_TABLE_COL_MIN_WIDTH[column.key] ?? 100), 0)
 
   function confirmDeleteDay(memberId: string, date: string, memberName: string, dateLabel: string) {
     const ok = window.confirm(
@@ -548,8 +552,15 @@ export function TimeActivityReportView({
               )}
             </AnimatePresence>
           </div>
-          <div className="overflow-x-auto custom-scrollbar-x pt-3">
-            <table className="w-full">
+          <div className="max-w-full overflow-x-auto custom-scrollbar-x pt-3">
+            <table className="w-full table-fixed" style={{ minWidth: fittedTableMinWidth }}>
+              <colgroup>
+                <col style={{ width: TIME_ACTIVITY_TABLE_FIXED_WIDTH }} />
+                {fittedMetricColumns.map((col) => (
+                  <col key={col.key} style={{ width: TIME_ACTIVITY_TABLE_COL_MIN_WIDTH[col.key] ?? 100 }} />
+                ))}
+                {canDeleteDay ? <col style={{ width: 72 }} /> : null}
+              </colgroup>
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800">
                   <ReportSortableTh
@@ -594,7 +605,7 @@ export function TimeActivityReportView({
                         className="cursor-pointer border-b border-slate-50 dark:border-slate-800 transition-colors hover:bg-slate-50/60 dark:hover:bg-slate-800/60"
                         onClick={() => toggleRow(day.date)}
                       >
-                        <td className="px-5 py-3.5">
+                        <td className="overflow-hidden px-5 py-3.5">
                           <div className="flex items-center gap-2">
                             {isExpanded ? (
                               <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
@@ -609,7 +620,7 @@ export function TimeActivityReportView({
                         {fittedMetricColumns.map((col) => {
                           const on = enabledCols.has(col.key)
                           return (
-                            <td key={col.key} className={cn("px-4 py-3.5", !on && "text-slate-300 dark:text-slate-700")}>
+                            <td key={col.key} className={cn("overflow-hidden px-4 py-3.5", !on && "text-slate-300 dark:text-slate-700")}>
                               {on ? <ReportPeriodMetricCell day={day} colKey={col.key} /> : <span className="text-sm">—</span>}
                             </td>
                           )
@@ -628,7 +639,7 @@ export function TimeActivityReportView({
                                   transition={{ delay: mi * 0.03 }}
                                   className="border-b border-slate-50 dark:border-slate-800 bg-slate-50/40 dark:bg-slate-800/40 transition-colors hover:bg-slate-100/50 dark:hover:bg-slate-800/70"
                                 >
-                                  <td className="px-5 py-3">
+                                  <td className="overflow-hidden px-5 py-3">
                                     <div className="flex items-center gap-2.5 pl-6">
                                       <ReportMemberAvatar initials={member.avatar} imageUrl={member.avatarUrl} />
                                       <span className="text-sm text-slate-700 dark:text-slate-200">{member.name}</span>
@@ -637,7 +648,7 @@ export function TimeActivityReportView({
                                   {fittedMetricColumns.map((col) => {
                                     const on = enabledCols.has(col.key)
                                     return (
-                                      <td key={col.key} className={cn("px-4 py-3", !on && "text-slate-300 dark:text-slate-700")}>
+                                      <td key={col.key} className={cn("overflow-hidden px-4 py-3", !on && "text-slate-300 dark:text-slate-700")}>
                                         {on ? (
                                           <ReportMemberMetricCell member={member} colKey={col.key} />
                                         ) : (

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Check, ChevronDown, Search, X, XCircle } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
@@ -151,6 +151,173 @@ function MultiSelect({
                         {on ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
                       </span>
                       <span className="truncate">{o.name}</span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+export function ReportToolbarMultiSelect({
+  label,
+  emptyLabel,
+  options,
+  selected,
+  onChange,
+  allSelected,
+  onSelectAll,
+  width = "w-60",
+}: {
+  label: string
+  emptyLabel: string
+  options: { id: string; name: string }[]
+  selected: Set<string>
+  onChange: (next: Set<string>) => void
+  allSelected?: boolean
+  onSelectAll?: () => void
+  width?: string
+}) {
+  const { isDark } = useTheme()
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState("")
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(event: MouseEvent) {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", onPointerDown, true)
+    return () => document.removeEventListener("mousedown", onPointerDown, true)
+  }, [open])
+
+  const shown = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    return query ? options.filter((option) => option.name.toLowerCase().includes(query)) : options
+  }, [options, search])
+  const selectedNames = options.filter((option) => selected.has(option.id)).map((option) => option.name)
+  const isAllSelected = allSelected ?? selected.size === 0
+  const summary =
+    isAllSelected
+      ? emptyLabel
+      : selectedNames.length === 0
+        ? `No ${label.toLowerCase()}`
+        : selectedNames.length === 1
+        ? selectedNames[0]
+        : `${selectedNames.length} ${label.toLowerCase()}`
+
+  function toggle(id: string) {
+    const next = new Set(selected)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    onChange(next)
+  }
+
+  return (
+    <div ref={rootRef} className={cn("relative", width)}>
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={cn(
+          "flex h-9 w-full items-center justify-between gap-2 rounded-lg border px-3 text-left text-sm transition-colors",
+          isDark
+            ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+          open && "border-blue-500 ring-1 ring-blue-500"
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate">{summary}</span>
+        <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform", open && "rotate-180")} />
+      </button>
+
+      <AnimatePresence>
+        {open ? (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: -4 }}
+            transition={{ duration: 0.12 }}
+            className={cn(
+              "absolute left-0 top-full z-70 mt-1 w-full min-w-64 overflow-hidden rounded-xl border shadow-xl",
+              isDark ? "border-slate-700 bg-slate-900" : "border-slate-200 bg-white"
+            )}
+          >
+            <div className={cn("border-b p-2", isDark ? "border-slate-700" : "border-slate-100")}>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="search"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder={`Search ${label.toLowerCase()}`}
+                  aria-label={`Search ${label.toLowerCase()}`}
+                  className={cn(
+                    "h-8 w-full rounded-lg border py-1.5 pl-8 pr-3 text-sm outline-none focus:border-blue-500",
+                    isDark
+                      ? "border-slate-700 bg-slate-950 text-slate-100 placeholder:text-slate-500"
+                      : "border-slate-200 bg-white text-slate-800 placeholder:text-slate-400"
+                  )}
+                />
+              </div>
+            </div>
+            <div className="max-h-56 overflow-y-auto py-1 scrollbar-hide" role="listbox" aria-label={label}>
+              <button
+                type="button"
+                onClick={() => (onSelectAll ? onSelectAll() : onChange(new Set()))}
+                className={cn(
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors",
+                  isDark ? "text-slate-200 hover:bg-slate-800" : "text-slate-700 hover:bg-slate-50"
+                )}
+              >
+                <span
+                  className={cn(
+                    "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                    isAllSelected
+                      ? "border-blue-500 bg-blue-500"
+                      : isDark
+                        ? "border-slate-600"
+                        : "border-slate-300"
+                  )}
+                >
+                  {isAllSelected ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
+                </span>
+                <span className="truncate">{emptyLabel}</span>
+              </button>
+              {shown.length === 0 ? (
+                <p className="px-3 py-3 text-sm text-slate-500">No matches</p>
+              ) : (
+                shown.map((option) => {
+                  const active = selected.has(option.id)
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => toggle(option.id)}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors",
+                        isDark ? "text-slate-200 hover:bg-slate-800" : "text-slate-700 hover:bg-slate-50"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "flex h-4 w-4 shrink-0 items-center justify-center rounded border",
+                          active
+                            ? "border-blue-500 bg-blue-500"
+                            : isDark
+                              ? "border-slate-600"
+                              : "border-slate-300"
+                        )}
+                      >
+                        {active ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
+                      </span>
+                      <span className="truncate">{option.name}</span>
                     </button>
                   )
                 })

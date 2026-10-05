@@ -77,7 +77,7 @@ export function ClientsTab({
       return name.includes(q) || projectText.includes(q)
     })
     if (sortCol) {
-      result = result.toSorted((a, b) => {
+      result = [...result].sort((a, b) => {
         let aVal: string | number = ""
         let bVal: string | number = ""
         switch (sortCol) {

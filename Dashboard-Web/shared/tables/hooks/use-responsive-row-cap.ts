@@ -3,7 +3,7 @@ import { useEffect, useState } from "react"
 export type RowCapBreakpoint = { minWidth: number; maxRows: number }
 
 function rowCapForWidth(width: number, breakpoints: readonly RowCapBreakpoint[]): number {
-  const sorted = breakpoints.toSorted((a, b) => b.minWidth - a.minWidth)
+  const sorted = [...breakpoints].sort((a, b) => b.minWidth - a.minWidth)
   for (const bp of sorted) {
     if (width >= bp.minWidth) return bp.maxRows
   }

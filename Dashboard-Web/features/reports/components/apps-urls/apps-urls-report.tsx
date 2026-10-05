@@ -317,6 +317,7 @@ export function AppsUrlsReport({ onNavigate }: { onNavigate?: (id: string) => vo
       showGroupBy={true}
       groupByOptions={MEMBER_ONLY_GROUP_BY_OPTIONS}
       defaultGroupBy="member"
+      toolbarFilters={{ options, value: filters, onChange: setFilters }}
       filtersPanel={(close) => (
         <ReportFiltersPanel onClose={close} options={options} value={filters} onChange={setFilters} />
       )}

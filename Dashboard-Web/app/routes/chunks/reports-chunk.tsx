@@ -70,7 +70,13 @@ export default function ReportsChunk({ pageId, onNavigate }: PageChunkProps) {
       return <ReportsHubPage onNavigate={onNavigate} />
     case "reports-custom":
       return (
-        <StandardReportLayout title="Customized reports" onNavigate={onNavigate} showGroupBy={false}>
+        <StandardReportLayout
+          title="Customized reports"
+          onNavigate={onNavigate}
+          showDateRange={false}
+          showScopeTabs={false}
+          showGroupBy={false}
+        >
           <ReportEmptyState
             title="No customized reports yet"
             subtitle="Save a configured report to keep its filters and columns ready to reuse."

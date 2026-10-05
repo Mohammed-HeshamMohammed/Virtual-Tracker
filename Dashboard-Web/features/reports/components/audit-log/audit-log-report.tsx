@@ -7,13 +7,15 @@ import {
   ChevronDown,
   ChevronRight,
   Download,
+  Filter,
   LayoutList,
-  Menu,
   Search,
 } from "lucide-react"
 import { ReportDateRangePicker } from "@/features/reports/components/time-activity-report/date-range-picker"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
 import { Button } from "@/shared/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu"
+import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover"
 import { AUDIT_LOG_ORG_LABEL, AUDIT_LOG_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 import {
@@ -27,7 +29,7 @@ import { fetchAuditLogReport } from "@/features/reports/api/misc-reports-api"
 import type { AuditLogColumnKey, AuditLogRow } from "@/features/reports/models/audit-log"
 import { cn } from "@/shared/utils/utils"
 import { usePageSearch } from "@/shared/ui/layout"
-import { ReportErrorState, ReportOrgLine, ReportPageHeading, ReportTableSkeleton, ReportTruncationNotice } from "@/features/reports/components/shared/report-ui"
+import { ReportErrorState, ReportPageHeading, ReportTableSkeleton, ReportTruncationNotice } from "@/features/reports/components/shared/report-ui"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 
 const COLUMN_DEFS: { key: AuditLogColumnKey; label: string }[] = [
@@ -266,32 +268,34 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
   return (
     <div className="report-print-area relative isolate mx-auto max-w-[1400px] space-y-6 px-6 py-6">
       
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <ReportPageHeading title="Audit log report" pageId="reports-audit" />
-        <div className="relative w-full max-w-md shrink-0">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-white/40" />
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search members or event details"
-            className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] py-2 pl-10 pr-4 text-sm text-slate-800 dark:text-[#dce1fb] placeholder:text-slate-400 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-500" aria-label="Interactive control"
-          />
-        </div>
-      </div>
-
-      <ReportOrgLine org={AUDIT_LOG_ORG_LABEL} timezone={AUDIT_LOG_TIMEZONE_LABEL} />
+      <ReportPageHeading title="Audit log report" pageId="reports-audit" />
 
       {truncated ? <ReportTruncationNotice what="audited changes" /> : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative z-40">
+      <div className="relative z-50 flex flex-wrap items-end gap-3 gap-y-3">
+        <div className="flex min-w-64 flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Search events</span>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Member, action, or detail"
+              className="h-9 w-full rounded-lg border border-slate-200 bg-white py-2 pl-10 pr-4 text-sm text-slate-800 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+              aria-label="Search audit events"
+            />
+          </div>
+        </div>
+
+        <div className="relative flex flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Date range</span>
           <button
             type="button"
             onClick={() => setShowDatePicker((v) => !v)}
             className={cn(
-              "flex min-w-[260px] items-center gap-2 rounded-lg border bg-white dark:bg-[#151b2d] px-4 py-2 text-sm text-slate-700 dark:text-[#dce1fb] shadow-sm hover:bg-slate-50 dark:hover:bg-white/5",
-              showDatePicker ? "border-sky-500 ring-1 ring-sky-500" : "border-slate-200 dark:border-white/10"
+              "flex h-9 min-w-[260px] items-center justify-between gap-2 rounded-lg border bg-white px-3 text-sm text-slate-700 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800",
+              showDatePicker ? "border-blue-500 ring-1 ring-blue-500" : "border-slate-200 dark:border-slate-700"
             )}
           >
             <span className="truncate">{dateLabel}</span>
@@ -313,54 +317,49 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
             ) : null}
           </AnimatePresence>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowFilters(true)}
-          className="inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-600"
-        >
-          Filters
-          <ChevronDown className="h-4 w-4 opacity-90" />
-        </button>
-      </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2">
-          <Menu className="h-4 w-4 text-slate-500 dark:text-white/45" />
-          <span className="text-sm text-slate-600 dark:text-[#bccbb9]">Group by</span>
+        <div className="flex h-9 items-center pb-0.5 text-sm font-semibold text-slate-700 dark:text-slate-200">{AUDIT_LOG_TIMEZONE_LABEL}</div>
+
+        <div className="flex min-w-36 flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Data grouped by</span>
           <ReportSimpleDropdown
             value={groupBy}
             onChange={(v) => setGroupBy(v as AuditLogGroupBy)}
             options={GROUP_OPTIONS}
-            width="w-36"
+            width="w-44"
             accentBar={false}
           />
         </div>
-        <div className="flex flex-wrap items-center gap-4">
+
+        <div className="ml-auto flex flex-wrap items-center gap-2 pb-0.5">
           <button
             type="button"
-            onClick={downloadCsv}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-500 hover:text-sky-600"
+            onClick={() => setShowFilters(true)}
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm text-blue-500 transition-colors hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-950/60"
           >
-            <Download className="h-4 w-4" strokeWidth={2} />
-            Export CSV
+            <Filter className="h-3.5 w-3.5" />
+            Filter
           </button>
-          <button
-            type="button"
-            onClick={downloadPdf}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-500 hover:text-sky-600"
-          >
-            <Download className="h-4 w-4" strokeWidth={2} />
-            Export PDF
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" aria-label="Export" className="flex h-9 min-w-11 items-center justify-center rounded-lg bg-blue-500 px-3 text-white transition-colors hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700">
+                <Download className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={downloadCsv}>To CSV</DropdownMenuItem>
+              <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <Popover>
             <PopoverTrigger asChild>
-              <button
-                type="button"
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-500 hover:text-sky-600"
-              >
-                <LayoutList className="h-4 w-4" strokeWidth={2} />
-                Columns
-              </button>
+              <span>
+                <IconTooltip text="Columns" placement="bottom">
+                  <button type="button" aria-label="Columns" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-950/60">
+                    <LayoutList className="h-4 w-4" />
+                  </button>
+                </IconTooltip>
+              </span>
             </PopoverTrigger>
             <PopoverContent className="w-56 p-3" align="end">
               <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-white/40">Columns</div>
@@ -381,6 +380,8 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
           </Popover>
         </div>
       </div>
+
+      <div className="border-t border-slate-200 dark:border-slate-700" />
 
       {loading ? (
         <ReportTableSkeleton rows={8} columns={5} />
