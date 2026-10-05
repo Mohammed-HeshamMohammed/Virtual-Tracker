@@ -16,7 +16,7 @@ function healthRank(health: OverviewProjectHealth): number {
 }
 
 export function sortProjectsForOverview<T extends OverviewSortableProject>(projects: T[]): T[] {
-  return projects.toSorted((a, b) => {
+  return [...projects].sort((a, b) => {
     const healthDiff = healthRank(b.health) - healthRank(a.health)
     if (healthDiff !== 0) return healthDiff
 

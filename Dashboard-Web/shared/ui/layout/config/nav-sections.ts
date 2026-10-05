@@ -209,7 +209,7 @@ export function sortedItems<T extends { sortLast?: boolean; hideFromDropdown?: b
 ): T[] {
   if (!items) return []
   const list = filterHidden ? items.filter(i => !i.hideFromDropdown) : items
-  return list.toSorted((a, b) => {
+  return [...list].sort((a, b) => {
     if (a.sortLast && !b.sortLast) return 1
     if (!a.sortLast && b.sortLast) return -1
     return 0

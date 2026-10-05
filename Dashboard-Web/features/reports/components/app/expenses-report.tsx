@@ -388,6 +388,7 @@ export function ExpensesReport({ onNavigate }: { onNavigate?: (id: string) => vo
       showScopeTabs={false}
       showGroupBy={true}
       groupByOptions={STANDARD_REPORT_GROUP_BY_OPTIONS}
+      toolbarFilters={{ options, value: filters, onChange: setFilters }}
       filtersPanel={(close) => (
         <ReportFiltersPanel onClose={close} options={options} value={filters} onChange={setFilters} />
       )}

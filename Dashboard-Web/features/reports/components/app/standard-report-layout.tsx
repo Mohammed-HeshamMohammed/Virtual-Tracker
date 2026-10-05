@@ -10,32 +10,40 @@ import {
 import { AnimatePresence, motion } from "framer-motion"
 import {
   Calendar,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Clock,
   Download,
   Filter,
-  Menu,
-  Send,
-  X,
+  Play,
 } from "lucide-react"
 import { ReportDateRangePicker } from "@/features/reports/components/time-activity-report/date-range-picker"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
 import { ReportScheduleDialog, type ReportScheduleInput } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
 import { ReportSendDialog, type ReportSendInput } from "@/features/reports/components/amounts-owed/report-send-dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu"
+import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { useTheme } from "@/shared/providers/app"
 import {
   STANDARD_REPORT_GROUP_BY_OPTIONS,
-  STANDARD_REPORT_ORG_LABEL,
   reportTimezoneLabelFor,
 } from "@/features/reports/components/shared/constants"
+import {
+  ReportToolbarMultiSelect,
+  type ReportFilterState,
+} from "@/features/reports/components/shared/report-filters-panel"
+import type { ReportFilterOptions } from "@/features/reports/api/misc-reports-api"
 import { formatRangeLabel, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
 import { reportCardFor } from "@/features/reports/catalog"
 import { cn } from "@/shared/utils/utils"
 
 export type StandardReportScope = "me" | "all"
+
+export type StandardReportToolbarFilters = {
+  options: ReportFilterOptions
+  value: ReportFilterState
+  onChange: (next: ReportFilterState) => void
+  showMembers?: boolean
+  showProjects?: boolean
+}
 
 export type { ReportSendInput } from "@/features/reports/components/amounts-owed/report-send-dialog"
 export type { ReportScheduleInput } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
@@ -106,6 +114,7 @@ export function StandardReportLayout({
   subtitle,
   onSend,
   onSchedule,
+  toolbarFilters,
   showDateRange = true,
   showScopeTabs = true,
   showGroupBy = true,
@@ -121,6 +130,7 @@ export function StandardReportLayout({
   subtitle?: string
   onSend?: (input: ReportSendInput) => Promise<void>
   onSchedule?: (input: ReportScheduleInput) => Promise<void>
+  toolbarFilters?: StandardReportToolbarFilters
   showDateRange?: boolean
   showScopeTabs?: boolean
   showGroupBy?: boolean
@@ -156,6 +166,13 @@ export function StandardReportLayout({
 
   const dateLabel = useMemo(() => formatRangeLabel(rangeStart, rangeEnd), [rangeStart, rangeEnd])
   const resolvedSubtitle = subtitle ?? (pageId ? reportCardFor(pageId)?.description : undefined)
+  const timezoneLabel = reportTimezoneLabelFor(pageId)
+  const toolbarTimezoneLabel =
+    timezoneLabel === "Each member's own timezone"
+      ? "Member TZ"
+      : timezoneLabel === "Calendar dates"
+        ? "Calendar"
+        : timezoneLabel
 
   const contextValue = useMemo(
     (): StandardReportLayoutContextValue => ({
@@ -169,24 +186,6 @@ export function StandardReportLayout({
     }),
     [scope, rangeStart, rangeEnd, dateLabel, groupBy, registerExportHandler, registerPdfExportHandler]
   )
-
-  function shiftRangeByPeriods(direction: -1 | 1) {
-    const spanDays = Math.max(1, Math.round((endOfDay(rangeEnd).getTime() - startOfDay(rangeStart).getTime()) / 86_400_000))
-    const s = new Date(rangeStart)
-    s.setDate(s.getDate() + direction * spanDays)
-    const e = new Date(rangeEnd)
-    e.setDate(e.getDate() + direction * spanDays)
-    setRangeStart(startOfDay(s))
-    setRangeEnd(endOfDay(e))
-  }
-
-  function resetRange() {
-    const end = endOfDay(new Date())
-    const start = startOfDay(new Date())
-    start.setDate(start.getDate() - 6)
-    setRangeStart(start)
-    setRangeEnd(end)
-  }
 
   function runExport() {
     exportHandlerRef.current?.()
@@ -205,7 +204,7 @@ export function StandardReportLayout({
       <div className="relative isolate min-h-0">
         <div className="report-print-area relative mx-auto min-h-0 max-w-[1400px] space-y-6 px-6 py-6">
 
-          <div className="relative z-50 flex flex-wrap items-end gap-3">
+          <div className="relative z-50 flex flex-wrap items-end gap-3 gap-y-3">
             {/* The report's name and blurb are already on the card that got
                 you here and in the nav, so on the page itself they were two
                 lines of chrome pushing the actual data below the fold. The
@@ -213,34 +212,52 @@ export function StandardReportLayout({
                 one - it just isn't painted. */}
             <h1 className="sr-only">{title}</h1>
             {resolvedSubtitle ? <p className="sr-only">{resolvedSubtitle}</p> : null}
-            <div className="flex min-w-0 flex-1 flex-wrap items-end gap-3">
+            {toolbarFilters?.showMembers !== false ? (
+              toolbarFilters ? (
+                <div className="flex min-w-60 flex-col gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    Members
+                  </span>
+                  <ReportToolbarMultiSelect
+                    label="Members"
+                    emptyLabel="All members"
+                    options={toolbarFilters.options.members}
+                    selected={toolbarFilters.value.memberIds}
+                    onChange={(memberIds) => toolbarFilters.onChange({ ...toolbarFilters.value, memberIds })}
+                  />
+                </div>
+              ) : null
+            ) : null}
+
+            {toolbarFilters?.showProjects !== false ? (
+              toolbarFilters ? (
+                <div className="flex min-w-60 flex-col gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    Projects
+                  </span>
+                  <ReportToolbarMultiSelect
+                    label="Projects"
+                    emptyLabel="All projects"
+                    options={toolbarFilters.options.projects}
+                    selected={toolbarFilters.value.projectIds}
+                    onChange={(projectIds) => toolbarFilters.onChange({ ...toolbarFilters.value, projectIds })}
+                  />
+                </div>
+              ) : null
+            ) : null}
+
               {showDateRange ? (
-                <div className="flex flex-col gap-1">
+                <div className="relative flex flex-col gap-1">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                     Date range
                   </span>
-                  <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => shiftRangeByPeriods(-1)}
-                className={cn(
-                  "flex h-9 w-9 items-center justify-center rounded-lg border shadow-sm",
-                  isDark
-                    ? "border-white/10 bg-white/5 text-[#dce1fb] hover:bg-white/10"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                )}
-                aria-label="Previous period"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <div className="relative z-50">
                 <button
                   type="button"
                   onClick={() => setShowDatePicker((x) => !x)}
                   className={cn(
-                    "flex min-w-[240px] max-w-[min(100vw-8rem,420px)] items-center gap-2 rounded-lg border px-3 py-2 text-sm",
+                    "flex h-9 min-w-[240px] max-w-[min(100vw-3rem,420px)] items-center justify-between gap-2 rounded-lg border px-3 text-sm",
                     isDark
-                      ? "border-white/10 bg-white/5 text-[#dce1fb] hover:bg-white/10"
+                      ? "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
                     showDatePicker ? "border-blue-500 ring-1 ring-blue-500" : ""
                   )}
@@ -263,153 +280,102 @@ export function StandardReportLayout({
                     />
                   ) : null}
                 </AnimatePresence>
-              </div>
-              <button
-                type="button"
-                onClick={() => shiftRangeByPeriods(1)}
-                className={cn(
-                  "flex h-9 w-9 items-center justify-center rounded-lg border shadow-sm",
-                  isDark
-                    ? "border-white/10 bg-white/5 text-[#dce1fb] hover:bg-white/10"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                )}
-                aria-label="Next period"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={resetRange}
-                className={cn(
-                  "rounded-lg border px-3 py-2 text-sm font-medium",
-                  isDark
-                    ? "border-white/10 bg-white/5 text-[#dce1fb] hover:bg-white/10"
-                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
-                )}
-              >
-                Last 7 days
-              </button>
-                  </div>
                 </div>
               ) : null}
-              {panel ? (
-                <div className="ml-auto flex flex-col gap-1">
-                  <span className="select-none text-[10px] font-semibold uppercase tracking-wider text-transparent">Actions</span>
-                  <button
-                    type="button"
-                    onClick={() => setShowFilters(true)}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition-colors",
-                      isDark
-                        ? "border-slate-700 bg-slate-900 text-blue-400 hover:bg-blue-950/60"
-                        : "border-slate-200 bg-white text-blue-500 hover:bg-blue-50"
-                    )}
-                  >
-                    <Filter className="h-3.5 w-3.5" />
-                    Filters
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
 
-          {showScopeTabs ? (
-          <div
-            className={cn(
-              "flex flex-wrap gap-10 border-b pb-3",
-              isDark ? "border-white/10" : "border-slate-200"
-            )}
-          >
-            {(["me", "all"] as const).map((v) => (
-              <button
-                key={v}
-                type="button"
-                onClick={() => setScope(v)}
-                className={cn(
-                  "-mb-px border-b-2 pb-2 text-sm font-semibold transition-colors",
-                  scope === v
-                    ? isDark
-                      ? "border-blue-500 text-blue-400"
-                      : "border-blue-500 text-blue-600"
-                    : isDark
-                      ? "border-transparent text-white/35 hover:text-white/60"
-                      : "border-transparent text-slate-400 hover:text-slate-600"
-                )}
+            {showDateRange ? (
+              <div
+                title={timezoneLabel}
+                className="flex h-9 items-center pb-0.5 text-sm font-semibold text-slate-700 dark:text-slate-200"
               >
-                {v === "me" ? "ME" : "ALL"}
-              </button>
-            ))}
-          </div>
-          ) : null}
-
-          <div
-            className={cn(
-              "flex flex-col gap-4 border-y py-4 lg:flex-row lg:items-end lg:justify-between",
-              isDark ? "border-slate-700" : "border-slate-200"
-            )}
-          >
-            <div className="space-y-1">
-              <div className="flex flex-wrap items-baseline gap-x-2">
-                <span className={cn("text-base font-semibold", isDark ? "text-white/90" : "text-slate-900")}>
-                  {STANDARD_REPORT_ORG_LABEL}
-                </span>
-                <span className={cn("text-sm", isDark ? "text-white/45" : "text-slate-400")}>
-                  {reportTimezoneLabelFor(pageId)}
-                </span>
+                {toolbarTimezoneLabel}
               </div>
-              {showGroupBy ? (
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <Menu className={cn("h-4 w-4", isDark ? "text-white/40" : "text-slate-500")} />
-                  <span className={cn("text-sm", isDark ? "text-[#bccbb9]" : "text-slate-600")}>Group by:</span>
+            ) : null}
+
+            {showScopeTabs ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  Scope
+                </span>
+                <div className="flex h-9 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                  {(["me", "all"] as const).map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setScope(value)}
+                      className={cn(
+                        "px-4 text-sm font-semibold transition-colors",
+                        scope === value
+                          ? "bg-blue-500 text-white"
+                          : "text-slate-500 hover:bg-slate-50 dark:text-slate-400 dark:hover:bg-slate-800"
+                      )}
+                    >
+                      {value === "me" ? "Me" : "All"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+
+            {showGroupBy ? (
+              <div className="flex min-w-40 flex-col gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                  Data grouped by
+                </span>
                   <ReportSimpleDropdown
                     value={groupBy}
                     onChange={setGroupBy}
                     options={groupByOptions}
-                    width="w-40"
+                    width="w-44"
                     accentBar={false}
                   />
-                </div>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
 
-            <div className="flex flex-wrap items-center gap-4 lg:gap-5">
+            <div className="ml-auto flex flex-wrap items-center gap-2 pb-0.5">
               {onSend ? (
-              <button
-                type="button"
-                onClick={() => setSendOpen(true)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 text-sm font-medium transition-colors",
-                  isDark ? "text-blue-400 hover:text-blue-300" : "text-blue-500 hover:text-blue-600"
-                )}
-              >
-                <Send className="h-4 w-4 shrink-0" strokeWidth={2} />
-                Send
-              </button>
+                <IconTooltip text="Send" placement="bottom">
+                  <button
+                    type="button"
+                    onClick={() => setSendOpen(true)}
+                    aria-label="Send"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-950/60"
+                  >
+                    <Play className="h-4 w-4" />
+                  </button>
+                </IconTooltip>
               ) : null}
               {onSchedule ? (
-              <button
-                type="button"
-                onClick={() => setScheduleOpen(true)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 text-sm font-medium transition-colors",
-                  isDark ? "text-blue-400 hover:text-blue-300" : "text-blue-500 hover:text-blue-600"
-                )}
-              >
-                <Clock className="h-4 w-4 shrink-0" strokeWidth={2} />
-                Schedule
-              </button>
+                <IconTooltip text="Schedule" placement="bottom">
+                  <button
+                    type="button"
+                    onClick={() => setScheduleOpen(true)}
+                    aria-label="Schedule"
+                    className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-950/60"
+                  >
+                    <Clock className="h-4 w-4" />
+                  </button>
+                </IconTooltip>
+              ) : null}
+              {panel ? (
+                <button
+                  type="button"
+                  onClick={() => setShowFilters(true)}
+                  className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm text-blue-500 transition-colors hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-950/60"
+                >
+                  <Filter className="h-3.5 w-3.5" />
+                  Filter
+                </button>
               ) : null}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className={cn(
-                      "inline-flex items-center gap-1.5 text-sm font-medium transition-colors",
-                      isDark ? "text-blue-400 hover:text-blue-300" : "text-blue-500 hover:text-blue-600"
-                    )}
+                    disabled={!canExport && !canExportPdf}
+                    aria-label="Export"
+                    className="flex h-9 min-w-11 items-center justify-center rounded-lg bg-blue-500 px-3 text-white transition-colors hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-600 dark:hover:bg-blue-700"
                   >
-                    <Download className="h-4 w-4 shrink-0" strokeWidth={2} />
-                    Export
+                    <Download className="h-3.5 w-3.5" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -423,6 +389,8 @@ export function StandardReportLayout({
               </DropdownMenu>
             </div>
           </div>
+
+          <div className="border-t border-slate-200 dark:border-slate-700" />
 
           <div>{children}</div>
         </div>

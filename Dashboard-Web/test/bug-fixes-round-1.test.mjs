@@ -141,6 +141,41 @@ test("Team Utilization: members with no weekly limit are still surfaced (item 20
   assert.doesNotMatch(src, /Optimal Load/, "renamed to 'On track'")
 })
 
+test("Time & Activity table uses the same widths for fitting and rendering", () => {
+  const view = code(read("features/reports/components/time-activity-report/time-activity-report-view.tsx"))
+  const constants = code(read("features/reports/components/shared/constants.ts"))
+
+  // The auto-hide hook used to budget narrow abstract widths while the
+  // browser's auto table layout expanded the real headers and activity bar.
+  // That mismatch clipped Total spent at the right edge of the report card.
+  assert.match(view, /const fittedTableMinWidth\s*=/)
+  assert.match(view, /table-fixed.*minWidth: fittedTableMinWidth/)
+  assert.match(view, /<colgroup>/)
+  assert.match(view, /TIME_ACTIVITY_TABLE_COL_MIN_WIDTH\[col\.key\]/)
+  assert.match(view, /max-w-full overflow-x-auto custom-scrollbar-x/)
+
+  const activityWidth = constants.match(/activity_pct:\s*(\d+)/)
+  const spentWidth = constants.match(/total_spent:\s*(\d+)/)
+  assert.ok(activityWidth && Number(activityWidth[1]) >= 140, "Activity % must fit its bar, value and cell padding")
+  assert.ok(spentWidth && Number(spentWidth[1]) >= 120, "Total spent must fit its label, value and cell padding")
+})
+
+test("Dashboard sorting remains compatible with the Windows 7 and Windows 8 browser ceiling", () => {
+  const runtimeFiles = [
+    "shared/ui/layout/config/nav-sections.ts",
+    "shared/tables/hooks/use-responsive-row-cap.ts",
+    "features/projects/utils/overview-sort.ts",
+    "features/clients/components/tables/clients-tab.tsx",
+    "features/projects/components/tables/projects-tab.tsx",
+  ]
+
+  for (const file of runtimeFiles) {
+    const src = code(read(file))
+    assert.doesNotMatch(src, /\.toSorted\s*\(/, `${file} must not require Array.prototype.toSorted`)
+    assert.match(src, /\[\.\.\.[^\]]+\]\.sort\s*\(/, `${file} must retain non-mutating sort behavior`)
+  }
+})
+
 test("Project archive uses the member UUID and restore clears archive metadata", () => {
   const hook = code(read("features/projects/hooks/use-project-mutations.ts"))
   const api = code(read("features/projects/api/project-api.ts"))
@@ -159,11 +194,34 @@ test("Command Center productivity chart separates active and idle and has an hon
   assert.match(src, /Activity rate/)
 })
 
-test("Report pages share the Time and Activity spacing and card treatment", () => {
+test("Report pages share the Time and Activity control bar and card treatment", () => {
   const layout = code(read("features/reports/components/app/standard-report-layout.tsx"))
   const cards = code(read("features/reports/components/shared/report-ui.tsx"))
 
   assert.match(layout, /max-w-\[1400px\].*space-y-6.*px-6 py-6/)
+  assert.match(layout, /Members/)
+  assert.match(layout, /Projects/)
   assert.match(layout, /Date range/)
+  assert.match(layout, /Data grouped by/)
+  assert.match(layout, /ReportToolbarMultiSelect/)
+  assert.match(layout, /rounded-lg bg-blue-500/)
   assert.match(cards, /dark:border-slate-700 dark:bg-slate-900/)
+})
+
+test("Bespoke reports use the same compact control-bar grammar", () => {
+  const workSessions = code(read("features/reports/components/work-sessions/work-sessions-report.tsx"))
+  const amountsOwed = code(read("features/reports/components/amounts-owed/amounts-owed-report.tsx"))
+  const dailyTotals = code(read("features/reports/components/daily-totals/daily-totals-report.tsx"))
+  const auditLog = code(read("features/reports/components/audit-log/audit-log-report.tsx"))
+
+  for (const src of [workSessions, amountsOwed, dailyTotals]) {
+    assert.match(src, /ReportToolbarMultiSelect/)
+    assert.match(src, /Date range/)
+    assert.match(src, /Filter\s*<\/button>/)
+    assert.match(src, /aria-label="Export"/)
+  }
+  assert.match(auditLog, /Search events/)
+  assert.match(auditLog, /Data grouped by/)
+  assert.match(auditLog, /Filter\s*<\/button>/)
+  assert.match(auditLog, /aria-label="Export"/)
 })

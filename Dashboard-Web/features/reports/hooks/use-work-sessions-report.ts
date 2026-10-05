@@ -347,6 +347,8 @@ export function useWorkSessionsReport() {
     memberOptions,
     projectFilter,
     memberFilter,
+    setProjectFilter,
+    setMemberFilter,
     toggleProject,
     toggleMember,
     selectAllProjects,

@@ -100,7 +100,7 @@ export function ProjectsTab({
       return name.includes(q) || teams.includes(q)
     })
     if (sortCol) {
-      result = result.toSorted((a, b) => {
+      result = [...result].sort((a, b) => {
         let aVal: string | number = ""
         let bVal: string | number = ""
         switch (sortCol) {

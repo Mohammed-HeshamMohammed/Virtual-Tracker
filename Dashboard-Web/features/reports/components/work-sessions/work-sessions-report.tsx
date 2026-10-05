@@ -5,22 +5,20 @@ import { AnimatePresence, motion } from "framer-motion"
 import {
   Calendar,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Clock,
   Download,
+  Filter,
   LayoutList,
   LineChart,
   Loader2,
-  Menu,
-  Send,
+  Play,
   Settings2,
   Trash2,
   X,
 } from "lucide-react"
 import { useWorkSessionsReport } from "@/features/reports/hooks/use-work-sessions-report"
 import {
-  WORK_SESSIONS_ORG_LABEL,
   WORK_SESSIONS_TIMEZONE_LABEL,
 } from "@/features/reports/components/shared/constants"
 import {
@@ -32,6 +30,8 @@ import type { WorkSessionColumnKey } from "@/features/reports/models/work-sessio
 import { ReportDateRangePicker } from "@/features/reports/components/time-activity-report/date-range-picker"
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
+import { ReportToolbarMultiSelect } from "@/features/reports/components/shared/report-filters-panel"
+import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { Button } from "@/shared/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu"
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover"
@@ -40,7 +40,6 @@ import { ReportSendDialog } from "@/features/reports/components/amounts-owed/rep
 import { WorkSessionsFiltersPanel } from "@/features/reports/components/work-sessions/work-sessions-filters-panel"
 import {
   ReportErrorState,
-  ReportOrgLine,
   ReportPageHeading,
   ReportTableSkeleton,
   ReportTruncationNotice,
@@ -205,6 +204,8 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
     memberOptions,
     projectFilter,
     memberFilter,
+    setProjectFilter,
+    setMemberFilter,
     toggleProject,
     toggleMember,
     selectAllProjects,
@@ -221,8 +222,6 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
     filteredRows,
     grouped,
     totals,
-    shiftRangeByDays,
-    goToToday,
     downloadCsv,
     downloadPdf,
     loading,
@@ -266,39 +265,40 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
 
         <ReportPageHeading title="Work sessions report" pageId="reports-work-sessions" />
 
-        <div className="flex flex-col gap-4 border-b border-slate-200 dark:border-white/10 pb-4 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between lg:gap-x-4">
-          <div className="flex flex-wrap items-end gap-6">
-            <div className="flex gap-10">
-              {(["me", "all"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setScope(v)}
-                  className={cn(
-                    "-mb-px border-b-2 pb-2 text-sm font-semibold transition-colors",
-                    scope === v ? "border-blue-500 text-blue-600" : "border-transparent text-slate-400 dark:text-white/40 hover:text-slate-600 dark:hover:text-[#bccbb9]"
-                  )}
-                >
-                  {v === "me" ? "ME" : "ALL"}
-                </button>
-              ))}
-            </div>
+        <div className="relative z-50 flex flex-wrap items-end gap-3 gap-y-3">
+          <div className="flex min-w-60 flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Members</span>
+            <ReportToolbarMultiSelect
+              label="Members"
+              emptyLabel="All members"
+              options={memberOptions.map((name) => ({ id: name, name }))}
+              selected={memberFilter ?? new Set<string>()}
+              allSelected={memberFilter === null}
+              onSelectAll={selectAllMembers}
+              onChange={setMemberFilter}
+            />
+          </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => shiftRangeByDays(-1)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] text-slate-600 dark:text-[#bccbb9] shadow-sm hover:bg-slate-50 dark:hover:bg-white/5"
-                aria-label="Previous period"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <div className="relative z-50">
+          <div className="flex min-w-60 flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Projects</span>
+            <ReportToolbarMultiSelect
+              label="Projects"
+              emptyLabel="All projects"
+              options={projectOptions.map((name) => ({ id: name, name }))}
+              selected={projectFilter ?? new Set<string>()}
+              allSelected={projectFilter === null}
+              onSelectAll={selectAllProjects}
+              onChange={setProjectFilter}
+            />
+          </div>
+
+          <div className="relative flex flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Date range</span>
                 <button
                   type="button"
                   onClick={() => setShowDatePicker((x) => !x)}
                   className={cn(
-                    "flex min-w-[260px] items-center gap-2 rounded-lg border bg-white dark:bg-[#151b2d] px-4 py-2 text-sm text-slate-700 dark:text-[#dce1fb] hover:bg-slate-50 dark:hover:bg-white/5",
+                    "flex h-9 min-w-[260px] items-center justify-between gap-2 rounded-lg border bg-white px-3 text-sm text-slate-700 hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800",
                     showDatePicker ? "border-blue-400 ring-1 ring-blue-400" : "border-slate-200 dark:border-white/10"
                   )}
                 >
@@ -320,34 +320,51 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                     />
                   )}
                 </AnimatePresence>
-              </div>
-              <button
-                type="button"
-                onClick={() => shiftRangeByDays(1)}
-                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] text-slate-600 dark:text-[#bccbb9] shadow-sm hover:bg-slate-50 dark:hover:bg-white/5"
-                aria-label="Next period"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={goToToday}
-                className="rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] px-4 py-2 text-sm font-medium text-slate-600 dark:text-[#bccbb9] hover:bg-slate-50 dark:hover:bg-white/5"
-              >
-                Today
-              </button>
-            </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowFilters(true)}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600"
-          >
-            Filters
-            <ChevronDown className="h-4 w-4 opacity-90" />
-          </button>
+          <div title={WORK_SESSIONS_TIMEZONE_LABEL} className="flex h-9 items-center pb-0.5 text-sm font-semibold text-slate-700 dark:text-slate-200">Member TZ</div>
+
+          <div className="flex min-w-40 flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Data grouped by</span>
+            <ReportSimpleDropdown
+              value={groupBy}
+              onChange={(value) => setGroupBy(value as typeof groupBy)}
+              options={groupByOptions}
+              width="w-44"
+              accentBar={false}
+            />
+          </div>
+
+          <div className="ml-auto flex flex-wrap items-center gap-2 pb-0.5">
+            <IconTooltip text="Send" placement="bottom">
+              <button type="button" onClick={() => setSendOpen(true)} aria-label="Send" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-950/60">
+                <Play className="h-4 w-4" />
+              </button>
+            </IconTooltip>
+            <IconTooltip text="Schedule" placement="bottom">
+              <button type="button" onClick={() => setScheduleOpen(true)} aria-label="Schedule" className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-950/60">
+                <Clock className="h-4 w-4" />
+              </button>
+            </IconTooltip>
+            <button type="button" onClick={() => setShowFilters(true)} className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm text-blue-500 transition-colors hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-950/60">
+              <Filter className="h-3.5 w-3.5" />
+              Filter
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button type="button" aria-label="Export" className="flex h-9 min-w-11 items-center justify-center rounded-lg bg-blue-500 px-3 text-white transition-colors hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700">
+                  <Download className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={downloadCsv}>To CSV</DropdownMenuItem>
+                <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
+
+        <div className="border-t border-slate-200 dark:border-slate-700" />
 
         <div className="flex flex-wrap items-stretch gap-0 rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-[#151b2d] shadow-sm">
           <div className="flex min-w-[100px] flex-1 flex-col justify-center border-r border-slate-100 dark:border-white/10 px-6 py-5">
@@ -387,23 +404,8 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
         ) : null}
 
         <div className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <ReportOrgLine org={WORK_SESSIONS_ORG_LABEL} timezone={WORK_SESSIONS_TIMEZONE_LABEL} />
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-2">
-                <Menu className="h-4 w-4 text-slate-500 dark:text-white/45" />
-                <span className="text-sm text-slate-500 dark:text-white/45">Group by:</span>
-                <ReportSimpleDropdown
-                  value={groupBy}
-                  onChange={(v) => setGroupBy(v as typeof groupBy)}
-                  options={groupByOptions}
-                  width="w-40"
-                  accentBar={false}
-                />
-              </div>
-              <div className="flex flex-wrap items-center gap-1 border-l border-slate-200 dark:border-white/10 pl-3">
+          <div className="flex justify-end">
+              <div className="flex flex-wrap items-center gap-1">
                 <Button
                   type="button"
                   variant="ghost"
@@ -414,26 +416,6 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                   <X className="h-4 w-4" />
                   {tableCollapsed ? "Expand" : "Collapse"}
                 </Button>
-                <Button type="button" variant="ghost" size="sm" className="gap-1 text-slate-600 dark:text-[#bccbb9]" onClick={() => setSendOpen(true)}>
-                  <Send className="h-4 w-4" />
-                  Send
-                </Button>
-                <Button type="button" variant="ghost" size="sm" className="gap-1 text-slate-600 dark:text-[#bccbb9]" onClick={() => setScheduleOpen(true)}>
-                  <Clock className="h-4 w-4" />
-                  Schedule
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button type="button" variant="ghost" size="sm" className="gap-1 text-slate-600 dark:text-[#bccbb9]">
-                      <Download className="h-4 w-4" />
-                      Export
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={downloadCsv}>To CSV</DropdownMenuItem>
-                    <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
                 <Popover>
                   <PopoverTrigger asChild>
                     {/* Was an unlabelled gear icon - column customisation existed
@@ -484,7 +466,6 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                     </div>
                   </PopoverContent>
                 </Popover>
-              </div>
             </div>
           </div>
 

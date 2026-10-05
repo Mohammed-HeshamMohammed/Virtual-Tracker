@@ -366,6 +366,7 @@ export function PaymentsReport({ onNavigate }: { onNavigate?: (id: string) => vo
       showGroupBy={true}
       groupByOptions={PAYMENTS_GROUP_BY_OPTIONS}
       defaultGroupBy="date"
+      toolbarFilters={{ options, value: filters, onChange: setFilters, showProjects: false }}
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}

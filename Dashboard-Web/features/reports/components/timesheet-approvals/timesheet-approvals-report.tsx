@@ -342,6 +342,7 @@ export function TimesheetApprovalsReport({ onNavigate }: { onNavigate: (id: stri
       showGroupBy={true}
       groupByOptions={TIMESHEET_APPROVALS_GROUP_BY_OPTIONS}
       defaultGroupBy="date"
+      toolbarFilters={{ options, value: filters, onChange: setFilters, showProjects: false }}
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}

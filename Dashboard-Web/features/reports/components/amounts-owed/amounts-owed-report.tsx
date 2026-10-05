@@ -4,13 +4,11 @@ import { Fragment, useEffect, useMemo, useState as useComponentState } from "rea
 import { AnimatePresence, motion } from "framer-motion"
 import {
   Calendar,
-  ChevronLeft,
-  ChevronRight,
   Clock,
   Download,
+  Filter,
   LineChart,
-  Send,
-  SlidersHorizontal,
+  Play,
 } from "lucide-react"
 import {
   AMOUNTS_OWED_DEFAULT_VISIBLE_COLUMNS,
@@ -21,6 +19,7 @@ import { ReportDateRangePicker } from "@/features/reports/components/time-activi
 import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
 import { formatRangeLabel, formatSecondsAsHMS, parseTimeToSeconds, startOfDay, endOfDay, toDateParam, todayDateParam } from "@/features/reports/utils/time-and-activity"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/shared/ui/dropdown-menu"
+import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { cn } from "@/shared/utils/utils"
 import { AmountsOwedFiltersPanel } from "@/features/reports/components/amounts-owed/amounts-owed-filters-panel"
 import { AmountsOwedTableColumnsMenu } from "@/features/reports/components/amounts-owed/amounts-owed-table-columns-menu"
@@ -29,6 +28,7 @@ import { ReportSendDialog } from "@/features/reports/components/amounts-owed/rep
 import { fetchAmountsOwedReport, fetchReportFilterOptions, type ReportFilterOptions, type ReportCurrencyMeta } from "@/features/reports/api/misc-reports-api"
 import { useAuth } from "@/shared/providers/app"
 import { ReportErrorState, ReportPageHeading, ReportTableSkeleton } from "@/features/reports/components/shared/report-ui"
+import { ReportToolbarMultiSelect } from "@/features/reports/components/shared/report-filters-panel"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import { STANDARD_REPORT_ORG_LABEL, MEMBER_TIMEZONE_LABEL } from "@/features/reports/components/shared/constants"
 import { sumMoneyStrings } from "@/features/reports/utils/money"
@@ -296,21 +296,6 @@ export function AmountsOwedReport() {
     }
   }, [rangeStart, rangeEnd, scope, memberId, selectedMemberIds, selectedProjectIds, reloadKey])
 
-  function shiftRangeByDays(delta: number) {
-    const s = new Date(rangeStart)
-    s.setDate(s.getDate() + delta)
-    const e = new Date(rangeEnd)
-    e.setDate(e.getDate() + delta)
-    setRangeStart(s)
-    setRangeEnd(e)
-  }
-
-  function goToToday() {
-    const now = new Date()
-    setRangeStart(startOfDay(now))
-    setRangeEnd(endOfDay(now))
-  }
-
   const totalHoursSummary = useMemo(() => {
     const all = groups.flatMap((g) => g.members.map((m) => m.hours))
     return sumHoursStrings(all)
@@ -325,56 +310,36 @@ export function AmountsOwedReport() {
     <div className="relative isolate min-h-0">
       <div className="report-print-area relative mx-auto min-h-[min(80vh,56rem)] max-w-[1400px] space-y-6 px-6 py-6">
         <ReportPageHeading title="Amounts owed report" pageId="reports-amounts" />
-        <div className="flex flex-col gap-4 border-b border-slate-200 dark:border-white/10 pb-4 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-x-4 lg:gap-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <div
-              className="relative flex items-center gap-0.5 rounded-full bg-slate-100 dark:bg-white/10 p-0.5"
-              role="group"
-              aria-label="Report scope"
-            >
-              {(["me", "all"] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setScope(v)}
-                  className="relative z-10 flex select-none items-center justify-center rounded-full px-5 py-1.5 text-sm font-medium transition-colors duration-200"
-                >
-                  {scope === v && (
-                    <motion.div
-                      layoutId="amounts-owed-scope-pill"
-                      className="absolute inset-0 rounded-full bg-white shadow-sm dark:bg-white/20"
-                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                    />
-                  )}
-                  <span
-                    className={cn(
-                      "relative z-10",
-                      scope === v ? "text-slate-900 dark:text-[#dce1fb]" : "text-slate-500 dark:text-white/45 hover:text-slate-700 dark:hover:text-[#dce1fb]"
-                    )}
-                  >
-                    {v === "me" ? "Me" : "All"}
-                  </span>
-                </button>
-              ))}
-            </div>
+        <div className="relative z-50 flex flex-wrap items-end gap-3 gap-y-3">
+          <div className="flex min-w-60 flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Members</span>
+            <ReportToolbarMultiSelect
+              label="Members"
+              emptyLabel="All members"
+              options={filterOptions.members}
+              selected={selectedMemberIds}
+              onChange={setSelectedMemberIds}
+            />
+          </div>
 
-            <div className="hidden h-6 w-px shrink-0 bg-slate-200 dark:bg-white/15 sm:block" aria-hidden />
+          <div className="flex min-w-60 flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Projects</span>
+            <ReportToolbarMultiSelect
+              label="Projects"
+              emptyLabel="All projects"
+              options={filterOptions.projects}
+              selected={selectedProjectIds}
+              onChange={setSelectedProjectIds}
+            />
+          </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => shiftRangeByDays(-1)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] text-slate-600 dark:text-[#bccbb9] shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/5"
-                aria-label="Previous day"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-              <div className="relative z-50">
+          <div className="relative flex flex-col gap-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Date range</span>
                 <button
                   type="button"
                   onClick={() => setShowDatePicker((v) => !v)}
                   className={cn(
-                    "flex min-w-[280px] items-center gap-2 rounded-lg border bg-white dark:bg-[#151b2d] px-4 py-2 text-sm text-slate-700 dark:text-[#dce1fb] transition-colors hover:bg-slate-50 dark:hover:bg-white/5",
+                    "flex h-9 min-w-[280px] items-center justify-between gap-2 rounded-lg border bg-white px-3 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800",
                     showDatePicker ? "border-blue-400 ring-1 ring-blue-400" : "border-slate-200 dark:border-white/10"
                   )}
                 >
@@ -396,61 +361,47 @@ export function AmountsOwedReport() {
                     />
                   )}
                 </AnimatePresence>
-              </div>
-              <button
-                type="button"
-                onClick={() => shiftRangeByDays(1)}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] text-slate-600 dark:text-[#bccbb9] shadow-sm transition-colors hover:bg-slate-50 dark:hover:bg-white/5"
-                aria-label="Next day"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </button>
-
-              <button
-                type="button"
-                onClick={goToToday}
-                className="rounded-lg px-3 py-2 text-sm font-medium text-blue-600 underline-offset-4 transition-colors hover:bg-blue-50 hover:underline"
-              >
-                Today
-              </button>
-            </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-            <button
-              type="button"
-              onClick={() => setShowFilters(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] px-3.5 py-2 text-sm font-medium text-slate-700 dark:text-[#dce1fb] shadow-sm transition-colors hover:border-slate-300 dark:hover:border-white/20 hover:bg-slate-50 dark:hover:bg-white/5"
-            >
-              <SlidersHorizontal className="h-4 w-4 text-slate-500 dark:text-white/45" />
-              Filters
-            </button>
+          <div title={MEMBER_TIMEZONE_LABEL} className="flex h-9 items-center pb-0.5 text-sm font-semibold text-slate-700 dark:text-slate-200">Member TZ</div>
 
-            <div className="flex flex-wrap items-stretch overflow-visible rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#151b2d] shadow-sm">
+          <div className="ml-auto flex flex-wrap items-center gap-2 pb-0.5">
+            <IconTooltip text="Send" placement="bottom">
               <button
                 type="button"
                 onClick={() => setSendDialogOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-slate-600 dark:text-[#bccbb9] transition-colors hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-[#dce1fb]"
+                aria-label="Send"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-950/60"
               >
-                <Send className="h-4 w-4 text-slate-500 dark:text-white/45" />
-                <span className="hidden sm:inline">Send</span>
+                <Play className="h-4 w-4" />
               </button>
+            </IconTooltip>
+            <IconTooltip text="Schedule" placement="bottom">
               <button
                 type="button"
                 onClick={() => setScheduleDialogOpen(true)}
-                className="flex items-center gap-1.5 border-l border-slate-200 dark:border-white/10 px-3 py-2 text-sm font-medium text-slate-600 dark:text-[#bccbb9] transition-colors hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-[#dce1fb]"
+                aria-label="Schedule"
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-blue-500 transition-colors hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-950/60"
               >
-                <Clock className="h-4 w-4 text-slate-500 dark:text-white/45" />
-                <span className="hidden sm:inline">Schedule</span>
+                <Clock className="h-4 w-4" />
               </button>
+            </IconTooltip>
+            <button
+              type="button"
+              onClick={() => setShowFilters(true)}
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-sm text-blue-500 transition-colors hover:bg-blue-50 dark:border-slate-700 dark:bg-slate-900 dark:text-blue-400 dark:hover:bg-blue-950/60"
+            >
+              <Filter className="h-3.5 w-3.5" />
+              Filter
+            </button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="flex items-center gap-1.5 border-l border-slate-200 dark:border-white/10 px-3 py-2 text-sm font-medium text-slate-600 dark:text-[#bccbb9] transition-colors hover:bg-slate-50 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-[#dce1fb] data-[state=open]:bg-slate-50"
+                    aria-label="Export"
+                    className="flex h-9 min-w-11 items-center justify-center rounded-lg bg-blue-500 px-3 text-white transition-colors hover:bg-blue-600 dark:bg-blue-600 dark:hover:bg-blue-700"
                   >
-                    <Download className="h-4 w-4 text-slate-500 dark:text-white/45" />
-                    <span className="hidden sm:inline">Export</span>
+                    <Download className="h-3.5 w-3.5" />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-36">
@@ -458,12 +409,13 @@ export function AmountsOwedReport() {
                   <DropdownMenuItem className="cursor-pointer" onClick={() => downloadAmountsOwedPdf(groups, dateLabel)}>To PDF</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <div className="flex items-center border-l border-slate-200 dark:border-white/10 px-1.5">
+              <div className="flex h-9 items-center rounded-lg border border-slate-200 bg-white px-1.5 dark:border-slate-700 dark:bg-slate-900">
                 <AmountsOwedTableColumnsMenu visible={visibleColumns} onVisibleChange={setVisibleColumns} />
               </div>
-            </div>
           </div>
         </div>
+
+        <div className="border-t border-slate-200 dark:border-slate-700" />
 
         <div className="flex flex-wrap items-stretch gap-4 rounded-xl border border-slate-100 dark:border-white/10 bg-white dark:bg-[#151b2d] p-6 shadow-sm">
           <div className="min-w-[120px] flex-1">

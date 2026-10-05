@@ -330,6 +330,7 @@ export function ProjectBudgetsReport({ onNavigate }: { onNavigate: (id: string) 
       showDateRange={false}
       showScopeTabs={false}
       showGroupBy={true}
+      toolbarFilters={{ options, value: filters, onChange: setFilters }}
       filtersPanel={(close) => (
         <ReportFiltersPanel
           onClose={close}

@@ -665,6 +665,11 @@ function InvoiceReportPage({
       showScopeTabs={false}
       showGroupBy={true}
       groupByOptions={kind === "team" ? TEAM_INVOICE_GROUP_BY_OPTIONS : CLIENT_INVOICE_GROUP_BY_OPTIONS}
+      toolbarFilters={
+        kind === "team"
+          ? { options, value: filters, onChange: setFilters, showProjects: false }
+          : undefined
+      }
       filtersPanel={
         kind === "team"
           ? (close) => (
