@@ -55,6 +55,13 @@ export interface ProjectData {
    *  with a weekly limit set. Zero means the ring's 0% is "nobody has a
    *  limit configured", not "nobody worked". */
   utilizationCounted: number
+  utilizationTotalMembers: number
+  /** Hours tracked by every member, including people without a weekly limit. */
+  utilizationTrackedHours: number
+  /** Hours tracked only by members whose utilization can be calculated. */
+  utilizationCountedHours: number
+  utilizationCapacityHours: number
+  utilizationCoveragePercent: number
   utilizationBreakdown: UtilizationMember[]
 }
 
@@ -112,6 +119,11 @@ export type ApiProjectData = {
   utilizationOffset: number
   utilizationMembers: ProjectData["utilizationMembers"]
   utilizationCounted?: number
+  utilizationTotalMembers?: number
+  utilizationTrackedHours?: number
+  utilizationCountedHours?: number
+  utilizationCapacityHours?: number
+  utilizationCoveragePercent?: number
   utilizationBreakdown: UtilizationMember[]
 }
 

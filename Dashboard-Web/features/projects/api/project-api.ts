@@ -215,7 +215,7 @@ export interface UpdateProjectInput {
   usersNotes?: string
   viewersNotes?: string
   updatedBy?: string
-  archivedBy?: string
+  archivedBy?: string | null
   archivedAt?: string | null
   expectedUpdatedAt?: string
 }
@@ -305,21 +305,21 @@ export async function deleteProject(id: string): Promise<void> {
 export async function archiveProject(
   id: string,
   archive: boolean,
-  userId?: string,
+  actorMemberId?: string,
 ): Promise<Project> {
   if (archive) {
     return updateProject(id, {
       status: "archived",
-      archivedBy: userId,
+      archivedBy: actorMemberId,
       archivedAt: new Date().toISOString(),
-      updatedBy: userId,
+      updatedBy: actorMemberId,
     })
   }
   return updateProject(id, {
     status: "active",
-    archivedBy: undefined,
+    archivedBy: null,
     archivedAt: null,
-    updatedBy: userId,
+    updatedBy: actorMemberId,
   })
 }
 

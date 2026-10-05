@@ -106,14 +106,21 @@ export function useProjectMutations({
   onError,
 }: UseProjectMutationsProps) {
   const deletingIdsRef = useRef(new Set<string>())
+  const archivingIdsRef = useRef(new Set<string>())
 
   async function archiveProject(id: string) {
     if (!canManageProjects) return
+    if (archivingIdsRef.current.has(id)) return
     const project = data.find((p) => p.id === id)
     if (!project) return
     const nextArchived = project.status === "active"
+    const nextStatus: Project["status"] = nextArchived ? "archived" : "active"
+    archivingIdsRef.current.add(id)
+    setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, status: nextStatus } : p)))
     try {
-      await archiveProjectApi(id, nextArchived, user?.uid)
+      // archived_by/updated_by are member UUID columns. Firebase's account
+      // uid is not that identifier and made restore fail in Postgres.
+      await archiveProjectApi(id, nextArchived, memberId ?? undefined)
       await refetchProjects({ forceRefetch: true })
       setSelected((prev) => {
         const s = new Set(prev)
@@ -123,26 +130,48 @@ export function useProjectMutations({
     } catch (err) {
       console.error("Failed to archive project:", err)
       onError?.(errorText(err, "Could not " + (nextArchived ? "archive" : "restore") + " " + project.name + "."))
+      setProjects((prev) => prev.map((p) => (p.id === id ? project : p)))
+      await refetchProjects({ forceRefetch: true }).catch(() => undefined)
+    } finally {
+      archivingIdsRef.current.delete(id)
     }
   }
 
   async function batchArchive(ids: string[]) {
     if (!canManageProjects || ids.length === 0) return
     const byId = new Map(data.map((p) => [p.id, p]))
-    await Promise.all(
-      ids.map((id) => {
-        const project = byId.get(id)
-        if (!project) return Promise.resolve()
-        return archiveProjectApi(id, project.status === "active", user?.uid).catch((err) => {
-          console.error(`Failed to archive project ${id}:`, err)
-          onError?.(errorText(err, "Could not archive " + project.name + "."))
-        })
+    const targets = ids.flatMap((id) => {
+      const project = byId.get(id)
+      return project ? [{ id, project, archive: project.status === "active" }] : []
+    })
+    setProjects((prev) =>
+      prev.map((project) => {
+        const target = targets.find((item) => item.id === project.id)
+        return target ? { ...project, status: target.archive ? "archived" : "active" } : project
       }),
     )
+    const results = await Promise.allSettled(
+      targets.map(({ id, archive }) => archiveProjectApi(id, archive, memberId ?? undefined)),
+    )
+    const succeeded = new Set<string>()
+    results.forEach((result, index) => {
+      const target = targets[index]!
+      if (result.status === "fulfilled") {
+        succeeded.add(target.id)
+        return
+      }
+      console.error(`Failed to archive project ${target.id}:`, result.reason)
+      onError?.(
+        errorText(
+          result.reason,
+          `Could not ${target.archive ? "archive" : "restore"} ${target.project.name}.`,
+        ),
+      )
+    })
     await refetchProjects({ forceRefetch: true })
     setSelected((prev) => {
       const s = new Set(prev)
-      for (const id of ids) s.delete(id)
+      for (const id of succeeded) s.delete(id)
       return s
     })
   }

@@ -264,7 +264,7 @@ export function AuditLogReport({ onNavigate }: { onNavigate?: (id: string) => vo
   const eventWord = filtered.length === 1 ? "event" : "events"
 
   return (
-    <div className="relative isolate mx-auto max-w-[1400px] space-y-5">
+    <div className="report-print-area relative isolate mx-auto max-w-[1400px] space-y-6 px-6 py-6">
       
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <ReportPageHeading title="Audit log report" pageId="reports-audit" />

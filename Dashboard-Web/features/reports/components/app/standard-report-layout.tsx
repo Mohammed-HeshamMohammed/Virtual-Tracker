@@ -15,6 +15,7 @@ import {
   ChevronRight,
   Clock,
   Download,
+  Filter,
   Menu,
   Send,
   X,
@@ -202,9 +203,9 @@ export function StandardReportLayout({
   return (
     <StandardReportLayoutContext.Provider value={contextValue}>
       <div className="relative isolate min-h-0">
-        <div className="relative mx-auto min-h-0 max-w-[1400px] space-y-5 px-0 py-0">
+        <div className="report-print-area relative mx-auto min-h-0 max-w-[1400px] space-y-6 px-6 py-6">
 
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+          <div className="relative z-50 flex flex-wrap items-end gap-3">
             {/* The report's name and blurb are already on the card that got
                 you here and in the nav, so on the page itself they were two
                 lines of chrome pushing the actual data below the fold. The
@@ -212,9 +213,13 @@ export function StandardReportLayout({
                 one - it just isn't painted. */}
             <h1 className="sr-only">{title}</h1>
             {resolvedSubtitle ? <p className="sr-only">{resolvedSubtitle}</p> : null}
-            <div className="flex min-w-0 flex-1 shrink-0 flex-wrap items-center justify-end gap-1.5 sm:pt-1">
+            <div className="flex min-w-0 flex-1 flex-wrap items-end gap-3">
               {showDateRange ? (
-                <>
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    Date range
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => shiftRangeByPeriods(-1)}
@@ -284,17 +289,26 @@ export function StandardReportLayout({
               >
                 Last 7 days
               </button>
-                </>
+                  </div>
+                </div>
               ) : null}
               {panel ? (
-                <button
-                  type="button"
-                  onClick={() => setShowFilters(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-600"
-                >
-                  Filters
-                  <ChevronDown className="h-4 w-4 opacity-90" />
-                </button>
+                <div className="ml-auto flex flex-col gap-1">
+                  <span className="select-none text-[10px] font-semibold uppercase tracking-wider text-transparent">Actions</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowFilters(true)}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium shadow-sm transition-colors",
+                      isDark
+                        ? "border-slate-700 bg-slate-900 text-blue-400 hover:bg-blue-950/60"
+                        : "border-slate-200 bg-white text-blue-500 hover:bg-blue-50"
+                    )}
+                  >
+                    <Filter className="h-3.5 w-3.5" />
+                    Filters
+                  </button>
+                </div>
               ) : null}
             </div>
           </div>
@@ -330,8 +344,8 @@ export function StandardReportLayout({
 
           <div
             className={cn(
-              "flex flex-col gap-4 border-b pb-5 pt-1 lg:flex-row lg:items-end lg:justify-between",
-              isDark ? "border-white/10" : "border-slate-200"
+              "flex flex-col gap-4 border-y py-4 lg:flex-row lg:items-end lg:justify-between",
+              isDark ? "border-slate-700" : "border-slate-200"
             )}
           >
             <div className="space-y-1">
@@ -410,7 +424,7 @@ export function StandardReportLayout({
             </div>
           </div>
 
-          <div className="report-print-area pt-4">{children}</div>
+          <div>{children}</div>
         </div>
 
         {onSend ? <ReportSendDialog open={sendOpen} onOpenChange={setSendOpen} onSend={onSend} /> : null}
