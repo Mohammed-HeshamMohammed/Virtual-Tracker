@@ -2140,6 +2140,7 @@ function MainApp() {
     dailyCapLabel,
     dailyCapLeftLabel,
     workedTodayLabel,
+    manualTodayLabel,
     dayUsedPercent,
     dayOverPercent,
     dayHint,
@@ -2152,6 +2153,7 @@ function MainApp() {
     weekActivityDash,
     weekActiveSeconds,
     weekIdleSeconds,
+    weekManualSeconds,
     weeklyCapSeconds,
     weekWorkedLabel,
     weekUsedPercent,
@@ -2189,6 +2191,7 @@ function MainApp() {
       dayHint={dayHint}
       memberLimits={memberLimits}
       workedTodayLabel={workedTodayLabel}
+      manualTodayLabel={manualTodayLabel}
       dailyCapSeconds={dailyCapSeconds}
       dailyCapLabel={dailyCapLabel}
       projectedCapTimeLabel={projectedCapTimeLabel}
@@ -2576,6 +2579,7 @@ function MainApp() {
             weekActivityDash={weekActivityDash}
             weekActiveSeconds={weekActiveSeconds}
             weekIdleSeconds={weekIdleSeconds}
+            weekManualSeconds={weekManualSeconds}
           />
 
           <TeamStatusCard team={workspace?.team ?? null} />

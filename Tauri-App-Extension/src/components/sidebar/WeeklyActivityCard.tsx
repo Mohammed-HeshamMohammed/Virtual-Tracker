@@ -11,6 +11,8 @@ type WeeklyActivityCardProps = {
   weekActivityDash: number;
   weekActiveSeconds: number;
   weekIdleSeconds: number;
+  /** Approved time added by hand this week; shown beside the split, never inside the percentage. */
+  weekManualSeconds?: number;
 };
 
 export function WeeklyActivityCard({
@@ -20,6 +22,7 @@ export function WeeklyActivityCard({
   weekActivityDash,
   weekActiveSeconds,
   weekIdleSeconds,
+  weekManualSeconds = 0,
 }: WeeklyActivityCardProps) {
   if (!signedIn) return null;
   if (loading) {
@@ -76,6 +79,12 @@ export function WeeklyActivityCard({
             <i className="activity-dot idle" />
             {fmtHours(weekIdleSeconds)} <em>idle</em>
           </span>
+          {weekManualSeconds > 0 ? (
+            <span className="activity-legend-row">
+              <i className="activity-dot manual" />
+              {fmtHours(weekManualSeconds)} <em>by hand</em>
+            </span>
+          ) : null}
         </div>
       </div>
     </section>

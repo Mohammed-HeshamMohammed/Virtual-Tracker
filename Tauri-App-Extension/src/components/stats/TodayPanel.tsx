@@ -5,6 +5,8 @@ type TodayPanelProps = {
   dayHint: string;
   memberLimits: MemberLimits | null;
   workedTodayLabel: string;
+  /** "incl. 1h added by hand" - empty when nothing was added by hand today. */
+  manualTodayLabel?: string;
   dailyCapSeconds: number;
   dailyCapLabel: string;
   projectedCapTimeLabel: string;
@@ -18,6 +20,7 @@ export function TodayPanel({
   dayHint,
   memberLimits,
   workedTodayLabel,
+  manualTodayLabel = "",
   dailyCapSeconds,
   dailyCapLabel,
   projectedCapTimeLabel,
@@ -72,6 +75,7 @@ export function TodayPanel({
           <span className="stat-hero-of">
             {dailyCapSeconds > 0 ? `of ${dailyCapLabel}` : "across every project"}
           </span>
+          {manualTodayLabel ? <span className="stat-hero-manual">{manualTodayLabel}</span> : null}
         </div>
 
         <div className="stat-hero-aside">

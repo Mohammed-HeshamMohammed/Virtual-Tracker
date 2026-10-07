@@ -216,7 +216,12 @@ export type MemberLimits = {
   weekDays: WeekDay[];
 };
 
-export type TodayActivity = { activeSeconds: number; idleSeconds: number };
+export type TodayActivity = {
+  activeSeconds: number;
+  idleSeconds: number;
+  /** Approved time added by hand today. Absent from an older backend. */
+  manualSeconds?: number;
+};
 
 export type WeekDay = {
   day: string;

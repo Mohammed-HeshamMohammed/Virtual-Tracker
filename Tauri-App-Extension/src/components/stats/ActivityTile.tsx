@@ -83,7 +83,7 @@ export function ActivityTile({ loading, activityDash, activityLabel, activityPer
       </div>
       <div style={{ minWidth: 0 }}>
         <span className="stat-tile-label">Activity</span>
-        {activityPercent == null ? (
+        {activityPercent == null && !(activityToday?.manualSeconds ?? 0) ? (
           <div className="stat-tile-foot">nothing tracked yet</div>
         ) : (
           <div className="activity-legend">
@@ -95,6 +95,12 @@ export function ActivityTile({ loading, activityDash, activityLabel, activityPer
               <i className="activity-dot idle" />
               {fmtHours(activityToday!.idleSeconds)} <em>idle</em>
             </span>
+            {(activityToday!.manualSeconds ?? 0) > 0 ? (
+              <span className="activity-legend-row">
+                <i className="activity-dot manual" />
+                {fmtHours(activityToday!.manualSeconds ?? 0)} <em>by hand</em>
+              </span>
+            ) : null}
           </div>
         )}
       </div>

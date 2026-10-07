@@ -959,6 +959,28 @@ export async function listDailyMemberManualSeconds(memberId, { fromDay, toDay })
   return result?.rows ?? [];
 }
 
+/**
+ * Approved manual time in a day range, optionally for one project - the same rows as
+ * listDailyMemberManualSeconds, summed. Display only.
+ */
+export async function sumMemberManualSeconds(memberId, { fromDay, toDay, projectId = null }) {
+  const id = parseProgressUuid(memberId);
+  if (!id) return 0;
+  const pId = projectId ? parseProgressUuid(projectId) : null;
+  if (projectId && !pId) return 0;
+  const result = await pgQuery(
+    `SELECT COALESCE(SUM(duration), 0) AS manual_seconds
+     FROM time_entries
+     WHERE member_id = $1
+       AND source = 'manual'
+       AND status = 'approved'
+       AND date >= $2::date AND date <= $3::date
+       AND ($4::uuid IS NULL OR project_id = $4::uuid)`,
+    [id, fromDay, toDay, pId],
+  );
+  return Math.max(0, Math.floor(Number(result?.rows?.[0]?.manual_seconds ?? 0)));
+}
+
 /** Idle seconds per day in `timeZone` - the same basis as everything above. */
 export async function listMemberIdleSecondsByDay(memberId, { fromDay, toDay, timeZone = null }) {
   const id = parseProgressUuid(memberId);

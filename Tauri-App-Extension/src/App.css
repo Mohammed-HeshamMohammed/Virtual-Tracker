@@ -5459,6 +5459,13 @@ select.modal-input {
   );
 }
 
+.stat-hero-manual {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: rgb(var(--c-warn));
+}
+
 .week-chart-idle {
   min-height: 2px;
   background: rgb(var(--c-overlay) / 0.22);

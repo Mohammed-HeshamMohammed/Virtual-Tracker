@@ -49,7 +49,11 @@ export function computeHomeStats({
       : memberLimits.limitReached
         ? "Limit reached"
         : fmtHours(memberLimits.allowedRemainingSeconds);
-  const workedTodayLabel = memberLimits ? fmtHours(liveWorkedTodaySeconds) : "—";
+  // Time added by hand today: part of what was worked, but not read from the tracker, so the
+  // cap bar and "still allowed" below (the server's own figures) stay as they are.
+  const todayManualSeconds = memberLimits?.todayActivity?.manualSeconds ?? 0;
+  const workedTodayLabel = memberLimits ? fmtHours(liveWorkedTodaySeconds + todayManualSeconds) : "—";
+  const manualTodayLabel = todayManualSeconds > 0 ? `incl. ${fmtHours(todayManualSeconds)} added by hand` : "";
   const dayUsedPercent =
     dailyCapSeconds > 0 ? Math.min(100, (liveWorkedTodaySeconds / dailyCapSeconds) * 100) : 0;
   const dayOverPercent =
@@ -71,8 +75,13 @@ export function computeHomeStats({
     ? {
         activeSeconds: Math.max(memberLimits.projectTodayActivity.activeSeconds, liveActivityActiveSeconds),
         idleSeconds: Math.max(memberLimits.projectTodayActivity.idleSeconds, liveActivityIdleSeconds),
+        ...(memberLimits.projectTodayActivity.manualSeconds !== undefined
+          ? { manualSeconds: memberLimits.projectTodayActivity.manualSeconds }
+          : {}),
       }
     : undefined;
+  // Manual time has no keyboard or mouse behind it, so it is shown beside the split and
+  // never inside the percentage.
   const activityTrackedSeconds = activityToday
     ? activityToday.activeSeconds + activityToday.idleSeconds
     : 0;
@@ -219,6 +228,7 @@ export function computeHomeStats({
     dailyCapLabel,
     dailyCapLeftLabel,
     workedTodayLabel,
+    manualTodayLabel,
     dayUsedPercent,
     dayOverPercent,
     dayHint,
@@ -232,6 +242,7 @@ export function computeHomeStats({
     weekActivityDash,
     weekActiveSeconds,
     weekIdleSeconds,
+    weekManualSeconds,
     weeklyCapSeconds,
     weekWorkedLabel,
     weekUsedPercent,

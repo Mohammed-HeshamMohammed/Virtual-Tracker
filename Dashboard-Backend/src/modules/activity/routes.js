@@ -122,6 +122,7 @@ import {
   listDailyMemberActiveSeconds,
   listMemberIdleSecondsByDay,
   listDailyMemberManualSeconds,
+  sumMemberManualSeconds,
   sumAppLogSecondsByAppNameForProjectPg,
   recordSessionEventPg,
   touchPgSessionActivity,
@@ -433,6 +434,8 @@ export async function routeActivity(req, res, url, origin) {
         weekActiveRows,
         weekIdleRows,
         weekManualRows,
+        todayManualSeconds,
+        projectTodayManualSeconds,
       ] = await Promise.all([
         getMemberLimitHours(db, member.memberId, "daily"),
         getMemberLimitHours(db, member.memberId, "weekly"),
@@ -451,6 +454,10 @@ export async function routeActivity(req, res, url, origin) {
         listDailyMemberActiveSeconds(member.memberId, { fromDay: weekStartDay, toDay: todayDay, timeZone: limitZone }),
         listMemberIdleSecondsByDay(member.memberId, { fromDay: weekStartDay, toDay: todayDay, timeZone: limitZone }),
         listDailyMemberManualSeconds(member.memberId, { fromDay: weekStartDay, toDay: todayDay }),
+        sumMemberManualSeconds(member.memberId, { fromDay: todayDay, toDay: todayDay }),
+        projectId
+          ? sumMemberManualSeconds(member.memberId, { fromDay: todayDay, toDay: todayDay, projectId })
+          : 0,
       ]);
       const capLeftToday = usesShifts ? null : timerAllowance.allowedRemainingSeconds;
       // `total` is the whole open workload, not a property of today, so it
@@ -470,8 +477,12 @@ export async function routeActivity(req, res, url, origin) {
           assignedTotal,
           workingToday: todayWorkStatus.workingToday,
           isMakeupDay: todayWorkStatus.isMakeupDay,
-          todayActivity,
-          projectTodayActivity,
+          // Approved time the member added by hand rides alongside the tracked figures, never
+          // inside them: activeSeconds/idleSeconds stay what the tracker saw.
+          todayActivity: { ...todayActivity, manualSeconds: todayManualSeconds },
+          projectTodayActivity: projectTodayActivity
+            ? { ...projectTodayActivity, manualSeconds: projectTodayManualSeconds }
+            : projectTodayActivity,
           // The member's week, one entry per day, from the same rollup as
           // timerAllowance.workedTodaySeconds/workedWeekSeconds.
           todayDay,

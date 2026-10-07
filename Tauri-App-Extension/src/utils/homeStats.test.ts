@@ -263,6 +263,29 @@ describe("computeHomeStats - the week (chart, This week card, sidebar ring)", ()
     expect(stats.weekActivityPercent).toBe(without.weekActivityPercent);
   });
 
+  it("Worked today counts time added by hand, and the cap bar stays on the tracker's figure", () => {
+    const withManual: MemberLimits = {
+      ...limits,
+      dailyHours: 8,
+      todayActivity: { activeSeconds: 600, idleSeconds: 0, manualSeconds: 3600 },
+    };
+    const stats = computeHomeStats({ ...emptyInput, memberLimits: withManual, liveWorkedTodaySeconds: 600 });
+    expect(stats.workedTodayLabel).toBe("1h 10m");
+    expect(stats.manualTodayLabel).toBe("incl. 1h 0s added by hand");
+    expect(stats.dayUsedPercent).toBeCloseTo((600 / (8 * 3600)) * 100);
+    expect(stats.weekManualSeconds).toBe(0);
+  });
+
+  it("the Activity ring carries manual time beside the split, never inside the percentage", () => {
+    const withManual: MemberLimits = {
+      ...limits,
+      projectTodayActivity: { activeSeconds: 30, idleSeconds: 10, manualSeconds: 7200 },
+    };
+    const stats = computeHomeStats({ ...emptyInput, memberLimits: withManual });
+    expect(stats.activityToday).toEqual({ activeSeconds: 30, idleSeconds: 10, manualSeconds: 7200 });
+    expect(stats.activityPercent).toBe(75);
+  });
+
   it("never shows today's idle below what the server has already recorded", () => {
     const stats = computeHomeStats({
       ...emptyInput,
