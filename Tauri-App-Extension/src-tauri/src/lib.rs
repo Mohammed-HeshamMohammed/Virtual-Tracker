@@ -465,6 +465,14 @@ pub fn run() {
             let handle = app.handle().clone();
             let status_controller = Arc::clone(&controller);
             status_controller.add_status_listener(Arc::new(move |text| {
+                // A break ending on its own (its time ran out, or a private break expired) is
+                // announced the way a buzz is - on the desktop, not only inside the window.
+                if text.starts_with("Break ended") {
+                    buzz::show(
+                        &handle,
+                        buzz::Buzz::notice("Break is over", "Your timer is running again. Back to it!"),
+                    );
+                }
                 if let Some(window) = handle.get_webview_window("main") {
                     // JSON string escaping is a strict subset of valid JS string-literal
                     // escaping, so the serialized value can be embedded directly - handles

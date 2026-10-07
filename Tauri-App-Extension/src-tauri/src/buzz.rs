@@ -27,6 +27,8 @@ const NUDGE_MARGIN: f64 = 16.0;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Buzz {
+    /// Replaces the "Buzz from <name>" heading, for the tracker's own notices (a break ending).
+    pub title: Option<String>,
     pub style: String,
     /// Where a nudge sits on the screen: "top-right" (the default), "top-left", "bottom-right" or "bottom-left".
     pub corner: String,
@@ -42,6 +44,19 @@ pub struct BuzzState {
 
 fn clip(value: &str, max: usize) -> String {
     value.trim().chars().take(max).collect()
+}
+
+impl Buzz {
+    /// The tracker telling the member something itself, drawn like a nudge.
+    pub fn notice(title: &str, message: &str) -> Self {
+        Buzz {
+            title: Some(title.to_string()),
+            style: "nudge".into(),
+            corner: "top-right".into(),
+            message: message.to_string(),
+            from: String::new(),
+        }
+    }
 }
 
 /// A `buzz` frame, or `None` for anything else (including a malformed or unknown-style one).
@@ -64,6 +79,7 @@ pub fn parse(frame: &str) -> Option<Buzz> {
     }
     let from = clip(value.get("from").and_then(|v| v.as_str()).unwrap_or(""), MAX_FROM_CHARS);
     Some(Buzz {
+        title: None,
         style: style.to_string(),
         corner: corner.to_string(),
         message,
@@ -198,6 +214,7 @@ mod tests {
         assert_eq!(
             parse(frame),
             Some(Buzz {
+                title: None,
                 style: "bluescreen".into(),
                 corner: "top-right".into(),
                 message: "Focus!".into(),
@@ -246,6 +263,14 @@ mod tests {
         assert_eq!(at("bottom-right"), (1920.0 - 360.0 - 16.0, 1040.0 - 120.0 - 16.0));
         // At 150% the card and its margin grow with the screen.
         assert_eq!(nudge_origin((0.0, 0.0), (2880.0, 1560.0), 1.5, "top-right"), (2880.0 - 540.0 - 24.0, 24.0));
+    }
+
+    #[test]
+    fn a_tracker_notice_is_a_nudge_with_its_own_heading() {
+        let notice = Buzz::notice("Break is over", "Your timer is running again.");
+        assert_eq!(notice.style, "nudge");
+        assert_eq!(notice.title.as_deref(), Some("Break is over"));
+        assert_eq!(notice.corner, "top-right");
     }
 
     #[test]

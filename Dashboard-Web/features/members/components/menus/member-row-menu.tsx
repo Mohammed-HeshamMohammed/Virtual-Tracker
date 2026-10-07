@@ -71,8 +71,8 @@ export function MemberRowMenu({
   const baseTabs = [...new Set(visibleEntries.map((i) => memberEntryToTab(i.id)))]
   const allowedTabs = limitedSelfManage ? LIMITED_SELF_TABS : baseTabs
   const canOpen = visibleEntries.length > 0
-  // Only the Owner, and never at themselves.
-  const canBuzz = isOwnerRoleName(memberRole ?? "") && !isSelf
+  // Only the Owner - who may buzz themselves, to see what the other person will see.
+  const canBuzz = isOwnerRoleName(memberRole ?? "")
 
   return (
     <div className="relative">
@@ -138,7 +138,7 @@ export function MemberRowMenu({
       )}
 
       {buzzOpen ? (
-        <BuzzModal memberId={member.id} memberName={member.name} onClose={() => setBuzzOpen(false)} />
+        <BuzzModal memberId={member.id} memberName={isSelf ? "yourself" : member.name} onClose={() => setBuzzOpen(false)} />
       ) : null}
 
       <MemberManageModal

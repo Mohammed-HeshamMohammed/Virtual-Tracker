@@ -36,6 +36,33 @@ const BLUR_CHOICES: { value: BlurStrength; label: string; tip: string }[] = [
   { value: "maximum", label: "Maximum", tip: "Maximum blur: nothing but the overall colour of the page" },
 ];
 
+type HeadIcon = "break" | "screen" | "blur" | "eye" | "shield";
+
+// Small line icons, one per card, so the cards read as different things at a glance.
+const HEAD_ICONS: Record<HeadIcon, string> = {
+  break: "M5 8h11v5a4 4 0 0 1-4 4H9a4 4 0 0 1-4-4V8Zm11 1h1.5a2 2 0 0 1 0 4H16M8 4v2m3-2v2",
+  screen: "M3 5h14v9H3zM7 17h6M10 14v3",
+  blur: "M10 3s5 5.2 5 8.5a5 5 0 0 1-10 0C5 8.2 10 3 10 3Z",
+  eye: "M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10Zm8 2.2a2.2 2.2 0 1 0 0-4.4 2.2 2.2 0 0 0 0 4.4Z",
+  shield: "M10 3 4 5.5v4.2c0 3.6 2.5 6.2 6 7.3 3.5-1.1 6-3.7 6-7.3V5.5L10 3Zm-2.2 6.6 1.7 1.7 3-3.2",
+};
+
+function PrivacyHead({ icon, title, sub }: { icon: HeadIcon; title: string; sub?: string }) {
+  return (
+    <div className="privacy-head">
+      <span className="privacy-head-icon" aria-hidden="true">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+          <path d={HEAD_ICONS[icon]} />
+        </svg>
+      </span>
+      <div className="privacy-head-text">
+        <h3 className="settings-section-label">{title}</h3>
+        {sub ? <span className="settings-row-sub">{sub}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 function messageOf(error: unknown): string {
   if (typeof error === "string") return error;
   if (error instanceof Error) return error.message;
@@ -178,7 +205,7 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
         ) : null}
 
         <section data-help="Private break: pauses your timer and stops all capture for the time you choose. Your manager sees that you took a break and your reason." className="settings-card">
-          <h3 className="settings-section-label">Private break</h3>
+          <PrivacyHead icon="break" title="Private break" />
           {onBreak ? (
             <>
               <span className="settings-row-sub">
@@ -240,11 +267,11 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
         </section>
 
         <section data-help="Which screen is recorded: limit screenshots to one of your screens. This can only reduce what is captured." className="settings-card">
-          <h3 className="settings-section-label">Which screen is recorded</h3>
-          <span className="settings-row-sub">
-            Screenshots are only taken of the screen you choose, and only while you are working on it. The apps and
-            websites you use are still logged. It can only reduce what is captured.
-          </span>
+          <PrivacyHead
+            icon="screen"
+            title="Which screen is recorded"
+            sub="Screenshots are only taken of the screen you choose, and only while you are working on it. The apps and websites you use are still logged. It can only reduce what is captured."
+          />
           {prefs && screens ? (
             <div className="privacy-screens" role="group" aria-label="Screen to record">
               <button data-tip="Take screenshots of whichever screen you are working on"
@@ -280,11 +307,11 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
         </section>
 
         <section data-help="Blur strength: how strongly blurred screenshots are softened. Standard is the minimum." className="settings-card">
-          <h3 className="settings-section-label">Blur strength</h3>
-          <span className="settings-row-sub">
-            Chat apps and social media (Facebook, Instagram, TikTok, Snapchat and similar) are always blurred. Standard is
-            the minimum, you can make it stronger.
-          </span>
+          <PrivacyHead
+            icon="blur"
+            title="Blur strength"
+            sub="Chat apps and social media (Facebook, Instagram, TikTok, Snapchat and similar) are always blurred. Standard is the minimum, you can make it stronger."
+          />
           {prefs ? (
             <div className="segmented" role="group" aria-label="Blur strength">
               {BLUR_CHOICES.map((choice) => (
@@ -306,7 +333,7 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
         </section>
 
         <section data-help="Collected today: exactly what has been collected about you so far today." className="settings-card">
-          <h3 className="settings-section-label">Collected today</h3>
+          <PrivacyHead icon="eye" title="Collected today" />
           {summary ? (
             <>
               <span className="settings-row-title">{describeCollection(summary)}</span>
@@ -319,25 +346,35 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
           )}
         </section>
 
-        <section data-help="Never capture: apps and websites you add are never captured. This can only reduce what is collected about you." className="settings-card">
-          <h3 className="settings-section-label">Never capture</h3>
-          <span className="settings-row-sub">
-            Apps and websites you add here are never captured. It can only reduce what is collected about you.
-          </span>
+        <section data-help="Never capture: apps and websites you add are never captured. This can only reduce what is collected about you." className="settings-card privacy-card">
+          <PrivacyHead
+            icon="shield"
+            title="Never capture"
+            sub="Apps and websites you add here are never captured - no screenshots, no activity. It can only reduce what is collected about you."
+          />
           <div className="privacy-add">
-            <select data-help="Whether the rule is for an app or for a website."
-              className="text-input privacy-type"
-              value={matchType}
-              aria-label="Type"
-              onChange={(e) => setMatchType(e.target.value === "domain" ? "domain" : "app")}
-            >
-              <option value="app">App</option>
-              <option value="domain">Website</option>
-            </select>
+            <div className="segmented" role="group" aria-label="Type">
+              <button data-tip="Never capture an app, for example KeePass"
+                type="button"
+                className={`segmented-btn${matchType === "app" ? " active" : ""}`}
+                aria-pressed={matchType === "app"}
+                onClick={() => setMatchType("app")}
+              >
+                App
+              </button>
+              <button data-tip="Never capture a website, for example mybank.com. Its subdomains are covered too"
+                type="button"
+                className={`segmented-btn${matchType === "domain" ? " active" : ""}`}
+                aria-pressed={matchType === "domain"}
+                onClick={() => setMatchType("domain")}
+              >
+                Website
+              </button>
+            </div>
             <input data-help="The app or website to never capture, for example mybank.com. A website rule covers its subdomains too."
-              className="text-input"
+              className="text-input privacy-add-input"
               value={pattern}
-              placeholder={matchType === "app" ? "e.g. KeePass" : "e.g. mybank.com"}
+              placeholder={matchType === "app" ? "App name, e.g. KeePass" : "Website, e.g. mybank.com"}
               aria-label="Name"
               onChange={(e) => setPattern(e.target.value)}
               onKeyDown={(e) => {
@@ -346,7 +383,7 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
             />
             <button data-tip="Never capture this app or website"
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-primary privacy-add-btn"
               disabled={addBusy || !pattern.trim()}
               onClick={() => void addExclusion()}
             >
@@ -356,21 +393,27 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
           {exclusions === null ? (
             <span className="settings-row-sub">{listFailed ? "Could not load your list." : "Loading…"}</span>
           ) : exclusions.length === 0 ? (
-            <span className="settings-row-sub">Nothing added yet.</span>
+            <div className="privacy-empty">
+              <span>Nothing added yet.</span>
+              <span className="privacy-empty-hint">
+                Try a password manager app, or your bank's website. It takes effect straight away.
+              </span>
+            </div>
           ) : (
             <ul className="privacy-list">
               {exclusions.map((row) => (
-                <li key={row.id} className="privacy-item">
-                  <span>
-                    <span className="privacy-kind">{exclusionLabel(row.matchType)}</span> {row.pattern}
-                  </span>
+                <li key={row.id} className="privacy-chip">
+                  <span className={`privacy-kind privacy-kind-${row.matchType}`}>{exclusionLabel(row.matchType)}</span>
+                  <span className="privacy-chip-name">{row.pattern}</span>
                   <button data-tip={`Stop excluding ${row.pattern}`}
                     type="button"
-                    className="btn btn-tertiary"
+                    className="privacy-chip-remove"
                     aria-label={`Remove ${row.pattern}`}
                     onClick={() => void removeExclusion(row.id)}
                   >
-                    Remove
+                    <svg viewBox="0 0 20 20" aria-hidden="true">
+                      <path d="M6 6l8 8M14 6l-8 8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
                   </button>
                 </li>
               ))}

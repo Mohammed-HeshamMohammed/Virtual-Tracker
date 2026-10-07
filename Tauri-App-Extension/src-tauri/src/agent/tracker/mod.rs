@@ -443,8 +443,9 @@ impl ActivityTracker {
     /// thirty minutes, which is far too long for a privacy control: someone who adds
     /// their bank would stay captured until it next ran.
     pub fn refresh_capture_exclusions_now(&self) {
-        if let Ok(patterns) = self.api.lock().fetch_capture_exclusions() {
-            self.events.apply_capture_exclusions(patterns);
+        if let Ok(rules) = self.api.lock().fetch_capture_exclusions() {
+            self.events.apply_capture_exclusions(rules.apps);
+            self.events.apply_capture_domain_exclusions(rules.domains);
         }
     }
 

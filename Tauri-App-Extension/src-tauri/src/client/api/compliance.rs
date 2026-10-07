@@ -6,9 +6,31 @@ use super::{ApiClient, ApiError};
 use crate::constants::HTTP_TIMEOUT_SEC;
 use crate::types::{CaptureSummary, MonitoringNoticeView, OwnExclusion};
 
+/// What is never captured: apps, and websites (by host). The org's rules and the member's own
+/// arrive together.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CaptureExclusions {
+    pub apps: Vec<String>,
+    pub domains: Vec<String>,
+}
+
+fn lowercase_list(value: Option<&Value>) -> Vec<String> {
+    value
+        .and_then(|v| v.as_array())
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|r| r.as_str())
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 impl ApiClient {
-    /// App patterns the org has excluded from capture.
-    pub fn fetch_capture_exclusions(&mut self) -> Result<Vec<String>, ()> {
+    /// The apps and websites excluded from capture. Websites used to be dropped here, so a
+    /// website a member added to their own list never stopped anything on this device.
+    pub fn fetch_capture_exclusions(&mut self) -> Result<CaptureExclusions, ()> {
         let auth = self.authorized().ok_or(())?;
         let url = format!("{}/api/compliance/capture-exclusions/effective", self.api_url);
         let res = self
@@ -22,18 +44,11 @@ impl ApiClient {
             return Err(());
         }
         let body: Value = res.json().map_err(|_| ())?;
-        Ok(body
-            .get("data")
-            .and_then(|d| d.get("apps"))
-            .and_then(|v| v.as_array())
-            .map(|rows| {
-                rows.iter()
-                    .filter_map(|r| r.as_str())
-                    .map(|s| s.trim().to_lowercase())
-                    .filter(|s| !s.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default())
+        let data = body.get("data");
+        Ok(CaptureExclusions {
+            apps: lowercase_list(data.and_then(|d| d.get("apps"))),
+            domains: lowercase_list(data.and_then(|d| d.get("domains"))),
+        })
     }
 
     /// The current disclosure notice, composed server-side from the live monitoring_policy

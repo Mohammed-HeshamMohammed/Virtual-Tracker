@@ -84,6 +84,22 @@ pub fn is_messaging_target(process_name: &str, url: Option<&str>, title: Option<
     title.is_some_and(title_matches)
 }
 
+/// Whether this URL's host is one of `domains` or a subdomain of one. Whole-host matching,
+/// like the blur lists: "mybank.com" covers "www.mybank.com" but not "notmybank.com" or a URL
+/// that only mentions it in a path or query. Entries may be written as a bare host or a
+/// pasted URL.
+pub fn url_on_any_domain(url: &str, domains: &[String]) -> bool {
+    let Some(host) = url_host(url) else {
+        return false;
+    };
+    domains.iter().any(|entry| {
+        url_host(entry).is_some_and(|domain| {
+            let domain = domain.trim_start_matches("www.").to_string();
+            host == domain || host.ends_with(&format!(".{domain}"))
+        })
+    })
+}
+
 fn process_matches(process_name: &str) -> bool {
     // Lowercase before trimming ".exe" - trim_end_matches is case-sensitive, so trimming
     // first left "TELEGRAM.EXE" untouched and never matched.
@@ -194,6 +210,26 @@ mod tests {
         assert!(target("chrome.exe", Some("https://www.instagram.com/direct/inbox/")));
         assert!(target("chrome.exe", Some("https://x.com/messages/12-34")));
         assert!(target("chrome.exe", Some("https://www.linkedin.com/messaging/thread/1")));
+    }
+
+    #[test]
+    fn a_domain_rule_covers_the_site_and_its_subdomains_and_nothing_else() {
+        let rules = vec!["mybank.com".to_string()];
+        assert!(url_on_any_domain("https://mybank.com/login", &rules));
+        assert!(url_on_any_domain("https://www.mybank.com/accounts?x=1", &rules));
+        assert!(url_on_any_domain("https://secure.login.mybank.com:8443/", &rules));
+        assert!(!url_on_any_domain("https://notmybank.com/", &rules));
+        assert!(!url_on_any_domain("https://example.com/?site=mybank.com", &rules));
+        assert!(!url_on_any_domain("https://example.com/mybank.com", &rules));
+        assert!(!url_on_any_domain("", &rules));
+        assert!(!url_on_any_domain("https://mybank.com/", &[]));
+    }
+
+    #[test]
+    fn a_domain_rule_may_have_been_pasted_as_a_whole_url() {
+        let rules = vec!["https://www.other-bank.com/login".to_string()];
+        assert!(url_on_any_domain("https://other-bank.com/home", &rules));
+        assert!(url_on_any_domain("https://app.other-bank.com/", &rules));
     }
 
     #[test]

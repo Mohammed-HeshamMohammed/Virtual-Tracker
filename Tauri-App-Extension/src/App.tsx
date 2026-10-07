@@ -1398,6 +1398,19 @@ function MainApp() {
     return () => window.clearInterval(timer);
   }, [tracking, session?.idleStage]);
 
+  // A Pause or a Break is time off the clock that the tracker credits to idle second by
+  // second (unless the project does not split idle at all), so the idle figures follow it
+  // live instead of sitting still until the next poll.
+  const idleDisabledForProject = Boolean(taskTracking?.disableIdleTime);
+  useEffect(() => {
+    if (!paused || idleDisabledForProject) return;
+    const timer = window.setInterval(() => {
+      setLiveIdleTodaySeconds((s) => s + 1);
+      setLiveActivityIdleSeconds((s) => s + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [paused, idleDisabledForProject]);
+
   const prevIdleStageRef = useRef(0);
   useEffect(() => {
     const stage = session?.idleStage ?? 0;

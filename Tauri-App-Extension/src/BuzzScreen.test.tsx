@@ -25,4 +25,12 @@ describe("BuzzView", () => {
     expect(html).toContain("Back to it");
     expect(html).not.toContain("buzz-bsod");
   });
+
+  it("uses the tracker's own heading for its notices, such as a break ending", () => {
+    const html = renderToStaticMarkup(
+      <BuzzView buzz={{ style: "nudge", message: "Your timer is running again.", from: "", title: "Break is over" }} onClose={noop} />,
+    );
+    expect(html).toContain("Break is over");
+    expect(html).not.toContain("Buzz from");
+  });
 });

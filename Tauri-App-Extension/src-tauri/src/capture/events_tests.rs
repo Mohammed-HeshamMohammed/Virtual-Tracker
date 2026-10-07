@@ -205,6 +205,50 @@ fn capture_exclusions_match_display_name_or_process_name() {
 }
 
 #[test]
+fn an_app_rule_written_without_the_exe_still_stops_the_exe() {
+    let builder = builder();
+    builder.apply_capture_exclusions(vec!["keepass".to_string()]);
+    assert!(builder.is_capture_excluded(&window("KeePass.exe", "Password manager")));
+    assert!(!builder.is_capture_excluded(&window("keepassxc.exe", "KeePassXC")), "a different app is not it");
+}
+
+// A website the member (or the org) excluded must stop capture while a browser shows it. The
+// agent used to ignore the website half of the list entirely.
+#[test]
+fn a_website_rule_stops_capture_while_a_browser_shows_that_site() {
+    let builder = builder();
+    builder.apply_capture_domain_exclusions(vec!["mybank.com".to_string()]);
+    let win = browser_window();
+
+    *builder.last_url.lock() = Some(("https://www.mybank.com/accounts".to_string(), Instant::now()));
+    assert!(builder.is_capture_excluded(&win), "the bank's page is never captured");
+
+    *builder.last_url.lock() = Some(("https://github.com/x".to_string(), Instant::now()));
+    assert!(!builder.is_capture_excluded(&win), "another site is captured as normal");
+
+    *builder.last_url.lock() = Some(("https://notmybank.com/".to_string(), Instant::now()));
+    assert!(!builder.is_capture_excluded(&win), "a look-alike domain is not the bank");
+}
+
+#[test]
+fn a_website_rule_does_not_touch_a_window_that_is_not_a_browser() {
+    let builder = builder();
+    builder.apply_capture_domain_exclusions(vec!["mybank.com".to_string()]);
+    *builder.last_url.lock() = Some(("https://mybank.com/".to_string(), Instant::now()));
+    assert!(!builder.is_capture_excluded(&window("notepad.exe", "Notepad")));
+}
+
+#[test]
+fn clearing_the_website_list_stops_excluding() {
+    let builder = builder();
+    *builder.last_url.lock() = Some(("https://mybank.com/".to_string(), Instant::now()));
+    builder.apply_capture_domain_exclusions(vec!["mybank.com".to_string()]);
+    assert!(builder.is_capture_excluded(&browser_window()));
+    builder.apply_capture_domain_exclusions(vec![]);
+    assert!(!builder.is_capture_excluded(&browser_window()));
+}
+
+#[test]
 fn url_capture_backs_off_after_repeated_failures_and_a_success_clears_it() {
     let builder = builder();
     assert!(!builder.url_capture_backed_off("hwnd-1"), "clean window is not backed off");

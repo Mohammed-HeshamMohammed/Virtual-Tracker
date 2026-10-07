@@ -217,7 +217,7 @@ describe("the member's own never-capture list", () => {
   it("adds a website and clears the box", async () => {
     respond({ add_my_exclusion: (args) => ({ id: "e2", matchType: args?.matchType, pattern: args?.pattern }) });
     await mount();
-    type(container.querySelector('select[aria-label="Type"]') as HTMLSelectElement, "domain");
+    await click(button("Website"));
     type(input("Name"), "  https://www.other-bank.com/login ");
     await click(button("Add"));
     expect(invokeMock).toHaveBeenCalledWith("add_my_exclusion", {
@@ -233,7 +233,7 @@ describe("the member's own never-capture list", () => {
     await mount();
     type(input("Name"), "keepass");
     await click(button("Add"));
-    const items = [...container.querySelectorAll(".privacy-item")].map((li) => li.textContent);
+    const items = [...container.querySelectorAll(".privacy-chip")].map((li) => li.textContent);
     expect(items[0]).toContain("keepass");
   });
 

@@ -47,6 +47,8 @@ pub struct EventBuilder {
     url_backoff: Mutex<HashMap<String, (u32, Option<Instant>)>>,
     /// Lowercased app patterns the org excluded from capture.
     excluded_apps: Mutex<HashSet<String>>,
+    /// Websites (hosts) that are never captured, org-wide and the member's own.
+    excluded_domains: Mutex<Vec<String>>,
     /// App-icon send state, keyed by lowercased resolved app name.
     app_icons: Arc<Mutex<HashMap<String, IconSlot>>>,
 }
@@ -126,6 +128,7 @@ impl EventBuilder {
             app_icons: Arc::new(Mutex::new(HashMap::new())),
             url_backoff: Mutex::new(HashMap::new()),
             excluded_apps: Mutex::new(HashSet::new()),
+            excluded_domains: Mutex::new(Vec::new()),
         }
     }
 
@@ -135,8 +138,29 @@ impl EventBuilder {
         *self.excluded_apps.lock() = patterns.into_iter().collect();
     }
 
-    /// True when the focused window belongs to an app the org excluded from capture.
+    /// Replaces the excluded-website list wholesale, for the same reason.
+    pub fn apply_capture_domain_exclusions(&self, domains: Vec<String>) {
+        *self.excluded_domains.lock() = domains;
+    }
+
+    /// True when the focused window is an app, or a page on a website, that is never captured.
     pub fn is_capture_excluded(&self, window: &ForegroundWindow) -> bool {
+        self.is_excluded_website(window) || self.is_excluded_app(window)
+    }
+
+    /// A browser showing a page on an excluded website. The last URL read for it is used even
+    /// when slightly old: guessing wrong toward "excluded" costs a missing screenshot, guessing
+    /// the other way captures what the member said never to capture.
+    fn is_excluded_website(&self, window: &ForegroundWindow) -> bool {
+        let domains = self.excluded_domains.lock().clone();
+        if domains.is_empty() {
+            return false;
+        }
+        self.url_for_blur(window)
+            .is_some_and(|url| crate::capture::sensitive_apps::url_on_any_domain(&url, &domains))
+    }
+
+    fn is_excluded_app(&self, window: &ForegroundWindow) -> bool {
         if self.excluded_apps.lock().is_empty() {
             return false;
         }
@@ -150,7 +174,9 @@ impl EventBuilder {
         let excluded = self.excluded_apps.lock();
         candidates.iter().any(|name| {
             let key = name.trim().to_lowercase();
-            !key.is_empty() && excluded.contains(&key)
+            // "keepass" must also stop "KeePass.exe".
+            let bare = key.trim_end_matches(".exe");
+            !key.is_empty() && (excluded.contains(&key) || excluded.contains(bare))
         })
     }
 
@@ -190,11 +216,6 @@ impl EventBuilder {
         }
     }
 
-    /// ACT-3: applied from the periodic scoring-settings poll. A min above the max is
-    /// refused rather than stored - `random_screenshot_delay_sec` would panic on
-    /// `rng.gen_range` with an inverted bound, and the backend already rejects this
-    /// ordering before it can be sent, so this is defense in depth, not the primary
-    /// guard.
     /// The member's own privacy choices (which screen, how strong the blur).
     pub fn apply_privacy_choices(&self, capture_screen: &str, blur_strength: &str) {
         self.screen.set_target(capture_screen);
@@ -206,6 +227,11 @@ impl EventBuilder {
         self.gate.apply(outside_work_hours, break_until_ms);
     }
 
+    /// ACT-3: applied from the periodic scoring-settings poll. A min above the max is
+    /// refused rather than stored - `random_screenshot_delay_sec` would panic on
+    /// `rng.gen_range` with an inverted bound, and the backend already rejects this
+    /// ordering before it can be sent, so this is defense in depth, not the primary
+    /// guard.
     pub fn apply_screenshot_cadence(&self, min_delay_sec: u64, max_delay_sec: u64) {
         if min_delay_sec > 0 && max_delay_sec > 0 && min_delay_sec <= max_delay_sec {
             self.screenshot_min_delay_sec.store(min_delay_sec, Ordering::Relaxed);

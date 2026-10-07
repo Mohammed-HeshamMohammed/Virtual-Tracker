@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-export type BuzzPayload = { style: "nudge" | "bluescreen"; message: string; from: string };
+export type BuzzPayload = {
+  style: "nudge" | "bluescreen";
+  message: string;
+  from: string;
+  /** The tracker's own notices (a break ending) replace "Buzz from <name>". */
+  title?: string | null;
+};
 
 const NUDGE_SECONDS = 8;
 const BLUESCREEN_SECONDS = 12;
@@ -50,7 +56,7 @@ export function BuzzView({ buzz, onClose }: { buzz: BuzzPayload; onClose: () => 
         ⚡
       </span>
       <span className="buzz-nudge-body">
-        <strong>Buzz from {buzz.from}</strong>
+        <strong>{buzz.title || `Buzz from ${buzz.from}`}</strong>
         <span>{buzz.message}</span>
       </span>
     </button>
