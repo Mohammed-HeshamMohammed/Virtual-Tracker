@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import type { CaptureStatus, CaptureSummary, OwnExclusion } from "../../types";
+import type {
+  AppSettingsView,
+  BlurStrength,
+  CaptureScreen,
+  CaptureStatus,
+  CaptureSummary,
+  OwnExclusion,
+  UserPreferences,
+} from "../../types";
 import { PanelBackHeader } from "../common/PanelBackHeader";
 import { toast } from "../../Toast";
 import { fmtHours } from "../../utils/formatters";
@@ -22,6 +30,12 @@ type Props = {
   onBack: () => void;
 };
 
+const BLUR_CHOICES: { value: BlurStrength; label: string; tip: string }[] = [
+  { value: "standard", label: "Standard", tip: "Standard blur: text is unreadable but you can still see what kind of page it was" },
+  { value: "strong", label: "Strong", tip: "Strong blur: the page is only a soft smudge of colour" },
+  { value: "maximum", label: "Maximum", tip: "Maximum blur: nothing but the overall colour of the page" },
+];
+
 function messageOf(error: unknown): string {
   if (typeof error === "string") return error;
   if (error instanceof Error) return error.message;
@@ -43,6 +57,44 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
   const [addBusy, setAddBusy] = useState(false);
 
   const [error, setError] = useState("");
+
+  const [prefs, setPrefs] = useState<UserPreferences | null>(null);
+  const [screens, setScreens] = useState<CaptureScreen[] | null>(null);
+  const [prefsBusy, setPrefsBusy] = useState(false);
+  const [prefsFailed, setPrefsFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    invokeWithTimeout<AppSettingsView>("get_app_settings")
+      .then((view) => !cancelled && setPrefs(view.preferences))
+      .catch(() => !cancelled && setPrefsFailed(true));
+    invokeWithTimeout<CaptureScreen[]>("list_capture_screens")
+      .then((rows) => !cancelled && setScreens(rows))
+      .catch(() => !cancelled && setScreens([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Both choices are saved the moment they are made, like the rest of Settings.
+  const savePref = useCallback(
+    async (patch: Partial<Pick<UserPreferences, "captureScreen" | "blurStrength">>) => {
+      if (!prefs) return;
+      setPrefsBusy(true);
+      setError("");
+      try {
+        const updated = await invokeWithTimeout<AppSettingsView>("save_preferences", {
+          preferences: { ...prefs, ...patch },
+        });
+        setPrefs(updated?.preferences ?? { ...prefs, ...patch });
+      } catch (e) {
+        setError(`Could not save this: ${messageOf(e)}`);
+      } finally {
+        setPrefsBusy(false);
+      }
+    },
+    [prefs],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -184,6 +236,72 @@ export function PrivacyPanel({ status, timeZone, onStatusChanged, onBack }: Prop
                 Start break
               </button>
             </>
+          )}
+        </section>
+
+        <section data-help="Which screen is recorded: limit screenshots to one of your screens. This can only reduce what is captured." className="settings-card">
+          <h3 className="settings-section-label">Which screen is recorded</h3>
+          <span className="settings-row-sub">
+            Screenshots are only taken of the screen you choose, and only while you are working on it. The apps and
+            websites you use are still logged. It can only reduce what is captured.
+          </span>
+          {prefs && screens ? (
+            <div className="privacy-screens" role="group" aria-label="Screen to record">
+              <button data-tip="Take screenshots of whichever screen you are working on"
+                type="button"
+                className={`segmented-btn${prefs.captureScreen === "auto" ? " active" : ""}`}
+                aria-pressed={prefs.captureScreen === "auto"}
+                disabled={prefsBusy}
+                onClick={() => void savePref({ captureScreen: "auto" })}
+              >
+                The screen I am working on
+              </button>
+              {screens.map((screen) => (
+                <button data-tip={`Only take screenshots of ${screen.label}`}
+                  key={screen.id}
+                  type="button"
+                  className={`segmented-btn${prefs.captureScreen === screen.id ? " active" : ""}`}
+                  aria-pressed={prefs.captureScreen === screen.id}
+                  disabled={prefsBusy}
+                  onClick={() => void savePref({ captureScreen: screen.id })}
+                >
+                  {screen.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="settings-row-sub">{prefsFailed ? "Could not load this right now." : "Loading…"}</span>
+          )}
+          {prefs && screens && prefs.captureScreen !== "auto" && !screens.some((s) => s.id === prefs.captureScreen) ? (
+            <span className="settings-message settings-message-warning" role="status">
+              The screen you chose is not connected right now, so no screenshots are being taken.
+            </span>
+          ) : null}
+        </section>
+
+        <section data-help="Blur strength: how strongly blurred screenshots are softened. Standard is the minimum." className="settings-card">
+          <h3 className="settings-section-label">Blur strength</h3>
+          <span className="settings-row-sub">
+            Chat apps and social media (Facebook, Instagram, TikTok, Snapchat and similar) are always blurred. Standard is
+            the minimum, you can make it stronger.
+          </span>
+          {prefs ? (
+            <div className="segmented" role="group" aria-label="Blur strength">
+              {BLUR_CHOICES.map((choice) => (
+                <button data-tip={choice.tip}
+                  key={choice.value}
+                  type="button"
+                  className={`segmented-btn${prefs.blurStrength === choice.value ? " active" : ""}`}
+                  aria-pressed={prefs.blurStrength === choice.value}
+                  disabled={prefsBusy}
+                  onClick={() => void savePref({ blurStrength: choice.value })}
+                >
+                  {choice.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="settings-row-sub">{prefsFailed ? "Could not load this right now." : "Loading…"}</span>
           )}
         </section>
 

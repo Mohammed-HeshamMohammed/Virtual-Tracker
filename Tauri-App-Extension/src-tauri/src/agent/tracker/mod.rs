@@ -178,6 +178,10 @@ impl ActivityTracker {
             settings.classification_cache_path.clone(),
             settings.app_icon_script_path.clone(),
         );
+        // A tracker starts already holding what the member chose, not the defaults until
+        // they next open the Privacy tab.
+        let chosen = settings.preferences_store().load();
+        events.apply_privacy_choices(&chosen.capture_screen, &chosen.blur_strength);
         Self {
             api,
             events,
@@ -213,6 +217,12 @@ impl ActivityTracker {
 
     /// Caller (`AgentController::start_tracker`) always stops any prior tracker and builds
     /// a fresh instance before calling this, so there's no existing loop to guard against
+    /// Called when the member changes their screen or blur choice, so it takes effect on the
+    /// next screenshot without a restart.
+    pub fn apply_privacy_choices(&self, capture_screen: &str, blur_strength: &str) {
+        self.events.apply_privacy_choices(capture_screen, blur_strength);
+    }
+
     pub fn gate(&self) -> &crate::capture::capture_gate::CaptureGate {
         &self.events.gate
     }

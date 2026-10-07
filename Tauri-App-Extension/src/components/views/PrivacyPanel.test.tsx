@@ -21,6 +21,11 @@ const ON_BREAK: CaptureStatus = { blocked: true, reason: "Private break - nothin
 
 const SUMMARY = { timezone: "UTC", screenshots: 4, appEvents: 9, apps: 3, domains: 2, activeSeconds: 3600 };
 const RULE = { id: "e1", matchType: "domain", pattern: "mybank.com" };
+const SETTINGS = { version: "1", logPath: "", preferences: { theme: "system", layout: "auto", captureScreen: "auto", blurStrength: "standard" } };
+const SCREENS = [
+  { id: "\.\DISPLAY1", label: "Screen 1 (main) - 1920x1080", primary: true },
+  { id: "\.\DISPLAY2", label: "Screen 2 - 1366x768", primary: false },
+];
 
 let container: HTMLDivElement;
 let root: Root;
@@ -30,6 +35,8 @@ function respond(overrides: Record<string, (args?: Record<string, unknown>) => u
     if (overrides[command]) return overrides[command](args);
     if (command === "get_my_capture_summary") return SUMMARY;
     if (command === "list_my_exclusions") return [RULE];
+    if (command === "get_app_settings") return SETTINGS;
+    if (command === "list_capture_screens") return SCREENS;
     return undefined;
   });
 }
@@ -97,11 +104,50 @@ describe("loading", () => {
     respond({
       get_my_capture_summary: () => Promise.reject(new Error("offline")),
       list_my_exclusions: () => Promise.reject(new Error("offline")),
+      get_app_settings: () => Promise.reject(new Error("offline")),
     });
     await mount();
     expect(container.textContent).toContain("Could not load this right now.");
     expect(container.textContent).toContain("Could not load your list.");
     expect(container.textContent).not.toContain("Loading");
+  });
+});
+
+describe("screen and blur choices", () => {
+  const saved = () =>
+    invokeMock.mock.calls.filter((c) => c[0] === "save_preferences").map((c) => (c[1] as { preferences: Record<string, unknown> }).preferences);
+
+  it("lists the connected screens and saves the one the member picks", async () => {
+    respond({ save_preferences: (args) => ({ ...SETTINGS, preferences: (args as { preferences: object }).preferences }) });
+    await mount();
+    expect(container.textContent).toContain("Screen 1 (main) - 1920x1080");
+    expect(container.textContent).toContain("Screen 2 - 1366x768");
+    await act(async () => {
+      button("Screen 2 - 1366x768").click();
+    });
+    await flush();
+    expect(saved()[saved().length - 1]).toMatchObject({ captureScreen: "\.\DISPLAY2", blurStrength: "standard", theme: "system" });
+    expect(button("Screen 2 - 1366x768").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("saves a stronger blur, and offers nothing weaker than standard", async () => {
+    respond({ save_preferences: (args) => ({ ...SETTINGS, preferences: (args as { preferences: object }).preferences }) });
+    await mount();
+    expect(container.textContent).not.toContain("Off");
+    expect(container.textContent).not.toContain("None");
+    await act(async () => {
+      button("Maximum").click();
+    });
+    await flush();
+    expect(saved()[saved().length - 1]).toMatchObject({ blurStrength: "maximum" });
+  });
+
+  it("warns when the chosen screen is not connected, because nothing is being captured", async () => {
+    respond({
+      get_app_settings: () => ({ ...SETTINGS, preferences: { ...SETTINGS.preferences, captureScreen: "\.\DISPLAY9" } }),
+    });
+    await mount();
+    expect(container.textContent).toContain("not connected right now, so no screenshots are being taken");
   });
 });
 

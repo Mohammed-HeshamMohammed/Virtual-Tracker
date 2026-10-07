@@ -7,6 +7,17 @@ fn default_true() -> bool {
     true
 }
 
+/// "auto": the screen the member is working on, as before.
+pub const CAPTURE_SCREEN_AUTO: &str = "auto";
+
+fn default_capture_screen() -> String {
+    CAPTURE_SCREEN_AUTO.to_string()
+}
+
+fn default_blur_strength() -> String {
+    "standard".to_string()
+}
+
 /// Every field carries its own `serde(default)`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,6 +55,14 @@ pub struct UserPreferences {
     /// by default, since most people open the app to track time, not to browse last week's
     #[serde(default)]
     pub show_insights: bool,
+    /// Which screen screenshots may be taken of: "auto" (the one the member is working on) or
+    /// the name of one connected screen. Only ever narrows what is captured.
+    #[serde(default = "default_capture_screen")]
+    pub capture_screen: String,
+    /// How strongly blurred screenshots are softened: "standard" | "strong" | "maximum".
+    /// "standard" is the floor - the member can only make it stronger.
+    #[serde(default = "default_blur_strength")]
+    pub blur_strength: String,
 }
 
 fn default_theme() -> String {
@@ -67,6 +86,8 @@ impl Default for UserPreferences {
             member_timezone: String::new(),
             layout: default_layout(),
             show_insights: false,
+            capture_screen: default_capture_screen(),
+            blur_strength: default_blur_strength(),
         }
     }
 }
@@ -140,6 +161,15 @@ mod tests {
         assert!(prefs.auto_sign_in);
         assert!(prefs.close_to_tray);
         assert!(!prefs.start_hidden);
+    }
+
+    #[test]
+    fn loads_preferences_written_before_the_screen_and_blur_choices_existed() {
+        let old = r#"{"theme":"dark","layout":"easy"}"#;
+        let prefs: UserPreferences = serde_json::from_str(old).expect("old file must still parse");
+        assert_eq!(prefs.capture_screen, "auto", "an upgrade keeps capturing the active screen");
+        assert_eq!(prefs.blur_strength, "standard");
+        assert_eq!(prefs.theme, "dark");
     }
 
     #[test]

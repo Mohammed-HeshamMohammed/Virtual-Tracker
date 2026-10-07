@@ -36,6 +36,10 @@ const MESSAGING_URL_HOSTS: &[&str] = &[
     "app.chanty.com",
 ];
 
+/// Social media: the feed is as personal as the inbox, so every page on these is blurred,
+/// not just the messages.
+const SOCIAL_URL_HOSTS: &[&str] = &["facebook.com", "fb.com", "instagram.com", "tiktok.com", "snapchat.com"];
+
 /// Conversations that live at a path inside an ordinary site, so the host alone cannot
 /// identify them.
 const MESSAGING_URL_PATHS: &[(&str, &str)] = &[
@@ -94,7 +98,7 @@ fn url_matches(url: &str) -> bool {
     };
     let host_is = |marker: &str| host == marker || host.ends_with(&format!(".{marker}"));
 
-    if MESSAGING_URL_HOSTS.iter().any(|marker| host_is(marker)) {
+    if MESSAGING_URL_HOSTS.iter().any(|marker| host_is(marker)) || SOCIAL_URL_HOSTS.iter().any(|marker| host_is(marker)) {
         return true;
     }
 
@@ -193,12 +197,23 @@ mod tests {
     }
 
     #[test]
-    fn the_rest_of_those_sites_is_not_blurred() {
-        // Only the conversation paths, not the whole site - someone's LinkedIn feed is not
-        // a private conversation.
-        assert!(!target("chrome.exe", Some("https://www.facebook.com/somepage")));
-        assert!(!target("chrome.exe", Some("https://www.instagram.com/explore/")));
+    fn social_media_is_blurred_on_every_page_not_just_the_messages() {
+        assert!(target("chrome.exe", Some("https://www.facebook.com/somepage")));
+        assert!(target("chrome.exe", Some("https://m.facebook.com/")));
+        assert!(target("chrome.exe", Some("https://www.instagram.com/explore/")));
+        assert!(target("chrome.exe", Some("https://www.instagram.com/")));
+        assert!(target("chrome.exe", Some("https://www.tiktok.com/@someone/video/1")));
+        assert!(target("chrome.exe", Some("https://www.snapchat.com/")));
+        // Whole-host matching, never a substring: a different site is not social media.
+        assert!(!target("chrome.exe", Some("https://notfacebook.com/")));
+        assert!(!target("chrome.exe", Some("https://example.com/?next=instagram.com")));
+    }
+
+    #[test]
+    fn the_rest_of_the_path_only_sites_is_not_blurred() {
+        // LinkedIn and X are blurred only for their conversations, not their feeds.
         assert!(!target("chrome.exe", Some("https://www.linkedin.com/feed/")));
+        assert!(!target("chrome.exe", Some("https://x.com/home")));
         // ...and a path that merely starts with the same letters is not it.
         assert!(!target("chrome.exe", Some("https://x.com/messagesomething")));
     }

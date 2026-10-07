@@ -73,7 +73,15 @@ export type UserPreferences = {
   layout: LayoutPreference;
   /** The week's top apps and the screenshots, in Standard/Wide/Focus. */
   showInsights: boolean;
+  /** "auto" (the screen being worked on) or one screen's id from list_capture_screens. */
+  captureScreen: string;
+  /** How strongly blurred screenshots are softened. "standard" is the floor. */
+  blurStrength: BlurStrength;
 };
+
+export type BlurStrength = "standard" | "strong" | "maximum";
+
+export type CaptureScreen = { id: string; label: string; primary: boolean };
 
 export type AppSettingsView = {
   version: string;

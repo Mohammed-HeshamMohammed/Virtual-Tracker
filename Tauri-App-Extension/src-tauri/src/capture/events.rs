@@ -195,6 +195,12 @@ impl EventBuilder {
     /// `rng.gen_range` with an inverted bound, and the backend already rejects this
     /// ordering before it can be sent, so this is defense in depth, not the primary
     /// guard.
+    /// The member's own privacy choices (which screen, how strong the blur).
+    pub fn apply_privacy_choices(&self, capture_screen: &str, blur_strength: &str) {
+        self.screen.set_target(capture_screen);
+        self.screen.set_blur_strength(blur_strength);
+    }
+
     pub fn apply_capture_policy(&self, blur_default: bool, outside_work_hours: bool, break_until_ms: i64) {
         self.blur_default.store(blur_default, Ordering::Relaxed);
         self.gate.apply(outside_work_hours, break_until_ms);
@@ -251,6 +257,8 @@ impl EventBuilder {
             // Someone stepping away is not a fault and says nothing about whether
             // capture works, so it is neither counted nor allowed to clear a run of them.
             Err(ScreenSkip::Locked) => return None,
+            // The member's own choice of screen: not a fault, so it does not count as one.
+            Err(ScreenSkip::OtherScreen) => return None,
             Err(ScreenSkip::Failed) => {
                 self.gate.note_screenshot(false);
                 return None;

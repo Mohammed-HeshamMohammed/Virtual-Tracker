@@ -418,6 +418,7 @@ pub fn run() {
             commands::app_info::set_member_timezone,
             commands::insights::get_dashboard_summary,
             commands::insights::set_private_break,
+            commands::insights::list_capture_screens,
             commands::insights::capture_status,
             commands::insights::get_my_capture_summary,
             commands::insights::list_my_exclusions,

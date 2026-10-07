@@ -219,7 +219,11 @@ impl AgentController {
     }
 
     pub fn save_preferences(&self, preferences: UserPreferences) -> Result<(), String> {
-        self.settings.preferences_store().save(&preferences)
+        self.settings.preferences_store().save(&preferences)?;
+        if let Some(tracker) = self.tracker.lock().as_ref() {
+            tracker.apply_privacy_choices(&preferences.capture_screen, &preferences.blur_strength);
+        }
+        Ok(())
     }
 
     pub fn get_profile(&self) -> ProfileInfo {

@@ -102,3 +102,9 @@ pub async fn remove_my_exclusion(state: tauri::State<'_, AppState>, id: String) 
     let controller = Arc::clone(&state.controller);
     run_blocking(move || controller.remove_own_exclusion(&id)).await
 }
+
+/// The screens a member can limit capture to.
+#[tauri::command]
+pub async fn list_capture_screens() -> Result<Vec<crate::capture::screen::ScreenInfo>, String> {
+    run_blocking(|| Ok(crate::capture::screen::list_screens())).await
+}
