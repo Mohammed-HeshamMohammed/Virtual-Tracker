@@ -12,6 +12,7 @@ import {
   openThreads,
   replyToThread,
 } from "./service.js";
+import { sendBuzz } from "./buzz.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -59,6 +60,23 @@ export async function routeMessages(req, res, url, origin) {
       const body = await readJsonBody(req);
       rejectUnknownFields(body, ["memberIds", "subject", "body"]);
       sendJson(res, origin, 201, { success: true, data: await openThreads(viewer.memberId, body) });
+    } catch (e) {
+      fail(res, origin, e);
+    }
+    return true;
+  }
+
+  if (pn === "/api/messages/buzz" && req.method === "POST") {
+    // Owner and nothing else, for the same reason as opening a thread: a buzz from "the owner"
+    // has to actually be from the owner.
+    if (!isOwnerRole(getAuthContext(req)?.roleName ?? "")) {
+      sendJson(res, origin, 403, { success: false, error: "Only the Owner can buzz someone." });
+      return true;
+    }
+    try {
+      const body = await readJsonBody(req);
+      rejectUnknownFields(body, ["memberId", "style", "message"]);
+      sendJson(res, origin, 200, { success: true, data: await sendBuzz(viewer.memberId, body) });
     } catch (e) {
       fail(res, origin, e);
     }
