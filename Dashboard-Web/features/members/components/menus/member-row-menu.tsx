@@ -1,10 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { MoreHorizontal } from "lucide-react"
+import { MoreHorizontal, Zap } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useAuth } from "@/shared/providers/app"
-import { isLimitedSelfManageRole } from "@/features/auth"
+import { isLimitedSelfManageRole, isOwnerRoleName } from "@/features/auth"
+import { BuzzModal } from "@/features/messages/components/buzz-modal"
 import { MEMBER_ENTRY_ITEMS } from "@/features/members/components/config/entry-menu-items"
 import { PORTAL_DROPDOWN_MENU_Z } from "@/features/members/config/members-config"
 import type { Member, MemberEntryAction, MemberPatchBody } from "@/features/members/models/member"
@@ -53,6 +54,7 @@ export function MemberRowMenu({
   const [manageOpen, setManageOpen] = useState(false)
   const [entryOpen, setEntryOpen] = useState(false)
   const [entryAction, setEntryAction] = useState<MemberEntryAction | null>(null)
+  const [buzzOpen, setBuzzOpen] = useState(false)
 
   const isSelf = isSameMember(member, memberId, user?.uid, user?.email ?? undefined)
   const limitedSelfManage = isSelf && isLimitedSelfManageRole(actorRole || memberRole)
@@ -69,6 +71,8 @@ export function MemberRowMenu({
   const baseTabs = [...new Set(visibleEntries.map((i) => memberEntryToTab(i.id)))]
   const allowedTabs = limitedSelfManage ? LIMITED_SELF_TABS : baseTabs
   const canOpen = visibleEntries.length > 0
+  // Only the Owner, and never at themselves.
+  const canBuzz = isOwnerRoleName(memberRole ?? "") && !isSelf
 
   return (
     <div className="relative">
@@ -114,11 +118,28 @@ export function MemberRowMenu({
                 {item.label}
               </DropdownMenuItem>
             ))}
+            {canBuzz ? (
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setMenuOpen(false)
+                  setBuzzOpen(true)
+                }}
+                className={cn(TABLE_ROW_MENU_ITEM_BASE, tableRowMenuItemClass(false, isDark))}
+              >
+                <Zap className="h-4 w-4" />
+                Buzz
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
         <span className="inline-flex h-7 w-7" />
       )}
+
+      {buzzOpen ? (
+        <BuzzModal memberId={member.id} memberName={member.name} onClose={() => setBuzzOpen(false)} />
+      ) : null}
 
       <MemberManageModal
         open={manageOpen}
