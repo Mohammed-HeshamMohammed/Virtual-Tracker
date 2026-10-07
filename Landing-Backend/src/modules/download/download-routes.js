@@ -6,14 +6,36 @@ import { getSecurityHeaders } from "../../http/security-headers.js";
 let cachedRelease = null;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
+const AGENT_TAG_RE = /^agent-v(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$/;
+
+/**
+ * The highest published agent version, not the first one GitHub lists.
+ *
+ * GitHub's release list is not in version order: it follows how the releases were created, so
+ * deleting and recreating a release (or retrying one on an existing tag) can leave an older
+ * version at the top. Taking the first match then pinned the whole update feed to 1.1.9 while
+ * 1.1.10 was already published, and the release's own verification failed on it. Ties keep
+ * GitHub's order.
+ */
 export function selectLatestAgentRelease(releases) {
   if (!Array.isArray(releases)) return null;
-  return releases.find((release) =>
-    release &&
-    release.draft !== true &&
-    release.prerelease !== true &&
-    /^agent-v\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(String(release.tag_name || "")),
-  ) ?? null;
+  let best = null;
+  let bestKey = null;
+  for (const release of releases) {
+    if (!release || release.draft === true || release.prerelease === true) continue;
+    const match = AGENT_TAG_RE.exec(String(release.tag_name || ""));
+    if (!match) continue;
+    const key = [Number(match[1]), Number(match[2]), Number(match[3])];
+    const newer =
+      !bestKey ||
+      key[0] > bestKey[0] ||
+      (key[0] === bestKey[0] && (key[1] > bestKey[1] || (key[1] === bestKey[1] && key[2] > bestKey[2])));
+    if (newer) {
+      best = release;
+      bestKey = key;
+    }
+  }
+  return best;
 }
 
 export async function getLatestRelease(repoOwner, repoName, pat) {
