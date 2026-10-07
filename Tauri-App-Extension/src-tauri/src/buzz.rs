@@ -28,6 +28,8 @@ const NUDGE_MARGIN: f64 = 16.0;
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Buzz {
     pub style: String,
+    /// Where a nudge sits on the screen: "top-right" (the default), "top-left", "bottom-right" or "bottom-left".
+    pub corner: String,
     pub message: String,
     pub from: String,
 }
@@ -52,6 +54,10 @@ pub fn parse(frame: &str) -> Option<Buzz> {
     if style != "nudge" && style != "bluescreen" {
         return None;
     }
+    let corner = match value.get("corner").and_then(|v| v.as_str()) {
+        Some(c @ ("top-right" | "top-left" | "bottom-right" | "bottom-left")) => c,
+        _ => "top-right",
+    };
     let message = clip(value.get("message").and_then(|v| v.as_str()).unwrap_or(""), MAX_MESSAGE_CHARS);
     if message.is_empty() {
         return None;
@@ -59,6 +65,7 @@ pub fn parse(frame: &str) -> Option<Buzz> {
     let from = clip(value.get("from").and_then(|v| v.as_str()).unwrap_or(""), MAX_FROM_CHARS);
     Some(Buzz {
         style: style.to_string(),
+        corner: corner.to_string(),
         message,
         from: if from.is_empty() { "Your owner".into() } else { from },
     })
@@ -111,28 +118,54 @@ fn open_window(app: &AppHandle, buzz: &Buzz) -> tauri::Result<()> {
         .minimizable(false)
         .always_on_top(true)
         .skip_taskbar(true)
-        .shadow(false)
-        .focused(true);
+        .shadow(false);
 
     if buzz.style == "bluescreen" {
-        builder.fullscreen(true).build()?;
+        // The joke screen does take focus, so any key closes it.
+        builder.focused(true).fullscreen(true).build()?;
         return Ok(());
     }
 
+    // A nudge is a pop-up on the desktop, like an antivirus notification - not a window of
+    // the app - so it must not take the keyboard from whatever the person is typing into.
     let window = builder
+        .focused(false)
         .inner_size(NUDGE_SIZE.0, NUDGE_SIZE.1)
         .transparent(true)
         .build()?;
-    // Top-right of the area the taskbar leaves free.
+    // In the corner asked for, inside the area the taskbar leaves free.
     if let Ok(Some(monitor)) = app.primary_monitor() {
         let scale = monitor.scale_factor();
         let area = monitor.work_area();
         let _ = window.set_size(LogicalSize::new(NUDGE_SIZE.0, NUDGE_SIZE.1));
-        let x = f64::from(area.position.x) + f64::from(area.size.width) - (NUDGE_SIZE.0 + NUDGE_MARGIN) * scale;
-        let y = f64::from(area.position.y) + NUDGE_MARGIN * scale;
-        let _ = window.set_position(PhysicalPosition::new(x.round(), y.round()));
+        let (x, y) = nudge_origin(
+            (f64::from(area.position.x), f64::from(area.position.y)),
+            (f64::from(area.size.width), f64::from(area.size.height)),
+            scale,
+            &buzz.corner,
+        );
+        let _ = window.set_position(PhysicalPosition::new(x, y));
     }
     Ok(())
+}
+
+/// Where the nudge's top-left corner goes, in physical pixels, for the corner asked for.
+/// `area` is the monitor's work area (position, size), which excludes the taskbar.
+fn nudge_origin(area_pos: (f64, f64), area_size: (f64, f64), scale: f64, corner: &str) -> (f64, f64) {
+    let w = NUDGE_SIZE.0 * scale;
+    let h = NUDGE_SIZE.1 * scale;
+    let margin = NUDGE_MARGIN * scale;
+    let left = area_pos.0 + margin;
+    let right = area_pos.0 + area_size.0 - w - margin;
+    let top = area_pos.1 + margin;
+    let bottom = area_pos.1 + area_size.1 - h - margin;
+    let (x, y) = match corner {
+        "top-left" => (left, top),
+        "bottom-left" => (left, bottom),
+        "bottom-right" => (right, bottom),
+        _ => (right, top),
+    };
+    (x.round(), y.round())
 }
 
 pub fn dismiss(app: &AppHandle) {
@@ -164,7 +197,12 @@ mod tests {
         let frame = r#"{"type":"buzz","style":"bluescreen","message":"Focus!","from":"Olive Owner","at":1}"#;
         assert_eq!(
             parse(frame),
-            Some(Buzz { style: "bluescreen".into(), message: "Focus!".into(), from: "Olive Owner".into() })
+            Some(Buzz {
+                style: "bluescreen".into(),
+                corner: "top-right".into(),
+                message: "Focus!".into(),
+                from: "Olive Owner".into()
+            })
         );
     }
 
@@ -185,6 +223,29 @@ mod tests {
         assert_eq!(buzz.message.chars().count(), MAX_MESSAGE_CHARS);
         assert_eq!(buzz.from.chars().count(), MAX_FROM_CHARS);
         assert_eq!(parse(r#"{"type":"buzz","style":"nudge","message":"hi"}"#).unwrap().from, "Your owner");
+    }
+
+    #[test]
+    fn the_corner_is_read_and_anything_else_means_top_right() {
+        let corner = |c: &str| {
+            parse(&format!(r#"{{"type":"buzz","style":"nudge","message":"hi","corner":"{c}"}}"#)).unwrap().corner
+        };
+        assert_eq!(corner("bottom-left"), "bottom-left");
+        assert_eq!(corner("top-left"), "top-left");
+        assert_eq!(corner("middle"), "top-right");
+    }
+
+    #[test]
+    fn each_corner_sits_inside_the_work_area_with_a_margin() {
+        // A 1920x1040 work area (taskbar excluded) at 100% scale, starting at the origin.
+        let area = ((0.0, 0.0), (1920.0, 1040.0));
+        let at = |c: &str| nudge_origin(area.0, area.1, 1.0, c);
+        assert_eq!(at("top-left"), (16.0, 16.0));
+        assert_eq!(at("top-right"), (1920.0 - 360.0 - 16.0, 16.0));
+        assert_eq!(at("bottom-left"), (16.0, 1040.0 - 120.0 - 16.0));
+        assert_eq!(at("bottom-right"), (1920.0 - 360.0 - 16.0, 1040.0 - 120.0 - 16.0));
+        // At 150% the card and its margin grow with the screen.
+        assert_eq!(nudge_origin((0.0, 0.0), (2880.0, 1560.0), 1.5, "top-right"), (2880.0 - 540.0 - 24.0, 24.0));
     }
 
     #[test]

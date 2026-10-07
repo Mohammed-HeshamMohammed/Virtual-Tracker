@@ -19,7 +19,7 @@ test("the Buzz row action needs the Owner role and is never offered on yourself"
 test("the client posts to the buzz endpoint with a style and a message", () => {
   const api = read("features/messages/api/messages-api.ts")
   assert.match(api, /apiPath\("\/api\/messages\/buzz"\)/)
-  assert.match(api, /JSON\.stringify\(\{ memberId, style, message \}\)/)
+  assert.match(api, /JSON\.stringify\(\{ memberId, style, message, corner \}\)/)
 })
 
 test("the modal offers a nudge and a blue screen, defaults the message, and says it can be closed at once", () => {

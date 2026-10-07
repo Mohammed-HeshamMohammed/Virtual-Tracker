@@ -89,13 +89,19 @@ export async function markMessageThreadRead(id: string): Promise<void> {
 }
 
 export type BuzzStyle = "nudge" | "bluescreen"
+export type BuzzCorner = "top-right" | "top-left" | "bottom-right" | "bottom-left"
 
 /** Owner only. Live-only: it fails if their tracker is not open, and nothing is queued. */
-export async function buzzMember(memberId: string, style: BuzzStyle, message: string): Promise<{ delivered: boolean }> {
+export async function buzzMember(
+  memberId: string,
+  style: BuzzStyle,
+  message: string,
+  corner: BuzzCorner = "top-right",
+): Promise<{ delivered: boolean }> {
   const res = await apiFetch(apiPath("/api/messages/buzz"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ memberId, style, message }),
+    body: JSON.stringify({ memberId, style, message, corner }),
   })
   return unwrap(res, "Failed to buzz them")
 }
