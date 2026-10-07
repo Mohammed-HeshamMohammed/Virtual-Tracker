@@ -6,6 +6,12 @@ use super::*;
 /// A break that could not be ended (offline) is retried this often, not on every tick.
 const BREAK_END_RETRY_SEC: u64 = 15;
 
+/// A session this process has never seen, last touched longer ago than this, was left
+/// behind by a run that did not get to stop it (shutdown, power cut, crash). The agent
+/// syncs every SESSION_SYNC_INTERVAL_SEC, so a session an agent just stepped away from
+/// (a quick relaunch) is far younger than this; a restarted computer is far older.
+pub(super) const STALE_SESSION_SEC: u64 = 90;
+
 impl ActivityTracker {
     /// The part of a tick that needs no network and no shared lock - crediting elapsed time
     /// and checking idle escalation.
@@ -242,18 +248,11 @@ impl ActivityTracker {
             .and_then(|v| v.as_str())
             .unwrap_or("");
         if status != "active" {
-            if status == "idle" && !state.current_session.is_empty() {
-                if state.was_active {
-                    self.emit_status("Timer idle — capture paused");
-                }
-                state.was_active = false;
-                // Nothing is credited while paused.
-                state.last_tick_at = Instant::now();
+            if status == "idle" {
+                self.handle_server_idle(state, &session);
                 return;
             }
-            if status == "idle" {
-                self.emit_status("Timer idle — capture paused");
-            } else if state.was_active {
+            if state.was_active {
                 self.emit_status("Signed in — waiting for timer");
             }
             self.end_session(state);
@@ -266,6 +265,32 @@ impl ActivityTracker {
         };
 
         let window = get_foreground_window();
+
+        if state.current_session.is_empty() && Self::left_behind_by_an_earlier_run(&session) {
+            // A restart stops everything: do not carry on counting a timer the member
+            // never started in this run.
+            log::info!("closing a session an earlier run left open ({session_id})");
+            let text = |keys: &[&str]| {
+                keys.iter()
+                    .find_map(|k| session.get(*k).and_then(|v| v.as_str()))
+                    .filter(|v| !v.is_empty())
+                    .map(str::to_string)
+            };
+            let number = |key: &str| session.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+            let task_id = text(&["taskId", "task_id"]);
+            let project_id = text(&["projectId", "project_id"]);
+            let _ = self.api.lock().post_session_action(
+                "stop",
+                task_id.as_deref(),
+                project_id.as_deref(),
+                number("activeSeconds"),
+                number("idleSeconds"),
+                None,
+                Some("stale_session_closed"),
+            );
+            self.end_session(state);
+            return;
+        }
 
         if state.current_session.as_str() != session_id {
             state.current_session = session_id.clone();
@@ -528,6 +553,17 @@ impl ActivityTracker {
                 }
             }
         }
+        // A Pause is still the member at their desk: the apps and URLs they use keep being
+        // recorded (upload_app_slice itself refuses while a Break blocks capture), but no
+        // screenshots are taken.
+        if !self.on_break.load(Ordering::SeqCst)
+            && !state.current_session.is_empty()
+            && now.duration_since(state.last_app_log_at).as_secs() >= APP_LOG_INTERVAL_SEC
+        {
+            let window = get_foreground_window();
+            self.upload_app_slice(&state.current_session, &window);
+            state.last_app_log_at = now;
+        }
         // Same carry as tick_progress - a break's seconds are counted the same way worked
         // ones are, so the remainder is owed here too rather than thrown away on every tick
         let elapsed = now.duration_since(state.last_tick_at);
@@ -555,6 +591,68 @@ impl ActivityTracker {
             );
             state.next_sync_at = now + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
         }
+    }
+
+    /// Whether the server reports the session as untouched for longer than a live agent
+    /// would leave it. Absent (an older backend) means unknown, which is not stale.
+    pub(super) fn left_behind_by_an_earlier_run(session: &serde_json::Value) -> bool {
+        session
+            .get("secondsSinceUpdate")
+            .and_then(|v| v.as_u64())
+            .is_some_and(|age| age > STALE_SESSION_SEC)
+    }
+
+    /// The server says this session is idle while this agent is NOT paused.
+    ///
+    /// The agent owns its own timer: the server's `idle` is only a record of what an agent
+    /// last told it. So nothing outside the member's own Pause/Break buttons stops the clock.
+    /// - Mid-run (the agent is tracking and did not pause): the server's state is wrong, so
+    ///   put it right instead of obeying it.
+    /// - On start (the agent has no session of its own): this is a pause an earlier run
+    ///   left behind - the machine was shut down or the app closed while paused. A restart
+    ///   stops everything, so close it rather than adopt it as a pause nobody just chose.
+    pub(super) fn handle_server_idle(&self, state: &mut TickState, session: &serde_json::Value) {
+        let text = |keys: &[&str]| {
+            keys.iter()
+                .find_map(|k| session.get(*k).and_then(|v| v.as_str()))
+                .filter(|v| !v.is_empty())
+                .map(str::to_string)
+        };
+        let number = |key: &str| session.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
+        if !state.current_session.is_empty() {
+            log::warn!("server marked this session idle but the agent is not paused - resuming it");
+            let task_id = (!state.task_id.is_empty()).then_some(state.task_id.as_str());
+            let project_id = (!state.last_project_id.is_empty()).then_some(state.last_project_id.as_str());
+            let active = state.active_baseline + state.active_elapsed;
+            let idle = state.idle_baseline + state.idle_elapsed;
+            if let Err(error) = self.api.lock().post_session_action(
+                "resume",
+                task_id,
+                project_id,
+                active,
+                idle,
+                None,
+                Some("agent_returned"),
+            ) {
+                log::warn!("could not undo the server's idle state: {error}");
+            }
+            // Nothing was credited for the tick the server had it wrong; count from now.
+            state.last_tick_at = Instant::now();
+            return;
+        }
+        let task_id = text(&["taskId", "task_id"]);
+        let project_id = text(&["projectId", "project_id"]);
+        log::info!("closing a pause left behind by an earlier run");
+        let _ = self.api.lock().post_session_action(
+            "stop",
+            task_id.as_deref(),
+            project_id.as_deref(),
+            number("activeSeconds"),
+            number("idleSeconds"),
+            None,
+            Some("agent_quit"),
+        );
+        self.end_session(state);
     }
 
     /// Attempts to resume a session the server closed as abandoned, carrying the local

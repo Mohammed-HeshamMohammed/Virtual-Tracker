@@ -4,6 +4,7 @@ mod capture;
 mod client;
 mod config;
 mod constants;
+mod power_events;
 mod prefs;
 mod queue;
 mod tray_menu;
@@ -316,6 +317,10 @@ pub fn run() {
 
     // Taken before `.setup()` moves `controller` wholesale into its closure.
     let exit_controller = Arc::clone(&controller);
+    // Sleep and shutdown do not ask this process to exit, so they are heard separately and
+    // close the session before the computer goes away.
+    let power_controller = Arc::clone(&controller);
+    power_events::watch(Arc::new(move |reason| power_controller.stop_for_power(reason)));
     // Same reason: the global-shortcut handler below is registered as part of the plugin
     // chain, before `.setup()` runs.
     let shortcut_controller = Arc::clone(&controller);
@@ -426,6 +431,8 @@ pub fn run() {
             commands::work::pause_session,
             commands::work::resume_session,
             commands::work::is_session_paused,
+            commands::work::start_break,
+            commands::work::is_session_on_break,
         ])
         .setup(move |app| {
             // Registration is separate from the handler wired into the plugin above - the

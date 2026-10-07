@@ -15,6 +15,8 @@ type EasyViewProps = {
   taskRequired: boolean;
   tracking: boolean;
   paused: boolean;
+  /** The timer is stopped for a Break rather than a Pause. */
+  onBreak?: boolean;
   busy: boolean;
   /** Time worked today, live. */
   seconds: number;
@@ -31,6 +33,7 @@ type EasyViewProps = {
   wallDate: string;
   onStart: () => void;
   onPause: () => void;
+  onStartBreak?: () => void;
   onResume: () => void;
   onStop: () => void;
   onOpenSettings: () => void;
@@ -62,7 +65,7 @@ export function EasyView(props: EasyViewProps) {
   } = props;
   const sessionOpen = tracking || paused;
 
-  const status = tracking ? "Tracking" : paused ? "On a break" : "Not tracking";
+  const status = tracking ? "Tracking" : paused ? (props.onBreak ? "On a break" : "Paused") : "Not tracking";
   const showTaskPicker = tasks.length > 0 || taskRequired;
   const limitLeft =
     props.dailyLimitHours > 0 && props.workedTodaySeconds != null
@@ -158,7 +161,7 @@ export function EasyView(props: EasyViewProps) {
       <div className="easy-actions">
         {paused ? (
           <>
-            <button data-tip="Resume the timer after your break" type="button" className="easy-btn easy-btn-primary" disabled={busy} onClick={props.onResume}>
+            <button data-tip={props.onBreak ? "Come back from your break and start the timer again" : "Start the timer again - you are back to work"} type="button" className="easy-btn easy-btn-primary" disabled={busy} onClick={props.onResume}>
               Resume
             </button>
             <button data-tip="Stop the timer and save your time" type="button" className="easy-btn easy-btn-danger" disabled={busy} onClick={props.onStop}>
@@ -167,9 +170,14 @@ export function EasyView(props: EasyViewProps) {
           </>
         ) : tracking ? (
           <>
-            <button data-tip="Pause the timer for a break" type="button" className="easy-btn easy-btn-secondary" disabled={busy} onClick={props.onPause}>
+            <button data-tip="Pause: you are still at your desk but not working on this. The timer stops and it only starts again when you resume" type="button" className="easy-btn easy-btn-secondary" disabled={busy} onClick={props.onPause}>
               Pause
             </button>
+            {props.onStartBreak ? (
+              <button data-tip="Break: you are away from your desk. The timer stops and nothing is captured" type="button" className="easy-btn easy-btn-secondary" disabled={busy} onClick={props.onStartBreak}>
+                Break
+              </button>
+            ) : null}
             <button data-tip="Stop the timer and save your time" type="button" className="easy-btn easy-btn-danger" disabled={busy} onClick={props.onStop}>
               Stop
             </button>

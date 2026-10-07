@@ -1,6 +1,8 @@
 type SessionControlsProps = {
   tracking: boolean;
   paused: boolean;
+  /** The timer is stopped for a Break rather than a Pause. */
+  onBreak?: boolean;
   busy: boolean;
   /** Whether a session could start right now - a selection is in place and
    *  no limit has been reached. Only consulted while nothing is running. */
@@ -9,6 +11,8 @@ type SessionControlsProps = {
   blockedReason?: string;
   onStart: () => void;
   onPause: () => void;
+  /** Away from everything; offered next to Stop while tracking. */
+  onStartBreak?: () => void;
   onResume: () => void;
   onStop: () => void;
 };
@@ -22,16 +26,23 @@ type SessionControlsProps = {
 export function SessionControls({
   tracking,
   paused,
+  onBreak = false,
   busy,
   canStart,
   blockedReason,
   onStart,
   onPause,
+  onStartBreak,
   onResume,
   onStop,
 }: SessionControlsProps) {
   const state = tracking ? "tracking" : paused ? "paused" : "idle";
   const label = tracking ? "Pause tracking" : paused ? "Resume tracking" : "Start tracking";
+  const hint = tracking
+    ? "Pause tracking - you are still at your desk"
+    : paused && onBreak
+      ? "Resume tracking - back from your break"
+      : label;
   const disabled = busy || (state === "idle" && !canStart);
 
   return (
@@ -40,7 +51,7 @@ export function SessionControls({
         type="button"
         className={`session-toggle is-${state}`}
         aria-label={label}
-        title={state === "idle" && !canStart && blockedReason ? blockedReason : label}
+        title={state === "idle" && !canStart && blockedReason ? blockedReason : hint}
         disabled={disabled}
         onClick={tracking ? onPause : paused ? onResume : onStart}
       >
@@ -54,6 +65,20 @@ export function SessionControls({
           </svg>
         )}
       </button>
+      {tracking && onStartBreak ? (
+        <button
+          type="button"
+          className="session-break"
+          aria-label="Take a break - away from your desk"
+          title="Take a break - away from your desk. The timer stops and nothing is captured"
+          disabled={busy}
+          onClick={onStartBreak}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 8h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8Zm12 1h2a2 2 0 0 1 0 4h-2V9ZM7 3h2v3H7V3Zm4 0h2v3h-2V3Z" />
+          </svg>
+        </button>
+      ) : null}
       {tracking || paused ? (
         <button
           type="button"

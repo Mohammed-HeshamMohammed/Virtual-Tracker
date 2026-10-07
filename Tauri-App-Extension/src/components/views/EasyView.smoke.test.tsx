@@ -30,6 +30,7 @@ const base = {
   taskRequired: true,
   tracking: false,
   paused: false,
+  onBreak: false,
   busy: false,
   seconds: 3725,
   projectBudget: null as ProjectBudgetStatus | null,
@@ -43,6 +44,7 @@ const base = {
   wallDate: "Tue, Sep 9",
   onStart: noop,
   onPause: noop,
+  onStartBreak: undefined as (() => void) | undefined,
   onResume: noop,
   onStop: noop,
   onOpenSettings: noop,
@@ -69,10 +71,18 @@ describe("EasyView", () => {
     expect(tracking).toContain("Stop");
     expect(tracking).not.toContain(">Start<");
 
-    const paused = render({ paused: true });
+    const paused = render({ paused: true, onBreak: true });
     expect(paused).toContain("On a break");
     expect(paused).toContain("Resume");
     expect(paused).toContain("Stop");
+  });
+
+  it("says Paused, not On a break, for a plain pause, and offers a separate Break while tracking", () => {
+    expect(render({ paused: true })).toContain("Paused");
+    expect(render({ paused: true })).not.toContain("On a break");
+    const tracking = render({ tracking: true, onStartBreak: () => {} });
+    expect(tracking).toContain(">Pause<");
+    expect(tracking).toContain(">Break<");
   });
 
   it("locks the project and task pickers while a session is open, and says why", () => {

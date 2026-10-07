@@ -242,6 +242,9 @@ function MainApp() {
   const [newTaskError, setNewTaskError] = useState<string | null>(null);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [paused, setPaused] = useState(false);
+  // The timer is stopped for a Break (away from everything) rather than a Pause (still at
+  // the desk). Only meaningful while `paused`.
+  const [onBreak, setOnBreak] = useState(false);
   const [taskTracking, setTaskTracking] = useState<TaskTimeTracking | null>(null);
   const [liveActiveSeconds, setLiveActiveSeconds] = useState(0);
   const [liveWorkedTodaySeconds, setLiveWorkedTodaySeconds] = useState(0);
@@ -689,19 +692,21 @@ function MainApp() {
   const refreshSeqRef = useRef(0);
   const refresh = useCallback(async () => {
     const seq = ++refreshSeqRef.current;
-    const [nextProfile, nextLink, nextSession, nextConnection, nextNotice, nextPaused] = await Promise.all([
+    const [nextProfile, nextLink, nextSession, nextConnection, nextNotice, nextPaused, nextOnBreak] = await Promise.all([
       invoke<ProfileInfo>("get_profile"),
       invoke<LinkStatus>("get_link_status"),
       invoke<SessionInfo>("get_session").catch(() => null),
       invoke<ConnectionState>("get_connection_state").catch<ConnectionState>(() => "connected"),
       invoke<MonitoringNoticeView | null>("get_monitoring_notice").catch(() => undefined),
       invoke<boolean>("is_session_paused").catch(() => false),
+      invoke<boolean>("is_session_on_break").catch(() => false),
     ]);
     if (seq !== refreshSeqRef.current) return;
     setProfile(nextProfile);
     setLink(nextLink);
     setConnection(nextConnection);
     setPaused(nextPaused);
+    setOnBreak(nextPaused && nextOnBreak);
     if (nextSession) {
       setSession(nextSession);
       if (nextSession.taskId) {
@@ -1785,6 +1790,7 @@ function MainApp() {
         toast.message("Tracking stopped");
       }
       setPaused(false);
+      setOnBreak(false);
       setStopNoteOpen(false);
       setStopNoteDraft("");
       if (!silent && liveWorkedTodaySeconds >= RECAP_MIN_SECONDS) {
@@ -1885,11 +1891,38 @@ function MainApp() {
         toast.error(msg);
       } else {
         setPaused(true);
-        toast.message("On a break — time is now counting as idle");
+        setOnBreak(false);
+        toast.message("Paused — the timer is stopped and this time counts as idle. Resume when you are back to work");
       }
       await refresh();
     } catch {
       const msg = "Could not pause session";
+      setActionError(msg);
+      toast.error(msg);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // A Break is time away from all of it: the timer stops, nothing is captured, and the
+  // project's break time (if it has one) brings the timer back by itself.
+  const handleStartBreak = async () => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const result = await invoke<ActionResult>("start_break");
+      if (!result.success) {
+        const msg = result.error || "Could not start a break";
+        setActionError(msg);
+        toast.error(msg);
+      } else {
+        setPaused(true);
+        setOnBreak(true);
+        toast.message("On a break — nothing is captured and the timer is stopped");
+      }
+      await refresh();
+    } catch {
+      const msg = "Could not start a break";
       setActionError(msg);
       toast.error(msg);
     } finally {
@@ -1908,6 +1941,7 @@ function MainApp() {
         toast.error(msg);
       } else {
         setPaused(false);
+        setOnBreak(false);
         toast.success("Back to tracking");
       }
       await refresh();
@@ -2499,6 +2533,7 @@ function MainApp() {
             taskRequired={taskRequired}
             tracking={tracking}
             paused={paused}
+            onBreak={onBreak}
             busy={busy}
             seconds={liveActiveSeconds}
             projectBudget={projectBudget}
@@ -2512,6 +2547,7 @@ function MainApp() {
             wallDate={fmtWallDate(wallClockNow, projectTimezone || undefined)}
             onStart={() => void handleStart()}
             onPause={() => void handlePause()}
+            onStartBreak={() => void handleStartBreak()}
             onResume={() => void handleResume()}
             onStop={handleStopClick}
             onOpenSettings={() => setView("settings")}
@@ -2586,6 +2622,7 @@ function MainApp() {
               <SidebarActions
                 showSessionButtons={!isFocus}
                 paused={paused}
+                onBreak={onBreak}
                 tracking={tracking}
                 busy={busy}
                 taskRequired={taskRequired}
@@ -2594,6 +2631,7 @@ function MainApp() {
                 taskTracking={taskTracking}
                 onResume={() => void handleResume()}
                 onPause={() => void handlePause()}
+                onStartBreak={() => void handleStartBreak()}
                 onStopClick={handleStopClick}
                 onStart={() => void handleStart()}
                 onOpenDashboard={() => void invoke("open_web_app")}
@@ -2763,7 +2801,7 @@ function MainApp() {
                     {fmtClock(timerViewMode === "task" ? liveTaskActiveSeconds : liveActiveSeconds)}
                   </span>
                   <span className="page-clock-label">
-                    {tracking ? "Elapsed · Tracking" : paused ? "On a break" : "Not tracking"}
+                    {tracking ? "Elapsed · Tracking" : paused ? (onBreak ? "On a break" : "Paused") : "Not tracking"}
                     {timerViewMode === "task" ? " · whole task" : ""}
                   </span>
                   {!taskLessSession && taskTracking ? (
@@ -2789,11 +2827,13 @@ function MainApp() {
                     <SessionControls
                       tracking={tracking}
                       paused={paused}
+                      onBreak={onBreak}
                       busy={busy}
                       canStart={!startBlockedReason}
                       blockedReason={startBlockedReason}
                       onStart={() => void handleStart()}
                       onPause={() => void handlePause()}
+                      onStartBreak={() => void handleStartBreak()}
                       onResume={() => void handleResume()}
                       onStop={handleStopClick}
                     />

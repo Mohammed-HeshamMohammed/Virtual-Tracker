@@ -44,6 +44,11 @@ pub struct ActivityTracker {
     stop: Arc<AtomicBool>,
     /// Set by `pause()`/cleared by `resume()` or `note_stop_requested()`.
     paused: Arc<AtomicBool>,
+    /// The stop is a Break (away from everything: nothing is captured and the project's
+    /// break time ends it) rather than a Pause (still at the desk: apps and URLs keep
+    /// being recorded, screenshots stop, only the member ends it). Only meaningful while
+    /// `paused`.
+    on_break: Arc<AtomicBool>,
     /// Set by `note_stop_requested()` (called from `AppController::stop_session`, which
     /// posts "stop" straight to the API without going through the tick loop).
     expect_stop: Arc<AtomicBool>,
@@ -182,6 +187,7 @@ impl ActivityTracker {
             on_status,
             stop: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
+            on_break: Arc::new(AtomicBool::new(false)),
             expect_stop: Arc::new(AtomicBool::new(false)),
             session_id: Arc::new(Mutex::new(None)),
             task_progress: Arc::new(Mutex::new((None, 0, 0))),
@@ -220,17 +226,29 @@ impl ActivityTracker {
         self.breaks.clamp_minutes(minutes)
     }
 
-    /// A private break is time off the clock too. The gate is already set by the time
-    /// this runs, so the first paused tick finds the break still running.
+    /// A Break: the member is away from all of it. The timer stops, nothing is captured
+    /// and the project's break time (if it has one) brings the timer back. The gate is
+    /// already set by the time this runs, so the first paused tick finds the break still
+    /// running.
     pub fn pause_for_private_break(&self) -> Result<(), String> {
         if self.session_id.lock().is_none() {
             return Ok(());
         }
         if !self.is_paused() {
-            self.pause()?;
+            self.pause_with("member_break", true)?;
+        } else if !self.is_on_break() {
+            // Already Paused at the desk and now going away: the same stopped timer,
+            // upgraded - it gains the capture block and the break time.
+            self.on_break.store(true, Ordering::SeqCst);
+            self.breaks.begin();
+            self.emit_status("Timer paused — on a break");
         }
         self.breaks.mark_private();
         Ok(())
+    }
+
+    pub fn is_on_break(&self) -> bool {
+        self.is_paused() && self.on_break.load(Ordering::SeqCst)
     }
 
     pub fn start(self: &Arc<Self>) {
@@ -260,12 +278,18 @@ impl ActivityTracker {
     pub fn note_stop_requested(&self) {
         self.expect_stop.store(true, Ordering::SeqCst);
         self.paused.store(false, Ordering::SeqCst);
+        self.on_break.store(false, Ordering::SeqCst);
         self.breaks.end();
     }
 
-    /// The break button: marks the session idle server-side, preserving its accumulated
-    /// active/idle totals (never resets to 0 the way clicking Stop then Start again used
+    /// Pause: the member is still at the desk, just not on this work. Marks the session
+    /// idle server-side, preserving its accumulated active/idle totals (never resets to 0
+    /// the way clicking Stop then Start again used to). Never ends by itself.
     pub fn pause(&self) -> Result<(), String> {
+        self.pause_with("member_pause", false)
+    }
+
+    fn pause_with(&self, reason: &str, is_break: bool) -> Result<(), String> {
         let (task_id, active_seconds, idle_seconds) = self.task_progress.lock().clone();
         let task_id = task_id.filter(|id| !id.is_empty());
         let project_id = task_id.is_none().then(|| self.last_project_id.lock().clone()).filter(|id| !id.is_empty());
@@ -276,11 +300,17 @@ impl ActivityTracker {
             active_seconds,
             idle_seconds,
             None,
-            Some("member_pause"),
+            Some(reason),
         )?;
         self.paused.store(true, Ordering::SeqCst);
-        self.breaks.begin();
-        self.emit_status("Timer paused — on a break");
+        self.on_break.store(is_break, Ordering::SeqCst);
+        if is_break {
+            // Only a Break has a clock to run out; a Pause is ended by the member alone.
+            self.breaks.begin();
+            self.emit_status("Timer paused — on a break");
+        } else {
+            self.emit_status("Timer paused");
+        }
         Ok(())
     }
 
@@ -299,6 +329,7 @@ impl ActivityTracker {
             Some("member_resume"),
         )?;
         self.paused.store(false, Ordering::SeqCst);
+        self.on_break.store(false, Ordering::SeqCst);
         self.breaks.end();
         self.emit_status("Task session active");
         Ok(())

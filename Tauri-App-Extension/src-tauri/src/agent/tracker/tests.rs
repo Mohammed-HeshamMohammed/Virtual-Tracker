@@ -102,11 +102,13 @@ fn session_test_server(session_body: &'static str) -> String {
     })
 }
 
-// C1: the server says this session is paused - historically the dashboard, on a single
-// "agent offline" reading.
+// The agent owns its own timer. A server-side "idle" that this agent did not ask for (it
+// used to come from the dashboard, on a single "agent offline" reading) must not stop the
+// clock: the agent undoes it and carries on, keeping the session and its totals.
 #[test]
-fn a_server_pause_keeps_the_session_and_its_totals() {
-    let tracker = test_tracker(session_test_server(IDLE_SESSION_WITH_TASK));
+fn a_server_side_pause_the_agent_did_not_ask_for_is_undone_not_obeyed() {
+    let (url, bodies) = body_recording_server(IDLE_SESSION_WITH_TASK);
+    let tracker = test_tracker(url);
     let mut state = TickState::new();
     state.was_active = true;
     state.current_session = "sess-1".to_string();
@@ -117,52 +119,99 @@ fn a_server_pause_keeps_the_session_and_its_totals() {
 
     tracker.tick(&mut state);
 
-    assert!(!state.was_active, "paused: nothing is being credited");
+    assert!(state.was_active, "still counting: the server does not decide to pause this agent");
     assert_eq!(state.current_session, "sess-1", "the session is kept");
-    assert_eq!(state.task_id, "task-1", "and its task");
     assert_eq!(state.active_baseline, 100, "and its baseline");
-    assert_eq!(state.active_elapsed, 40, "and the time already worked - not thrown away");
+    assert_eq!(state.active_elapsed, 40, "and the time already worked");
+    let bodies = bodies.lock();
+    assert!(
+        bodies.iter().any(|b| b.contains(r#""action":"resume""#) && b.contains("agent_returned")),
+        "the wrong state is put right on the server: {bodies:?}"
+    );
+}
+
+// A restart stops everything: a pause an earlier run left behind is closed, not adopted.
+#[test]
+fn a_pause_left_behind_by_an_earlier_run_is_closed_on_start() {
+    let (url, bodies) = body_recording_server(IDLE_SESSION_WITH_TASK);
+    let tracker = test_tracker(url);
+    let mut state = TickState::new();
+
+    tracker.tick(&mut state);
+
+    assert!(state.current_session.is_empty(), "nothing is adopted");
+    assert!(!state.was_active);
+    let bodies = bodies.lock();
+    assert!(
+        bodies.iter().any(|b| b.contains(r#""action":"stop""#) && b.contains("agent_quit")),
+        "{bodies:?}"
+    );
+}
+
+// ...and so is a session that was still running when the computer went away.
+#[test]
+fn a_running_session_left_open_by_a_shutdown_is_closed_not_carried_on() {
+    let stale = r#"{"data": {"id": "sess-1", "status": "active", "taskId": "task-1", "projectId": "proj-1", "activeSeconds": 500, "idleSeconds": 5, "secondsSinceUpdate": 4000}}"#;
+    let (url, bodies) = body_recording_server(stale);
+    let tracker = test_tracker(url);
+    let mut state = TickState::new();
+
+    tracker.tick(&mut state);
+
+    assert!(state.current_session.is_empty(), "a session the member never started in this run is not adopted");
+    let bodies = bodies.lock();
+    assert!(
+        bodies.iter().any(|b| b.contains(r#""action":"stop""#) && b.contains("stale_session_closed") && b.contains("500")),
+        "stopped with its own totals: {bodies:?}"
+    );
 }
 
 #[test]
-fn resuming_after_a_server_pause_carries_on_and_credits_none_of_the_pause() {
-    let paused = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let paused_in_server = std::sync::Arc::clone(&paused);
+fn a_session_a_live_agent_just_touched_is_adopted_as_before() {
+    let fresh = r#"{"data": {"id": "sess-1", "status": "active", "taskId": "task-1", "projectId": "proj-1", "activeSeconds": 0, "idleSeconds": 0, "secondsSinceUpdate": 12}}"#;
+    let (url, _bodies) = body_recording_server(fresh);
+    let tracker = test_tracker(url);
+    let mut state = TickState::new();
+
+    tracker.tick(&mut state);
+
+    assert_eq!(state.current_session, "sess-1");
+    assert!(state.was_active);
+}
+
+#[test]
+fn only_a_session_past_the_stale_threshold_counts_as_left_behind() {
+    let age = |seconds: u64| serde_json::json!({ "secondsSinceUpdate": seconds });
+    assert!(!ActivityTracker::left_behind_by_an_earlier_run(&age(super::tick::STALE_SESSION_SEC)));
+    assert!(ActivityTracker::left_behind_by_an_earlier_run(&age(super::tick::STALE_SESSION_SEC + 1)));
+    assert!(
+        !ActivityTracker::left_behind_by_an_earlier_run(&serde_json::json!({})),
+        "an older backend does not say, and unknown is not stale"
+    );
+}
+
+fn body_recording_server(session_body: &'static str) -> (String, std::sync::Arc<Mutex<Vec<String>>>) {
+    let bodies = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+    let seen = std::sync::Arc::clone(&bodies);
     let url = fake_server(move |request| {
         let path = request.url().split('?').next().unwrap_or("").to_string();
         match (request.method(), path.as_str()) {
-            (Method::Get, "/api/activity/session") => {
-                let body = if paused_in_server.load(std::sync::atomic::Ordering::SeqCst) {
-                    IDLE_SESSION_WITH_TASK
-                } else {
-                    ACTIVE_SESSION_WITH_TASK
-                };
-                (200, body.to_string())
+            (Method::Get, "/api/activity/session") => (200, session_body.to_string()),
+            (Method::Get, p) if p.starts_with("/api/tasks/") && p.ends_with("/time-tracking") => (
+                200,
+                r#"{"data": {"activeSeconds": 0, "idleSeconds": 0, "disableIdleTime": false, "idleTimeSeconds": 600}}"#.to_string(),
+            ),
+            (Method::Post, "/api/activity/session") => {
+                let mut body = String::new();
+                let _ = request.as_reader().read_to_string(&mut body);
+                seen.lock().push(body);
+                (200, r#"{"data": {"id": "sess-1", "status": "stopped"}}"#.to_string())
             }
             (Method::Post, "/api/activity/events") => (200, r#"{"data": {"inserted": 1}}"#.to_string()),
             _ => (404, "{}".to_string()),
         }
     });
-    let tracker = test_tracker(url);
-    let mut state = TickState::new();
-    state.was_active = true;
-    state.current_session = "sess-1".to_string();
-    state.task_id = "task-1".to_string();
-    state.idle_settings_stale = false;
-    state.active_baseline = 100;
-    state.active_elapsed = 40;
-
-    tracker.tick(&mut state); // paused
-    thread::sleep(Duration::from_millis(1_200)); // time that is not work
-
-    paused.store(false, std::sync::atomic::Ordering::SeqCst);
-    state.ticks_since_session_fetch = super::SESSION_FETCH_EVERY_N_TICKS; // due to poll
-    tracker.tick(&mut state); // resumed
-
-    assert!(state.was_active, "counting has resumed");
-    assert_eq!(state.current_session, "sess-1", "on the same session");
-    assert_eq!(state.active_baseline, 100, "no re-baseline for the same session and task");
-    assert_eq!(state.active_elapsed, 40, "the 1.2s spent paused is not credited as work");
+    (url, bodies)
 }
 
 #[test]
@@ -738,7 +787,8 @@ fn paused_tracker(api_url: String, limit: Option<u64>) -> (ActivityTracker, Tick
         Some(seconds) => tracker.breaks.set_limit(false, seconds),
         None => tracker.breaks.set_limit(true, 600),
     }
-    tracker.pause().expect("pause succeeds against the fake server");
+    // A Break is the only stop with a clock to run out; a Pause is covered below.
+    tracker.pause_with("member_break", true).expect("break succeeds against the fake server");
     let mut state = TickState::new();
     state.next_sync_at = Instant::now() + Duration::from_secs(3600);
     (tracker, state)
@@ -791,16 +841,22 @@ fn a_private_break_pauses_the_timer_only_when_a_session_is_open() {
 #[test]
 fn a_private_break_keeps_the_timer_paused_while_it_runs_and_resumes_when_it_ends() {
     let (url, actions) = action_recording_server(false);
-    let (tracker, mut state) = paused_tracker(url, Some(3600));
-    tracker.breaks.mark_private();
-
+    let tracker = test_tracker(url);
+    *tracker.session_id.lock() = Some("sess-1".into());
+    tracker.breaks.set_limit(false, 3600);
     tracker.gate().set_break(crate::capture::capture_gate::now_plus_minutes_ms(5));
+    tracker.pause_for_private_break().expect("pauses");
+    let mut state = TickState::new();
+    state.next_sync_at = Instant::now() + Duration::from_secs(3600);
+
     tracker.tick_paused(&mut state);
     assert!(tracker.is_paused(), "still on the private break");
+    assert!(tracker.is_on_break());
 
     tracker.gate().set_break(0);
     tracker.tick_paused(&mut state);
     assert!(!tracker.is_paused(), "ending the private break brings the timer back");
+    assert!(!tracker.is_on_break());
     assert_eq!(resumes(&actions), 1);
 }
 
@@ -838,4 +894,67 @@ fn stopping_ends_the_break_bookkeeping_too() {
     tracker.note_stop_requested();
 
     assert!(!tracker.breaks.is_over(false), "no break is running, so none can be over");
+}
+
+// Pause: still at the desk. It stops the timer, is never ended by the clock, and is not a
+// break - so the apps and URLs the member uses keep being recorded (screenshots do not).
+#[test]
+fn a_plain_pause_never_ends_by_itself_however_long_it_runs() {
+    let (url, actions) = action_recording_server(false);
+    let tracker = test_tracker(url);
+    *tracker.session_id.lock() = Some("sess-1".into());
+    tracker.breaks.set_limit(false, 60);
+    tracker.pause().expect("pauses");
+    let mut state = TickState::new();
+    state.next_sync_at = Instant::now() + Duration::from_secs(3600);
+
+    assert!(tracker.is_paused());
+    assert!(!tracker.is_on_break(), "a Pause is not a Break");
+    // Only a Break starts the clock, so there is nothing for it to run out.
+    assert!(!tracker.breaks.is_over(false));
+    tracker.tick_paused(&mut state);
+
+    assert!(tracker.is_paused(), "only the member's Resume ends a Pause");
+    assert_eq!(resumes(&actions), 0);
+}
+
+#[test]
+fn pause_and_break_tell_the_server_apart() {
+    let (url, bodies) = body_recording_server(ACTIVE_SESSION_WITH_TASK);
+    let tracker = test_tracker(url);
+    *tracker.session_id.lock() = Some("sess-1".into());
+
+    tracker.pause().expect("pauses");
+    tracker.resume().expect("resumes");
+    tracker.pause_for_private_break().expect("breaks");
+
+    let bodies = bodies.lock();
+    assert!(bodies.iter().any(|b| b.contains("member_pause")), "{bodies:?}");
+    assert!(bodies.iter().any(|b| b.contains("member_break")), "{bodies:?}");
+}
+
+#[test]
+fn going_on_a_break_from_a_pause_upgrades_it_without_a_second_pause() {
+    let (url, bodies) = body_recording_server(ACTIVE_SESSION_WITH_TASK);
+    let tracker = test_tracker(url);
+    *tracker.session_id.lock() = Some("sess-1".into());
+    tracker.pause().expect("pauses");
+    assert!(!tracker.is_on_break());
+    let before = bodies.lock().len();
+
+    tracker.pause_for_private_break().expect("upgrades");
+
+    assert!(tracker.is_on_break(), "now away: capture is blocked and the break time applies");
+    assert_eq!(bodies.lock().len(), before, "the timer was already stopped, so nothing more is sent");
+}
+
+#[test]
+fn resuming_clears_both_kinds_of_stop() {
+    let (url, _bodies) = body_recording_server(ACTIVE_SESSION_WITH_TASK);
+    let tracker = test_tracker(url);
+    *tracker.session_id.lock() = Some("sess-1".into());
+    tracker.pause_for_private_break().expect("breaks");
+    tracker.resume().expect("resumes");
+    assert!(!tracker.is_paused());
+    assert!(!tracker.is_on_break());
 }

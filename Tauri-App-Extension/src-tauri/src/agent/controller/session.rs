@@ -186,7 +186,31 @@ impl AgentController {
         }
     }
 
+    /// The Break button: away from everything. Stops the timer and blocks capture; the
+    /// project's break time (or the member's Resume) ends it. The length asked for is
+    /// clamped to the project's break time, and is only a ceiling when the project has none.
+    pub fn start_break(&self) -> ActionResult {
+        const NO_LIMIT_CEILING_MINUTES: u32 = 8 * 60;
+        if self.tracker.lock().as_ref().is_none() {
+            return ActionResult { success: false, error: Some("No active session".into()), session: None };
+        }
+        match self.set_private_break(Some(NO_LIMIT_CEILING_MINUTES), "Break") {
+            Ok(_) => ActionResult { success: true, error: None, session: None },
+            Err(error) => ActionResult { success: false, error: Some(error), session: None },
+        }
+    }
+
+    pub fn is_session_on_break(&self) -> bool {
+        self.tracker.lock().as_ref().is_some_and(|tracker| tracker.is_on_break())
+    }
+
     pub fn resume_session(&self) -> ActionResult {
+        // A Break also blocks capture; ending it is what lifts that, so it goes first.
+        if self.is_session_on_break() {
+            if let Err(error) = self.set_private_break(None, "") {
+                log::warn!("could not end the break's capture block: {error}");
+            }
+        }
         let tracker = self.tracker.lock();
         let Some(tracker) = tracker.as_ref() else {
             return ActionResult { success: false, error: Some("No active session".into()), session: None };

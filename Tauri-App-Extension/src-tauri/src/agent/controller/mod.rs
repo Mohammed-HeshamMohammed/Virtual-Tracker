@@ -124,6 +124,17 @@ impl AgentController {
         );
     }
 
+    /// The computer is going to sleep or shutting down: close the session now, with its
+    /// real totals, so nothing keeps counting while the machine is off. The tracker is
+    /// torn down the same way a stop is; the member starts a fresh one when they are back.
+    pub fn stop_for_power(&self, reason: &str) {
+        if let Some(tracker) = self.tracker.lock().as_ref() {
+            // Clears Pause/Break so the screen after waking does not claim one.
+            tracker.note_stop_requested();
+        }
+        self.flush_and_stop_tracker(reason);
+    }
+
     pub fn stop(&self) {
         self.link_flow.stop();
         self.flush_and_stop_tracker("quit");
@@ -137,6 +148,8 @@ impl AgentController {
             "quit" => "agent_quit",
             "sign-out" => "agent_signout",
             "re-link" => "agent_relink",
+            "suspend" => "system_suspend",
+            "shutdown" => "system_shutdown",
             _ => "unspecified",
         }
     }

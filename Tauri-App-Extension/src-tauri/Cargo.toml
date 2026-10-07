@@ -96,5 +96,8 @@ windows = { version = "0.58", features = [
   # (capture/uia_url.rs) - replaces the per-tick PowerShell subprocess.
   "Win32_UI_Accessibility",
   "Win32_System_Com",
+  # The hidden window that hears sleep and shutdown (power_events.rs).
+  "Win32_System_LibraryLoader",
+  "Win32_Graphics_Gdi",
   "Win32_System_Variant",
 ] }

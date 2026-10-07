@@ -176,6 +176,18 @@ pub async fn resume_session(state: tauri::State<'_, AppState>) -> Result<ActionR
 }
 
 #[tauri::command]
+pub async fn start_break(state: tauri::State<'_, AppState>) -> Result<ActionResult, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.start_break()).await)
+}
+
+#[tauri::command]
+pub async fn is_session_on_break(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.is_session_on_break()).await)
+}
+
+#[tauri::command]
 pub async fn is_session_paused(state: tauri::State<'_, AppState>) -> Result<bool, String> {
     let controller = Arc::clone(&state.controller);
     Ok(run_blocking(move || controller.is_session_paused()).await)
