@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { X } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
-import { buzzMember, type BuzzStyle } from "@/features/messages/api/messages-api"
+import { buzzMember, type BuzzCorner, type BuzzStyle } from "@/features/messages/api/messages-api"
 
 export const BUZZ_DEFAULT_MESSAGE = "Dude. Focus on work."
 const MAX_MESSAGE = 140
@@ -11,6 +11,13 @@ const MAX_MESSAGE = 140
 const STYLES: { value: BuzzStyle; label: string; hint: string }[] = [
   { value: "nudge", label: "Nudge", hint: "A small card that pops up in the corner of their screen." },
   { value: "bluescreen", label: "Blue screen", hint: "A joke blue screen with your message. They can close it at once." },
+]
+
+const CORNERS: { value: BuzzCorner; label: string }[] = [
+  { value: "top-left", label: "Top left" },
+  { value: "top-right", label: "Top right" },
+  { value: "bottom-left", label: "Bottom left" },
+  { value: "bottom-right", label: "Bottom right" },
 ]
 
 /**
@@ -27,6 +34,7 @@ export function BuzzModal({
   onClose: () => void
 }) {
   const [style, setStyle] = useState<BuzzStyle>("nudge")
+  const [corner, setCorner] = useState<BuzzCorner>("top-right")
   const [message, setMessage] = useState(BUZZ_DEFAULT_MESSAGE)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -37,7 +45,7 @@ export function BuzzModal({
     setBusy(true)
     setError("")
     try {
-      await buzzMember(memberId, style, message.trim())
+      await buzzMember(memberId, style, message.trim(), corner)
       setSent(true)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not buzz them.")
@@ -105,6 +113,33 @@ export function BuzzModal({
                 </button>
               ))}
             </div>
+
+            {style === "nudge" ? (
+              <div className="mt-3">
+                <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  Corner of their screen
+                </span>
+                <div className="grid grid-cols-4 gap-1.5" role="radiogroup" aria-label="Corner of their screen">
+                  {CORNERS.map((c) => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={corner === c.value}
+                      onClick={() => setCorner(c.value)}
+                      className={cn(
+                        "rounded-lg border px-1.5 py-1.5 text-[11px] font-semibold transition-colors",
+                        corner === c.value
+                          ? "border-blue-500 bg-blue-50 text-blue-700 dark:border-emerald-500 dark:bg-emerald-950/40 dark:text-emerald-300"
+                          : "border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800",
+                      )}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-3">
               <label
