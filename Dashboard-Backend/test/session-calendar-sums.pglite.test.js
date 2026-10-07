@@ -26,7 +26,7 @@ if (!PGlite) {
     CREATE TABLE activity_sessions (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), member_id uuid, project_id uuid, task_id uuid,
       started_at timestamptz, active_seconds int, idle_seconds int);
-    CREATE TABLE time_entries (project_id uuid, member_id uuid, duration int, date date, status text, billable boolean);
+    CREATE TABLE time_entries (project_id uuid, member_id uuid, duration int, date date, status text, billable boolean, source text DEFAULT 'manual');
     CREATE INDEX ON activity_sessions (member_id, started_at DESC);
   `);
 
@@ -106,6 +106,25 @@ if (!PGlite) {
     assert.equal(Number(idle.find((r) => r.day === "2026-01-02").idle_seconds), 40);
     const active = await svc.listDailyMemberActiveSeconds(M, { fromDay: "2025-12-29", toDay: "2026-01-04", timeZone: tz });
     assert.equal(Number(active.find((r) => r.day === "2026-01-02").active_seconds), 2700);
+  });
+
+  test("manual time per day counts only approved manual entries of that member and week", async () => {
+    // Its own member and project, so these rows can't bleed into the project-limit sums below.
+    const mine = "88888888-8888-4888-8888-888888888881";
+    const other = "88888888-8888-4888-8888-888888888882";
+    const proj2 = "88888888-8888-4888-8888-888888888883";
+    await db.query("INSERT INTO members VALUES ($1, 'UTC'), ($2, 'UTC')", [mine, other]);
+    const add = (member, secs, day, status, source) =>
+      db.query("INSERT INTO time_entries (project_id, member_id, duration, date, status, billable, source) VALUES ($1,$2,$3,$4,$5,true,$6)", [proj2, member, secs, day, status, source]);
+    await add(mine, 3600, "2026-03-03", "approved", "manual");
+    await add(mine, 1800, "2026-03-03", "approved", "manual"); // same day adds up
+    await add(mine, 999, "2026-03-03", "pending", "manual"); // not approved yet
+    await add(mine, 888, "2026-03-03", "rejected", "manual");
+    await add(mine, 777, "2026-03-03", "approved", "tracked"); // not manual: already in the sessions
+    await add(mine, 555, "2026-03-09", "approved", "manual"); // outside the window
+    await add(other, 4242, "2026-03-03", "approved", "manual"); // someone else's
+    const rows = await svc.listDailyMemberManualSeconds(mine, { fromDay: "2026-03-02", toDay: "2026-03-08" });
+    assert.deepEqual(rows.map((r) => [r.day, Number(r.manual_seconds)]), [["2026-03-03", 5400]]);
   });
 
   test("another member's sessions never leak in", async () => {
