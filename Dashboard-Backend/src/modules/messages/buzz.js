@@ -18,6 +18,9 @@ import { MessageError } from "./service.js";
  */
 
 export const BUZZ_STYLES = Object.freeze(["nudge", "bluescreen"]);
+/** Which corner of their screen a nudge appears in, like an antivirus pop-up. */
+export const BUZZ_CORNERS = Object.freeze(["top-right", "top-left", "bottom-right", "bottom-left"]);
+export const DEFAULT_BUZZ_CORNER = "top-right";
 export const DEFAULT_BUZZ_MESSAGE = "Dude. Focus on work.";
 export const MAX_BUZZ_MESSAGE = 140;
 export const BUZZ_COOLDOWN_MS = 30_000;
@@ -31,13 +34,16 @@ export function resetBuzzCooldownsForTests() {
   lastBuzzAt.clear();
 }
 
-export async function sendBuzz(ownerId, { memberId, style, message } = {}, now = Date.now()) {
+export async function sendBuzz(ownerId, { memberId, style, message, corner } = {}, now = Date.now()) {
   const target = String(memberId ?? "").trim();
   if (!target) throw new MessageError(400, "Pick who to buzz.");
   if (target === String(ownerId)) throw new MessageError(400, "You cannot buzz yourself.");
 
   const cleanStyle = String(style ?? "nudge").trim().toLowerCase();
   if (!BUZZ_STYLES.includes(cleanStyle)) throw new MessageError(400, "Pick a nudge or a blue screen.");
+
+  const cleanCorner = String(corner ?? DEFAULT_BUZZ_CORNER).trim().toLowerCase();
+  if (!BUZZ_CORNERS.includes(cleanCorner)) throw new MessageError(400, "Pick a corner of the screen.");
 
   const cleanMessage = String(message ?? "").trim() || DEFAULT_BUZZ_MESSAGE;
   if (cleanMessage.length > MAX_BUZZ_MESSAGE) {
@@ -68,6 +74,7 @@ export async function sendBuzz(ownerId, { memberId, style, message } = {}, now =
   const reached = pushToTracker(target, {
     type: "buzz",
     style: cleanStyle,
+    corner: cleanCorner,
     message: cleanMessage,
     from,
     at: now,

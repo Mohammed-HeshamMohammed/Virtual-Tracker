@@ -63,6 +63,7 @@ test("a buzz reaches the tracker with the owner's name and a default message", a
   assert.deepEqual(pushed[0].message, {
     type: "buzz",
     style: "bluescreen",
+    corner: "top-right",
     message: DEFAULT_BUZZ_MESSAGE,
     from: "Olive Owner",
     at: 1_000,
@@ -93,6 +94,13 @@ test("you cannot buzz yourself, an empty target, an unknown style or a long mess
     { status: 400 },
   );
   assert.equal(pushed.length, 0);
+});
+
+test("a nudge can be sent to any corner of the screen, and nothing else", async () => {
+  reset();
+  await sendBuzz("owner-1", { memberId: MEMBER, corner: "bottom-left" }, 1_000);
+  assert.equal(pushed[0].message.corner, "bottom-left");
+  await assert.rejects(() => sendBuzz("owner-1", { memberId: MEMBER, corner: "middle" }, 99_000), { status: 400 });
 });
 
 test("the same person cannot be buzzed again inside the cooldown", async () => {
