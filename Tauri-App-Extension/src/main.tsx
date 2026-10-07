@@ -10,6 +10,8 @@ import "./App.css";
 // src-tauri/src/tray_menu.rs). It must not start the app - polling, tour, tooltips - so the
 // app's own modules are only loaded in the main window.
 const TRAY_MENU_LABEL = "tray-menu";
+// The Owner's buzz (src-tauri/src/buzz.rs) is a third window on the same bundle.
+const BUZZ_LABEL = "buzz";
 
 function currentWindowLabel(): string {
   try {
@@ -36,6 +38,16 @@ async function start() {
     root.render(
       <React.StrictMode>
         <TrayMenu />
+      </React.StrictMode>,
+    );
+    return;
+  }
+
+  if (currentWindowLabel() === BUZZ_LABEL) {
+    const { BuzzScreen } = await import("./BuzzScreen");
+    root.render(
+      <React.StrictMode>
+        <BuzzScreen />
       </React.StrictMode>,
     );
     return;

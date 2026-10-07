@@ -8,6 +8,31 @@ import { recordPresenceEvent } from "./presence-event-log.js";
 const WS_PATH = "/api/presence/ws";
 
 const connectionsByMember = new Map();
+// Sockets opened by the desktop tracker (it signs in with a bearer token; the dashboard uses its
+// session cookie). A buzz is for the tracker only, so it has to be able to tell them apart.
+const trackerSockets = new WeakSet();
+
+/**
+ * A live-only frame for one member's desktop tracker. Unlike sendToMember it is not written to
+ * the replay log (a buzz that is five minutes old is not a buzz), skips dashboards, and reports
+ * how many trackers it reached so the sender is told the truth.
+ */
+export function pushToTracker(memberId, message) {
+  const sockets = connectionsByMember.get(memberId);
+  if (!sockets || sockets.size === 0) return 0;
+  const payload = JSON.stringify(message);
+  let reached = 0;
+  for (const ws of sockets) {
+    if (!trackerSockets.has(ws)) continue;
+    try {
+      ws.send(payload);
+      reached += 1;
+    } catch {
+      /* ignore - connection will be cleaned up on close */
+    }
+  }
+  return reached;
+}
 
 export function sendToMember(memberId, message) {
   recordPresenceEvent(memberId, message);
@@ -64,6 +89,7 @@ export function attachPresenceGateway(httpServer, deps) {
 
   wss.on("connection", (ws, req) => {
     let memberId = null;
+    let isTracker = false;
     const connectionId = randomUUID();
     let heartbeatTimer = null;
     let closed = false;
@@ -74,6 +100,7 @@ export function attachPresenceGateway(httpServer, deps) {
         const decoded = await deps.verifyIdToken(idToken);
         memberId = await deps.resolveMemberId(decoded.uid);
         if (!memberId) throw new Error("member_not_found");
+        isTracker = true;
         return;
       }
 
@@ -113,6 +140,7 @@ export function attachPresenceGateway(httpServer, deps) {
       deps.presenceManager.onConnect(memberId, connectionId);
       if (!connectionsByMember.has(memberId)) connectionsByMember.set(memberId, new Set());
       connectionsByMember.get(memberId).add(ws);
+      if (isTracker) trackerSockets.add(ws);
       notifyChange();
 
       const snapshot = deps.presenceService.getPresence(memberId);

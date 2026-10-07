@@ -87,3 +87,15 @@ export async function markMessageThreadRead(id: string): Promise<void> {
   })
   await unwrap(res, "Failed to mark the conversation read")
 }
+
+export type BuzzStyle = "nudge" | "bluescreen"
+
+/** Owner only. Live-only: it fails if their tracker is not open, and nothing is queued. */
+export async function buzzMember(memberId: string, style: BuzzStyle, message: string): Promise<{ delivered: boolean }> {
+  const res = await apiFetch(apiPath("/api/messages/buzz"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ memberId, style, message }),
+  })
+  return unwrap(res, "Failed to buzz them")
+}

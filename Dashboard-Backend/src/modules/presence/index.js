@@ -116,7 +116,7 @@ export function resetPresenceRuntimeForTests() {
   runtime = null;
 }
 
-export { PRESENCE_WS_PATH, sendToMember, broadcastToAll } from "./presence-gateway.js";
+export { PRESENCE_WS_PATH, sendToMember, broadcastToAll, pushToTracker } from "./presence-gateway.js";
 export { PresenceEvents } from "./presence-events.js";
 export { routePresenceEvents } from "./presence-events-route.js";
 export { routePresencePoll } from "./presence-poll-route.js";

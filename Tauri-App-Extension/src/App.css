@@ -6398,3 +6398,112 @@ select.modal-input {
 .easy-read .reconnect-body {
   align-items: safe center;
 }
+
+/* ─── Buzz: the Owner's nudge card and joke blue screen (BuzzScreen.tsx) ───────── */
+html.buzz-window,
+html.buzz-window body,
+html.buzz-window #root {
+  background: transparent;
+  margin: 0;
+  overflow: hidden;
+}
+
+.buzz-nudge {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  box-sizing: border-box;
+  border: 1px solid rgb(var(--c-warn) / 0.55);
+  border-radius: 14px;
+  cursor: pointer;
+  text-align: left;
+  color: var(--on-surface-bright);
+  background: rgb(var(--c-surface-high));
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.35);
+  animation: buzz-in 0.35s cubic-bezier(0.16, 1, 0.3, 1), buzz-shake 0.5s 0.35s;
+}
+
+.buzz-nudge-icon {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.buzz-nudge-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.buzz-nudge-body strong {
+  font-size: 12px;
+  color: rgb(var(--c-warn));
+}
+
+.buzz-bsod {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  padding: 0 12vw;
+  cursor: pointer;
+  color: #fff;
+  background: #0b6bcb;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+.buzz-bsod-face {
+  font-size: 120px;
+  line-height: 1;
+}
+
+.buzz-bsod-lead {
+  margin: 0;
+  max-width: 900px;
+  font-size: 26px;
+}
+
+.buzz-bsod-progress {
+  margin: 0;
+  font-size: 20px;
+}
+
+.buzz-bsod-message {
+  margin: 0;
+  max-width: 900px;
+  font-size: 34px;
+  font-weight: 600;
+}
+
+.buzz-bsod-foot {
+  margin: 12px 0 0;
+  max-width: 900px;
+  font-size: 14px;
+  opacity: 0.85;
+}
+
+@keyframes buzz-in {
+  0% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+}
+
+@keyframes buzz-shake {
+  20% { transform: translateX(-5px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buzz-nudge {
+    animation: none;
+  }
+}

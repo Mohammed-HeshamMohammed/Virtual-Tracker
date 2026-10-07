@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "buzz",
+  "description": "The Owner's buzz window: reads what to show and closes itself",
+  "windows": ["buzz"],
+  "permissions": ["core:default"]
+}

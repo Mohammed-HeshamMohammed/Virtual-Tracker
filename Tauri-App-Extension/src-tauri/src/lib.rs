@@ -4,6 +4,7 @@ mod capture;
 mod client;
 mod config;
 mod constants;
+mod buzz;
 mod power_events;
 mod prefs;
 mod queue;
@@ -368,6 +369,7 @@ pub fn run() {
                 })
                 .build(),
         )
+        .manage(buzz::BuzzState::default())
         .manage(AppState {
             controller: Arc::clone(&controller),
         })
@@ -432,6 +434,8 @@ pub fn run() {
             commands::work::resume_session,
             commands::work::is_session_paused,
             commands::work::start_break,
+            buzz::buzz_take,
+            buzz::buzz_dismiss,
             commands::work::is_session_on_break,
         ])
         .setup(move |app| {
@@ -490,6 +494,11 @@ pub fn run() {
             let live_sync_handle = app.handle().clone();
             let live_sync_controller = Arc::clone(&controller);
             live_sync_controller.add_live_sync_listener(Arc::new(move |frame_json: String| {
+                // A buzz is drawn in its own window, not handed to the page.
+                if let Some(buzz) = buzz::parse(&frame_json) {
+                    buzz::show(&live_sync_handle, buzz);
+                    return;
+                }
                 if let Some(window) = live_sync_handle.get_webview_window("main") {
                     let _ = window.eval(format!(
                         "window.dispatchEvent(new CustomEvent('vt-live-changed', {{ detail: {frame_json} }}));"
