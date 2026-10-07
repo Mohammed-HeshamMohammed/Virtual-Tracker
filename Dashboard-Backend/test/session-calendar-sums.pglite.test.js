@@ -125,6 +125,10 @@ if (!PGlite) {
     await add(other, 4242, "2026-03-03", "approved", "manual"); // someone else's
     const rows = await svc.listDailyMemberManualSeconds(mine, { fromDay: "2026-03-02", toDay: "2026-03-08" });
     assert.deepEqual(rows.map((r) => [r.day, Number(r.manual_seconds)]), [["2026-03-03", 5400]]);
+    // The same rows, summed - for all projects and for one.
+    assert.equal(await svc.sumMemberManualSeconds(mine, { fromDay: "2026-03-03", toDay: "2026-03-03" }), 5400);
+    assert.equal(await svc.sumMemberManualSeconds(mine, { fromDay: "2026-03-03", toDay: "2026-03-03", projectId: proj2 }), 5400);
+    assert.equal(await svc.sumMemberManualSeconds(mine, { fromDay: "2026-03-03", toDay: "2026-03-03", projectId: P }), 0);
   });
 
   test("another member's sessions never leak in", async () => {
