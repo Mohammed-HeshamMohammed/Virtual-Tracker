@@ -315,6 +315,12 @@ async function normalizeSession(id, data) {
     taskId: data.task_id ?? null,
     projectId: data.project_id ?? null,
     updatedAt: toIso(data.updated_at),
+    // How long since the agent last touched it, measured here so the agent never
+    // has to trust its own clock: a freshly started agent uses it to tell a
+    // session it just left from one a shutdown left behind.
+    secondsSinceUpdate: data.updated_at
+      ? Math.max(0, Math.round((Date.now() - new Date(data.updated_at).getTime()) / 1000))
+      : null,
     // Who owns the session ("agent" or "web"), and why it last paused - so a
     // client can tell a session it must leave alone from one it may drive.
     source: data.source ?? null,
