@@ -107,6 +107,10 @@ export function computeHomeStats({
         Math.max(0, memberLimits.workedWeekSeconds - memberLimits.workedTodaySeconds) + liveWorkedTodaySeconds
       : 0;
   const weekIdleSeconds = weekDays.reduce((sum, day) => sum + day.idleSeconds, 0);
+  // Added by hand, not seen by the tracker: it counts toward the week worked, but is not
+  // activity, so the activity share below stays about tracked time only.
+  const weekManualSeconds = weekDays.reduce((sum, day) => sum + (day.manualSeconds ?? 0), 0);
+  const weekWorkedSeconds = weekActiveSeconds + weekManualSeconds;
   const weekTrackedSeconds = weekActiveSeconds + weekIdleSeconds;
   const weekActivityPercent =
     weekTrackedSeconds > 0 ? Math.round((weekActiveSeconds / weekTrackedSeconds) * 100) : null;
@@ -117,10 +121,10 @@ export function computeHomeStats({
     memberLimits && !memberLimits.usesShifts && memberLimits.weeklyHours > 0
       ? Math.floor(memberLimits.weeklyHours * 3600)
       : 0;
-  const weekWorkedLabel = memberLimits ? fmtHours(weekActiveSeconds) : "—";
+  const weekWorkedLabel = memberLimits ? fmtHours(weekWorkedSeconds) : "—";
   const weekUsedPercent =
     weeklyCapSeconds > 0 && memberLimits
-      ? Math.min(100, (weekActiveSeconds / weeklyCapSeconds) * 100)
+      ? Math.min(100, (weekWorkedSeconds / weeklyCapSeconds) * 100)
       : 0;
   const weekOfLabel = weeklyCapSeconds > 0 && memberLimits ? `of ${fmtLimitHours(memberLimits.weeklyHours)}` : "";
   const weekFootLabel = !memberLimits
@@ -128,7 +132,7 @@ export function computeHomeStats({
     : memberLimits.usesShifts
       ? "shift-based — no weekly cap"
       : weeklyCapSeconds > 0
-        ? `${fmtHours(Math.max(0, weeklyCapSeconds - weekActiveSeconds))} left`
+        ? `${fmtHours(Math.max(0, weeklyCapSeconds - weekWorkedSeconds))} left`
         : "no weekly cap";
 
   const projectedCapTimeLabel = (() => {

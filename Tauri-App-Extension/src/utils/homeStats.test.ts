@@ -251,6 +251,18 @@ describe("computeHomeStats - the week (chart, This week card, sidebar ring)", ()
     expect(stats.weekIdleSeconds).toBe(1.5 * 3600 + 120);
   });
 
+  it("counts time added by hand toward the week, but not toward the activity share", () => {
+    const withManual: MemberLimits = {
+      ...limits,
+      weekDays: weekDays.map((d) => (d.label === "Tue" ? { ...d, manualSeconds: 2 * 3600 } : d)),
+    };
+    const stats = computeHomeStats({ ...emptyInput, memberLimits: withManual, liveWorkedTodaySeconds: 600 });
+    expect(stats.weekActiveSeconds).toBe(5 * 3600 + 600);
+    expect(stats.weekWorkedLabel).toBe("7h 10m");
+    const without = computeHomeStats({ ...emptyInput, memberLimits: limits, liveWorkedTodaySeconds: 600 });
+    expect(stats.weekActivityPercent).toBe(without.weekActivityPercent);
+  });
+
   it("never shows today's idle below what the server has already recorded", () => {
     const stats = computeHomeStats({
       ...emptyInput,

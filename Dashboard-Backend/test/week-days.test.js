@@ -66,3 +66,23 @@ test("junk values read as zero rather than NaN", () => {
   assert.equal(days[0].activeSeconds, 0);
   assert.equal(days[0].idleSeconds, 0);
 });
+
+test("approved manual time lands on its own day, apart from tracked time", () => {
+  const days = buildWeekDays(
+    "2026-09-14",
+    [{ day: "2026-09-15", active_seconds: 600 }],
+    [],
+    [
+      { day: "2026-09-15", manual_seconds: "7200" },
+      { day: "2026-09-13", manual_seconds: 999 }, // previous week - not ours
+    ],
+  );
+  assert.equal(days[1].activeSeconds, 600, "tracked time is untouched");
+  assert.equal(days[1].manualSeconds, 7200);
+  assert.equal(days[0].manualSeconds, 0);
+  assert.equal(days.reduce((sum, d) => sum + d.manualSeconds, 0), 7200);
+});
+
+test("a caller that passes no manual rows still gets a zero on every day", () => {
+  assert.ok(buildWeekDays("2026-09-14", [], []).every((d) => d.manualSeconds === 0));
+});

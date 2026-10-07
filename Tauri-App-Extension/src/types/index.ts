@@ -218,7 +218,15 @@ export type MemberLimits = {
 
 export type TodayActivity = { activeSeconds: number; idleSeconds: number };
 
-export type WeekDay = { day: string; label: string; activeSeconds: number; idleSeconds: number };
+export type WeekDay = {
+  day: string;
+  label: string;
+  /** Time the tracker recorded. */
+  activeSeconds: number;
+  idleSeconds: number;
+  /** Approved time the member added by hand. Absent from an older backend. */
+  manualSeconds?: number;
+};
 
 
 export type TimeOffBalance = {

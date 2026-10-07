@@ -15,13 +15,14 @@ type WeekChartProps = {
 export function WeekChart({ days, todayDay, loading }: WeekChartProps) {
   const shown: WeekDay[] = days.length
     ? days
-    : DAY_LABELS.map((label) => ({ day: "", label, activeSeconds: 0, idleSeconds: 0 }));
-  const maxSeconds = Math.max(0, ...shown.map((d) => d.activeSeconds + d.idleSeconds));
+    : DAY_LABELS.map((label) => ({ day: "", label, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0 }));
+  const maxSeconds = Math.max(0, ...shown.map((d) => d.activeSeconds + d.idleSeconds + (d.manualSeconds ?? 0)));
   const activeSeconds = shown.reduce((sum, d) => sum + d.activeSeconds, 0);
+  const manualSeconds = shown.reduce((sum, d) => sum + (d.manualSeconds ?? 0), 0);
   const empty = !loading && maxSeconds === 0;
 
   return (
-    <section data-help="Your week: one bar per day, showing the time you worked and, stacked on it, your idle time." className="stat-panel week-chart page-content-swap" style={{ animationDelay: "0.1s" }} aria-busy={loading}>
+    <section data-help="Your week: one bar per day, showing the time you worked, the time you added by hand in its own colour, and, stacked on it, your idle time." className="stat-panel week-chart page-content-swap" style={{ animationDelay: "0.1s" }} aria-busy={loading}>
       <div className="week-chart-head">
         <span className="stat-tile-label">Your week</span>
         <span className="week-chart-legend" aria-hidden="true">
@@ -31,13 +32,25 @@ export function WeekChart({ days, todayDay, loading }: WeekChartProps) {
           <span>
             <i className="activity-dot idle" /> idle
           </span>
+          {manualSeconds > 0 ? (
+            <span>
+              <i className="activity-dot manual" /> added by hand
+            </span>
+          ) : null}
         </span>
-        <span className="week-chart-total">{loading ? "" : `${fmtHours(activeSeconds)} active`}</span>
+        <span className="week-chart-total">
+          {loading
+            ? ""
+            : manualSeconds > 0
+              ? `${fmtHours(activeSeconds + manualSeconds)} worked · ${fmtHours(manualSeconds)} by hand`
+              : `${fmtHours(activeSeconds)} active`}
+        </span>
       </div>
 
       <div className={`week-chart-bars${loading ? " is-loading" : ""}`}>
         {shown.map((day, index) => {
-          const total = day.activeSeconds + day.idleSeconds;
+          const manual = day.manualSeconds ?? 0;
+          const total = day.activeSeconds + day.idleSeconds + manual;
           // A day with any time at all keeps a visible sliver next to a long one.
           const heightPct = maxSeconds > 0 && total > 0 ? Math.max(4, (total / maxSeconds) * 100) : 0;
           const isToday = Boolean(todayDay) && day.day === todayDay;
@@ -47,12 +60,13 @@ export function WeekChart({ days, todayDay, loading }: WeekChartProps) {
             <div
               key={day.day || day.label || index}
               className={`week-chart-day${isToday ? " is-today" : ""}${future ? " is-future" : ""}`}
-              title={`${day.label}: ${fmtHours(day.activeSeconds)} active, ${fmtHours(day.idleSeconds)} idle`}
+              title={`${day.label}: ${fmtHours(day.activeSeconds)} active${manual > 0 ? `, ${fmtHours(manual)} added by hand` : ""}, ${fmtHours(day.idleSeconds)} idle`}
             >
-              <span className="week-chart-value">{day.activeSeconds > 0 ? fmtHours(day.activeSeconds) : ""}</span>
+              <span className="week-chart-value">{day.activeSeconds + manual > 0 ? fmtHours(day.activeSeconds + manual) : ""}</span>
               <div className="week-chart-track">
                 <div className="week-chart-stack" style={{ height: `${heightPct}%` }}>
                   {day.idleSeconds > 0 ? <div className="week-chart-idle" style={{ flexGrow: day.idleSeconds }} /> : null}
+                  {manual > 0 ? <div className="week-chart-manual" style={{ flexGrow: manual }} /> : null}
                   {day.activeSeconds > 0 ? (
                     <div className="week-chart-active" style={{ flexGrow: day.activeSeconds }} />
                   ) : null}

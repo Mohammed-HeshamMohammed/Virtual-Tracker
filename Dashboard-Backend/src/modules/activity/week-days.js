@@ -19,10 +19,15 @@ function seconds(value) {
  * @param {string} weekStartDay Monday of the member's week, "YYYY-MM-DD".
  * @param {{ day: string, active_seconds: unknown }[]} activeRows
  * @param {{ day: string, idle_seconds: unknown }[]} idleRows
+ * @param {{ day: string, manual_seconds: unknown }[]} [manualRows] Approved manual time,
+ *   kept apart from activeSeconds on purpose: it is time the member added, not time the
+ *   tracker saw, so a chart can show it in its own colour and the activity share stays
+ *   about tracked time only.
  */
-export function buildWeekDays(weekStartDay, activeRows, idleRows) {
+export function buildWeekDays(weekStartDay, activeRows, idleRows, manualRows = []) {
   const active = new Map((activeRows ?? []).map((row) => [String(row.day), seconds(row.active_seconds)]));
   const idle = new Map((idleRows ?? []).map((row) => [String(row.day), seconds(row.idle_seconds)]));
+  const manual = new Map((manualRows ?? []).map((row) => [String(row.day), seconds(row.manual_seconds)]));
   return LABELS.map((label, index) => {
     const day = addLocalDays(weekStartDay, index);
     return {
@@ -30,6 +35,7 @@ export function buildWeekDays(weekStartDay, activeRows, idleRows) {
       label,
       activeSeconds: active.get(day) ?? 0,
       idleSeconds: idle.get(day) ?? 0,
+      manualSeconds: manual.get(day) ?? 0,
     };
   });
 }

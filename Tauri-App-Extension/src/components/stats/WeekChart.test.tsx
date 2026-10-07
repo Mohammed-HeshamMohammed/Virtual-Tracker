@@ -12,6 +12,23 @@ const week = (seconds: [number, number][]): WeekDay[] =>
     idleSeconds: seconds[i]?.[1] ?? 0,
   }));
 
+describe("WeekChart - time added by hand", () => {
+  it("draws it in its own colour, counts it in the total and explains the colour", () => {
+    const days = week([[3600, 0], [0, 0]]).map((d, i) => (i === 1 ? { ...d, manualSeconds: 2 * 3600 } : d));
+    const html = renderToStaticMarkup(<WeekChart days={days} todayDay="2026-09-16" loading={false} />);
+    expect(html).toContain("week-chart-manual");
+    expect(html).toContain("added by hand");
+    expect(html).toContain("3h 0s worked");
+    expect(html).toContain("height:100%");
+  });
+
+  it("shows nothing extra when no time was added by hand", () => {
+    const html = renderToStaticMarkup(<WeekChart days={week([[3600, 0]])} todayDay="2026-09-16" loading={false} />);
+    expect(html).not.toContain("week-chart-manual");
+    expect(html).not.toContain("activity-dot manual");
+  });
+});
+
 describe("WeekChart", () => {
   it("draws a bar per day, scaled to the busiest one, and totals the active time", () => {
     const html = renderToStaticMarkup(

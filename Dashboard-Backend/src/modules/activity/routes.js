@@ -121,6 +121,7 @@ import {
   sumMemberActiveIdleSecondsForProject,
   listDailyMemberActiveSeconds,
   listMemberIdleSecondsByDay,
+  listDailyMemberManualSeconds,
   sumAppLogSecondsByAppNameForProjectPg,
   recordSessionEventPg,
   touchPgSessionActivity,
@@ -431,6 +432,7 @@ export async function routeActivity(req, res, url, origin) {
         projectTodayActivity,
         weekActiveRows,
         weekIdleRows,
+        weekManualRows,
       ] = await Promise.all([
         getMemberLimitHours(db, member.memberId, "daily"),
         getMemberLimitHours(db, member.memberId, "weekly"),
@@ -448,6 +450,7 @@ export async function routeActivity(req, res, url, origin) {
           : null,
         listDailyMemberActiveSeconds(member.memberId, { fromDay: weekStartDay, toDay: todayDay, timeZone: limitZone }),
         listMemberIdleSecondsByDay(member.memberId, { fromDay: weekStartDay, toDay: todayDay, timeZone: limitZone }),
+        listDailyMemberManualSeconds(member.memberId, { fromDay: weekStartDay, toDay: todayDay }),
       ]);
       const capLeftToday = usesShifts ? null : timerAllowance.allowedRemainingSeconds;
       // `total` is the whole open workload, not a property of today, so it
@@ -472,7 +475,7 @@ export async function routeActivity(req, res, url, origin) {
           // The member's week, one entry per day, from the same rollup as
           // timerAllowance.workedTodaySeconds/workedWeekSeconds.
           todayDay,
-          weekDays: buildWeekDays(weekStartDay, weekActiveRows, weekIdleRows),
+          weekDays: buildWeekDays(weekStartDay, weekActiveRows, weekIdleRows, weekManualRows),
         },
       });
     } catch (e) {

@@ -934,6 +934,31 @@ export async function listDailyMemberActiveSeconds(memberId, { fromDay, toDay, t
   return result?.rows ?? [];
 }
 
+/**
+ * Approved manual time per day, from time_entries.
+ *
+ * Display only: the same rows the Time & Activity report counts as manual (source
+ * 'manual', status 'approved'). The daily/weekly limit rules deliberately read something
+ * else - sessions, plus manual time not yet rejected - so none of these figures feed them.
+ * `date` is already the member's local day, so no zone is applied.
+ */
+export async function listDailyMemberManualSeconds(memberId, { fromDay, toDay }) {
+  const id = parseProgressUuid(memberId);
+  if (!id) return [];
+  const result = await pgQuery(
+    `SELECT to_char(date, 'YYYY-MM-DD') AS day,
+            COALESCE(SUM(duration), 0) AS manual_seconds
+     FROM time_entries
+     WHERE member_id = $1
+       AND source = 'manual'
+       AND status = 'approved'
+       AND date >= $2::date AND date <= $3::date
+     GROUP BY 1`,
+    [id, fromDay, toDay],
+  );
+  return result?.rows ?? [];
+}
+
 /** Idle seconds per day in `timeZone` - the same basis as everything above. */
 export async function listMemberIdleSecondsByDay(memberId, { fromDay, toDay, timeZone = null }) {
   const id = parseProgressUuid(memberId);

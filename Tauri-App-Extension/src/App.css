@@ -1601,6 +1601,10 @@ body {
   background: rgb(var(--c-good));
 }
 
+.activity-dot.manual {
+  background: rgb(var(--c-warn));
+}
+
 .activity-dot.idle {
   background: var(--on-surface-fainter);
 }
@@ -5441,6 +5445,18 @@ select.modal-input {
 .week-chart-active {
   min-height: 2px;
   background: linear-gradient(180deg, rgb(var(--c-good)), rgb(var(--c-good) / 0.7));
+}
+
+/* Time added by hand: its own colour, so it reads as different from what was tracked. */
+.week-chart-manual {
+  min-height: 2px;
+  background: repeating-linear-gradient(
+    135deg,
+    rgb(var(--c-warn)),
+    rgb(var(--c-warn)) 4px,
+    rgb(var(--c-warn) / 0.65) 4px,
+    rgb(var(--c-warn) / 0.65) 8px
+  );
 }
 
 .week-chart-idle {
