@@ -20,3 +20,22 @@ test("drafts and prereleases never become the production agent feed", () => {
   assert.equal(selectLatestAgentRelease(releases)?.id, 2);
   assert.equal(selectLatestAgentRelease([{ id: 1, tag_name: "dashboard-v1.0.0" }]), null);
 });
+
+test("the highest version wins even when GitHub lists an older release first", () => {
+  // The real shape of the bug: a release that was deleted and recreated sorted above the newer
+  // one, so the feed kept serving 1.1.9 after 1.1.10 was published.
+  const releases = [
+    { id: 9, tag_name: "agent-v1.1.9", draft: false, prerelease: false },
+    { id: 10, tag_name: "agent-v1.1.10", draft: false, prerelease: false },
+    { id: 8, tag_name: "agent-v1.1.8", draft: false, prerelease: false },
+  ];
+  assert.equal(selectLatestAgentRelease(releases)?.id, 10, "1.1.10 is newer than 1.1.9 - numerically, not as text");
+});
+
+test("versions compare number by number across major, minor and patch", () => {
+  const pick = (...tags) =>
+    selectLatestAgentRelease(tags.map((tag_name, id) => ({ id, tag_name, draft: false, prerelease: false })))?.tag_name;
+  assert.equal(pick("agent-v1.9.0", "agent-v1.10.0", "agent-v1.2.30"), "agent-v1.10.0");
+  assert.equal(pick("agent-v2.0.0", "agent-v1.99.99"), "agent-v2.0.0");
+  assert.equal(pick("agent-v1.1.1", "agent-v1.1.1"), "agent-v1.1.1");
+});
