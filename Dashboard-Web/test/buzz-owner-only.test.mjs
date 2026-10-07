@@ -9,9 +9,10 @@ import { fileURLToPath } from "node:url"
 const ROOT = fileURLToPath(new URL("..", import.meta.url))
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
 
-test("the Buzz row action needs the Owner role and is never offered on yourself", () => {
+test("the Buzz row action needs the Owner role, who may also buzz themselves", () => {
   const menu = read("features/members/components/menus/member-row-menu.tsx")
-  assert.match(menu, /const canBuzz = isOwnerRoleName\(memberRole \?\? ""\) && !isSelf/)
+  assert.match(menu, /const canBuzz = isOwnerRoleName\(memberRole \?\? ""\)\n/)
+  assert.doesNotMatch(menu, /canBuzz = .*!isSelf/)
   assert.match(menu, /\{canBuzz \? \(/)
   assert.match(menu, /<BuzzModal memberId=\{member\.id\}/)
 })
