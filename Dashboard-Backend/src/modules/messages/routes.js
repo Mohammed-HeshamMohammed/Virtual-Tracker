@@ -1,5 +1,5 @@
 import { getAuthContext, requireAuthContext } from "../../http/auth-context.js";
-import { isOwnerRole } from "../../http/role-hierarchy.js";
+import { isOwnerOrSuperAdminRole, isOwnerRole } from "../../http/role-hierarchy.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { rejectUnknownFields } from "../../http/validate-body.js";
 import { sendJson } from "../../http/response.js";
@@ -67,10 +67,11 @@ export async function routeMessages(req, res, url, origin) {
   }
 
   if (pn === "/api/messages/buzz" && req.method === "POST") {
-    // Owner and nothing else, for the same reason as opening a thread: a buzz from "the owner"
-    // has to actually be from the owner.
-    if (!isOwnerRole(getAuthContext(req)?.roleName ?? "")) {
-      sendJson(res, origin, 403, { success: false, error: "Only the Owner can buzz someone." });
+    // Owner and Super Admin. Opening a conversation stays Owner-only (a message "from the
+    // Owner" has to be from the Owner), but a buzz is a nudge, not a message in anyone's name,
+    // so a Super Admin may send one too.
+    if (!isOwnerOrSuperAdminRole(getAuthContext(req)?.roleName ?? "")) {
+      sendJson(res, origin, 403, { success: false, error: "Only the Owner or a Super Admin can buzz someone." });
       return true;
     }
     try {

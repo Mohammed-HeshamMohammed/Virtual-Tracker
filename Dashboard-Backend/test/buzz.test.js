@@ -126,3 +126,15 @@ test("a tracker that is not open is told to the sender, not queued, and costs no
   await sendBuzz("owner-1", { memberId: MEMBER }, 5_001);
   assert.equal(pushed.length, 2, "the failed attempt did not start a cooldown");
 });
+
+// The route's own gate: Owner and Super Admin may buzz, nobody else. (Opening a conversation
+// stays Owner-only; that is covered with the messaging tests.)
+test("the buzz route lets the Owner and Super Admins through and nobody below", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../src/modules/messages/routes.js", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+  const buzzBlock = src.slice(src.indexOf('pn === "/api/messages/buzz"'), src.indexOf("const threadMatch"));
+  assert.match(buzzBlock, /!isOwnerOrSuperAdminRole\(/);
+  assert.doesNotMatch(buzzBlock, /isOwnerRole\(/, "the buzz gate is not the Owner-only one");
+  const threadBlock = src.slice(src.indexOf('pn === "/api/messages/threads" && req.method === "POST"'), src.indexOf('pn === "/api/messages/buzz"'));
+  assert.match(threadBlock, /!isOwnerRole\(/, "starting a conversation is still the Owner alone");
+});
