@@ -4,7 +4,7 @@ import { useState } from "react"
 import { MoreHorizontal, Zap } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useAuth } from "@/shared/providers/app"
-import { isLimitedSelfManageRole, isOwnerRoleName } from "@/features/auth"
+import { isLimitedSelfManageRole, isOwnerOrSuperAdminRole } from "@/features/auth"
 import { BuzzModal } from "@/features/messages/components/buzz-modal"
 import { MEMBER_ENTRY_ITEMS } from "@/features/members/components/config/entry-menu-items"
 import { PORTAL_DROPDOWN_MENU_Z } from "@/features/members/config/members-config"
@@ -71,8 +71,8 @@ export function MemberRowMenu({
   const baseTabs = [...new Set(visibleEntries.map((i) => memberEntryToTab(i.id)))]
   const allowedTabs = limitedSelfManage ? LIMITED_SELF_TABS : baseTabs
   const canOpen = visibleEntries.length > 0
-  // Only the Owner - who may buzz themselves, to see what the other person will see.
-  const canBuzz = isOwnerRoleName(memberRole ?? "")
+  // The Owner and Super Admins - who may buzz themselves, to see what the other person sees.
+  const canBuzz = isOwnerOrSuperAdminRole(memberRole ?? "")
 
   return (
     <div className="relative">
