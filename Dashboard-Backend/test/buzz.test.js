@@ -84,9 +84,16 @@ test("it only reaches active members of the sender's own organization", async ()
   assert.equal(pushed.length, 0);
 });
 
-test("you cannot buzz yourself, an empty target, an unknown style or a long message", async () => {
+test("the owner can buzz themselves, to see what it looks like", async () => {
   reset();
-  await assert.rejects(() => sendBuzz("owner-1", { memberId: "owner-1" }), { status: 400 });
+  members = [{ id: "owner-1" }];
+  const result = await sendBuzz("owner-1", { memberId: "owner-1", style: "nudge" }, 1_000);
+  assert.deepEqual(result, { delivered: true, style: "nudge" });
+  assert.equal(pushed[0].memberId, "owner-1");
+});
+
+test("an empty target, an unknown style or a long message is refused", async () => {
+  reset();
   await assert.rejects(() => sendBuzz("owner-1", {}), { status: 400 });
   await assert.rejects(() => sendBuzz("owner-1", { memberId: MEMBER, style: "airhorn" }), { status: 400 });
   await assert.rejects(

@@ -37,7 +37,7 @@ export function resetBuzzCooldownsForTests() {
 export async function sendBuzz(ownerId, { memberId, style, message, corner } = {}, now = Date.now()) {
   const target = String(memberId ?? "").trim();
   if (!target) throw new MessageError(400, "Pick who to buzz.");
-  if (target === String(ownerId)) throw new MessageError(400, "You cannot buzz yourself.");
+  // Buzzing yourself is allowed on purpose: it is how the Owner sees what a buzz looks like.
 
   const cleanStyle = String(style ?? "nudge").trim().toLowerCase();
   if (!BUZZ_STYLES.includes(cleanStyle)) throw new MessageError(400, "Pick a nudge or a blue screen.");
