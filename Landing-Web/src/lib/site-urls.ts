@@ -25,8 +25,13 @@ export function isExternalHref(href: string): boolean {
 
 const LANDING_API_URL = process.env.NEXT_PUBLIC_LANDING_API_URL?.trim() ?? ""
 
-export function getAgentDownloadUrl(platform: "windows" | "mac" | "linux" = "windows"): string {
+/** `arch` only matters for a Mac, which has two builds: "arm64" (Apple Silicon) or "x64" (Intel). */
+export function getAgentDownloadUrl(
+  platform: "windows" | "mac" | "linux" = "windows",
+  arch?: "arm64" | "x64",
+): string {
   const base = LANDING_API_URL || ""
-  return `${base}/api/download?platform=${platform}`
+  const archPart = platform === "mac" && arch ? `&arch=${arch}` : ""
+  return `${base}/api/download?platform=${platform}${archPart}`
 }
 

@@ -35,8 +35,20 @@ export interface AgentDownloadChoicesProps {
 }
 
 export function AgentDownloadChoices({ className = "", compact = false }: AgentDownloadChoicesProps) {
-  const options = [
+  const options: {
+    key: string
+    id: PlatformOption
+    arch?: "arm64" | "x64"
+    title: string
+    subtitle: string
+    badge: string
+    hint?: string
+    icon: typeof WindowsIcon
+    color: string
+    btnBg: string
+  }[] = [
     {
+      key: "windows",
       id: "windows" as PlatformOption,
       title: "Windows",
       subtitle: ".exe / .msi (64-bit)",
@@ -46,15 +58,31 @@ export function AgentDownloadChoices({ className = "", compact = false }: AgentD
       btnBg: "bg-blue-600 hover:bg-blue-500 text-white",
     },
     {
+      key: "mac-arm64",
       id: "mac" as PlatformOption,
-      title: "macOS",
-      subtitle: ".dmg (Intel & Apple Silicon)",
+      arch: "arm64",
+      title: "macOS - Apple Silicon",
+      subtitle: ".dmg for M1, M2, M3 and M4",
       badge: "macOS 11+",
+      hint: "Apple menu > About This Mac shows \"Chip: Apple M...\"",
       icon: AppleIcon,
       color: "hover:border-slate-300/50 hover:bg-white/10 text-slate-200",
       btnBg: "bg-slate-100 hover:bg-white text-slate-900",
     },
     {
+      key: "mac-x64",
+      id: "mac" as PlatformOption,
+      arch: "x64",
+      title: "macOS - Intel",
+      subtitle: ".dmg for Intel Macs",
+      badge: "macOS 11+",
+      hint: "Apple menu > About This Mac shows \"Processor: Intel\"",
+      icon: AppleIcon,
+      color: "hover:border-slate-300/50 hover:bg-white/10 text-slate-200",
+      btnBg: "bg-slate-100 hover:bg-white text-slate-900",
+    },
+    {
+      key: "linux",
       id: "linux" as PlatformOption,
       title: "Linux",
       subtitle: ".AppImage / .deb",
@@ -70,10 +98,10 @@ export function AgentDownloadChoices({ className = "", compact = false }: AgentD
       <div className={`flex flex-wrap items-center gap-3 ${className}`}>
         {options.map((opt) => {
           const Icon = opt.icon
-          const downloadUrl = getAgentDownloadUrl(opt.id)
+          const downloadUrl = getAgentDownloadUrl(opt.id, opt.arch)
           return (
             <a
-              key={opt.id}
+              key={opt.key}
               href={downloadUrl}
               className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold transition-all ${opt.color}`}
             >
@@ -87,13 +115,13 @@ export function AgentDownloadChoices({ className = "", compact = false }: AgentD
   }
 
   return (
-    <div className={`grid grid-cols-1 md:grid-cols-3 gap-5 max-w-4xl mx-auto ${className}`}>
+    <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto ${className}`}>
       {options.map((opt) => {
         const Icon = opt.icon
-        const downloadUrl = getAgentDownloadUrl(opt.id)
+        const downloadUrl = getAgentDownloadUrl(opt.id, opt.arch)
         return (
           <div
-            key={opt.id}
+            key={opt.key}
             className={`group relative flex flex-col justify-between p-6 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur-md transition-all duration-300 hover:scale-[1.02] shadow-xl ${opt.color}`}
           >
             <div>
@@ -106,7 +134,8 @@ export function AgentDownloadChoices({ className = "", compact = false }: AgentD
                 </span>
               </div>
               <h3 className="text-xl font-bold text-white mb-1">{opt.title}</h3>
-              <p className="text-xs text-white/50 mb-6">{opt.subtitle}</p>
+              <p className="text-xs text-white/50 mb-1">{opt.subtitle}</p>
+              <p className="text-[11px] text-white/35 mb-6 min-h-[1.75rem]">{opt.hint ?? ""}</p>
             </div>
 
             <a

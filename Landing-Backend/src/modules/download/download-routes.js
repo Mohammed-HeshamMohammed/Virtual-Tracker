@@ -68,7 +68,26 @@ export async function getLatestRelease(repoOwner, repoName, pat) {
   return data;
 }
 
-function findAsset(assets, platform, assetName) {
+/**
+ * The right .dmg for this Mac. A release carries two - `..._darwin_aarch64.dmg` (Apple
+ * Silicon) and `..._darwin_x64.dmg` (Intel) - and the page used to hand out whichever GitHub
+ * listed first, which was the Apple Silicon one: an Intel Mac opening it is told "this
+ * application is not supported on this Mac".
+ *
+ * With no architecture given, the Intel build is the safe answer: it also runs on Apple
+ * Silicon (through Rosetta), where the Apple Silicon build cannot run on an Intel Mac.
+ */
+export function pickMacDmg(assets, arch = "") {
+  const dmgs = (Array.isArray(assets) ? assets : []).filter((a) => String(a?.name || "").toLowerCase().endsWith(".dmg"));
+  if (dmgs.length === 0) return null;
+  const wantsAppleSilicon = /^(arm64|aarch64|apple|silicon|m\d)/i.test(String(arch || "").trim());
+  const isAppleSilicon = (a) => /aarch64|arm64/i.test(a.name);
+  const isIntel = (a) => /x64|x86_64|x86-64|intel/i.test(a.name);
+  const wanted = wantsAppleSilicon ? dmgs.find(isAppleSilicon) : dmgs.find(isIntel);
+  return wanted ?? dmgs[0];
+}
+
+export function findAsset(assets, platform, assetName, arch = "") {
   if (!Array.isArray(assets) || assets.length === 0) return null;
 
   if (assetName) {
@@ -87,7 +106,7 @@ function findAsset(assets, platform, assetName) {
 
   if (p === "mac" || p === "macos" || p === "dmg" || p === "darwin") {
     return (
-      assets.find((a) => a.name.endsWith(".dmg")) ||
+      pickMacDmg(assets, arch) ||
       assets.find((a) => a.name.endsWith(".app.tar.gz") || a.name.endsWith(".tar.gz") || a.name.endsWith(".zip"))
     );
   }
@@ -121,10 +140,11 @@ export async function routeDownload(req, res, url, origin) {
 
   const platform = url.searchParams.get("platform") || url.searchParams.get("os") || "windows";
   const assetName = url.searchParams.get("asset") || "";
+  const arch = url.searchParams.get("arch") || "";
 
   try {
     const release = await getLatestRelease(repoOwner, repoName, pat);
-    const asset = findAsset(release.assets, platform, assetName);
+    const asset = findAsset(release.assets, platform, assetName, arch);
 
     if (!asset) {
       applyCors(res, origin);
