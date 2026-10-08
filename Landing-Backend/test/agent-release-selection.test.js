@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { selectLatestAgentRelease } from "../src/modules/download/download-routes.js";
+import { findAsset, pickMacDmg, selectLatestAgentRelease } from "../src/modules/download/download-routes.js";
 
 test("the download and updater feeds ignore unrelated repository releases", () => {
   const releases = [
@@ -38,4 +38,38 @@ test("versions compare number by number across major, minor and patch", () => {
   assert.equal(pick("agent-v1.9.0", "agent-v1.10.0", "agent-v1.2.30"), "agent-v1.10.0");
   assert.equal(pick("agent-v2.0.0", "agent-v1.99.99"), "agent-v2.0.0");
   assert.equal(pick("agent-v1.1.1", "agent-v1.1.1"), "agent-v1.1.1");
+});
+
+// An Intel Mac was handed the Apple Silicon .dmg (it was listed first) and told "this
+// application is not supported on this Mac".
+const MAC_ASSETS = [
+  { name: "My-Virtual-Tracker_v1.1.9_darwin_aarch64.app.tar.gz" },
+  { name: "My-Virtual-Tracker_v1.1.9_darwin_aarch64.dmg" },
+  { name: "My-Virtual-Tracker_v1.1.9_darwin_x64.app.tar.gz" },
+  { name: "My-Virtual-Tracker_v1.1.9_darwin_x64.dmg" },
+  { name: "My-Virtual-Tracker_v1.1.9_windows_x64.exe" },
+];
+
+test("a Mac with no architecture given gets the Intel build, which runs on both kinds of Mac", () => {
+  assert.equal(pickMacDmg(MAC_ASSETS, "").name, "My-Virtual-Tracker_v1.1.9_darwin_x64.dmg");
+  assert.equal(findAsset(MAC_ASSETS, "mac", "").name, "My-Virtual-Tracker_v1.1.9_darwin_x64.dmg");
+});
+
+test("an Apple Silicon Mac asking for it gets the native build, and Intel asking gets Intel", () => {
+  for (const arch of ["arm64", "aarch64", "apple", "M1"]) {
+    assert.equal(pickMacDmg(MAC_ASSETS, arch).name, "My-Virtual-Tracker_v1.1.9_darwin_aarch64.dmg", arch);
+  }
+  for (const arch of ["x64", "x86_64", "intel"]) {
+    assert.equal(pickMacDmg(MAC_ASSETS, arch).name, "My-Virtual-Tracker_v1.1.9_darwin_x64.dmg", arch);
+  }
+  assert.equal(findAsset(MAC_ASSETS, "macos", "", "arm64").name, "My-Virtual-Tracker_v1.1.9_darwin_aarch64.dmg");
+});
+
+test("a release with a single .dmg still serves it, and none falls back to the archive", () => {
+  assert.equal(pickMacDmg([{ name: "App_universal.dmg" }], "arm64").name, "App_universal.dmg");
+  assert.equal(pickMacDmg([{ name: "x.exe" }], "arm64"), null);
+  assert.equal(
+    findAsset([{ name: "App_darwin_x64.app.tar.gz" }], "mac", "").name,
+    "App_darwin_x64.app.tar.gz",
+  );
 });
