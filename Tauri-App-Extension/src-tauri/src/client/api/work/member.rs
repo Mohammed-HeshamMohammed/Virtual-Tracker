@@ -95,6 +95,8 @@ impl ApiClient {
                 }
             }),
             today_day: data.get("todayDay").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            time_zone: data.get("timeZone").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            project_id: data.get("projectId").and_then(|v| v.as_str()).unwrap_or("").to_string(),
             // Absent on an older backend - the week chart then falls back to an empty week
             // rather than failing the whole limits fetch.
             week_days: parse_week_days(data.get("weekDays")),

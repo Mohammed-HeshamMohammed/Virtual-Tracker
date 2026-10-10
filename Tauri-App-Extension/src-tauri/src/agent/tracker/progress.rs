@@ -114,6 +114,19 @@ impl ActivityTracker {
         self.progress.clear();
     }
 
+    /// The earliest point an idle stop may rewind to: the last real input this run saw, but
+    /// never below what the session already held when the run picked it up.
+    ///
+    /// `active_at_last_input` starts at 0 on every run and is only raised by a tick that sees
+    /// input. An agent that adopts an open session while nobody is at the machine - an update
+    /// that restarted it overnight, a session left running over lunch - has seen no input
+    /// yet, so the first idle check would rewind to 0 and post a stop that erases every hour
+    /// the session had banked, booking them all as idle. Those hours were earned before this
+    /// run began; it has no evidence they were idle, so it has no business reversing them.
+    pub(super) fn rewind_floor(active_at_last_input: u64, active_baseline: u64) -> u64 {
+        active_at_last_input.max(active_baseline)
+    }
+
     /// The rewind arithmetic on its own, so it can be tested without a live session.
     pub(super) fn rewind_active(active_total: u64, active_at_last_input: u64) -> (u64, u64) {
         let rewound = active_at_last_input.min(active_total);

@@ -220,6 +220,10 @@ export type MemberLimits = {
   projectTodayActivity: TodayActivity | null;
   /** The member's local today, "YYYY-MM-DD" - which of weekDays is today. */
   todayDay: string;
+  /** The IANA zone these figures were cut in; absent/"" on an older backend. */
+  timeZone?: string;
+  /** The project projectTodayActivity is scoped to; absent/"" when none. */
+  projectId?: string;
   /** This week, Monday first, from the same rollup as workedWeekSeconds. */
   weekDays: WeekDay[];
 };

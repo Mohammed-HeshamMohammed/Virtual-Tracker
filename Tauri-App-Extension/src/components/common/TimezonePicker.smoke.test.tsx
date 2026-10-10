@@ -36,6 +36,26 @@ describe("TimezonePicker", () => {
     ).toContain("disabled");
   });
 
+  it("shows the project's zone and locks the trigger when the project declares one", () => {
+    const html = renderToStaticMarkup(
+      <TimezonePicker
+        value="America/New_York"
+        onSelect={noop}
+        lockedReason='Set by the project "Bana"'
+      />,
+    );
+    expect(html).toContain("New York");
+    expect(html).toContain("is-locked");
+    expect(html).toContain("disabled");
+    expect(html).toContain("Set by the project");
+  });
+
+  it("stays changeable when nothing locks it", () => {
+    const html = renderToStaticMarkup(<TimezonePicker value="America/Mexico_City" onSelect={noop} />);
+    expect(html).not.toContain("is-locked");
+    expect(html).not.toContain("disabled");
+  });
+
   it("never carries a drag region, which would swallow the click", () => {
     // .titlebar-drag is a data-tauri-drag-region; anything inheriting it turns
     // clicks into window drags instead of opening the menu.

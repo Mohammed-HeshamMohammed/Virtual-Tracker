@@ -225,6 +225,13 @@ pub struct MemberLimits {
     /// The member's local today, "YYYY-MM-DD" - which of `week_days` is today.
     #[serde(default)]
     pub today_day: String,
+    /// The IANA zone every figure in this response was cut in - the project's when one is
+    /// selected and declares one, else the member's own. Empty on an older backend.
+    #[serde(default)]
+    pub time_zone: String,
+    /// The project `project_today_activity` is scoped to; empty when none was asked about.
+    #[serde(default)]
+    pub project_id: String,
     /// This week, Monday first, from the same rollup as worked_week_seconds.
     #[serde(default)]
     pub week_days: Vec<WeekDay>,

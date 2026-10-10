@@ -4870,6 +4870,12 @@ select.modal-input {
   cursor: default;
 }
 
+/* Locked to the project's zone: not busy, just not changeable here - keep it
+   fully legible, it's the zone every figure on screen is counted in. */
+.tz-trigger.is-locked:disabled {
+  opacity: 1;
+}
+
 .tz-globe {
   width: 13px;
   height: 13px;
