@@ -125,6 +125,7 @@ import {
   sumMemberManualSeconds,
   sumAppLogSecondsByAppNameForProjectPg,
   recordSessionEventPg,
+  sessionRunningTotals,
   touchPgSessionActivity,
   updatePgSession,
 } from "../../lib/postgres/activity-events-postgres.service.js";
@@ -137,6 +138,8 @@ import {
 } from "./agent-heartbeat.js";
 import { isWebActionOnAgentSession, normalizeSessionReason } from "./session-reasons.js";
 import { effectiveIdleTimeSeconds } from "../projects/idle-time-limit.service.js";
+import { guardIdleRewind } from "./idle-rewind-guard.js";
+import { recordSecurityEvent } from "../../core/metrics.js";
 import { breakSettingsOf } from "../projects/break-time.js";
 import { resolveTenantGrantCached } from "../customer-accounts/tenant-grant-cache.js";
 
@@ -312,8 +315,9 @@ async function normalizeSession(id, data) {
     status: data.status,
     startedAt: toIso(data.started_at),
     endedAt: toIso(data.ended_at),
-    activeSeconds: typeof data.active_seconds === "number" ? data.active_seconds : 0,
-    idleSeconds: typeof data.idle_seconds === "number" ? data.idle_seconds : 0,
+    // The running total the client was told about, not only what this session earned: the agent
+    // seeds and re-baselines from it (see createPgSession).
+    ...sessionRunningTotals(data),
     taskId: data.task_id ?? null,
     projectId: data.project_id ?? null,
     updatedAt: toIso(data.updated_at),
@@ -486,6 +490,12 @@ export async function routeActivity(req, res, url, origin) {
           // The member's week, one entry per day, from the same rollup as
           // timerAllowance.workedTodaySeconds/workedWeekSeconds.
           todayDay,
+          // The calendar every figure above was cut in. A client that keeps a "never goes
+          // down" floor under Today needs it: the same sessions cut in another zone (the
+          // project changed, or its zone did) is a different, legitimately lower number.
+          timeZone: limitZone,
+          // Which project projectTodayActivity is scoped to (null = none was asked about).
+          projectId: projectId || null,
           weekDays: buildWeekDays(weekStartDay, weekActiveRows, weekIdleRows, weekManualRows),
         },
       });
@@ -605,8 +615,9 @@ export async function routeActivity(req, res, url, origin) {
     }
     const idToken = readIdToken(req, url, body);
     const action = typeof body.action === "string" ? body.action.trim().toLowerCase() : "";
-    const activeSeconds = typeof body.activeSeconds === "number" ? Math.max(0, Math.floor(body.activeSeconds)) : undefined;
-    const idleSeconds = typeof body.idleSeconds === "number" ? Math.max(0, Math.floor(body.idleSeconds)) : undefined;
+    // `let`: an idle-escalation stop may be bounded below (guardIdleRewind).
+    let activeSeconds = typeof body.activeSeconds === "number" ? Math.max(0, Math.floor(body.activeSeconds)) : undefined;
+    let idleSeconds = typeof body.idleSeconds === "number" ? Math.max(0, Math.floor(body.idleSeconds)) : undefined;
     const taskId = typeof body.taskId === "string" && body.taskId.trim() ? body.taskId.trim() : null;
     const bodyProjectId =
       typeof body.projectId === "string" && body.projectId.trim() ? body.projectId.trim() : null;
@@ -702,6 +713,46 @@ export async function routeActivity(req, res, url, origin) {
       }
 
       let sessionProjectId = bodyProjectId || open?.project_id || null;
+
+      // An idle stop rewinds the running total to the last real input, and a stop is the one
+      // action allowed to write a lower figure. Bound how much it can take back to what idle
+      // time can be (see idle-rewind-guard.js) - otherwise an agent that has lost its last-input
+      // point posts 0 and the whole session's hours are erased and booked as idle. Applied
+      // here, before anything downstream (the session row, the task's progress) reads the
+      // figures, so none of them can be reached with the unbounded value.
+      if (
+        action === "stop" &&
+        sessionReason === "idle_escalation" &&
+        open &&
+        activeSeconds !== undefined &&
+        idleSeconds !== undefined
+      ) {
+        const guardProject = sessionProjectId ? await getProjectPg(sessionProjectId).catch(() => null) : null;
+        const stored = sessionRunningTotals(open);
+        const guarded = guardIdleRewind({
+          storedActive: stored.activeSeconds,
+          storedIdle: stored.idleSeconds,
+          incomingActive: activeSeconds,
+          incomingIdle: idleSeconds,
+          thresholdSeconds: await effectiveIdleTimeSeconds(guardProject, member.memberId),
+        });
+        if (guarded.clampedSeconds > 0) {
+          logSafeWarn("[activity/session] refused an idle rewind larger than the idle allowance", {
+            sessionId: open.id,
+            held: stored.activeSeconds,
+            attempted: activeSeconds,
+            keptAt: guarded.activeSeconds,
+            refusedSeconds: guarded.clampedSeconds,
+            clientVersion,
+          });
+          recordSecurityEvent({
+            event: "idle_rewind_clamped",
+            detail: `session=${open.id} held=${stored.activeSeconds} attempted=${activeSeconds} kept=${guarded.activeSeconds} v=${clientVersion ?? "?"}`,
+          });
+        }
+        activeSeconds = guarded.activeSeconds;
+        idleSeconds = guarded.idleSeconds;
+      }
 
       if (action === "start" || action === "resume") {
         const effectiveTaskId = taskId || open?.task_id || null;
@@ -855,19 +906,24 @@ export async function routeActivity(req, res, url, origin) {
         if (!open) {
           const id = crypto.randomUUID();
           try {
-            open = await createPgSession({
-              id,
-              memberId: member.memberId,
-              taskId,
-              projectId: sessionProjectId,
-              status: "active",
-              startedAt: now,
-              endedAt: null,
-              activeSeconds: activeSeconds ?? 0,
-              idleSeconds: idleSeconds ?? 0,
-              source: origin ? "web" : "agent",
-              updatedAt: now,
-            });
+            open = await createPgSession(
+              {
+                id,
+                memberId: member.memberId,
+                taskId,
+                projectId: sessionProjectId,
+                status: "active",
+                startedAt: now,
+                endedAt: null,
+                activeSeconds: activeSeconds ?? 0,
+                idleSeconds: idleSeconds ?? 0,
+                source: origin ? "web" : "agent",
+                updatedAt: now,
+              },
+              // The agent re-opening a session the server reaped carries its whole running
+              // total; only what the reaped one never received is new.
+              { recoveredAfterReap: sessionReason === "recovered_after_reap" },
+            );
           } catch (createErr) {
             if (isOneOpenSessionConflict(createErr)) {
               sendJson(res, origin, 409, {
