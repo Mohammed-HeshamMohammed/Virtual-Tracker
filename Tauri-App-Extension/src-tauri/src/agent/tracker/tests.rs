@@ -752,6 +752,65 @@ fn zero_clock_stays_zero() {
     assert_eq!(reversed, 0);
 }
 
+#[test]
+fn an_idle_stop_never_rewinds_below_what_the_session_held_when_this_run_picked_it_up() {
+    // The run adopted a session with 8h banked and has seen no input yet, so its last-input
+    // point is still the initial 0. Rewinding to that would erase all 8 hours.
+    let eight_hours = 8 * 3600;
+    let floor = ActivityTracker::rewind_floor(0, eight_hours);
+    assert_eq!(floor, eight_hours);
+    // 90s of this run's own time is the most it can reverse.
+    let (rewound, reversed) = ActivityTracker::rewind_active(eight_hours + 90, floor);
+    assert_eq!(rewound, eight_hours);
+    assert_eq!(reversed, 90);
+}
+
+#[test]
+fn a_real_input_point_later_than_the_baseline_still_wins() {
+    assert_eq!(ActivityTracker::rewind_floor(3540, 3000), 3540);
+    // And a session this run started itself (baseline 0) still rewinds all the way when it
+    // idles from the very start - the case `idling_from_the_very_start_reverses_everything` pins.
+    assert_eq!(ActivityTracker::rewind_floor(0, 0), 0);
+}
+
+// Windows-only for the same reason as the escalation tests above.
+#[cfg(windows)]
+#[test]
+fn an_agent_that_adopts_a_long_session_while_idle_does_not_erase_it() {
+    let base_url = fake_server(|request| match request.method() {
+        Method::Post => (200, r#"{"data": {"id": "sess-1", "status": "stopped"}}"#.to_string()),
+        _ => (404, "{}".to_string()),
+    });
+    let tracker = test_tracker(base_url);
+    tracker.apply_idle_thresholds(1);
+    let _os_idle = SimulatedOsIdle::seconds(9_999);
+    thread::sleep(Duration::from_millis(3_500));
+
+    // A fresh run: the last-input point is still its initial 0, the session already holds 4h.
+    let mut watch = IdleWatch { stage: 0, active_at_last_input: 0 };
+    let active_baseline = 4 * 3600u64;
+    let active_elapsed = 30u64;
+    let idle_baseline = 0u64;
+    let idle_elapsed = 0u64;
+
+    let stopped = tracker.tick_idle_escalation(
+        &mut watch,
+        "task-1",
+        "project-1",
+        &active_baseline,
+        &active_elapsed,
+        &idle_baseline,
+        &idle_elapsed,
+        false,
+        1,
+    );
+    assert!(stopped);
+
+    let (_, active_seconds, idle_seconds) = tracker.task_progress.lock().clone();
+    assert_eq!(active_seconds, 4 * 3600, "the 4h held before this run must survive");
+    assert_eq!(idle_seconds, 30, "only this run's own 30s moves to idle");
+}
+
 
 // A break is time off the clock that ends by itself: after the project's break time, or -
 // for a private break - when that break ends. These drive tick_paused against a server that

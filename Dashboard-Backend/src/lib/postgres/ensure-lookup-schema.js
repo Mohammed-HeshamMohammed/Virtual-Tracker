@@ -1020,6 +1020,12 @@ GROUP BY task_id`,
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS stopped_by UUID`,
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS pause_reason VARCHAR(40)`,
   `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ`,
+  // What the agent already had when this session began - the task's lifetime total, or a
+  // recovered session's earlier total. active_seconds/idle_seconds hold only what the
+  // session itself earned (the agent still reports the running total; see
+  // activity-events-postgres.service.js), so summing sessions never re-counts it.
+  `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS seed_active_seconds INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE activity_sessions ADD COLUMN IF NOT EXISTS seed_idle_seconds INTEGER NOT NULL DEFAULT 0`,
   // A row per start, pause, resume and stop, and per refused dashboard
   // request (D3). No foreign key: history must outlive a deleted session.
   `CREATE TABLE IF NOT EXISTS activity_session_events (

@@ -524,7 +524,34 @@ export async function fetchLatestPgScreenshot(memberId, sessionId) {
 
 
 const SESSION_COLUMNS =
-  "id, member_id, task_id, project_id, status, started_at, ended_at, active_seconds, idle_seconds, source, updated_at, stop_reason, pause_reason, paused_at";
+  "id, member_id, task_id, project_id, status, started_at, ended_at, active_seconds, idle_seconds, seed_active_seconds, seed_idle_seconds, source, updated_at, stop_reason, pause_reason, paused_at";
+
+/** How long after a reap the agent's "I'm back" start is still read as the same piece of work. */
+const RECOVERY_WINDOW_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * The session the server last closed as abandoned for this member and work, with the total
+ * the agent had been told for it - what it earned plus what it began with. A recovered
+ * session is seeded with that, so only the seconds the server never received count again.
+ */
+async function findReapedSessionForRecoveryPg({ memberId, taskId, projectId }) {
+  const result = await pgQuery(
+    `SELECT active_seconds + seed_active_seconds AS total_active,
+            idle_seconds + seed_idle_seconds AS total_idle
+     FROM activity_sessions
+     WHERE member_id = $1
+       AND stop_reason = 'abandoned_reap'
+       AND task_id IS NOT DISTINCT FROM $2
+       AND project_id IS NOT DISTINCT FROM $3
+       AND ended_at >= $4
+     ORDER BY ended_at DESC LIMIT 1`,
+    [memberId, taskId, projectId, new Date(Date.now() - RECOVERY_WINDOW_MS)],
+  );
+  const row = result?.rows?.[0];
+  return row
+    ? { totalActive: Math.max(0, Number(row.total_active) || 0), totalIdle: Math.max(0, Number(row.total_idle) || 0) }
+    : null;
+}
 
 export async function findOpenPgSession(memberId) {
   const id = parseProgressUuid(memberId);
@@ -594,14 +621,44 @@ export async function deleteMemberDayActivityWithChildrenPg(memberId, day) {
   });
 }
 
-export async function createPgSession(row) {
+/**
+ * The agent reports a *running total*, not what one session earned: it seeds a new session
+ * with the task's lifetime total (so a stop/start does not reset the clock the limits are
+ * enforced against), and a session it re-opens after a reap carries its whole earlier total.
+ * Every total in this system - Today, the week, limits, reports - is a SUM over sessions, so
+ * storing that running total as the session's own seconds counted the seed again for every
+ * new session, and a recovered session counted the reaped one's hours twice.
+ *
+ * So what the session began with is kept apart as a seed, and `active_seconds` /
+ * `idle_seconds` hold only what it earned itself. Clients still see the running total
+ * (own + seed - see `sessionRunningTotals`), so nothing changes for them.
+ *
+ * `recoveredAfterReap` seeds with what the server already holds for the session it just
+ * reaped, so the seconds that never reached the server (the agent was offline) are the only
+ * ones this session adds. Without a reaped session to match it seeds with everything: it
+ * would rather drop a few unsynced seconds than count hours twice.
+ */
+export async function createPgSession(row, options = {}) {
   const memberId = parseProgressUuid(row.memberId);
   if (!memberId) return null;
   const taskId = row.taskId ? parseProgressUuid(row.taskId) : null;
   const projectId = row.projectId ? parseProgressUuid(row.projectId) : null;
+
+  const incomingActive = Math.max(0, Math.floor(Number(row.activeSeconds) || 0));
+  const incomingIdle = Math.max(0, Math.floor(Number(row.idleSeconds) || 0));
+  let seedActive = incomingActive;
+  let seedIdle = incomingIdle;
+  if (options.recoveredAfterReap) {
+    const reaped = await findReapedSessionForRecoveryPg({ memberId, taskId, projectId });
+    if (reaped) {
+      seedActive = Math.min(incomingActive, reaped.totalActive);
+      seedIdle = Math.min(incomingIdle, reaped.totalIdle);
+    }
+  }
+
   const result = await pgQuery(
-    `INSERT INTO activity_sessions (id, member_id, task_id, project_id, status, started_at, ended_at, active_seconds, idle_seconds, source, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+    `INSERT INTO activity_sessions (id, member_id, task_id, project_id, status, started_at, ended_at, active_seconds, idle_seconds, seed_active_seconds, seed_idle_seconds, source, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (id) DO NOTHING
      RETURNING ${SESSION_COLUMNS}`,
     [
@@ -612,13 +669,24 @@ export async function createPgSession(row) {
       row.status,
       row.startedAt,
       row.endedAt ?? null,
-      row.activeSeconds ?? 0,
-      row.idleSeconds ?? 0,
+      incomingActive - seedActive,
+      incomingIdle - seedIdle,
+      seedActive,
+      seedIdle,
       normalizeSource(row.source),
       row.updatedAt,
     ],
   );
   return result?.rows?.[0] ?? null;
+}
+
+/** The running totals a client was told about a session: what it earned plus what it began with. */
+export function sessionRunningTotals(row) {
+  const own = (earned, seed) => Math.max(0, Math.floor(Number(earned) || 0)) + Math.max(0, Math.floor(Number(seed) || 0));
+  return {
+    activeSeconds: own(row?.active_seconds, row?.seed_active_seconds),
+    idleSeconds: own(row?.idle_seconds, row?.seed_idle_seconds),
+  };
 }
 
 /**
@@ -662,7 +730,7 @@ export async function updatePgSession(sessionId, patch, options = {}) {
   let prev = null;
   if (wantsActive || wantsIdle) {
     const prevResult = await pgQuery(
-      `SELECT member_id, task_id, project_id, started_at, active_seconds, idle_seconds FROM activity_sessions WHERE id = $1`,
+      `SELECT member_id, task_id, project_id, started_at, active_seconds, idle_seconds, seed_active_seconds, seed_idle_seconds FROM activity_sessions WHERE id = $1`,
       [sessionId],
     );
     prev = prevResult?.rows?.[0] ?? null;
@@ -671,8 +739,12 @@ export async function updatePgSession(sessionId, patch, options = {}) {
   let effectiveActive = patch.activeSeconds;
   let effectiveIdle = patch.idleSeconds;
   if (prev) {
+    // The client reports a running total; the row keeps only what the session earned, so
+    // the seed it began with comes off before anything is compared or stored (see createPgSession).
+    const seedActive = Math.max(0, Math.floor(Number(prev.seed_active_seconds ?? 0)));
+    const seedIdle = Math.max(0, Math.floor(Number(prev.seed_idle_seconds ?? 0)));
     if (wantsActive) {
-      const incoming = Math.floor(patch.activeSeconds);
+      const incoming = Math.max(0, Math.floor(patch.activeSeconds) - seedActive);
       const stored = Math.floor(Number(prev.active_seconds ?? 0));
       if (incoming < stored) {
         if (allowDecrease) {
@@ -701,7 +773,7 @@ export async function updatePgSession(sessionId, patch, options = {}) {
       effectiveActive = allowDecrease ? incoming : Math.max(incoming, stored);
     }
     if (wantsIdle) {
-      const incoming = Math.floor(patch.idleSeconds);
+      const incoming = Math.max(0, Math.floor(patch.idleSeconds) - seedIdle);
       const stored = Math.floor(Number(prev.idle_seconds ?? 0));
       effectiveIdle = Math.max(incoming, stored);
     }

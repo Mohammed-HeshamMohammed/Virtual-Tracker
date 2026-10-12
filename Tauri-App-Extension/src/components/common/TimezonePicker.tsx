@@ -109,10 +109,16 @@ export function TimezonePicker({
   value,
   onSelect,
   saving,
+  lockedReason,
 }: {
   value: string;
   onSelect: (zone: string) => void;
   saving?: boolean;
+  /** Set while the selected project declares its own zone: `value` is then that
+   *  project's zone, every figure on screen is already counted in it, and the
+   *  member's own zone isn't what is being shown - so the picker reads as the
+   *  project's and can't be changed from here. The text says why. */
+  lockedReason?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -231,16 +237,20 @@ export function TimezonePicker({
   return (
     // No data-tauri-drag-region anywhere in here: any drag-region ancestor
     // would make every click drag the window instead of opening the menu.
-    <div className="tz-picker" ref={rootRef}>
+    <div className="tz-picker" ref={rootRef} title={lockedReason}>
       <button
         ref={triggerRef}
         type="button"
-        className="tz-trigger"
-        title={`Timezone: ${current} (${offsetOf(current)}) - your day boundaries are resolved in this zone`}
-        aria-label={`Timezone: ${current}. Change`}
+        className={`tz-trigger${lockedReason ? " is-locked" : ""}`}
+        title={
+          lockedReason
+            ? `${lockedReason} (${current}, ${offsetOf(current)})`
+            : `Timezone: ${current} (${offsetOf(current)}) - your day boundaries are resolved in this zone`
+        }
+        aria-label={lockedReason ? `Timezone: ${current}. ${lockedReason}` : `Timezone: ${current}. Change`}
         aria-expanded={open}
         aria-haspopup="listbox"
-        disabled={saving}
+        disabled={saving || Boolean(lockedReason)}
         onClick={() => setOpen((v) => !v)}
       >
         <svg viewBox="0 0 24 24" aria-hidden="true" className="tz-globe">

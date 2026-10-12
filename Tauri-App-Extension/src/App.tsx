@@ -73,6 +73,7 @@ import { SessionControls } from "./components/stats/SessionControls";
 import { WeekChart } from "./components/stats/WeekChart";
 import { TitleBar } from "./components/common/TitleBar";
 import { TimezonePicker } from "./components/common/TimezonePicker";
+import { limitsCalendarKey } from "./utils/calendarKey";
 import { Icon } from "./components/common/Icon";
 import { applyTheme } from "./utils/theme";
 import { notify } from "./utils/notify";
@@ -1334,7 +1335,10 @@ function MainApp() {
   const workedTodayLocalDayRef = useRef<string | null>(null);
   useEffect(() => {
     const next = memberLimits?.workedTodaySeconds ?? 0;
-    const today = new Date().toDateString();
+    // Keyed on the calendar the response was cut in, not the device's day: a project
+    // in another zone re-cuts today, and a floor held over that read as hours that
+    // appeared on their own.
+    const today = limitsCalendarKey(memberLimits, new Date().toDateString()) ?? workedTodayLocalDayRef.current;
     const sameDay = workedTodayLocalDayRef.current === today;
     workedTodayLocalDayRef.current = today;
     const rewindFrom = idleRewindFromRef.current;
@@ -1346,7 +1350,7 @@ function MainApp() {
       }
     }
     setLiveWorkedTodaySeconds((s) => (sameDay ? Math.max(s, next) : next));
-  }, [memberLimits?.workedTodaySeconds, tracking]);
+  }, [memberLimits?.workedTodaySeconds, memberLimits?.timeZone, memberLimits?.todayDay, tracking]);
 
   useEffect(() => {
     if (!tracking || (session?.idleStage ?? 0) !== 0) return;
@@ -1367,22 +1371,31 @@ function MainApp() {
   const idleTodayLocalDayRef = useRef<string | null>(null);
   useEffect(() => {
     const next = memberLimits?.todayActivity?.idleSeconds ?? 0;
-    const today = new Date().toDateString();
+    const today = limitsCalendarKey(memberLimits, new Date().toDateString()) ?? idleTodayLocalDayRef.current;
     const sameDay = idleTodayLocalDayRef.current === today;
     idleTodayLocalDayRef.current = today;
     setLiveIdleTodaySeconds((s) => (sameDay ? Math.max(s, next) : next));
-  }, [memberLimits?.todayActivity?.idleSeconds]);
+  }, [memberLimits?.todayActivity?.idleSeconds, memberLimits?.timeZone, memberLimits?.todayDay]);
 
   const activityTodayLocalDayRef = useRef<string | null>(null);
   useEffect(() => {
     const nextActive = memberLimits?.projectTodayActivity?.activeSeconds ?? 0;
     const nextIdle = memberLimits?.projectTodayActivity?.idleSeconds ?? 0;
-    const today = new Date().toDateString();
+    // Project-scoped as well as zone-scoped: switching project swaps the whole figure.
+    const today =
+      limitsCalendarKey(memberLimits, new Date().toDateString(), { includeProject: true }) ??
+      activityTodayLocalDayRef.current;
     const sameDay = activityTodayLocalDayRef.current === today;
     activityTodayLocalDayRef.current = today;
     setLiveActivityActiveSeconds((s) => (sameDay ? Math.max(s, nextActive) : nextActive));
     setLiveActivityIdleSeconds((s) => (sameDay ? Math.max(s, nextIdle) : nextIdle));
-  }, [memberLimits?.projectTodayActivity?.activeSeconds, memberLimits?.projectTodayActivity?.idleSeconds]);
+  }, [
+    memberLimits?.projectTodayActivity?.activeSeconds,
+    memberLimits?.projectTodayActivity?.idleSeconds,
+    memberLimits?.timeZone,
+    memberLimits?.todayDay,
+    memberLimits?.projectId,
+  ]);
 
   useEffect(() => {
     if (!tracking) return;
@@ -2320,7 +2333,19 @@ function MainApp() {
     />
   );
   const timezonePicker = (
-    <TimezonePicker value={displayTimezone} onSelect={handleSelectTimezone} saving={savingTimezone} />
+    // Shows the zone the screen is actually counted in: the project's when it declares one
+    // (the header clock, Today and the week already follow it), else the member's own.
+    // While a project's zone is showing, it's the project's to change, not the member's.
+    <TimezonePicker
+      value={projectTimezone}
+      onSelect={handleSelectTimezone}
+      saving={savingTimezone}
+      lockedReason={
+        selectedProject?.timezone
+          ? `Set by the project "${selectedProject.name}" - its days are counted in this zone. Pick another project to change your own.`
+          : undefined
+      }
+    />
   );
 
   if (signedIn && monitoringNotice?.requiresAcknowledgement) {

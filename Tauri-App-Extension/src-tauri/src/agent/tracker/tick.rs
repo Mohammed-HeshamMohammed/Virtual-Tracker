@@ -490,7 +490,10 @@ impl ActivityTracker {
         }
 
         // Past the project's own allowance: stop immediately and rewind.
-        let (rewound, reversed) = Self::rewind_active(active_total, watch.active_at_last_input);
+        let (rewound, reversed) = Self::rewind_active(
+            active_total,
+            Self::rewind_floor(watch.active_at_last_input, *active_baseline),
+        );
         let idle_total = idle_baseline.saturating_add(*idle_elapsed).saturating_add(reversed);
 
         log::info!(
