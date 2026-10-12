@@ -1,0 +1,475 @@
+/* Focus and Easy mode: the app's two compact windows. They share the Dashboard's palette (see
+   dashboard-style.css, where .mode-shell is defined next to .db-layout) and differ mostly in size:
+   everything is in em, Focus is 13px and Easy is 16px times the user's text-size step. */
+.mode-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100vh;
+  height: 100dvh;
+  color: var(--db-text);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.mode-easy {
+  font-size: calc(16px * var(--easy-scale, 1.25));
+}
+.mode-shell :focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 2px;
+}
+
+/* ---- title bar ---- */
+.mode-bar {
+  display: flex;
+  flex: 0 0 36px;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 0 0 12px;
+  background: var(--db-canvas);
+  font-size: 13px;
+}
+.mode-bar .logo-mark {
+  --h: 20px;
+  display: block;
+}
+.mode-bar-title {
+  color: var(--db-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.mode-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.mode-icon-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--db-muted);
+}
+.mode-icon-button svg {
+  width: 16px;
+  height: 16px;
+}
+.mode-icon-button:hover:not(:disabled) {
+  background: var(--db-hover);
+  color: var(--db-text);
+}
+.mode-icon-button.on {
+  color: var(--db-accent);
+}
+.mode-icon-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.mode-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 6px;
+  color: var(--db-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ---- body and cards ---- */
+.mode-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.8em;
+  min-height: 0;
+  padding: 2px 12px 12px;
+  overflow-y: auto;
+}
+.mode-focus .mode-body {
+  width: 100%;
+  max-width: 30em;
+  margin: 0 auto;
+}
+.mode-easy .mode-body {
+  width: 100%;
+  max-width: 46em;
+  margin: 0 auto;
+  padding: 0.4em 1.2em 1.4em;
+  gap: 1em;
+}
+.mode-card {
+  flex-shrink: 0;
+  padding: 1.1em;
+  border-radius: 1.4em;
+  background: var(--db-card);
+  box-shadow: var(--db-shadow);
+}
+.mode-card h2 {
+  margin: 0 0 0.5em;
+  color: var(--db-muted);
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mode-hint {
+  margin: 0.5em 0 0;
+  color: var(--db-muted);
+  font-size: 0.92em;
+}
+.easy-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8em 1.2em;
+}
+.easy-hello {
+  flex: 1 1 13em;
+}
+.easy-top .mode-today {
+  flex: 1 1 15em;
+  padding: 0.8em 1em;
+}
+.easy-hello h1 {
+  margin: 0;
+  font-size: 1.7em;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.easy-hello p {
+  margin: 0.15em 0 0;
+  color: var(--db-muted);
+}
+
+/* ---- timer ---- */
+.mode-pickers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6em;
+}
+.mode-focus .mode-pickers {
+  grid-template-columns: minmax(0, 1fr);
+}
+.mode-focus .mode-card {
+  padding: 0.95em;
+}
+.mode-pickers label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+  min-width: 0;
+}
+.mode-pickers label span {
+  color: var(--db-muted-2);
+  font-size: 0.82em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mode-pickers select {
+  width: 100%;
+  height: 2.5em;
+  padding: 0 0.8em;
+  border: 1px solid var(--db-line);
+  border-radius: 0.8em;
+  background: var(--db-card-2);
+  color: var(--db-text);
+  font: inherit;
+  text-overflow: ellipsis;
+}
+.mode-pickers select:disabled {
+  opacity: 0.6;
+}
+/* The timer card is a size container so the clock (which now carries milliseconds) always fits it. */
+.mode-timer-card {
+  container-type: inline-size;
+}
+.mode-clock {
+  margin-top: 0.5em;
+  margin-bottom: 0.2em;
+  font-size: min(3.4em, 14.5cqw);
+}
+.mode-easy .mode-clock {
+  font-size: min(3.8em, 14.5cqw);
+}
+.mode-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  margin: 0 0 0.9em;
+  color: var(--db-muted);
+  font-size: 0.92em;
+}
+.mode-state i {
+  width: 0.55em;
+  height: 0.55em;
+  border-radius: 50%;
+  background: var(--db-muted-2);
+}
+.mode-state.running i {
+  background: var(--db-accent);
+  box-shadow: 0 0 0 0.25em var(--db-accent-soft);
+}
+.mode-actions {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 0.6em;
+}
+.mode-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5em;
+  min-height: 2.9em;
+  padding: 0 1em;
+  border: 1px solid var(--db-line);
+  border-radius: 1em;
+  background: var(--db-card-2);
+  color: var(--db-text);
+  font: inherit;
+  font-weight: 600;
+  transition:
+    background 0.15s ease,
+    transform 0.15s ease;
+}
+.mode-button svg {
+  width: 1.15em;
+  height: 1.15em;
+  flex-shrink: 0;
+}
+.mode-button:hover:not(:disabled) {
+  background: var(--panel-soft);
+}
+.mode-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+.mode-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.mode-button.primary {
+  border-color: transparent;
+  background: linear-gradient(150deg, var(--db-hero-a), var(--db-hero-b));
+  color: #fff;
+}
+.mode-button.primary:hover:not(:disabled) {
+  background: linear-gradient(150deg, var(--db-hero-a), var(--db-hero-a));
+}
+.mode-button.small {
+  min-height: 2.2em;
+  padding: 0 0.8em;
+  border-radius: 0.8em;
+  font-size: 0.9em;
+}
+.mode-easy .mode-button {
+  min-height: 3.1em;
+}
+.mode-input {
+  width: 100%;
+  height: 2.5em;
+  margin-top: 0.7em;
+  padding: 0 0.9em;
+  border: 1px solid var(--db-line);
+  border-radius: 0.8em;
+  background: var(--db-card-2);
+  color: var(--db-text);
+  font: inherit;
+}
+.mode-input::placeholder {
+  color: var(--db-muted-2);
+}
+
+/* ---- today ---- */
+.mode-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6em;
+  color: var(--db-muted);
+}
+.mode-row > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+.mode-row svg {
+  color: var(--db-accent);
+}
+.mode-row strong {
+  color: var(--db-text);
+  font-size: 1.15em;
+  font-weight: 650;
+}
+.mode-row strong small {
+  color: var(--db-muted);
+  font-size: 0.78em;
+  font-weight: 500;
+}
+.mode-meter {
+  height: 0.55em;
+  margin-top: 0.7em;
+  border-radius: 999px;
+  background: var(--db-track);
+  overflow: hidden;
+}
+.mode-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--db-accent-strong), var(--db-accent));
+  transition: width 0.4s ease;
+}
+
+/* ---- task lists ---- */
+.mode-next ul,
+.mode-tasks ul {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mode-next li,
+.mode-tasks li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7em;
+  padding: 0.55em 0;
+  border-top: 1px solid var(--db-line);
+}
+.mode-next li:first-child,
+.mode-tasks li:first-child {
+  border-top: 0;
+}
+.mode-tasks li {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.mode-tasks li.current strong {
+  color: var(--db-accent-ink);
+}
+.mode-next li span,
+.mode-tasks li span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.mode-next strong,
+.mode-tasks strong {
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mode-next small,
+.mode-tasks small {
+  overflow: hidden;
+  color: var(--db-muted);
+  font-size: 0.85em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mode-check {
+  display: grid;
+  place-items: center;
+  width: 1.9em;
+  height: 1.9em;
+  border: 2px solid var(--db-muted-2);
+  border-radius: 0.55em;
+  background: transparent;
+  color: transparent;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+.mode-check svg {
+  width: 1em;
+  height: 1em;
+}
+.mode-check:hover {
+  border-color: var(--db-accent);
+  color: var(--db-accent);
+}
+
+/* ---- Easy mode's big tiles ---- */
+.easy-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8em;
+}
+.easy-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15em;
+  padding: 1em 1.1em;
+  border: 1px solid transparent;
+  border-radius: 1.3em;
+  background: var(--db-card);
+  box-shadow: var(--db-shadow);
+  color: var(--db-text);
+  font: inherit;
+  text-align: left;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+.easy-tile svg {
+  width: 2em;
+  height: 2em;
+  margin-bottom: 0.3em;
+  color: var(--db-accent);
+}
+.easy-tile strong {
+  font-size: 1.05em;
+}
+.easy-tile small {
+  color: var(--db-muted);
+  font-size: 0.88em;
+}
+.easy-tile:hover {
+  border-color: var(--db-accent);
+  transform: translateY(-2px);
+}
+
+/* ---- footer ---- */
+.mode-foot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 12px 10px;
+  font-size: 12px;
+}
+.mode-easy .mode-foot {
+  justify-content: center;
+}
+.mode-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--db-muted);
+  font: inherit;
+}
+.mode-link:hover {
+  background: var(--db-hover);
+  color: var(--db-text);
+}
+
+@media (max-width: 700px) {
+  .mode-easy .mode-pickers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

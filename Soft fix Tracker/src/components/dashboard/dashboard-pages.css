@@ -1,0 +1,864 @@
+/* The Dashboard's pages beyond the Overview: the tab strip, KPI rows, tables, and the cards the
+   Screenshots, Teams, Financials and Reports pages use. Colours come from the palette tokens
+   defined on .db-layout in dashboard-style.css, so both themes follow. */
+
+/* ---- the page menu in the breadcrumb, and filter dropdowns ----
+   Pages and filters used to be rows of tabs; they are dropdowns now, which gives the page back
+   the height of those rows. */
+.db-crumb-menu .menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 12px;
+  border: 1px solid var(--db-line);
+  border-radius: 999px;
+  background: var(--db-card);
+  color: var(--db-text);
+  font-size: 12px;
+  transition: border-color 0.16s ease;
+}
+.db-crumb-menu .menu-trigger:hover,
+.db-crumb-menu .menu-trigger[aria-expanded="true"] {
+  border-color: var(--db-accent);
+}
+.db-crumb-menu .menu-trigger svg {
+  color: var(--db-muted);
+  transition: transform 0.18s ease;
+}
+.db-crumb-menu .menu-trigger[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.db-crumb-menu .menu-pop {
+  min-width: 270px;
+}
+.db-filter-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 6px 0 14px;
+  border: 1px solid var(--db-line);
+  border-radius: 12px;
+  background: var(--db-card);
+  color: var(--db-muted);
+  font-size: 12px;
+}
+.db-filter-select:focus-within {
+  border-color: var(--db-accent);
+}
+.db-filter-select select {
+  min-height: 36px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--db-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.db-filter-select select option {
+  background: var(--db-card);
+  color: var(--db-text);
+}
+
+/* ---- KPI row ---- */
+.db-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.db-kpis > div {
+  padding: 16px 20px;
+  border: 1px solid var(--db-line);
+  border-radius: var(--radius);
+  background: var(--db-card);
+  box-shadow: var(--db-shadow);
+}
+.db-kpis span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--db-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.db-kpis strong {
+  font-family: Manrope, sans-serif;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+.db-kpis small {
+  margin-left: 8px;
+  color: var(--db-muted-2);
+  font-family: "DM Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.db-kpis .tone-good strong {
+  color: var(--green);
+}
+.db-kpis .tone-warn strong {
+  color: var(--warning);
+}
+
+/* ---- tables ---- */
+.db-page .db-table-card {
+  margin-bottom: 18px;
+}
+.db-heat {
+  position: relative;
+  display: inline-block;
+  min-width: 46px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  isolation: isolate;
+}
+.db-heat::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--db-accent);
+  opacity: calc(var(--heat, 0) * 0.34);
+}
+.db-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 130px;
+}
+.db-share > i {
+  flex: 0 0 auto;
+  height: 7px;
+  max-width: 90px;
+  min-width: 2px;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--db-accent-strong), var(--db-accent));
+}
+.db-share > b {
+  min-width: 36px;
+  color: var(--db-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.db-decide {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.db-decide .sf-button {
+  min-height: 34px;
+  padding: 0 14px;
+}
+.db-task-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.db-rate {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--db-muted);
+}
+.db-rate input {
+  width: 74px;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--db-line);
+  border-radius: 10px;
+  background: var(--db-card-2);
+  color: var(--db-text);
+  font: inherit;
+  text-align: right;
+}
+.db-week-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px;
+  border: 1px solid var(--db-line);
+  border-radius: 999px;
+  background: var(--db-card);
+  font-size: 13px;
+}
+.db-week-nav strong {
+  min-width: 108px;
+  text-align: center;
+  font-weight: 600;
+}
+.db-week-nav .sf-icon-button:disabled {
+  opacity: 0.35;
+}
+
+/* ---- statuses the older pages did not have ---- */
+.db-status-pending,
+.db-status-scheduled,
+.db-status-neutral,
+.db-status-waiting {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  border-color: transparent;
+}
+.db-status-rejected,
+.db-status-declined,
+.db-status-banned,
+.db-status-over-budget,
+.db-status-distracting {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: transparent;
+}
+.db-status-reimbursed,
+.db-status-active,
+.db-status-productive,
+.db-status-on-track,
+.db-status-on-time,
+.db-status-done {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 12%, transparent);
+  border-color: transparent;
+}
+.db-status-neutral {
+  color: var(--db-muted);
+  background: var(--db-track);
+}
+
+/* ---- Screenshots ---- */
+.db-shots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+.db-page .db-shot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  text-align: left;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease;
+}
+.db-page .db-shot:hover {
+  transform: translateY(-3px);
+  border-color: var(--db-accent);
+}
+.db-shot-art {
+  --tone: 160;
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: 12px;
+  background: linear-gradient(145deg, hsl(var(--tone) 55% 24%), hsl(calc(var(--tone) + 40) 50% 14%));
+}
+.db-shot-art.large {
+  margin-bottom: 12px;
+  border-radius: 14px;
+}
+.db-shot-art > i {
+  position: absolute;
+  left: 8%;
+  height: 8%;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.db-shot-art > i:nth-child(1) {
+  top: 14%;
+  width: 52%;
+}
+.db-shot-art > i:nth-child(2) {
+  top: 30%;
+  width: 78%;
+  background: rgba(255, 255, 255, 0.1);
+}
+.db-shot-art > i:nth-child(3) {
+  top: 46%;
+  width: 36%;
+  background: rgba(255, 255, 255, 0.22);
+}
+.db-shot-art > em {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.42);
+  color: #fff;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+}
+.db-shot-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 4px 4px;
+}
+.db-shot-meta small {
+  color: var(--db-muted);
+}
+.db-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 18px;
+}
+
+/* ---- Tools, Teams ---- */
+.db-tool-grid,
+.db-team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.db-page .db-tool,
+.db-page .db-team {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+}
+.db-tool > strong {
+  font-family: Manrope, sans-serif;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+}
+.db-avatar-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.db-team-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0;
+}
+.db-team-stats div {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--db-card-2);
+}
+.db-team-stats dt {
+  color: var(--db-muted);
+  font-size: 12px;
+}
+.db-team-stats dd {
+  margin: 2px 0 0;
+  font-weight: 650;
+}
+.db-team > .db-text-button {
+  align-self: flex-start;
+}
+
+/* ---- Financials ---- */
+.db-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.db-page .db-pad {
+  padding: 22px;
+}
+.db-form-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.db-hbars {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+}
+.db-hbar {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) 84px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+.db-hbar > span {
+  color: var(--db-muted);
+}
+.db-hbar > i {
+  height: 10px;
+  border-radius: 99px;
+  background: var(--db-track);
+  overflow: hidden;
+}
+.db-hbar > i > b {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  border-radius: inherit;
+  background: var(--db-accent);
+}
+.db-hbar.out > i > b {
+  background: var(--violet);
+}
+.db-hbar.wait > i > b {
+  background: var(--warning);
+}
+.db-hbar > strong {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.db-todo {
+  display: flex;
+  flex-direction: column;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.db-todo li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--db-line);
+}
+.db-todo li:first-child {
+  border-top: 0;
+}
+.db-todo li > span {
+  display: flex;
+  flex-direction: column;
+}
+.db-todo small {
+  color: var(--db-muted);
+}
+.db-check {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--db-muted);
+  font-size: 13px;
+}
+.db-checks {
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+.db-checks legend {
+  margin-bottom: 8px;
+  color: var(--db-muted);
+  font-size: 12px;
+}
+.db-checks label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+/* ---- Reports hub ---- */
+.db-report-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.db-page .db-report-group {
+  padding: 20px;
+}
+.db-report-group h2 {
+  margin: 0 0 8px;
+  color: var(--db-accent-ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.db-report-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--db-text);
+  text-align: left;
+  transition: background 0.16s ease;
+}
+.db-report-link:hover {
+  background: var(--db-hover);
+}
+.db-report-link:hover svg {
+  color: var(--db-accent);
+}
+.db-report-link span {
+  display: flex;
+  flex-direction: column;
+}
+.db-report-link small {
+  color: var(--db-muted);
+  font-size: 12px;
+}
+
+/* ---- Notifications, and the Overview's attention list ---- */
+.db-notices {
+  margin: 0;
+  padding: 6px 18px;
+  list-style: none;
+}
+.db-notices li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-top: 1px solid var(--db-line);
+}
+.db-notices li:first-child {
+  border-top: 0;
+}
+.db-notice-icon {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--db-accent-soft);
+  color: var(--db-accent);
+}
+.db-notice-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+.db-notice-copy small {
+  color: var(--db-muted);
+}
+.db-attention-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.db-attention-list button {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--db-card-2);
+  color: var(--db-text);
+  text-align: left;
+  transition: background 0.16s ease;
+}
+.db-attention-list button:hover {
+  background: var(--db-hover);
+}
+.db-attention-list strong {
+  font-size: 13px;
+  font-weight: 650;
+}
+.db-attention-list small {
+  color: var(--db-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 1100px) {
+  .db-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .db-hbar {
+    grid-template-columns: 96px minmax(0, 1fr) 72px;
+  }
+}
+
+/* ---- the sidebar's project list: it narrows every Dashboard page to one project ----
+   Only this list scrolls (when it has more than five rows); the rest of the sidebar never does. */
+/* (.sf-sidebar scrolls by default, hence the doubled selector) */
+.sf-sidebar.db-sidebar {
+  overflow: hidden;
+}
+.db-sidebar nav,
+.db-sidebar .db-workspace,
+.db-sidebar-bottom {
+  flex-shrink: 0;
+}
+.db-scope {
+  display: flex;
+  /* The project list is the sidebar's flexible part: it takes whatever height the menu and the
+     bottom block leave, and scrolls inside that space, so nothing ever overlaps. */
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  margin-top: 18px;
+}
+.db-scope-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.db-scope-caption small {
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: var(--db-track);
+  font-size: 10px;
+  letter-spacing: 0;
+}
+.db-scope-list {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 2px;
+  /* two rows, so the list can always scroll even when the window is short */
+  min-height: 76px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--db-line) transparent;
+}
+.db-scope-list::-webkit-scrollbar {
+  width: 6px;
+}
+.db-scope-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.db-scope-list::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: var(--db-line);
+}
+.db-scope-list::-webkit-scrollbar-thumb:hover {
+  background: var(--db-muted-2);
+}
+.db-scope-row {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--db-muted);
+  font-size: 13px;
+  text-align: left;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease;
+}
+.db-scope-row > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.db-scope-row small {
+  color: var(--db-muted-2);
+  font-size: 11px;
+}
+.db-scope-row:hover {
+  background: var(--db-hover);
+  color: var(--db-text);
+}
+.db-scope-row.active {
+  background: var(--db-accent-soft);
+  color: var(--db-accent-ink);
+  font-weight: 600;
+}
+.db-scope-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--db-accent);
+}
+.db-scope-dot.all {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--db-muted-2);
+}
+.db-scope-dot.violet {
+  background: var(--violet);
+}
+.db-scope-dot.cyan {
+  background: var(--cyan);
+}
+.db-scope-dot.gold,
+.db-scope-dot.orange {
+  background: var(--warning);
+}
+.db-scope-dot.green {
+  background: var(--green);
+}
+/* On shorter windows the menu tightens and the decorative note gives way to the project list. */
+@media (max-height: 940px) {
+  .db-sidebar .db-nav-item {
+    min-height: 36px;
+  }
+  .db-sidebar .db-manage-label {
+    padding-top: 12px;
+  }
+  .db-sidebar .db-workspace {
+    padding-bottom: 12px;
+  }
+  .db-scope {
+    margin-top: 10px;
+  }
+}
+/* Shorter still: the menu tightens once more, so the project list keeps a few rows. */
+@media (max-height: 800px) {
+  .db-sidebar .db-nav-item {
+    min-height: 32px;
+  }
+  .db-sidebar nav {
+    gap: 0;
+  }
+  .db-sidebar .db-manage-label {
+    padding-top: 8px;
+    padding-bottom: 6px;
+  }
+  .db-sidebar-bottom {
+    padding-top: 12px;
+  }
+}
+@media (max-height: 1000px) {
+  .db-sidebar-note {
+    display: none;
+  }
+  .db-sidebar-bottom {
+    padding-top: 12px;
+  }
+}
+.db-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--db-accent);
+  border-radius: 999px;
+  background: var(--db-accent-soft);
+  color: var(--db-accent-ink);
+  font-size: 12px;
+}
+.db-scope-chip span {
+  color: var(--db-muted);
+}
+.db-scope-chip strong {
+  font-weight: 650;
+}
+
+/* ---- Tasks: priorities, row actions and the board ---- */
+.db-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--db-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.db-priority::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--db-muted-2);
+}
+.db-priority.high {
+  color: var(--danger);
+}
+.db-priority.high::before {
+  background: var(--danger);
+}
+.db-priority.medium::before {
+  background: var(--warning);
+}
+.db-priority.low::before {
+  background: var(--green);
+}
+.db-task-title,
+.db-taskcard-title {
+  padding: 0;
+  background: transparent;
+  color: var(--db-text);
+  font-weight: 650;
+  text-align: left;
+}
+.db-task-title:hover,
+.db-taskcard-title:hover {
+  color: var(--db-accent-ink);
+}
+.db-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+}
+.db-taskboard {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+.db-taskcol {
+  padding: 14px;
+  border: 1px solid var(--db-line);
+  border-radius: var(--radius);
+  background: var(--db-card-2);
+}
+.db-taskcol > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.db-taskcol h2 {
+  margin: 0;
+  font-size: 13px;
+}
+.db-taskcol > header small {
+  padding: 1px 8px;
+  border-radius: 99px;
+  background: var(--db-track);
+  color: var(--db-muted);
+}
+.db-taskcard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 14px;
+  border: 1px solid var(--db-line);
+  border-radius: 14px;
+  background: var(--db-card);
+}
+.db-taskcard small {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--db-muted);
+}
+.db-taskcard p {
+  margin: 0;
+  color: var(--db-muted);
+  font-size: 12px;
+}
+.db-taskcard .db-text-button {
+  align-self: flex-start;
+}
+.db-taskcol-empty {
+  margin: 0;
+  color: var(--db-muted-2);
+  font-size: 12px;
+}
+@media (max-width: 900px) {
+  .db-taskboard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

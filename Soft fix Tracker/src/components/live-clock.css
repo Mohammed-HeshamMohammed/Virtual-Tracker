@@ -1,0 +1,240 @@
+/* The timer's face (LiveClock). Everything is sized in em from the font size the place it sits in
+   gives it, and the colours are the app's own tokens, so it follows each mode and both themes.
+   Only transform, opacity and a little blur move; the ruler's head and the milliseconds are written
+   by script once per frame. */
+.lc {
+  --lc-dim: color-mix(in srgb, var(--text) 14%, transparent);
+  --lc-glow: color-mix(in srgb, var(--accent) 38%, transparent);
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.16em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  color: var(--text);
+  user-select: none;
+}
+.lc-face {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  isolation: isolate;
+}
+/* The glow is one soft halo behind the whole face. (A text-shadow would be clipped into boxes by
+   the digits' rolling windows.) */
+.lc-face::before {
+  content: "";
+  position: absolute;
+  inset: -0.12em -0.28em;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--lc-glow), transparent);
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+}
+
+/* ---- rolling digits ---- */
+.lc-digit {
+  position: relative;
+  display: inline-block;
+  width: 0.66em;
+  height: 1.1em;
+  overflow: hidden;
+  text-align: center;
+  line-height: 1.1;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 84%, transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 16%, #000 84%, transparent 100%);
+}
+.lc-in {
+  display: inline-block;
+  animation: lc-in 0.46s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+.lc-out {
+  position: absolute;
+  inset: 0;
+  animation: lc-out 0.3s cubic-bezier(0.4, 0, 1, 1) both;
+}
+/* The new digit comes up from below, overshoots a touch, and settles; the old one lifts away. */
+@keyframes lc-in {
+  0% {
+    opacity: 0;
+    transform: translateY(64%);
+    filter: blur(2px);
+  }
+  28% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  55% {
+    transform: translateY(-6%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+@keyframes lc-out {
+  to {
+    opacity: 0;
+    transform: translateY(-64%);
+    filter: blur(2px);
+  }
+}
+.lc-colon {
+  display: inline-block;
+  width: 0.3em;
+  text-align: center;
+  opacity: 0.5;
+  transform: translateY(-0.04em);
+}
+.lc-ms {
+  min-width: 2.2em;
+  margin-left: 0.12em;
+  color: var(--muted);
+  font-size: 0.44em;
+  font-weight: 600;
+  text-align: left;
+}
+
+/* ---- the ruler: 60 ticks for the 60 seconds, and a head that sweeps along them ---- */
+.lc-ruler {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 0.3em;
+  margin: 0.06em 0.12em 0;
+}
+.lc-ruler > i {
+  width: max(1px, 0.03em);
+  height: 0.1em;
+  border-radius: 1px;
+  background: var(--lc-dim);
+  transition:
+    background 0.25s ease,
+    height 0.18s ease,
+    box-shadow 0.25s ease;
+}
+.lc-ruler > i.major {
+  height: 0.17em;
+}
+.lc-ruler > i.lit {
+  background: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+/* The tick the head has just reached stands up and glows. */
+.lc-ruler > i.now {
+  height: 0.28em;
+  background: var(--accent);
+  box-shadow: 0 0 0.3em var(--lc-glow);
+}
+.lc-head {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 0.14em;
+  height: 0.14em;
+  margin: -0.07em 0 0 -0.07em;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow:
+    0 0 0.4em var(--accent),
+    0 0 1em var(--lc-glow);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+.lc-pulse {
+  position: absolute;
+  inset: -0.02em;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+}
+/* A ripple leaves the head on every second. */
+.is-running .lc-pulse {
+  animation: lc-pulse 0.75s ease-out both;
+}
+@keyframes lc-pulse {
+  from {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(4.2);
+  }
+}
+
+/* ---- states ---- */
+.lc.is-idle .lc-face {
+  color: var(--muted);
+}
+.lc.is-running .lc-face::before {
+  opacity: 0.55;
+  animation: lc-halo 2s ease-in-out infinite;
+}
+@keyframes lc-halo {
+  50% {
+    opacity: 0.28;
+  }
+}
+.lc.is-running .lc-head {
+  opacity: 1;
+}
+.lc.is-running .lc-ms {
+  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
+}
+/* Paused: the head stops where it was and the whole face breathes slowly. */
+.lc.is-paused .lc-head {
+  opacity: 0.45;
+}
+.lc.is-paused .lc-face {
+  animation: lc-breathe 2.6s ease-in-out infinite;
+}
+@keyframes lc-breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* ---- where it sits ---- */
+/* Work's focus card: the clock fits the card's width whatever the window size. */
+.wk-timer {
+  container-type: inline-size;
+  align-self: stretch;
+  width: 100%;
+}
+.wk-timer .lc {
+  align-self: center;
+  font-size: clamp(30px, 16cqw, 64px);
+}
+.lc.mode-clock {
+  display: flex;
+  width: fit-content;
+  margin-inline: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lc-out {
+    display: none;
+  }
+  .lc-in,
+  .lc-out,
+  .lc-pulse,
+  .lc.is-paused .lc-face,
+  .lc.is-running .lc-face::before {
+    animation: none;
+  }
+}
+:root[data-reduced-motion="true"] .lc-in,
+:root[data-reduced-motion="true"] .lc-out,
+:root[data-reduced-motion="true"] .lc-pulse,
+:root[data-reduced-motion="true"] .lc.is-paused .lc-face,
+:root[data-reduced-motion="true"] .lc.is-running .lc-face::before {
+  animation: none;
+}
+:root[data-reduced-motion="true"] .lc-out {
+  display: none;
+}

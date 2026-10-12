@@ -1,69 +1,45 @@
-# Soft Fix Tracker
+# Soft Fix Workplace
 
-An isolated React + Tauri-ready UI project for the Soft Fix Workplace design. It does not modify or import tracking, release, updater, authentication, or backend behavior from the current Virtual Tracker app. Nothing in it calls a real API - every screen runs on local mock data.
+An isolated React + Vite frontend for **Work, Lounge, and Dashboard**. All application data is local sample data. This project does not import or modify the production tracker, web dashboard, authentication services, or backend.
 
-## Current scope
-
-The window keeps Windows' own title bar machinery (`decorations: true`), so minimize / maximize /
-close are the real buttons and keep everything the system gives them: the Snap Layouts flyout
-on hover over maximize, hover / pressed states, the system menu, double-click to maximize,
-drag-to-snap. Only those three buttons are Windows'; the rest of the title-bar row is the app's
-own header - the Lounge / Work / Dashboard switch and Settings - and its empty space drags the
-window.
-
-How (`caption` module in `src-tauri/src/lib.rs`, Windows only): the client area is extended up
-over the old title bar (`WM_NCCALCSIZE`), DWM keeps painting the caption buttons and hit-tests
-them through `DwmDefWindowProc`, and the web view gets a region with the buttons' rectangle cut
-out so they show and receive the mouse instead of the page. A 5px strip along the top is cut
-out too and answered as the window's top resize edge. The buttons' size reaches the frontend
-through the `caption_inset` command / `caption-inset` event, and `AppToolbar` pads itself
-clear of them. If any step fails (no web-view child window, DWM refusing the bounds) the window
-stays exactly as Windows made it and the header simply sits under the normal, recoloured
-(`match_title_bar`) title bar. Not verified on Windows 10 or on multi-monitor DPI changes.
-
-- **Lounge** - the original `Nova Vanguard / #general-orbit` Figma frame: a Coworkers/DM view and a project-channels view (their own toggle, top-left), mission card, crew roster, and the voice/profile dock. Channel switching, squad joining, message composition, mute, and deafen all work locally.
-- **Work** - a time-tracking mode restyled from Tauri-App-Extension's real screens into this design system: a project/task picker, a live clock and a timer that actually ticks while "tracking" is on (Start/Pause/Stop), today/week/activity/budget stat tiles, and who else on the team is tracking. The timer only resets when you change project or task - not when you switch mode (see below).
-- **Dashboard** - Dashboard-Web's Command Center, copied in structure and wording (sidebar sections, breadcrumb, search, notifications, stat cards, the weekly productivity chart, Project Health) into this app's own styling. Only the Dashboard section is filled in; the other sidebar entries show a placeholder. A floating chat button (bottom right, hover to reveal its label) jumps straight to the Lounge.
-
-All three modes stay mounted at once - switching between them hides and shows, it never remounts - so a running timer, a picked project, a half-open menu, or a scroll position survives the round trip instead of resetting. Every interactive row across both Lounge and Work now shares the same hover/active transition instead of some snapping instantly and others not reacting at all.
-
-## Run the UI
+## Run
 
 ```powershell
 npm install
 npm run dev
 ```
 
-Open `http://127.0.0.1:1421/`.
+Open http://127.0.0.1:1421/. Build with `npm run build`.
 
-## Build the UI
+## Screens and interactions
 
-```powershell
-npm run build
-```
+- **Work:** focus timer with start/pause/resume/finish (a live clock that shows milliseconds, rolls its digits, and has a 60-tick second ruler with a glowing head that pulses every second; milliseconds can be turned off in Work settings, and reduced motion drops them and the rolling), a project picker in the sidebar (pick one and Up next shows only its tasks, and, when idle, the timer moves to it), one "Working on" line with a Change menu (grouped by project) that stays in step with Up next, one-line task rows that end in an ellipsis with a hover tooltip carrying the details (project, priority, due date, time tracked, notes), "On your agenda" across every project, your own tasks as a checklist or board (tick, start, no editing), your timesheet (edit your drafts, submit the week, export) and daily planning. Work only has what you use while you work; making and managing things happens in the Dashboard: Work's New task and the arrow on a task open the Dashboard's Tasks page, and Request time opens its Manual Time Requests form.
+- **Lounge:** coworkers, direct messages, project rooms, persistent drafts and conversations, saved messages, local invitations and requests, room creation/join/leave, and a clearly identified voice-room preview.
+- **Dashboard:** the real Dashboard's sections and pages (`src/data/dashboard.ts` copies Dashboard-Web's `nav-sections.ts`), reached from a dropdown on the page name in the top bar's breadcrumb (Section > Page, starting with the sidebar's own title, with Reports listing all 21 reports under their groups), so there is no row of tabs taking space from the page. Filters that used to be tab rows (status, view) are dropdowns next to the search box. Overview (Command Center, Notifications); Timesheets (Time & Activity, Task Approvals, Timesheets, Manual Time Requests); Activity (Overview, Screenshots, Apps, URLs, Tools, Removal Requests); Projects (Overview, Projects, Tasks, Clients, Time off requests); Reports (an All reports hub with the 21 reports of the real Reports menu, plus Custom); People (Members, Members tree, Teams, Banned members, Customer accounts); Financials (Overview, Manage payroll, Create payments, Payment records, Invoices, Expenses). The extra pages keep their records locally (`dashboard.*` keys, see `components/dashboard/pages/stores.ts`): approving a manual time request adds an approved session to the timesheets, paying someone marks their approved time as paid, and every action is written to the audit log. Screenshots, apps and sites are sample figures worked out from the sessions (`activity-data.ts`), since Soft Fix has no capture agent. Which pages a role may open follows the real Dashboard's rules (`pageAllowed`): owners, admins and managers see everything (payroll, payments, bans and customer accounts are owner/admin only), a member sees their own time, tasks and the team but no Reports or Financials, and a client sees only the shared Command Center, time, screenshots, projects and four reports. Each role's Overview shows cards that make sense for it: a member sees their own time, daily goal, open tasks and draft entries, a client sees how their projects are going, and a team lead sees the team. The Tasks page is where tasks are created, edited and deleted (list or board; anyone but a client can), and the Dashboard sidebar lists the projects: picking one narrows every page (tasks, timesheets, activity, reports, manual time, expenses) to that project, shown as a chip in the top bar, and a list longer than five rows scrolls on its own with a thin scrollbar while the rest of the sidebar stays put. The sidebar has no workspace card on top: the organization switcher sits at the bottom of it.
+- **New project:** a page, not a dialog: the sidebar stays on Projects and the main pane becomes a short wizard modelled on the real Dashboard's (`pages/NewProjectPage.tsx`, route `pm-new`; Edit project is the same page with the project's id as its target). Saving returns to the Projects list with the new project marked. It first asks what kind of project it is (Normal, Calling, Retainer, Fixed price, Internal, Support or Management, from `data/projectTypes.ts`), which decides whether the project has tasks, whether tracking needs one, whether it is billable and how a budget refills. Then come the details (one name per line makes several projects, a description, end date, colour), the people (a client, its managers and the people on it) and a time budget in hours with how it refills and when to warn. A type can't be changed afterwards; editing skips that step. A project with no tasks (Calling, Support) or with "require a task" turned off is timed as it is, from Work, the Dashboard's focus card and the Focus and Easy windows.
+- **Calendar:** a Dashboard section in the sidebar (with Time off requests moved under it). The month is on the left with each day's events as coloured chips (planning, team, review, deadline), and on the right the chosen day, a "Coming up" list and a tray of tasks with no date. Deadlines are tasks: drag one to another day to move its due date, drag it to the tray to clear it, click one for its details, or use the + on the day card to add a task. Review is a finished task waiting for sign-off, team is approved time off, and planning is the focus blocks from Work. Clients see it but can't change anything. (`pages/CalendarPage.tsx`)
+- **Organizations:** a person can belong to several, and each one is a workspace of its own (its projects, tasks, people, time, messages, approvals, expenses and settings) kept apart from the others. The switcher at the bottom of the Dashboard sidebar (and at the top of Work's) shows the open organization with your role and head count, lists the others, and makes a new one; Settings > Organization renames, opens and deletes them. Switching remounts the workspace so nothing from one organization is shown in another. The first one keeps the sample data; a new one starts with you as its owner and a "Getting started" project. See `src/organizations.tsx`.
+- **Focus and Easy mode:** two compact windows for people who don't want the whole app. Focus is a small timer that stays in front of other windows (project and task pickers, start/pause/stop, a note, today against the daily goal, and the next tasks). Easy is the same timer and task list with large text (four size steps), big buttons and four tiles that open Messages, the timesheet, tasks or the full app. They share the timer with Work, so a session started in one continues in the others.
+- **Chat box:** a button in the bottom-right corner of Work and the Dashboard opens a small chat window with your direct messages (an unread badge, search, a thread with a composer). It is the Lounge's own conversations in a small window, so a message sent from either place is in both, and "Your team today" in Work opens it on that person. It is hidden in the Lounge itself.
+- **Shared shell:** global search (`Ctrl/Cmd + K`), inbox, profile, and settings. Navigation carries project or person context between modes.
+- **Settings:** a different list for each mode, opened from whichever mode you are in. The Lounge gets User settings (My account, Privacy & safety, Notifications, Voice & audio, Appearance, About & shortcuts); Work gets Work settings (Work preferences, Focus & Easy mode, Reminders, then Account, Appearance, Data & privacy, Storage & sync); the Dashboard gets Dashboard settings (Organization, Schedules, Activity & tracking, Team permissions, Integrations, then Notifications, Data & privacy, Storage & sync, Appearance, Account). Each opens on the page that suits it, groups its pages under headings, words its notification switches for what that mode notifies about, and takes the mode's accent. Activity & tracking switches the Dashboard's sample screenshots (and how often) and apps / websites on or off, and Organization renames the open organization and lists, opens, creates and deletes your organizations. See `layouts` in `SettingsOverlay.tsx`.
 
-## Structure
+## Frontend state
 
-```text
-Soft fix Tracker/
-├── public/
-│   └── assets/
-├── src/
-│   ├── components/
-│   │   ├── work/          Work mode
-│   │   ├── dashboard/     Dashboard mode
-│   │   ├── AppToolbar.tsx   Mode switch + Settings
-│   │   └── ...            Lounge (unchanged) + LoungeShell
-│   ├── data/              Mock data per mode
-│   ├── App.tsx
-│   ├── main.tsx
-│   └── styles.css
-├── src-tauri/
-│   ├── capabilities/
-│   ├── src/
-│   ├── Cargo.toml
-│   └── tauri.conf.json
-├── index.html
-├── package.json
-└── vite.config.ts
-```
+`src/workspace.tsx` owns shared projects, tasks, members, sessions, profile, preferences, and the active timer. Mode-specific data uses the same `usePersistentState` helper. Storage keys start with `softfix.ui.v2.`; the first organization keeps those keys as they are and every other one adds `org.<id>.` after the prefix (`storageKeyFor` in `src/organizations.tsx`), except for the few settings that belong to the person and not to an organization (preferences, window view, audio). Switching modes keeps their components mounted; elapsed timer time is calculated from timestamps. UI data also survives a refresh in the same browser profile.
+
+Settings and exports are local. Invitations do not send email, conversations do not send network messages, audio controls do not start real calls, integration configurations do not connect external accounts, and invoice changes do not move money. Role previews illustrate the frontend experience; they are not authentication or authorization enforcement.
+
+## Design and accessibility
+
+See `DESIGN_SYSTEM.md` for shared tokens and component conventions, and `design-qa.md` for validation evidence. The interface uses semantic controls, labelled fields, visible focus, native modal dialogs with focus containment and restoration, responsive navigation, and reduced-motion support.
+
+## Native window
+
+The desktop window has no native title bar (`decorations: false`). `AppToolbar` is the title bar: the Lounge / Work / Dashboard switch is three buttons (Lucide icons) shaded on hover and press like the window buttons, where the open one expands to show its name; its empty space drags the window (`data-tauri-drag-region`, double-click maximizes) and `WindowControls` draws minimize / maximize-restore / close as small rounded buttons styled after the tracker agent's title bar (`Tauri-App-Extension`), in the app's theme tokens. The matching `core:window` permissions are in `src-tauri/capabilities/default.json`. For Windows 11's Snap Layouts flyout, `src-tauri/src/lib.rs` (`snap`) lays an invisible layered native window over the maximize button that answers the hit test with "maximize button"; it reports hover and pressed back to the page and does the maximize / restore itself. A layered child window needs the app manifest to declare Windows 8+ support, which Tauri's default manifest doesn't, so `src-tauri/windows-app-manifest.xml` (wired in by `build.rs`) adds it. Browser validation does not establish native runtime behavior, and `WindowControls` render only inside Tauri.
+
+### Focus mode, Easy mode and the tray icon
+
+`src-tauri/src/shell.rs` gives the one window three shapes: Full (1440x900, remembers where it was), Focus (380x640, docked bottom-right, in front of other windows unless turned off) and Easy (900x780, centred). The page chooses with `set_view_mode` (`src/shell-bridge.ts`; the choice is stored as `view-mode` and `App.tsx` renders `FocusShell` or `EasyShell` instead of the full app). The tray icon, found under the hidden icons next to the clock, offers Open Soft Fix / Focus mode / Easy mode / Quit; a left click shows the window. Closing the window only hides it to the tray while *Keep running in the tray* is on (Settings > Focus & Easy mode), so a running timer keeps going; Quit lives in the tray menu. Launching Soft Fix a second time brings the running copy forward (`tauri-plugin-single-instance`). Both modes can also be entered from the Focus / Easy buttons in the toolbar. In a browser the same two views render full-window with no tray.
+
+Logo artwork comes from `public/assets` (see `src/brand.ts`): the white-lettered full logo on dark themes, the navy-lettered one on light themes, and the symbol alone when the header is narrow.

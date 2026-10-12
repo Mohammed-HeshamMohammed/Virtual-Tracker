@@ -1,63 +1,91 @@
 import { useState } from "react";
-import { Bell, Broadcast, Buildings, CalendarPlus, CaretDown, CheckSquare, Copy, FolderPlus, Gear, Hash, Lock, Megaphone, Plugs, Plus, ShieldCheck, SpeakerHigh, UserCircleGear, UserPlus, UsersThree } from "@phosphor-icons/react";
-import { channels } from "../data/community";
-import { Avatar } from "./Avatar";
+import { CaretDown, Hash, Plus, SpeakerHigh, UserPlus } from "@phosphor-icons/react";
+import type { LoungeRoom } from "./lounge-model";
 
-type Props = { activeChannel: string; onChannelChange: (channel: string) => void };
-
-export function ChannelSidebar({ activeChannel, onChannelChange }: Props) {
-  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
-  const [hideInactive, setHideInactive] = useState(false);
+/** The channel list of one server: text channels, then the voice channels. */
+export function ChannelSidebar({
+  rooms,
+  activeChannel,
+  previewRoom,
+  onChannelChange,
+  onCreate,
+  onInvite,
+  onPreview,
+}: {
+  rooms: LoungeRoom[];
+  activeChannel?: string;
+  previewRoom?: string;
+  onChannelChange: (id: string) => void;
+  onCreate: () => void;
+  onInvite: () => void;
+  onPreview: (id: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  const joined = rooms.filter((room) => room.joined);
+  const sections = [
+    { id: "text", title: "Text Channels", rooms: joined },
+    { id: "voice", title: "Voice Channels", rooms: joined.slice(0, 2) },
+  ];
+  const toggle = (id: string) =>
+    setCollapsed((previous) =>
+      previous.includes(id) ? previous.filter((value) => value !== id) : [...previous, id],
+    );
   return (
-    <aside className="channel-sidebar">
-      <button className="community-header" aria-expanded={workspaceMenuOpen} onClick={() => setWorkspaceMenuOpen(!workspaceMenuOpen)}>
-        <span className="community-logo">SF</span>
-        <span><strong>Soft Fix Workplace</strong><small>COMPANY WORKSPACE</small></span>
-        <CaretDown className={workspaceMenuOpen ? "open" : ""} weight="bold" />
-      </button>
-      {workspaceMenuOpen ? (
-        <div className="workspace-menu" role="menu">
-          <button role="menuitem"><Buildings /><span>Workspace overview</span></button>
-          <button role="menuitem"><UserPlus /><span>Invite teammate</span></button>
-          <button role="menuitem"><Gear /><span>Workspace settings</span></button>
-          <div />
-          <button role="menuitem"><FolderPlus /><span>Create project</span></button>
-          <button role="menuitem"><CheckSquare /><span>Create task</span></button>
-          <button role="menuitem"><CalendarPlus /><span>Schedule meeting</span></button>
-          <button role="menuitem"><Plugs /><span>Apps & integrations</span></button>
-          <div />
-          <button role="menuitem"><Bell /><span>Notification settings</span></button>
-          <button role="menuitem"><ShieldCheck /><span>Privacy & security</span></button>
-          <button role="menuitem"><UserCircleGear /><span>Edit workplace profile</span></button>
-          <label><UsersThree /><span>Hide inactive projects</span><input type="checkbox" checked={hideInactive} onChange={event => setHideInactive(event.target.checked)} /></label>
-          <div />
-          <button role="menuitem"><Copy /><span>Copy workspace ID</span></button>
-        </div>
-      ) : null}
-      <button className="event-card">
-        <span className="event-icon"><Broadcast /></span>
-        <span><strong>Weekly team sync</strong><small>Today at 3 PM · 18 attending</small></span>
-      </button>
-      <nav className="channel-nav">
-        {channels.map(group => (
-          <section key={group.section}>
-            <div className="section-label"><span><CaretDown /> {group.section}</span><Plus /></div>
-            {group.items.map(item => (
-              <button key={item} className={`channel-row ${activeChannel === item ? "active" : ""}`} onClick={() => onChannelChange(item)}>
-                {item === "announcements" ? <Megaphone /> : item === "rules-and-roles" ? <ShieldCheck /> : <Hash />}
-                <span>{item}</span>{item === "announcements" ? <b>2</b> : null}
+    <div className="lg-channel-navigation">
+      {sections.map((section) => {
+        const closed = collapsed.includes(section.id);
+        return (
+          <section key={section.id}>
+            <div className="lg-channel-group">
+              <button
+                onClick={() => toggle(section.id)}
+                aria-expanded={!closed}
+              >
+                <CaretDown weight="bold" className={closed ? "is-collapsed" : ""} />
+                {section.title}
               </button>
-            ))}
+              <button
+                className="lg-icon-button"
+                aria-label={`Create a channel in ${section.title}`}
+                title="Create Channel"
+                onClick={onCreate}
+              >
+                <Plus weight="bold" />
+              </button>
+            </div>
+            {!closed && (
+              <nav aria-label={section.title}>
+                {section.rooms.map((room, index) => {
+                  const voice = section.id === "voice";
+                  const active = voice ? previewRoom === room.id : activeChannel === room.id;
+                  return (
+                    <div className="lg-channel-row" key={room.id}>
+                      <button
+                        className={`lg-channel-link ${active ? "active" : ""}`}
+                        aria-current={active && !voice ? "page" : undefined}
+                        onClick={() => (voice ? onPreview(room.id) : onChannelChange(room.id))}
+                      >
+                        {voice ? <SpeakerHigh /> : <Hash />}
+                        <span>{voice ? (index === 0 ? "General" : "Team room") : room.name}</span>
+                      </button>
+                      {!voice && (
+                        <button
+                          className="lg-channel-hover"
+                          aria-label={`Invite people to ${room.name}`}
+                          title="Create Invite"
+                          onClick={onInvite}
+                        >
+                          <UserPlus weight="fill" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </nav>
+            )}
           </section>
-        ))}
-        <section>
-          <div className="section-label"><span><CaretDown /> VOICE DECKS</span><Plus /></div>
-          <button className="channel-row"><SpeakerHigh /><span>Ready room</span></button>
-          <div className="voice-user"><Avatar initials="RK" color="cyan" size="sm" /><span>Rook</span><SpeakerHigh /></div>
-          <div className="voice-user"><Avatar initials="MO" color="violet" size="sm" /><span>Moxie</span></div>
-          <button className="channel-row"><SpeakerHigh /><span>Afterburner</span><Lock /></button>
-        </section>
-      </nav>
-    </aside>
+        );
+      })}
+    </div>
   );
 }

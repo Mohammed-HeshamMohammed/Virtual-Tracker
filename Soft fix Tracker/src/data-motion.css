@@ -1,0 +1,173 @@
+/* Data draws itself. Wherever the app shows a number as a shape (a bar, a meter, a ring, a donut
+   slice), the shape is drawn at --p of its value: 0 is empty, 1 (the default) is the value. One loop
+   in data-motion.ts moves --p from 0 to 1 when the page opens and writes the very same number into the
+   figure beside the shape, so "39%" and an arc at 39% are one value and cannot disagree.
+
+   There are deliberately no keyframe animations here. A CSS animation beside a scripted counter is two
+   clocks: in real playback the charts ran about a second ahead of their figures, and every hidden pane
+   that was shown again restarted them. A shape drawn from a variable has neither problem. */
+
+/* The pace, set here only (data-motion.ts reads these three). The curve is a gentle ease-in-out: it
+   keeps rising through the whole time instead of rushing the first third, which reads as the shape
+   shooting up and then crawling. The lead lets the card finish appearing first. */
+:root {
+  --data-dur: 2.2s;
+  --data-ease: cubic-bezier(0.37, 0, 0.63, 1);
+  --data-lead: 250ms;
+}
+
+/* ---- each shape, drawn at --p of its value ---- */
+
+/* horizontal fills: their width is their value */
+.db-progress > span,
+.db-prow-bar i,
+.db-share > i,
+.db-hbar > i > b,
+.wk-progress > i,
+.mode-meter > i {
+  transform-origin: left;
+  transform: scaleX(var(--p, 1));
+}
+
+/* The Dashboard's day bars grow in real height (--h is the bar's value), not by scaling: a scaled bar
+   squashes its rounded ends, its stripes and the label that rides on top of it. */
+.db-bar {
+  height: calc(var(--h, 100%) * var(--p, 1));
+  min-height: calc(14px * var(--p, 1));
+}
+
+/* Work's week: plain bars with nothing on them, so scaling from the baseline is fine */
+.wk-week-chart i {
+  transform-origin: bottom;
+  transform: scaleY(var(--p, 1));
+}
+
+/* The gauge's arc: --len of the half circle. Its round cap would show as a dot at zero length, so the
+   arc is invisible until it has some. */
+.db-gauge-fill {
+  stroke-dasharray: calc(var(--len, 0) * var(--p, 1) * 1px) 400px;
+  opacity: calc(var(--p, 1) * 40);
+}
+
+/* a donut's slice: --len of the --circ round */
+.db-donut-segment {
+  stroke-dasharray: calc(var(--len, 0) * var(--p, 1) * 1px) calc(var(--circ, 1000) * 1px);
+}
+
+/* Work's daily-goal ring: --sweep of the way round */
+.wk-goal-ring {
+  background: conic-gradient(var(--accent, #6688ff) calc(var(--sweep, 0%) * var(--p, 1)), var(--border, #303641) 0);
+}
+
+/* the area chart is uncovered from the left */
+.db-area-canvas svg {
+  clip-path: inset(0 calc((1 - var(--p, 1)) * 100%) 0 0);
+}
+
+/* ---- held empty until the card plays ----
+   data-motion is on the root from the first frame (set as data-motion.ts loads) and a card is marked
+   data-in as it starts, with --p already set on each shape. So nothing shows its value first. */
+:root[data-motion] :is(.sf-card, .mode-card, .wk-week-card):not([data-in]) :is(
+    .db-gauge-fill,
+    .db-bar,
+    .db-donut-segment,
+    .db-progress > span,
+    .db-prow-bar i,
+    .db-share > i,
+    .db-hbar > i > b,
+    .wk-progress > i,
+    .mode-meter > i,
+    .wk-week-chart i,
+    .wk-goal-ring,
+    .db-area-canvas svg
+  ) {
+  --p: 0;
+}
+
+/* ---- rows follow one another: --d is how long after the first a row starts ---- */
+.db-hbars > :nth-child(2),
+.db-prows > :nth-child(2),
+.db-contributors > :nth-child(2),
+.db-allocation-list > :nth-child(2),
+.wk-week-chart > :nth-child(2),
+tbody > :nth-child(2) {
+  --d: 70ms;
+}
+.db-hbars > :nth-child(3),
+.db-prows > :nth-child(3),
+.db-contributors > :nth-child(3),
+.db-allocation-list > :nth-child(3),
+.wk-week-chart > :nth-child(3),
+tbody > :nth-child(3) {
+  --d: 140ms;
+}
+.db-hbars > :nth-child(4),
+.db-prows > :nth-child(4),
+.db-contributors > :nth-child(4),
+.db-allocation-list > :nth-child(4),
+.wk-week-chart > :nth-child(4),
+tbody > :nth-child(4) {
+  --d: 210ms;
+}
+.db-hbars > :nth-child(5),
+.db-prows > :nth-child(5),
+.db-contributors > :nth-child(5),
+.db-allocation-list > :nth-child(5),
+.wk-week-chart > :nth-child(5),
+tbody > :nth-child(5) {
+  --d: 280ms;
+}
+.db-hbars > :nth-child(6),
+.db-prows > :nth-child(6),
+.db-contributors > :nth-child(6),
+.db-allocation-list > :nth-child(6),
+.wk-week-chart > :nth-child(6),
+tbody > :nth-child(6) {
+  --d: 350ms;
+}
+.db-hbars > :nth-child(n + 7),
+.db-prows > :nth-child(n + 7),
+.db-contributors > :nth-child(n + 7),
+.db-allocation-list > :nth-child(n + 7),
+.wk-week-chart > :nth-child(n + 7),
+tbody > :nth-child(n + 7) {
+  --d: 420ms;
+}
+/* the Dashboard's seven day bars */
+.db-bar-col:nth-child(2) {
+  --d: 90ms;
+}
+.db-bar-col:nth-child(3) {
+  --d: 180ms;
+}
+.db-bar-col:nth-child(4) {
+  --d: 270ms;
+}
+.db-bar-col:nth-child(5) {
+  --d: 360ms;
+}
+.db-bar-col:nth-child(6) {
+  --d: 450ms;
+}
+.db-bar-col:nth-child(7) {
+  --d: 540ms;
+}
+/* a donut's slices, in order round the ring (the first circle is the track) */
+.db-donut-segment:nth-of-type(3) {
+  --d: 140ms;
+}
+.db-donut-segment:nth-of-type(4) {
+  --d: 280ms;
+}
+.db-donut-segment:nth-of-type(5) {
+  --d: 420ms;
+}
+.db-donut-segment:nth-of-type(n + 6) {
+  --d: 560ms;
+}
+
+/* A card that has played keeps still: its own entrance (cards rising in) would otherwise replay each
+   time its hidden pane is shown again. */
+.db-bento > [data-settled] {
+  animation: none;
+}

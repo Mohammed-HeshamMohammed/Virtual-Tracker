@@ -1,0 +1,105 @@
+# Soft Fix design system
+
+## Direction
+
+A calm, dark productivity workspace with restrained blue emphasis, warm neutral surfaces, readable information density, and consistent navigation. Work supports focus, Lounge supports conversations, Dashboard supports decisions. Each uses the same top-level shell while keeping a clear local navigation hierarchy. Lounge is a copy of Discord's desktop app: a 72px server rail (Direct Messages, the workplace, one server per project), a 240px DM or channel list with your profile floating at the bottom-left, then Friends / chat in the middle and a member list or profile card on the right. Discord's palette and dimensions live in `components/lounge.css` on `.lg-layout`, which also remaps the app's colour tokens so shared modals, buttons and search follow. The Dashboard uses a soft bento style (`components/dashboard/dashboard-style.css`): a floating sidebar and large rounded cards on a calm canvas, one bright accent, pastel chips, hatched capsule bars, a half-donut gauge, and cards that rise in. Its palette is the real Dashboard's (Dashboard-Web `constants.ts`) and is defined once on `.db-layout`: navy ink surfaces (`#0c1324` canvas, `#151b2d` cards) with a bright green accent (`#4be277`) in the dark theme, cool grey-blue surfaces with its violet accent (`#6b38d4`) in the light theme. The app's own tokens are remapped to it, so every Dashboard page inherits it. Text on an accent fill uses `--db-on-accent` (dark ink on the bright green, white on violet), never a fixed white. A section's pages are a dropdown on the page name in the top bar's breadcrumb (`MenuButton`), and a filter that could have been a row of tabs is a `FilterSelect` next to the search box, so neither costs the page a row of height. Numbers sit in a `Kpis` row above a `DataTable`, the shared table in `pages/kit.tsx`. In the Lounge the title bar takes the rail's colour (`--lounge-frame`), so the rail and title bar form one L-shaped frame around the content. Focus and Easy mode (`components/mode`) reuse the Dashboard palette (`.mode-shell` shares its tokens) and everything in them is sized in `em`: Focus is a 13px, 380px-wide timer card stack; Easy is 16px times the user's text-size step (`--easy-scale`, 100-175%) with large targets (3em buttons, 2x2 tiles); both have a 36px title bar with the Soft Fix mark and no maximize button. The title bar is three zones that stay uncrowded: the logo and the mode switch on the left, the search in the middle (a grid with equal outer columns keeps it centred on the window), and the View menu, bell, Settings and profile on the right, then the window buttons. The mode switch is three icons and only the current mode shows its name; below ~860px the search shrinks to an icon. Settings differ by mode (each has its own page list, order and accent). Elsewhere the title bar is a compact 36px strip on the page background that reuses the Soft Fix logo artwork from `public/assets`.
+
+## Tokens
+
+`src/styles.css` owns the source of truth. Use semantic variables in feature styles.
+
+| Category | Tokens / rule |
+| --- | --- |
+| Surfaces | `--bg`, `--title-bg`, `--panel`, `--panel-raised`, `--panel-soft` |
+| Text | `--text`, `--muted`, `--muted-2` |
+| Borders | `--line`, `--border` |
+| Brand | `--accent`, `--accent-strong`, `--accent-soft` |
+| Semantic | `--green`, `--warning`, `--danger` |
+| Type | DM Sans body, Manrope headings, Segoe UI/system fallbacks |
+| Spacing | 4/8px increments; 24–32px page gutters; 16–24px card padding |
+| Corners | 8px controls, 12px cards, 16px dialogs |
+| Layout | 224px navigation and flexible content; supporting panels collapse before primary content |
+| Motion | 160ms interaction feedback; honors OS and local reduced-motion preferences |
+
+Light/system themes map the same semantic tokens. Status uses a written label as well as color. Controls must remain usable without hover.
+
+## Shared primitives
+
+- `.sf-button`: default, `.primary`, `.ghost`, `.danger`; disabled semantics for unavailable actions.
+- `.sf-card`: grouped content with consistent padding and border.
+- `.sf-input` and `SearchField`: explicit labels; controlled values; clear-search control.
+- `.sf-badge`: compact status labels, never color alone.
+- `.sf-table`: accessible table markup, readable column headings; tables may scroll inside their container.
+- `Modal`: native dialog, heading association, Escape handling, focus trap and focus restoration.
+- `EmptyState`: explains the empty state and offers a relevant recovery action.
+- `Avatar`: existing initials-based representation and semantic color variants.
+
+Feature CSS is scoped with `wk-`, `lg-`, `db-`, and `st-` prefixes. Avoid global feature selectors that override unrelated modes.
+
+## The timer
+
+`components/LiveClock.tsx` is the one clock face (Work's focus card, Focus mode, Easy mode). It is sized in `em` from where it sits and uses the app's accent token. Digits roll with a short spring-like overshoot and a soft edge mask (only `transform`, `opacity` and a little blur move); milliseconds, the colon flash and the ruler's head are written straight to the page every animation frame, so React re-renders once a second. The ruler has 60 ticks, one per second of the minute, that light up as the head passes; every second the head sends out a ripple. Paused, the face breathes and the head parks; idle, it is muted. Time comes from `startedAt` + banked seconds (kept to the millisecond by `useWorkTimer`), so it is exact however the page is throttled.
+
+## Work and the Dashboard
+
+Work is for doing the work and the Dashboard is for managing it, so a piece of data is edited in one place only. Work has the timer, one project-and-task picker, the checklist of your own tasks, your timesheet and your day; anything that creates or manages projects, tasks or approvals links out to the Dashboard (`navigate("dashboard", "pm-tasks", "new")` opens its New task form, a task id opens that task). Work's sidebar keeps a project picker (not project pages): it chooses which project Up next shows, and its list scrolls on its own past five rows. Task rows are one line each, cut with an ellipsis, with the rest in a `Tip` (a tooltip that holds real content and is drawn on the page so no card clips it). Chat is a corner box (`components/chat/ChatDock.tsx`) over every mode but the Lounge, reading and writing the Lounge's data, which lives in the workspace state (`lounge` / `setLounge`) so the two are one conversation. Choosing what to work on has one state (`timer.projectId` / `timer.taskId`) and three views of it that always agree: the focus card's "Working on" line, its Change menu, and the Up next list. The Dashboard sidebar's project list (`db-scope`) is a filter, not a navigator: it scopes every page, says so with a chip, and is the only thing in the sidebar that scrolls.
+
+## Organizations and the title bar
+
+An organization is a whole workspace, not a label: `OrganizationsProvider` (`src/organizations.tsx`) holds the list and which one is open, and `App.tsx` mounts `<WorkspaceProvider key={active.id}>` so a switch rebuilds the workspace from that organization's own storage keys. `usePersistentState` fixes its key when the hook is created, which is why the remount is what separates them; any new persisted store must go through it (or `storageKeyFor`) and must not seed sample records for a non-sample organization (`isSampleOrg()`). A persisted list that starts empty has to trust what is stored, or it drops its data on reload. `OrganizationMenu` is the switcher: a letter mark, the name, "Role · N people" and a chevron, opening a `MenuButton` with `fixed` (so the sidebar's clipping can't cut it) and `up` at the bottom of the Dashboard sidebar. Because `.menu-pop` already sets `top`, an upward menu has to set `top: auto` inline.
+
+The title bar's mode switch uses the window buttons' own vocabulary: no frame, `--film` tint at .12 on hover and .2 pressed, 6px radius, 36px minimum width, and only the current mode shows its name. Icons for the three modes and for the organization UI are Lucide; the rest of the app stays on Phosphor.
+
+## Cards fill their row
+
+Cards in the Dashboard's bento grid (`.db-bento`) are as tall as the tallest card in their row, so a card never leaves a gap under its content: it is a flex column whose heading keeps its size and whose body takes the rest (`dashboard-style.css`, "tiles fill their row"). The body grows in the way that suits it: the weekly chart's bars stretch (`.db-bars` has a minimum height, not a fixed one), project and recent-work rows share the height equally (project rows carry a progress bar so a taller row still has something in it), the gauge centres itself in the spare space above two figures, stat tiles keep their label at the top and their value at the bottom, the focus-time clock scales with the window, and the "all caught up" state is centred with an icon. A new card in the grid should do the same: no fixed heights on its body, `flex: 1 1 auto` on whatever should grow, and something real to show if it can still be taller than its content.
+
+## Work wears the Dashboard's look
+
+The sidebar is one fixed piece: Work and the Dashboard share `--sidebar-w` (268px) and it never changes with the window, the page or its contents. The doubled selector `.sf-mode-layout.db-layout, .sf-mode-layout.wk-layout` in `work-style.css` is what keeps `styles.css`'s narrower-window rules from shrinking it, and `.sf-sidebar.db-sidebar` is `overflow: hidden`, so the sidebar never scrolls as a whole: only what is in it (the menu, the project list, the bottom block) changes. Don't add a per-page or per-width sidebar size. Inside it, the project list is the one flexible part (`.db-scope` and `.db-scope-list` take the height the menu and bottom block leave, and scroll in it); anything else that is added must not be able to push over the bottom block.
+
+Work is not styled separately. `.wk-layout` and the title bar in Work are in the Dashboard's palette rule (`dashboard-style.css`), which remaps the app's own tokens, so every Work screen gets the same canvas, card surfaces, accent and 20px radius, in both themes. `components/work/work-style.css` (imported last, from `main.tsx`) adds the rest of the Dashboard's style: the floating rounded sidebar with the accent bar beside the open page, the cards' edge and shadow, the buttons, fields and page headings. A change to the Dashboard's palette therefore changes Work too; a Work-only colour should be avoided.
+
+## The Lounge wears it too
+
+The Lounge keeps its own layout (server rail, conversation list, chat, members or profile) but none of its own colours. `.lg-layout` is in the Dashboard's palette rule, and `components/lounge-style.css` (imported last, from `main.tsx`) points the Lounge's `--dc-*` tokens at that palette, so `lounge.css` needs no colour rewritten and both themes follow. Its panels float on the canvas with the Dashboard's 24px corners and shadow, and it uses the app's font. Filled buttons and selected marks carry white text, so they use the hero's deep tone (`--db-hero-a`), not the bright accent.
+
+## Title bar: drop-downs, not dialogs
+
+Nothing in the title bar opens a dialog. The search is a field (`ToolbarSearch`): click it or press Ctrl/Cmd + K and type, and the matches drop down under it (arrow keys, Enter, Escape). The bell, gear and avatar are `MenuButton`s (`fixed`, `align="end"`) like the View menu: the bell lists the inbox, the gear has the theme choices and "All settings", the avatar has your status and "Profile & account". The gear lists the Settings pages of the mode you are in (Dashboard: Organization, Activity & tracking, Team permissions, Integrations, Notifications; Work: Work preferences, Focus & Easy, Reminders, Account; Lounge: My account, Privacy, Notifications, Voice) plus Appearance, the theme choices and About & shortcuts, and each opens Settings straight on that page (`SettingsOverlay`'s `page` prop; `openSettings(page)` in `App.tsx`). The avatar has your status, then Go to (My timesheet, My tasks, My schedule, Team calendar, Request time off, Messages) and Profile & account. A client only gets the calendar and messages.
+
+## Projects have a type
+
+A project's `type` (`data/projectTypes.ts`, taken from Dashboard-Web) is chosen first, on the first step of the New project page (`NewProjectPage`), and then drives the rest: `hasTasks` (a Calling or Support project has no task list, so its card and detail say so and the timer needs no task), `requireTask` (copied onto the project as `requireTask`, which the timer reads through `useWorkTimer().canStart`), `billable`, and how a budget refills. Older projects have no type and are normal projects. A project's budget of 0 means "no budget" (not "use 80 hours"; only projects with no stored budget default to 80). Anything that saves and leaves in the same breath (a dialog that closes, a page that navigates away) loses state that is only written by an effect: the component is unmounted before the effect runs. So `NewProjectPage` sets a `saved` state and navigates from an effect of its own, which runs after the effects that write the project, its details, the client and the audit log to storage.
+
+**Adding things is a page, not a pop-up.** A form that creates something with several fields (a project, and anything of that size) is a page in the main pane: the sidebar keeps the section open, the breadcrumb reads Section > New thing, the page is left out of the section's page menu, and saving goes back to the list with the new item marked (`?target=new:<id>`, the card gets `.fresh`). Dialogs are for confirmations and one-field questions. Don't add another form dialog.
+
+**A project has its own page.** Clicking a project anywhere (its card, a table row, the search, Work's sidebar arrow) opens `pm-project` with the project's id as the route target (`pages/ProjectPage.tsx`); it is not a dialog over the list. Like `pm-new` it is a hidden page (`HIDDEN_PAGES` in `DashboardShell`), and the breadcrumb shows the project's name. Its header says what it is and where it stands, its tasks and latest time are the main column, and its budget, people and set-up sit beside them. The Projects list (`ProjectsPage.tsx`) shows the same facts per card or table row. Both read them from one function, `projectFacts` in `pages/project-facts.tsx` (status, tasks, budget used in the current refill period, people), so a card and the page can't disagree; add a new fact there, not in a page. A project's status is one of Completed, Over budget, Overdue, Not started, In progress, always shown as a written pill (`StatusPill`). A page that needs data from outside the sidebar's project scope uses `ctx.visibleProjects` and `ctx.unscopedSessions`. In the wizard, Next is the form's submit button while a project is being made, so Enter in a field moves to the next step, and the step buttons sit on the left because the chat button covers the window's bottom-right corner. A card that sets its own padding inside `.db-page` needs two classes in the selector (`.db-page .sf-card.np-main`), because a later Dashboard rule clears card padding.
+
+**Icons are used sparingly.** On the project screens there is no icon beside a panel heading, inside a text button, in front of a note or before a fact the words already state. An icon stays only where it is the control (the cards/table and list/board toggles, the back arrow), marks a state (the selected colour, a finished step) or is the one main action's "+". A project is shown by its picture, not a folder icon: `ProjectAvatar` draws the uploaded image, or the project's initials on its colour when it has none. The picture is chosen on the Details step with `AvatarPicker` (`pages/AvatarPicker.tsx`, styles prefixed `pp-` because `ap-` belongs to the Activity pages), which works in place on the form, not in a dialog: upload an image or an animated GIF, or search pictures by topic, then drag and zoom a square frame to choose the part that shows, with previews at the three avatar sizes; nothing is kept until "Use this picture". A still picture is cut to its frame and shrunk to 192px; an animated GIF is kept whole (cutting it would stop it moving) with its framing stored beside it as `avatarCrop` (centre, zoom, aspect ratio) and drawn by `cropStyle`, which is all percentages so one crop looks the same at every size. Pictures are data URLs in `ProjectMeta` (`avatar`, `avatarCrop`, `avatarCredit`), which is local storage: a GIF is limited to 800 KB and the picker checks the picture fits before keeping it, because a full storage fails silently. The search is Openverse (`api.openverse.org`, no account), asked only for pictures whose licence allows changes and commercial use; GIFs are asked from Wikimedia so the original can be fetched. The chosen picture's credit is kept and shown under Set-up on the project's page. The desktop app's content security policy (`src-tauri/tauri.conf.json`) allows those two hosts and `blob:` images for this; a new picture source needs adding there too.
+
+## Motion
+
+Changing view (a mode, or a page in a sidebar) is one motion everywhere: `view-in`, a 0.22s fade with an 8px rise, on the mode panes, `.db-content`, Work's `.wk-main` and the Lounge's `.lg-main`. It uses opacity and transform only and `backwards` fill, so nothing keeps a transform afterwards (that would break fixed menus and the cards' hover lift).
+
+Data draws itself (`src/data-motion.css`, `src/data-motion.ts`). When a page opens, the cards in view come in together (one shared start): each chart starts empty and fills, each figure counts up from zero. A card further down plays when you scroll to it (about a third of it in view), so it is never finished before it could be seen; playing the whole page at once was tried and the bottom row read as not animating. Each card plays once: scrolling away and back, or leaving a mode and coming back, doesn't repeat it.
+
+There is one clock and one value. A single loop works out each frame how far along every chart is (0 to 1) and writes that same number to the chart, as the CSS variable `--p` its shape is drawn from, and to the figure that belongs to it (`shapeFor` finds the nearest shape), as its text. So `39%` and an arc at 39% are the same number. There are deliberately no keyframe animations for data: a CSS animation beside a scripted counter is two clocks, and in recorded playback the charts ran about a second ahead of their figures, even when the counter read the animation's own `currentTime`. Shapes drawn from a variable also have nothing to restart when a hidden pane is shown again.
+
+A new chart: draw the shape from `var(--p, 1)` (pass its value as a variable such as `--h`, `--len`, `--sweep`, not as a final inline size), and add its class to `SHAPES` in `data-motion.ts` and to the two lists in `data-motion.css`. Put it in an `.sf-card` or `.mode-card`. The pace is set only in `data-motion.css`: `--data-dur` (2.2s), `--data-ease` (a gentle ease-in-out; a steep ease-out does 90% of its movement in the first third and reads as shooting up) and `--data-lead` (250ms). Rows are staggered by `--d`. Durations and clocks count as real time (`8h 02m` at a half is `4h 01m`). Day bars grow in real height, not by scaling, so their label rides on top undistorted. `data-motion` is set on the root as the module loads and the watcher is installed in a layout effect, so nothing shows its final value before it plays. Reduced motion turns all of it off. `--ring` is the Lounge's; don't reuse it.
+
+The title bar is the same colour as the area under it in every mode (the Lounge's frame, the Dashboard's canvas, the page background in Work) and has no borders of its own: no line under it, a filled rather than outlined search, and no divider by the avatar. `.app-toolbar.mode-dashboard` takes the Dashboard palette so its colours resolve there.
+
+## Interaction contracts
+
+- `navigate(mode, section?, target?)` carries project/person context across sections.
+- Work time entries, task completion, and project edits update the same data used by Dashboard.
+- Messages opened from Work and Dashboard target the correct shared member in Lounge.
+- Selecting a role changes the previewed Dashboard scope; no security boundary is implied.
+- Changes are saved locally with visible confirmation. External-service actions are described accurately as previews or configuration drafts.
+- Search, forms, empty states, edits, cancellation, and local error states are part of a completed screen.
+
+## Responsive rules
+
+Work uses a fixed-height main workspace: its overview fits the viewport and long task, project, schedule, or time-entry lists scroll inside bounded panels. Lounge pins its composer below the scrolling conversation. Desktop navigation is persistent. At narrow widths it becomes a horizontally scrollable navigation strip. Content cards stack; controls wrap; wide data tables keep their own scrolling area. The page must not overflow horizontally. Settings navigation becomes a horizontal list and content remains vertically scrollable.
+

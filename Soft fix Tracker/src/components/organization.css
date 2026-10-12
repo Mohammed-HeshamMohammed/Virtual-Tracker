@@ -1,0 +1,153 @@
+/* The organization switcher: a letter mark, the name and what you are in it, and an up/down chevron. */
+.org-menu {
+  display: flex;
+  width: 100%;
+}
+.org-menu .menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: background 0.16s ease;
+}
+.org-menu .menu-trigger:hover,
+.org-menu .menu-trigger[aria-expanded="true"] {
+  background: var(--db-hover, var(--panel-raised));
+}
+.org-menu.work .menu-trigger {
+  padding: 6px 4px;
+}
+.org-menu .menu-trigger > svg {
+  flex: 0 0 auto;
+  color: var(--db-muted-2, var(--muted-2));
+}
+.org-mark {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: linear-gradient(150deg, var(--db-hero-a, var(--accent-strong)), var(--db-hero-b, var(--accent)));
+  color: #fff;
+  font-family: Manrope, sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+}
+.org-mark.small {
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  font-size: 13px;
+}
+.org-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.org-copy strong {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.org-copy small {
+  overflow: hidden;
+  color: var(--db-muted, var(--muted));
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* the menu's rows show the letter mark in place of an icon */
+.menu-item .org-mark.small {
+  box-shadow: none;
+}
+
+.org-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.org-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.org-error {
+  margin: 0;
+  color: var(--danger, #f23f43);
+  font-size: 12px;
+}
+.org-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* the Organization page in Settings */
+.org-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+.org-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-raised, var(--panel));
+}
+.org-row.current {
+  border-color: var(--accent);
+}
+.org-row-actions {
+  display: flex;
+  gap: 6px;
+}
+.org-badge {
+  padding: 2px 9px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+/* (.sf-modal form makes every form in a dialog a column, hence the longer selector) */
+.sf-modal .org-name-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.org-name-row label {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.org-name-row .sf-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+@media (max-width: 560px) {
+  .wk-sidebar .org-menu {
+    display: none;
+  }
+}

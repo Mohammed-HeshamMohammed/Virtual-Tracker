@@ -1,0 +1,609 @@
+/* New project / Edit project, as a page: the steps and a live summary on the left, the form on the right. */
+.np-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  margin-bottom: 18px;
+}
+/* Two classes on the card, so the Dashboard's own card rule (which clears padding) can't win. */
+.db-page .sf-card.np-side {
+  position: sticky;
+  top: 12px;
+  padding: 18px 14px;
+}
+.np-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.np-steps button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 10px;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--db-muted);
+  text-align: left;
+  transition: background 0.16s ease;
+}
+.np-steps button:not(:disabled):hover {
+  background: var(--db-hover);
+}
+.np-steps button:disabled {
+  cursor: default;
+}
+.np-steps button.now {
+  background: var(--db-accent-soft);
+  color: var(--db-accent-ink);
+}
+.np-dot {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--db-track);
+  font-size: 12px;
+  font-weight: 700;
+}
+.np-dot svg {
+  width: 26px;
+  height: 26px;
+  color: var(--db-accent-strong);
+}
+.np-steps button.now .np-dot {
+  background: var(--db-accent-strong);
+  color: var(--db-on-accent);
+}
+.np-steps span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.np-steps strong {
+  font-size: 13.5px;
+}
+.np-steps small {
+  color: var(--db-muted-2);
+  font-size: 11.5px;
+}
+/* how the project will look, as it is filled in */
+.np-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  margin-top: 16px;
+  padding: 16px 8px 0;
+  border-top: 1px solid var(--db-line);
+}
+.np-preview > span:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.np-preview strong {
+  overflow: hidden;
+  font-family: Manrope, sans-serif;
+  font-size: 14.5px;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.np-preview small {
+  color: var(--db-muted);
+  font-size: 11.5px;
+}
+.np-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 16px 8px 0;
+  border-top: 1px solid var(--db-line);
+}
+.np-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.np-summary dt {
+  color: var(--db-muted-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.np-summary dd {
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the form */
+.db-page .sf-card.np-main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 24px 26px 22px;
+}
+.np-main > header h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.np-main > header p {
+  max-width: 62ch;
+  margin: 0;
+  color: var(--db-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.np-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+}
+.np-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px 22px;
+}
+.np-row > .db-field {
+  flex: 1 1 200px;
+}
+.np-short {
+  max-width: 360px;
+}
+.np-hint {
+  display: block;
+  margin-top: 4px;
+  color: var(--db-muted-2);
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.np-colors {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+}
+
+/* the project's picture */
+.np-avatar-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.np-avatar-field > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.np-avatar-field strong {
+  font-size: 13px;
+}
+.np-avatar-field small {
+  color: var(--db-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.np-avatar-field > div > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.np-upload {
+  cursor: pointer;
+}
+.np-upload:focus-within {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 2px;
+}
+
+/* choosing the picture: framing it, and searching for one */
+.pp {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pp-credit {
+  margin-top: 6px;
+  color: var(--db-muted-2) !important;
+  font-size: 11.5px !important;
+}
+.pp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--db-line);
+  border-radius: 16px;
+  background: var(--db-card-2);
+}
+.pp-quiet {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pp-framing {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px;
+}
+.pp-frame {
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+  width: 240px;
+  height: 240px;
+  border-radius: 24px;
+  background: var(--db-track);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.pp-frame:active {
+  cursor: grabbing;
+}
+.pp-frame:focus-visible {
+  outline: 2px solid var(--db-accent);
+  outline-offset: 3px;
+}
+.pp-framing-side {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.pp-framing-side > strong {
+  font-size: 13.5px;
+}
+.pp-framing-side > small {
+  color: var(--db-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.pp-zoom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  color: var(--db-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.pp-zoom input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--db-accent-strong);
+}
+.pp-zoom b {
+  min-width: 44px;
+  color: var(--db-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.pp-previews {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.pp-previews > span {
+  color: var(--db-muted-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.pp-previews > div {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.pp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.pp-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.pp-search > input {
+  flex: 1 1 220px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--db-line);
+  border-radius: 12px;
+  background: var(--db-card);
+  color: var(--db-text);
+  font-size: 13px;
+}
+.pp-search > input:focus-visible {
+  border-color: var(--db-accent);
+  outline: none;
+}
+.pp-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.pp-results button {
+  overflow: hidden;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 12px;
+  background: var(--db-track);
+  transition: border-color 0.16s ease;
+}
+.pp-results button:hover,
+.pp-results button:focus-visible {
+  border-color: var(--db-accent);
+  outline: none;
+}
+.pp-results img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* the kinds of project */
+.np-types {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.np-type {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--db-line);
+  border-radius: 16px;
+  background: var(--db-card-2);
+  color: var(--db-text);
+  text-align: left;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    transform 0.16s ease;
+}
+.np-type:hover,
+.np-type:focus-visible {
+  border-color: var(--db-accent);
+  background: var(--db-accent-soft);
+  outline: none;
+  transform: translateY(-2px);
+}
+.np-type-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.np-type-copy strong {
+  font-size: 14px;
+}
+.np-type-copy small {
+  color: var(--db-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.np-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 4px;
+}
+.np-tags em {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--db-track);
+  color: var(--db-muted);
+  font-size: 10.5px;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.np-switches {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.np-switch {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--db-line);
+  border-radius: 12px;
+  background: var(--db-card-2);
+  cursor: pointer;
+}
+.np-switch.locked {
+  opacity: 0.7;
+  cursor: default;
+}
+.np-switch input {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin-top: 2px;
+  accent-color: var(--db-accent-strong);
+}
+.np-switch span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.np-switch strong {
+  font-size: 13px;
+}
+.np-switch small {
+  color: var(--db-muted);
+  font-size: 12px;
+}
+.np-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--db-accent-soft);
+  color: var(--db-accent-ink);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.np-lists {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.np-people {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  max-height: 300px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border: 0;
+}
+.np-people legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 0;
+  color: var(--db-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.np-people legend b {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--db-track);
+  color: var(--db-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.np-all {
+  margin-left: auto;
+  padding: 0;
+  background: transparent;
+  color: var(--db-accent-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+.np-all:hover {
+  text-decoration: underline;
+}
+.np-people label {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.14s ease;
+}
+.np-people label:hover {
+  background: var(--db-hover);
+}
+.np-people input {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--db-accent-strong);
+}
+.np-people span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.np-people strong {
+  font-size: 13px;
+}
+.np-people small {
+  color: var(--db-muted-2);
+  font-size: 11.5px;
+}
+.np-error {
+  margin: 0;
+  color: var(--db-danger, var(--danger));
+  font-size: 12.5px;
+}
+/* Kept to the left: the chat button sits over the window's bottom-right corner. */
+.np-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--db-line);
+}
+.np-actions > div {
+  display: flex;
+  gap: 10px;
+}
+
+@media (max-width: 1100px) {
+  .np-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .db-page .sf-card.np-side {
+    position: static;
+  }
+  .np-steps {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .np-steps li {
+    flex: 1 1 140px;
+  }
+  .np-summary {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .np-types,
+  .np-lists {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+

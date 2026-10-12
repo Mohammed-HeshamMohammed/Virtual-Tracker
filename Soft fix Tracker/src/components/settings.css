@@ -1,0 +1,378 @@
+.st-layout {
+  display: grid;
+  grid-template-columns: 205px minmax(0, 1fr);
+  gap: 30px;
+  min-height: 480px;
+}
+.st-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-right: 1px solid var(--line);
+  padding-right: 20px;
+}
+.st-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.st-nav-group + .st-nav-group {
+  margin-top: 14px;
+}
+.st-nav-heading {
+  padding: 0 10px 6px;
+  color: var(--muted-2);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.st-nav button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-align: left;
+  padding: 10px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+}
+.st-nav button:hover {
+  background: var(--panel-raised);
+  color: var(--text);
+}
+.st-nav button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.st-local {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-2);
+  font-size: 10px;
+  margin-top: auto;
+  padding-top: 25px;
+}
+.st-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.st-content {
+  min-width: 0;
+  max-height: 64vh;
+  overflow: auto;
+  padding-right: 4px;
+}
+.st-content > h2 {
+  font-size: 21px;
+  margin-bottom: 20px;
+  letter-spacing: -0.6px;
+}
+.st-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+}
+.st-profile > div {
+  flex: 1;
+}
+.st-profile strong,
+.st-profile small {
+  display: block;
+}
+.st-profile strong {
+  font-size: 14px;
+}
+.st-profile small {
+  font-size: 12px;
+  margin-top: 4px;
+  color: var(--muted);
+}
+.st-description {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.st-section {
+  margin-top: 26px;
+}
+.st-section > h3 {
+  font-size: 13px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.st-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 15px 0;
+}
+.st-toggle span {
+  min-width: 0;
+}
+.st-toggle strong,
+.st-toggle small {
+  display: block;
+}
+.st-toggle strong {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.st-toggle small {
+  font-size: 11px;
+  margin-top: 5px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.st-toggle input {
+  appearance: none;
+  flex: 0 0 35px;
+  width: 35px;
+  height: 20px;
+  background: var(--panel-soft);
+  border: 1px solid var(--muted-2);
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+}
+.st-toggle input:before {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--muted);
+  top: 3px;
+  left: 3px;
+  transition: transform 0.16s;
+}
+.st-toggle input:checked {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+.st-toggle input:checked:before {
+  background: white;
+  transform: translateX(15px);
+}
+.st-themes {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.st-themes > button {
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+}
+.st-themes > button.selected {
+  border-color: var(--accent);
+}
+.st-themes > button > span:last-child {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  padding: 9px 4px 3px;
+}
+.st-theme-preview {
+  height: 80px;
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 6px;
+  padding: 10px;
+  background: #0f1218;
+  border: 1px solid #303744;
+  border-radius: 5px;
+}
+.st-theme-preview i {
+  background: #292f3b;
+  border-radius: 3px;
+}
+.st-theme-preview i:first-child {
+  grid-row: 1/3;
+}
+.st-theme-preview.light {
+  background: #eff2f7;
+  border-color: #c3cddd;
+}
+.st-theme-preview.light i {
+  background: #cbd5e5;
+}
+.st-theme-preview.system {
+  background: linear-gradient(90deg, #0f1218 50%, #eff2f7 50%);
+}
+.st-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.st-fields label {
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.st-footnote {
+  font-size: 11px;
+  color: var(--muted-2);
+  line-height: 1.7;
+  margin-top: 24px;
+}
+.st-role-list {
+  margin: 22px 0;
+}
+.st-role-list > div {
+  display: grid;
+  grid-template-columns: 78px 1fr;
+  gap: 12px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+.st-role-list strong {
+  font-size: 12px;
+}
+.st-role-list small {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.st-integration {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 0;
+  border-bottom: 1px solid var(--line);
+}
+.st-integration-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  background: var(--panel-soft);
+  border-radius: 9px;
+  color: var(--accent);
+}
+.st-integration > span:nth-child(2) {
+  flex: 1;
+}
+.st-integration strong,
+.st-integration small {
+  display: block;
+}
+.st-integration strong {
+  font-size: 13px;
+}
+.st-integration small {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.st-integration-form {
+  margin-top: 24px;
+}
+.st-info {
+  padding: 18px;
+  display: flex;
+  gap: 12px;
+  background: var(--accent-soft);
+  border-radius: 10px;
+  color: var(--accent);
+}
+.st-info svg {
+  flex-shrink: 0;
+}
+.st-info p {
+  font-size: 12px;
+  line-height: 1.7;
+  margin: 0;
+}
+.st-storage {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 22px;
+}
+.st-storage > div {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 16px;
+}
+.st-storage span,
+.st-storage strong {
+  display: block;
+}
+.st-storage span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.st-storage strong {
+  font-size: 24px;
+  margin-top: 8px;
+}
+.st-about {
+  text-align: center;
+  padding: 18px;
+}
+.st-about .brand-symbol {
+  margin: auto;
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+}
+.st-about h3 {
+  font-size: 19px;
+  margin-top: 20px;
+}
+.st-about p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.st-shortcut {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 18px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+@media (max-width: 700px) {
+  .st-layout {
+    grid-template-columns: 1fr;
+    gap: 20px;
+    min-height: 0;
+  }
+  .st-nav {
+    flex-direction: row;
+    overflow: auto;
+    border: 0;
+    padding: 0;
+    max-width: calc(100vw - 70px);
+  }
+  .st-nav button {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .st-local {
+    display: none;
+  }
+  .st-content {
+    max-height: 58vh;
+  }
+  .st-themes {
+    gap: 8px;
+  }
+}
+/* Each mode's settings take its accent: the Dashboard's and the Lounge's palette comes from
+   dashboard-style.css. */

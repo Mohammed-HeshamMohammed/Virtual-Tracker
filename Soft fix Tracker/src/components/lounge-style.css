@@ -1,0 +1,108 @@
+/* The Lounge wears the Dashboard's look. It keeps its own layout (server rail, conversation list,
+   chat, members), but every colour it uses comes from the Dashboard's palette: .lg-layout is in the
+   Dashboard's palette rule (dashboard-style.css), and here the Lounge's own --dc-* tokens are pointed
+   at it, so nothing in lounge.css needs its colours rewritten and both themes follow. The panels float
+   on the canvas with the Dashboard's rounded corners and shadow. Loaded last (from main.tsx). */
+:root .lg-layout,
+:root[data-theme="light"] .lg-layout {
+  --dc-rail: var(--db-canvas);
+  --dc-side: var(--db-card);
+  --dc-main: var(--db-canvas);
+  --dc-dock: var(--db-card-2);
+  --dc-input: var(--db-card);
+  --dc-field: var(--db-card-2);
+  --dc-hover: var(--db-hover);
+  --dc-active: var(--db-accent-soft);
+  --dc-line: var(--db-line);
+  --dc-text: var(--db-text);
+  --dc-head: var(--db-text);
+  --dc-muted: var(--db-muted-2);
+  --dc-icon: var(--db-muted);
+  /* filled buttons and selected marks carry white text, so they use the hero's deep tone */
+  --dc-brand: var(--db-hero-a);
+  --dc-brand-hover: var(--db-hero-b);
+  --dc-green-btn: var(--db-hero-a);
+  --dc-menu: var(--db-card);
+  --dc-msg-hover: var(--db-hover);
+  --dc-intro: var(--db-card-2);
+  --dc-button: var(--db-card-2);
+  --dc-button-hover: var(--panel-soft);
+  --dc-pill: var(--db-accent-strong);
+  --dc-thumb: var(--db-line);
+  --dc-shadow: 0 1px 0 var(--db-line);
+  --accent: var(--db-accent);
+  --accent-strong: var(--db-accent-strong);
+  --accent-soft: var(--db-accent-soft);
+  --lounge-frame: var(--db-canvas);
+  gap: 0 14px;
+  padding: 0 14px 14px 0;
+  background: var(--db-canvas);
+  font-family: "DM Sans", "Segoe UI", sans-serif;
+  font-size: 15px;
+}
+
+/* ---- floating panels ---- */
+.lg-layout .lg-sidebar,
+.lg-layout .lg-context-pane {
+  overflow: hidden;
+  border-radius: 24px;
+  box-shadow: var(--db-shadow);
+}
+.lg-layout .lg-context-pane {
+  overflow-y: auto;
+}
+/* the chat area: a card of its own, a shade off the canvas so the conversation has an edge */
+.lg-layout > .lg-main {
+  border: 1px solid var(--db-line);
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--db-card) 55%, var(--db-canvas));
+}
+
+/* ---- the Dashboard's selected state: soft accent fill, accent ink ---- */
+.lg-layout .lg-dm-link.active,
+.lg-layout .lg-channel-link.active {
+  color: var(--db-accent-ink);
+}
+.lg-layout .sf-button.primary {
+  border-radius: 12px;
+}
+.lg-layout .lg-composer {
+  border: 1px solid var(--db-line);
+  border-radius: 14px;
+}
+.lg-layout :focus-visible {
+  outline-color: var(--db-accent);
+}
+
+/* the title bar above it is the same canvas, and its search a card on it */
+.app-toolbar.mode-lounge {
+  background: var(--db-canvas);
+}
+.app-toolbar.mode-lounge .toolbar-search {
+  background: var(--db-card);
+}
+
+@media (max-width: 760px) {
+  :root .lg-layout,
+  :root[data-theme="light"] .lg-layout {
+    gap: 0;
+    padding: 0;
+  }
+  .lg-layout .lg-sidebar,
+  .lg-layout > .lg-main,
+  .lg-layout .lg-context-pane {
+    border-radius: 0;
+  }
+}
+
+/* The profile and voice controls sit inside the conversation list's card, not across the rail beside it. */
+.lg-layout .lg-control-dock {
+  left: 86px;
+  right: auto;
+  bottom: 22px;
+  width: 224px;
+  border: 0;
+  border-radius: 16px;
+  background: var(--db-card-2);
+  box-shadow: none;
+}

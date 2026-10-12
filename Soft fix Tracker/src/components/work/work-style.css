@@ -1,0 +1,147 @@
+/* Work wears the Dashboard's look. The palette itself is shared: .wk-layout (and the title bar in Work)
+   are in the Dashboard's palette rule in dashboard-style.css, which remaps the app's own tokens, so
+   every Work screen picks up the same navy canvas, card surfaces, green accent and 20px radius. This
+   file is the rest of that style: the floating sidebar, the cards' edge and shadow, and the buttons.
+   Loaded last (from main.tsx) so it wins over work.css. */
+.wk-layout {
+  grid-template-columns: var(--sidebar-w, 268px) minmax(0, 1fr);
+  background: var(--db-canvas);
+}
+
+/* ---- the sidebar is the Dashboard's own (.db-sidebar and its parts are used in WorkSidebar.tsx), so
+   only what Work adds to it is styled here: the arrow that opens a project in the Dashboard ---- */
+.wk-sidebar .wk-project-row {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  border-radius: 10px;
+}
+.wk-sidebar .wk-project-row .db-scope-row {
+  flex: 1;
+  min-width: 0;
+}
+.wk-sidebar .wk-project-row .wk-project-open {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 0;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--db-muted-2);
+  opacity: 0;
+  transition:
+    width 0.16s ease,
+    opacity 0.16s ease;
+}
+.wk-sidebar .wk-project-row:hover .wk-project-open,
+.wk-sidebar .wk-project-row:focus-within .wk-project-open {
+  width: 28px;
+  opacity: 1;
+}
+.wk-sidebar .wk-project-open:hover {
+  background: var(--db-hover);
+  color: var(--db-text);
+}
+.wk-sidebar .db-scope-dot.pulse {
+  box-shadow: 0 0 0 4px var(--db-accent-soft);
+}
+.wk-sidebar .db-sidebar-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: auto;
+}
+.wk-sidebar .wk-week-card {
+  border: 0;
+  border-radius: 16px;
+  background: var(--db-card-2);
+}
+.wk-layout .wk-progress {
+  height: 6px;
+  background: var(--db-track);
+}
+.wk-layout .wk-progress i {
+  background: linear-gradient(90deg, var(--db-accent-strong), var(--db-accent));
+}
+
+/* ---- cards, buttons and fields: the Dashboard's ---- */
+.wk-layout .sf-card {
+  border: 1px solid var(--db-line);
+  border-radius: var(--radius);
+  background: var(--db-card);
+  box-shadow: var(--db-shadow);
+}
+.wk-layout .sf-button {
+  min-height: 40px;
+  padding: 0 18px;
+  border: 1px solid var(--db-line);
+  border-radius: 12px;
+  background: var(--db-card);
+  color: var(--db-text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.wk-layout .sf-button:hover {
+  border-color: var(--db-accent);
+  background: var(--db-hover);
+}
+.wk-layout .sf-button.primary {
+  border-color: transparent;
+  background: var(--db-accent-strong);
+  color: var(--db-on-accent);
+}
+.wk-layout .sf-button.primary:hover {
+  background: color-mix(in srgb, var(--db-accent-strong) 86%, #000);
+}
+.wk-layout .sf-input,
+.wk-layout select,
+.wk-layout input[type="text"],
+.wk-layout input[type="search"] {
+  border-radius: 12px;
+}
+.wk-layout .sf-badge {
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---- headings: the Dashboard's page heading ---- */
+.wk-layout .sf-page-header h1 {
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  color: var(--db-text);
+}
+.wk-layout .sf-page-header p {
+  color: var(--db-muted);
+}
+.wk-layout .wk-eyebrow {
+  color: var(--db-accent);
+  letter-spacing: 0.14em;
+}
+.wk-layout .wk-metric > strong {
+  font-family: Manrope, sans-serif;
+  letter-spacing: -0.04em;
+}
+
+/* ---- one sidebar, fixed ----
+   Work and the Dashboard share one sidebar width and it never changes: not with the window, not with
+   the page, not with what is in it. The rule is doubled up (two classes) so no narrower-window rule in
+   styles.css can shrink it; only the stacked phone layout (display: flex, under 560px) lets go of it.
+   The sidebar is also a fixed-height panel that never scrolls as a whole, so only the items inside it
+   change: the menu, the project list and the bottom block. */
+:root {
+  --sidebar-w: 268px;
+}
+.sf-mode-layout.db-layout,
+.sf-mode-layout.wk-layout {
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+}
+.sf-sidebar.db-sidebar {
+  width: auto;
+  min-width: 0;
+  overflow: hidden;
+}

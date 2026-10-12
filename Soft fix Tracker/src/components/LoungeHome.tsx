@@ -1,84 +1,35 @@
-import { useMemo, useState } from "react";
-import { BracketsCurly, ChatCircleDots, CheckCircle, DotsThreeVertical, MagnifyingGlass, PaintBrush, Plus, UserPlus, UsersThree, VideoCamera } from "@phosphor-icons/react";
+import { useState } from "react";
+import { ArrowRight, BookmarkSimple, ChatCircleDots, Check, Compass, DotsThreeVertical, Hash, MagnifyingGlass, Plus, Prohibit, Tray, UserPlus, UsersThree, X } from "@phosphor-icons/react";
+import { useWorkspace } from "../workspace";
 import { Avatar } from "./Avatar";
+import { EmptyState, SearchField } from "./ui";
+import type { LoungeData, LoungeRoute } from "./lounge-model";
 
-type LoungeTab = "online" | "everyone" | "requests";
+type Props = { route: LoungeRoute; data: LoungeData; onNavigate: (route: LoungeRoute) => void; onInvite: () => void; onCreate: () => void; onJoin: (id: string) => void; onAccept: (id: string) => void; onDecline: (id: string) => void; onCancelInvite: (id: string) => void; onBookmark: (id: string) => void; onBlock: (id: string) => void };
 
-const people = [
-  { initials: "SA", name: "Sara Ahmed", role: "Product designer", activity: "Reviewing Lounge navigation", color: "violet", online: true },
-  { initials: "YK", name: "Youssef Khaled", role: "Frontend engineer", activity: "Working in Soft Fix Tracker", color: "cyan", online: true },
-  { initials: "MN", name: "Mariam Nabil", role: "Project manager", activity: "Available to talk", color: "gold", online: true },
-  { initials: "OA", name: "Omar Adel", role: "Backend engineer", activity: "In Product sync · 24m", color: "green", online: true },
-  { initials: "NH", name: "Nour Hany", role: "QA engineer", activity: "Testing the employee build", color: "blue", online: true },
-  { initials: "AT", name: "Ahmed Tarek", role: "Support specialist", activity: "Away · 8m", color: "orange", online: false },
-  { initials: "LR", name: "Laila Reda", role: "Operations", activity: "Offline", color: "slate", online: false }
-];
-
-const activities = [
-  { icon: <VideoCamera />, title: "Product sync", detail: "4 teammates in Work Room", names: "Mariam, Omar, Sara +1", tone: "violet" },
-  { icon: <BracketsCurly />, title: "Pairing session", detail: "Authentication flow · 36m", names: "Youssef and Ahmed", tone: "cyan" },
-  { icon: <PaintBrush />, title: "Design review", detail: "Soft Fix Lounge UI", names: "Sara, Nour +2", tone: "gold" }
-];
-
-export function LoungeHome() {
-  const [tab, setTab] = useState<LoungeTab>("online");
+export function LoungeHome({ route, data, onNavigate, onInvite, onCreate, onJoin, onAccept, onDecline, onCancelInvite, onBookmark, onBlock }: Props) {
+  const { members, profile } = useWorkspace();
   const [query, setQuery] = useState("");
-  const visiblePeople = useMemo(() => people.filter(person => {
-    if (tab === "online" && !person.online) return false;
-    return `${person.name} ${person.role} ${person.activity}`.toLowerCase().includes(query.toLowerCase());
-  }), [tab, query]);
+  const [menu, setMenu] = useState<string>();
+  const [roomFilter, setRoomFilter] = useState("All channels");
+  const tab = route.page === "people" ? "All" : route.page === "requests" ? "Pending" : route.page === "blocked" ? "Blocked" : "Online";
+  const coworkers = members.filter(person => person.id !== "me");
+  const blocked = data.blocked ?? [];
+  const people = coworkers.filter(person => (tab === "Blocked" ? blocked.includes(person.id) : !blocked.includes(person.id) && (tab !== "Online" || person.status !== "Offline")) && `${person.name} ${person.team} ${person.role}`.toLowerCase().includes(query.toLowerCase()));
+  const rooms = data.rooms.filter(room => (roomFilter === "All channels" || roomFilter === "Joined" && room.joined || room.category === roomFilter) && `${room.name} ${room.description}`.toLowerCase().includes(query.toLowerCase()));
+  const saved = Object.entries(data.messages).flatMap(([key, messages]) => messages.filter(message => data.bookmarks.includes(message.id) && message.body.toLowerCase().includes(query.toLowerCase())).map(message => ({ ...message, key })));
+  const friendsView = !["rooms", "saved"].includes(route.page);
+  const pendingCount = data.requests.length + data.invites.length;
+  const requestMatches = data.requests.filter(person => `${person.name} ${person.email}`.toLowerCase().includes(query.toLowerCase()));
+  const inviteMatches = data.invites.filter(invite => invite.email.toLowerCase().includes(query.toLowerCase()));
+  const activeRooms = data.rooms.filter(room => room.joined && room.members.some(id => coworkers.some(person => person.id === id && person.status === "Available"))).slice(0, 3);
 
-  return (
-    <main className="lounge-home">
-      <header className="lounge-header">
-        <span className="lounge-title"><UsersThree weight="fill" /><strong>Lounge</strong></span>
-        <span className="lounge-header-rule" />
-        <div className="lounge-tabs">
-          <button className={tab === "online" ? "active" : ""} onClick={() => setTab("online")}>Online</button>
-          <button className={tab === "everyone" ? "active" : ""} onClick={() => setTab("everyone")}>Everyone</button>
-          <button className={tab === "requests" ? "active" : ""} onClick={() => setTab("requests")}>Requests <b>3</b></button>
-        </div>
-        <button className="invite-button"><UserPlus /><span>Invite teammate</span></button>
-      </header>
-
-      <section className="people-pane">
-        {tab === "requests" ? (
-          <div className="requests-state">
-            <span><UserPlus /></span><h2>3 connection requests</h2><p>Review requests from employees in your Soft Fix workplace.</p>
-            {people.slice(4, 7).map(person => <button key={person.name}><Avatar initials={person.initials} color={person.color} /><span><strong>{person.name}</strong><small>{person.role}</small></span><b>Review</b></button>)}
-          </div>
-        ) : (
-          <>
-            <label className="people-search"><MagnifyingGlass /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Search coworkers" /><kbd>Ctrl K</kbd></label>
-            <div className="people-heading">{tab === "online" ? "ONLINE" : "ALL COWORKERS"} — {visiblePeople.length}</div>
-            <div className="people-list">
-              {visiblePeople.map(person => (
-                <article className={`person-row ${person.online ? "" : "is-offline"}`} key={person.name}>
-                  <Avatar initials={person.initials} color={person.color} />
-                  <span className="person-copy"><strong>{person.name}</strong><small>{person.role} · {person.activity}</small></span>
-                  {person.online ? <CheckCircle className="available-mark" weight="fill" /> : null}
-                  <button title={`Message ${person.name}`}><ChatCircleDots weight="fill" /></button>
-                  <button title="More options"><DotsThreeVertical weight="bold" /></button>
-                </article>
-              ))}
-            </div>
-          </>
-        )}
-      </section>
-
-      <aside className="active-pane">
-        <div className="active-pane-heading"><div><strong>Active now</strong><small>Work together without leaving Soft Fix</small></div><button title="Start activity"><Plus /></button></div>
-        <div className="active-cards">
-          {activities.map(activity => (
-            <button className="active-card" key={activity.title}>
-              <span className={`active-icon ${activity.tone}`}>{activity.icon}</span>
-              <span><strong>{activity.title}</strong><small>{activity.detail}</small></span>
-              <span className="activity-people">{activity.names}</span>
-            </button>
-          ))}
-        </div>
-        <div className="active-empty"><ChatCircleDots /><strong>Start something together</strong><small>Open a voice room, share a screen, or message a teammate.</small><button>Open Lounge room</button></div>
-      </aside>
-    </main>
-  );
+  return <main className="lg-main">
+    <header className="lg-content-header">{friendsView ? <><span className="lg-header-title"><UsersThree weight="fill" /><strong>Friends</strong></span><span className="lg-header-divider" /><nav className="lg-friends-tabs" aria-label="Friends filters">{[{ label: "Online", page: "home" as const }, { label: "All", page: "people" as const }, { label: "Pending", page: "requests" as const }, { label: "Blocked", page: "blocked" as const }].map(item => <button key={item.label} className={tab === item.label ? "active" : ""} aria-current={tab === item.label ? "page" : undefined} onClick={() => onNavigate({ page: item.page })}>{item.label}{item.label === "Pending" && pendingCount > 0 && <b>{pendingCount}</b>}</button>)}<button className="lg-add-friend" onClick={onInvite}>Add Friend</button></nav></> : <span className="lg-header-title">{route.page === "rooms" ? <Compass weight="fill" /> : <BookmarkSimple weight="fill" />}<strong>{route.page === "rooms" ? "Browse Channels" : "Saved Messages"}</strong></span>}<div className="lg-header-actions"><button className="lg-icon-button" aria-label="Invite a teammate" title="Invite a teammate" onClick={onInvite}><UserPlus weight="fill" /></button><span className="lg-header-divider" /><button className="lg-icon-button" aria-label="Open saved messages" title="Saved Messages" onClick={() => onNavigate({ page: "saved" })}><Tray weight="fill" /></button></div></header>
+    {friendsView ? <div className="lg-friends-layout"><section className="lg-friends-list"><SearchField value={query} onChange={setQuery} placeholder={tab === "Pending" ? "Search requests" : "Search"} label="Search friends" /><div className="lg-list-heading">{tab.toUpperCase()} — {tab === "Pending" ? requestMatches.length + inviteMatches.length : people.length}</div>
+      {tab === "Pending" ? <>{requestMatches.map(person => <article className="lg-friend-row" key={person.id}><Avatar initials={person.initials} color={person.color} /><div className="lg-friend-copy"><strong>{person.name}</strong><small>Incoming Friend Request · {person.team}</small></div><button className="lg-round-action lg-accept" aria-label={`Accept ${person.name}`} title="Accept" onClick={() => onAccept(person.id)}><Check weight="bold" /></button><button className="lg-round-action lg-decline" aria-label={`Decline ${person.name}`} title="Ignore" onClick={() => onDecline(person.id)}><X weight="bold" /></button></article>)}{inviteMatches.map(invite => <article className="lg-friend-row" key={invite.id}><Avatar initials={invite.email.slice(0, 2).toUpperCase()} color="blue" /><div className="lg-friend-copy"><strong>{invite.email}</strong><small>Outgoing invitation · prepared locally</small></div><button className="lg-round-action lg-decline" aria-label={`Cancel invitation for ${invite.email}`} title="Cancel invitation" onClick={() => onCancelInvite(invite.id)}><X weight="bold" /></button></article>)}{!requestMatches.length && !inviteMatches.length && <div className="lg-friends-empty"><UserPlus /><h2>No pending requests</h2><p>{query ? "Try a different name or email." : "You’re all caught up. Add a friend to start a conversation."}</p></div>}</> : <>{people.map(person => <article className="lg-friend-row" key={person.id}><span className="lg-avatar-status"><Avatar initials={person.initials} color={person.color} /><i className={`lg-status-dot ${person.status.toLowerCase()}`} /></span><button className="lg-friend-copy" onClick={() => onNavigate({ page: "dm", id: person.id })}><strong>{person.name}<span>{person.role}</span></strong><small>{tab === "Blocked" ? "Blocked" : person.status === "Available" ? "Online" : person.status === "Focusing" ? "Do Not Disturb" : person.status === "Away" ? "Idle" : "Offline"}</small></button>{tab === "Blocked" ? <button className="lg-round-action" aria-label={`Unblock ${person.name}`} title="Unblock" onClick={() => onBlock(person.id)}><Prohibit /></button> : <><button className="lg-round-action" aria-label={`Message ${person.name}`} title="Message" onClick={() => onNavigate({ page: "dm", id: person.id })}><ChatCircleDots weight="fill" /></button><div className="lg-friend-more"><button className="lg-round-action" aria-label={`More options for ${person.name}`} title="More" aria-expanded={menu === person.id} onClick={() => setMenu(menu === person.id ? undefined : person.id)}><DotsThreeVertical weight="bold" /></button>{menu === person.id && <div className="lg-person-menu"><button onClick={() => { setMenu(undefined); onNavigate({ page: "dm", id: person.id }); }}>Message<ChatCircleDots /></button><button className="lg-danger" onClick={() => { setMenu(undefined); onBlock(person.id); }}>Block<Prohibit /></button></div>}</div></>}</article>)}{!people.length && <div className="lg-friends-empty">{tab === "Blocked" ? <Prohibit /> : <UsersThree />}<h2>{query ? "No results found" : tab === "Blocked" ? "No blocked users" : "No one’s around right now"}</h2><p>{query ? "We couldn’t find anyone matching your search." : tab === "Blocked" ? "People you block will appear here." : "Check the All tab to find your teammates."}</p>{!query && tab === "Online" && <button className="sf-button primary" onClick={() => onNavigate({ page: "people" })}>Show all friends</button>}</div>}</>}
+    </section><aside className="lg-active-now"><h2>Active Now</h2>{activeRooms.length ? <><p className="lg-active-intro">See what’s happening in your workspace.</p>{activeRooms.map(room => { const present = coworkers.filter(person => room.members.includes(person.id) && !blocked.includes(person.id) && person.status !== "Offline"); return <button key={room.id} className="lg-activity-card" onClick={() => onNavigate({ page: "channel", id: room.id })}><div className="lg-activity-top"><span className="lg-small-room-icon"><Hash /></span><span><strong>{room.name}</strong><small>{room.category} channel</small></span></div><div className="lg-activity-members"><div>{present.slice(0, 3).map(person => <Avatar key={person.id} initials={person.initials} color={person.color} size="sm" />)}</div><span>{present.length} teammates around</span></div></button>; })}</> : <div className="lg-quiet-state"><strong>It’s quiet for now…</strong><p>When teammates are around in your project rooms, you’ll see them here.</p></div>}</aside></div> : <div className="lg-directory-content">
+      {route.page === "rooms" ? <><div className="lg-directory-heading"><div><h1>Channels & Rooms</h1><p>Find your next conversation in Soft Fix.</p></div><button className="sf-button primary" onClick={onCreate}><Plus />Create Channel</button></div><div className="lg-directory-filters"><SearchField value={query} onChange={setQuery} placeholder="Search channels" /><select className="sf-input" aria-label="Filter channels" value={roomFilter} onChange={event => setRoomFilter(event.target.value)}>{["All channels", "Joined", "Workspace", "Project"].map(option => <option key={option}>{option}</option>)}</select></div><div className="lg-channel-directory">{rooms.map(room => <article key={room.id}><span className="lg-small-room-icon"><Hash /></span><div><h2>{room.name}</h2><p>{room.description}</p><small>{room.members.length + (room.joined ? 1 : 0)} members · {room.category}</small></div><button className={`sf-button ${room.joined ? "" : "primary"}`} onClick={() => room.joined ? onNavigate({ page: "channel", id: room.id }) : onJoin(room.id)}>{room.joined ? "Open" : "Join"}<ArrowRight /></button></article>)}</div>{!rooms.length && <EmptyState title="No channels found" description="Try another search or create a channel for your team." action="Create Channel" onAction={onCreate} />}</> : <><SearchField value={query} onChange={setQuery} placeholder="Search saved messages" /><div className="lg-list-heading">SAVED MESSAGES — {saved.length}</div>{saved.map(message => { const person = members.find(member => member.id === message.personId); const [page, id] = message.key.split(":"); const location = page === "channel" ? `#${data.rooms.find(room => room.id === id)?.name ?? "room"}` : members.find(member => member.id === id)?.name ?? "Direct message"; return <article className="lg-saved-message" key={message.id}><Avatar initials={person?.initials ?? "AM"} color={person?.color} /><div><div className="lg-message-meta"><strong>{message.personId === "me" ? profile.name : person?.name ?? "Teammate"}</strong><small>{location}</small></div><p>{message.body || message.attachment}</p><button className="lg-text-button" onClick={() => onNavigate({ page: page === "dm" ? "dm" : "channel", id })}>Jump to conversation<ArrowRight /></button></div><button className="lg-icon-button" aria-label="Remove saved message" title="Remove saved message" onClick={() => onBookmark(message.id)}><BookmarkSimple weight="fill" /></button></article>; })}{!saved.length && <div className="lg-friends-empty"><BookmarkSimple /><h2>{query ? "No matching messages" : "Nothing saved yet"}</h2><p>Bookmark a message to keep it here for later.</p></div>}</>}
+    </div>}
+  </main>;
 }
