@@ -54,6 +54,7 @@ import { ExpandCollapse, SegmentedControl } from "@/shared/ui/motion/expand-coll
 import { FormField } from "@/shared/ui/forms/form-field"
 import { IconTooltip } from "@/shared/ui/forms/icon-tooltip"
 import { SelectField } from "@/shared/ui/forms/select-field"
+import { PAY_RATE_CURRENCIES } from "@/features/members/config/pay-currencies"
 import { Toggle } from "@/shared/ui/forms/toggle"
 import { AddProjectDynamicFields } from "@/features/projects/components/add-project-dynamic-fields"
 import { ProjectNamesPreviewButton } from "@/features/projects/components/project-names-preview-button"
@@ -109,6 +110,9 @@ interface AddProjectFormState {
   breakTimeMinutes: string
   endDate: string
   timezone: string
+  /** What the client pays per hour on this project, as typed. Blank = none agreed. */
+  clientHourlyRate: string
+  clientRateCurrency: string
   /** The Management tab's switches - see ProjectRuleSwitches. */
   rules: ProjectRuleSwitches
   clientIds: string[]
@@ -155,6 +159,19 @@ const DEFAULT_BREAK_TIME_SECONDS = 600
 const BREAK_TIME_MIN_MINUTES = 1
 const BREAK_TIME_MAX_MINUTES = 480
 const BREAK_TIME_PRESETS = [5, 10, 15, 30, 60]
+
+/** Blank is "no rate agreed" (null), which clears a saved one. */
+function clientHourlyRateToNumber(value: string): number | null {
+  const rate = Number(value)
+  return value.trim() !== "" && Number.isFinite(rate) && rate > 0 ? Math.round(rate * 100) / 100 : null
+}
+
+function validateClientHourlyRate(value: string): string | null {
+  if (value.trim() === "") return null
+  const rate = Number(value)
+  if (!Number.isFinite(rate) || rate < 0) return "Client hourly rate must be a number, zero or more."
+  return null
+}
 
 function breakTimeMinutesToSeconds(value: string): number {
   const minutes = Number(value)
@@ -251,6 +268,8 @@ function createDefaultAddForm(): AddProjectFormState {
     breakTimeMinutes: String(DEFAULT_BREAK_TIME_SECONDS / 60),
     endDate: "",
     timezone: "",
+    clientHourlyRate: "",
+    clientRateCurrency: PAY_RATE_CURRENCIES[0].value,
     rules: { ...DEFAULT_PROJECT_RULE_SWITCHES },
     clientIds: [],
     teams: [],
@@ -408,6 +427,8 @@ function formStateToPayload(
     breakTimeSeconds: breakTimeMinutesToSeconds(addForm.breakTimeMinutes),
     endDate: addForm.endDate,
     timezone: addForm.timezone,
+    clientHourlyRate: clientHourlyRateToNumber(addForm.clientHourlyRate),
+    clientRateCurrency: addForm.clientRateCurrency,
     rules: addForm.rules,
     clientIds: addForm.clientIds,
     teamIds: addForm.teams,
@@ -786,6 +807,8 @@ export function ProjectModal({
           breakTimeMinutes: String((payload.breakTimeSeconds || DEFAULT_BREAK_TIME_SECONDS) / 60),
           endDate: payload.endDate || "",
           timezone: payload.timezone || "",
+          clientHourlyRate: payload.clientHourlyRate ? String(payload.clientHourlyRate) : "",
+          clientRateCurrency: payload.clientRateCurrency || PAY_RATE_CURRENCIES[0].value,
           rules: payload.rules ?? { ...DEFAULT_PROJECT_RULE_SWITCHES },
           clientIds: payload.clientIds,
           teams: payload.teamIds,
@@ -1151,7 +1174,11 @@ export function ProjectModal({
     if (breakError && addProjectTab !== "general") {
       setAddProjectTab("general")
     }
-    const validationError = namesError ?? idleError ?? breakError ?? budgetError
+    const clientRateError = validateClientHourlyRate(addForm.clientHourlyRate)
+    if (clientRateError && addProjectTab !== "general") {
+      setAddProjectTab("general")
+    }
+    const validationError = namesError ?? idleError ?? breakError ?? clientRateError ?? budgetError
     if (validationError) {
       setSubmitError(validationError)
       return
@@ -1179,6 +1206,8 @@ export function ProjectModal({
       const payloads = projectNames.map((name) => ({
         ...formStateToPayload(sanitizedAddForm, name, memberRoleById),
         ...(canSetTimezone ? {} : { timezone: undefined }),
+        // The rate is hidden from anyone below Manager, so their save must not blank it.
+        ...(canSetTimezone ? {} : { clientHourlyRate: undefined, clientRateCurrency: undefined }),
         // Only the people who see the Management tab send its switches; the server refuses them otherwise.
         ...(canManageProjectTracking ? {} : { rules: undefined }),
         // Not written: a part locked for this viewer, or one switched off (its stored values are kept).
@@ -1487,6 +1516,48 @@ export function ProjectModal({
                   onChange={(next) => setAddForm((p) => ({ ...p, billable: next }))}
                   label="Billable"
                 />
+                {canSetTimezone ? (
+                  <ExpandCollapse show={addForm.billable}>
+                    {(() => {
+                      const clientRateError = validateClientHourlyRate(addForm.clientHourlyRate)
+                      return (
+                        <FormField
+                          label="Client hourly rate"
+                          hint="What the client pays for an hour on this project. Client statements multiply the hours by it. Leave blank if none is agreed"
+                          error={clientRateError}
+                          className="pt-1"
+                        >
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              inputMode="decimal"
+                              min={0}
+                              step="0.01"
+                              value={addForm.clientHourlyRate}
+                              onChange={(e) => setAddForm((p) => ({ ...p, clientHourlyRate: e.target.value }))}
+                              placeholder="0.00"
+                              disabled={readOnly}
+                              aria-label="Client hourly rate"
+                              aria-invalid={clientRateError ? true : undefined}
+                              className={cn(
+                                formTheme.control,
+                                "min-w-0 flex-1",
+                                clientRateError ? "border-red-500 focus:border-red-500" : "",
+                              )}
+                            />
+                            <div className="w-36 shrink-0">
+                              <SelectField
+                                value={addForm.clientRateCurrency}
+                                onChange={(next) => setAddForm((p) => ({ ...p, clientRateCurrency: next }))}
+                                options={PAY_RATE_CURRENCIES.map((c) => ({ value: c.value, label: `${c.label} / hour` }))}
+                              />
+                            </div>
+                          </div>
+                        </FormField>
+                      )
+                    })()}
+                  </ExpandCollapse>
+                ) : null}
                 <SettingToggleRow
                   help="Disable activity: no screenshots or app and website activity are recorded on this project."
                   checked={addForm.disableActivity}

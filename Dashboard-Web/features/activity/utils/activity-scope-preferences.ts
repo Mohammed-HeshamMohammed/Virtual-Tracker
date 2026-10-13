@@ -51,6 +51,16 @@ export function writeStoredSelectedMemberId(viewerMemberId: string | null | unde
   writeSession(`${SELECTED_MEMBER_PREFIX}${viewerMemberId}`, memberId)
 }
 
+/** The member filter is "all", one id, or several joined by commas. */
+export function splitSelectedMemberIds(value: string): string[] {
+  return value === "all" ? [] : value.split(",").map((id) => id.trim()).filter(Boolean)
+}
+
+export function joinSelectedMemberIds(ids: Iterable<string>): string {
+  const list = [...new Set(ids)].filter(Boolean)
+  return list.length === 0 ? "all" : list.join(",")
+}
+
 export function clearStoredSelectedMemberId(viewerMemberId: string | null | undefined): void {
   if (!viewerMemberId) return
   removeSession(`${SELECTED_MEMBER_PREFIX}${viewerMemberId}`)

@@ -2,8 +2,10 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { ALL_MEMBERS_VALUE, ALL_PROJECTS_VALUE, GROUP_BY_OPTIONS, TABLE_METRIC_COLUMNS } from "@/features/reports/components/shared/constants"
+import { fetchReportFilterOptions } from "@/features/reports/api/misc-reports-api"
 import { attachForwardWheelToDocument } from "@/features/reports/utils/time-and-activity"
 import {
+  buildDayMemberRows,
   buildDisplayDay,
   buildGroupedRows,
   comparePeriodRows,
@@ -15,10 +17,10 @@ import {
   parseTimeToSeconds,
   type ActivityLevelFilter,
   type ManualTimeFilter,
+  type RosterMember,
   type TrackedTimeFilter,
 } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityGroupBy, TimeActivityMetric, TimeActivityReportData } from "@/features/reports/models/time-and-activity"
-import { getMembers } from "@/features/members/api/member-api"
 import { formatRangeLabel } from "@/features/reports/utils/time-and-activity"
 import { sumMoneyStrings } from "@/features/reports/utils/money"
 
@@ -38,11 +40,12 @@ const SAVED_VIEW_KEY = "reports:time-and-activity:view"
 
 type SavedView = {
   groupBy: TimeActivityGroupBy
-  memberFilter: string
+  /** One name in views saved before the filter took several. */
+  memberFilter: string | string[]
   enabledCols?: string[]
   enabledPeriodCols?: string[]
   enabledMemberCols?: string[]
-  projectFilter?: string
+  projectFilter?: string | string[]
   trackedTimeFilter?: TrackedTimeFilter
   manualTimeFilter?: ManualTimeFilter
   activityLevelFilter?: ActivityLevelFilter
@@ -58,12 +61,19 @@ function loadSavedView(): SavedView | null {
   }
 }
 
+/** A saved filter as the list it is now: the old single value becomes a list
+ *  of one, and the old "all" becomes the empty list. */
+function toNameList(saved: string | string[] | undefined, allValue: string): string[] {
+  if (Array.isArray(saved)) return saved.filter((name) => typeof name === "string" && name.length > 0)
+  return typeof saved === "string" && saved && saved !== allValue ? [saved] : []
+}
+
 export type UseTimeAndActivityReportParams = TimeActivityReportData & {
   range?: { from: string; to: string }
   currentMemberName?: string
 }
 
-export function useTimeAndActivityReport({ days, memberRows, entries, range, currentMemberName, moneyHidden = false }: UseTimeAndActivityReportParams) {
+export function useTimeAndActivityReport({ days, memberRows: wholeDayMemberRows, entries, members, range, currentMemberName, moneyHidden = false }: UseTimeAndActivityReportParams) {
   const savedView = useMemo(() => loadSavedView(), [])
   const [chartMetrics, setChartMetrics] = useState<Set<TimeActivityMetric>>(
     () => new Set<TimeActivityMetric>(["total_hours"])
@@ -83,8 +93,8 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range, cur
   }
 
   const [groupBy, setGroupBy] = useState<TimeActivityGroupBy>(savedView?.groupBy ?? "date_per_day")
-  const [memberFilter, setMemberFilter] = useState<string>(savedView?.memberFilter ?? ALL_MEMBERS_VALUE)
-  const [projectFilter, setProjectFilter] = useState<string>(savedView?.projectFilter ?? ALL_PROJECTS_VALUE)
+  const [memberFilter, setMemberFilter] = useState<string[]>(() => toNameList(savedView?.memberFilter, ALL_MEMBERS_VALUE))
+  const [projectFilter, setProjectFilter] = useState<string[]>(() => toNameList(savedView?.projectFilter, ALL_PROJECTS_VALUE))
   const [trackedTimeFilter, setTrackedTimeFilter] = useState<TrackedTimeFilter>(
     savedView?.trackedTimeFilter ?? "all"
   )
@@ -177,13 +187,16 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range, cur
   const [sortKey, setSortKey] = useState<string>("date")
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc")
 
-  const [rosterNames, setRosterNames] = useState<string[]>([])
+  // Everyone whose time this viewer may report on, with their photo - the same
+  // list the other reports' filters offer. It used to be the plain member
+  // list, names only, so anyone without activity in the range had no avatar.
+  const [roster, setRoster] = useState<RosterMember[]>([])
   useEffect(() => {
     let cancelled = false
-    getMembers({ fields: ["name"], singlePage: true, limit: 500 })
-      .then((members) => {
+    fetchReportFilterOptions()
+      .then((options) => {
         if (cancelled) return
-        setRosterNames(members.map((m) => m.name).filter(Boolean))
+        setRoster(options.members.filter((m) => m.name).map((m) => ({ name: m.name, avatarUrl: m.avatarUrl })))
       })
       .catch(() => {
         // Filter falls back to whoever has activity in-range - not fatal.
@@ -193,16 +206,35 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range, cur
     }
   }, [])
 
+  const photoByMemberId = useMemo(() => {
+    const photos = new Map<string, string>()
+    for (const m of members ?? []) if (m.avatarUrl) photos.set(m.id, m.avatarUrl)
+    return photos
+  }, [members])
+
   const memberFilterOptions = useMemo(
-    () => getMemberFilterOptions(memberRows, rosterNames, currentMemberName),
-    [memberRows, rosterNames, currentMemberName],
+    () => getMemberFilterOptions(wholeDayMemberRows, roster, currentMemberName),
+    [wholeDayMemberRows, roster, currentMemberName],
   )
-  const projectFilterOptions = useMemo(() => getProjectFilterOptions(memberRows), [memberRows])
+  const projectFilterOptions = useMemo(() => getProjectFilterOptions(wholeDayMemberRows), [wholeDayMemberRows])
+
+  // Narrowed to projects, a day must count only the hours on those projects -
+  // see buildDayMemberRows. Unfiltered, the report's own whole-day rows stand.
+  const memberRows = useMemo(
+    () =>
+      projectFilter.length === 0
+        ? wholeDayMemberRows
+        : buildDayMemberRows(
+            entries.filter((e) => projectFilter.includes(e.projectName)),
+            photoByMemberId,
+          ),
+    [projectFilter, wholeDayMemberRows, entries, photoByMemberId],
+  )
 
   const displayRows = useMemo(() => {
     const noFilters =
-      memberFilter === ALL_MEMBERS_VALUE &&
-      projectFilter === ALL_PROJECTS_VALUE &&
+      memberFilter.length === 0 &&
+      projectFilter.length === 0 &&
       trackedTimeFilter === "all" &&
       manualTimeFilter === "all" &&
       activityLevelFilter === "all"
@@ -243,8 +275,8 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range, cur
       manualTimeFilter,
       activityLevelFilter,
     )
-    return buildGroupedRows(filtered, groupBy)
-  }, [groupBy, entries, memberFilter, projectFilter, trackedTimeFilter, manualTimeFilter, activityLevelFilter])
+    return buildGroupedRows(filtered, groupBy, photoByMemberId)
+  }, [groupBy, entries, memberFilter, projectFilter, trackedTimeFilter, manualTimeFilter, activityLevelFilter, photoByMemberId])
 
   /**
    * Hours per member, aggregated straight from the filtered entries rather
@@ -372,7 +404,7 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range, cur
   }
 
   function clearFilters() {
-    setProjectFilter(ALL_PROJECTS_VALUE)
+    setProjectFilter([])
     setTrackedTimeFilter("all")
     setManualTimeFilter("all")
     setActivityLevelFilter("all")
@@ -382,6 +414,7 @@ export function useTimeAndActivityReport({ days, memberRows, entries, range, cur
     chartMetrics,
     toggleChartMetric,
     memberTotals,
+    photoByMemberId,
     groupBy,
     setGroupBy,
     groupByOptions: GROUP_BY_OPTIONS,

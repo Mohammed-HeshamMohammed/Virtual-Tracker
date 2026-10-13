@@ -1,22 +1,16 @@
 "use client"
 
 import { useEffect, useMemo } from "react"
-import { Users } from "lucide-react"
-import { SearchableSelectField } from "@/shared/ui/forms/searchable-select-field";
 import { useActivityFeedContext } from "@/features/activity/components/activity-feed-context"
+import { joinSelectedMemberIds, splitSelectedMemberIds } from "@/features/activity/utils/activity-scope-preferences"
 import { usePeopleTeamScope } from "@/features/members/context/people-team-scope-context"
-import { useTheme } from "@/shared/providers/app"
+import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
+import { ReportToolbarMultiSelect } from "@/features/reports/components/shared/report-filters-panel"
 
-function MemberInitials({ initials }: { initials: string }) {
-  return (
-    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-600 dark:bg-slate-700 dark:text-slate-200">
-      {initials}
-    </div>
-  )
-}
-
+/** Pick any number of members, or leave it on "all". The picked ids travel as
+ *  one comma-joined string (see splitSelectedMemberIds), so the feed query,
+ *  its cache key and the stored preference all stay a plain string. */
 export function ActivityMemberSelect({ compact = false }: { compact?: boolean }) {
-  const { isDark } = useTheme()
   const { scope, selectedMemberId, setSelectedMemberId } = useActivityFeedContext()
   const { canToggleMyTeam, myTeamOnly, teamMemberIds, teamMemberIdsLoading } = usePeopleTeamScope()
 
@@ -28,12 +22,18 @@ export function ActivityMemberSelect({ compact = false }: { compact?: boolean })
   }, [scope?.members, canToggleMyTeam, myTeamOnly, teamMemberIds, teamMemberIdsLoading])
 
   const showMemberFilter = (scope?.canSeeAllMembers ?? false) || memberOptions.length > 1
+  // "All" asks the server for everyone the viewer may see, which in My team
+  // mode is more than the team - so there it means "every member listed".
+  const allowAll = Boolean(scope?.canSeeAllMembers) && !myTeamOnly
 
   useEffect(() => {
     if (!canToggleMyTeam || !myTeamOnly || teamMemberIdsLoading) return
     if (teamMemberIds.size === 0) return
-    if (selectedMemberId !== "all" && teamMemberIds.has(selectedMemberId)) return
+    const picked = splitSelectedMemberIds(selectedMemberId)
+    if (picked.length > 0 && picked.every((id) => teamMemberIds.has(id))) return
+    const kept = picked.filter((id) => teamMemberIds.has(id))
     const fallback =
+      (kept.length > 0 ? joinSelectedMemberIds(kept) : null) ??
       memberOptions.find((member) => teamMemberIds.has(member.id))?.id ??
       scope?.defaultMemberId ??
       memberOptions[0]?.id
@@ -49,38 +49,39 @@ export function ActivityMemberSelect({ compact = false }: { compact?: boolean })
     setSelectedMemberId,
   ])
 
+  const options = useMemo(
+    () =>
+      memberOptions.map((m) => ({
+        id: String(m.id),
+        name: m.name,
+        meta: <ReportMemberAvatar initials={m.initials} imageUrl={m.avatarUrl} />,
+      })),
+    [memberOptions],
+  )
+  const selected = useMemo(() => new Set(splitSelectedMemberIds(selectedMemberId)), [selectedMemberId])
+
   if (!showMemberFilter) return null
 
-  const options = [
-    ...(scope?.canSeeAllMembers && !myTeamOnly
-      ? [
-          {
-            value: "all",
-            label: compact ? "All" : "All members",
-            meta: <Users className="h-4 w-4 shrink-0 text-slate-400" />,
-          },
-        ]
-      : []),
-    ...memberOptions.map((m) => ({
-      value: String(m.id),
-      label: m.name,
-      meta: <MemberInitials initials={m.initials} />,
-    })),
-  ]
+  const everyoneListed = options.length > 0 && options.every((o) => selected.has(o.id))
 
   return (
-    <SearchableSelectField
-      isDark={isDark}
-      value={selectedMemberId}
-      onChange={(value) => {
-        if (value) setSelectedMemberId(value)
-      }}
-      placeholder={compact ? "Member" : "All members"}
-      className={compact ? "w-36 shrink-0 sm:w-40" : "w-44 shrink-0 sm:w-52"}
-      menuMinWidth={240}
-      visibleOptionRows={5}
-      truncateOptions={false}
+    <ReportToolbarMultiSelect
+      label="Members"
+      emptyLabel={compact ? "All" : "All members"}
       options={options}
+      selected={selected}
+      allSelected={allowAll ? selectedMemberId === "all" : everyoneListed}
+      onSelectAll={() => setSelectedMemberId(allowAll ? "all" : joinSelectedMemberIds(options.map((o) => o.id)))}
+      onChange={(next) => {
+        // Unticking the last one goes back to "all" where that is allowed, and
+        // is ignored where it is not (someone has to stay selected).
+        if (next.size === 0) {
+          if (allowAll) setSelectedMemberId("all")
+          return
+        }
+        setSelectedMemberId(joinSelectedMemberIds(next))
+      }}
+      width={compact ? "w-36 shrink-0 sm:w-44" : "w-44 shrink-0 sm:w-52"}
     />
   )
 }

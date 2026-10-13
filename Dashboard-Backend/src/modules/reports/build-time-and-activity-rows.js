@@ -65,7 +65,11 @@ export function buildTimeAndActivityReportPayload(
   memberRates = new Map(),
   manualRows = [],
   currency = null,
+  options = {},
 ) {
+  // What the client is charged is a separate permission from what a member is
+  // paid: only the caller knows whether this viewer may see it.
+  const includeBilling = options.includeBilling === true;
   /**
    * Money is earned in the member's own currency and reported in one. The
    * conversion happens here, at the row, rather than in the client: the day a
@@ -128,6 +132,11 @@ export function buildTimeAndActivityReportPayload(
           projectName: row.project_name || "",
           clientName: row.client_name || "",
           teamName: row.team_name || "",
+          clientHourlyRate: row.client_hourly_rate,
+          clientRateCurrency: row.client_rate_currency,
+          clientNetTermsDays: row.client_net_terms_days,
+          clientTaxRate: row.client_tax_rate,
+          clientBillingNotes: row.client_billing_notes,
           activeSeconds: 0,
           idleSeconds: 0,
           manualSeconds: 0,
@@ -165,6 +174,11 @@ export function buildTimeAndActivityReportPayload(
         projectName: row.project_name || "",
         clientName: row.client_name || "",
         teamName: row.team_name || "",
+        clientHourlyRate: row.client_hourly_rate,
+        clientRateCurrency: row.client_rate_currency,
+        clientNetTermsDays: row.client_net_terms_days,
+        clientTaxRate: row.client_tax_rate,
+        clientBillingNotes: row.client_billing_notes,
         activeSeconds: 0,
         idleSeconds: 0,
         manualSeconds: 0,
@@ -196,28 +210,60 @@ export function buildTimeAndActivityReportPayload(
       })),
     }));
 
+  /**
+   * What the project's client is charged for this row: the same hours, priced
+   * at the project's own hourly rate instead of the member's pay rate, and
+   * converted on the row's day exactly as pay is. Left off entirely for a
+   * project with no rate, so "nothing set" never reads as "free".
+   */
+  const billing = (entry, hours) => {
+    if (!includeBilling) return {};
+    const rate = Number(entry.clientHourlyRate);
+    if (!Number.isFinite(rate) || rate <= 0) return {};
+    const billedIn = String(entry.clientRateCurrency || currency?.orgCurrency || "USD").toUpperCase();
+    const converted = spend(round2(hours * rate), billedIn, entry.date);
+    // The client's own invoice terms, present only when it has set custom ones.
+    const taxRate = Number(entry.clientTaxRate);
+    const netTerms = Number(entry.clientNetTermsDays);
+    const notes = String(entry.clientBillingNotes ?? "").trim();
+    return {
+      billRate: rate,
+      billRateCurrency: billedIn,
+      billAmount: converted.spentAmount,
+      billCurrency: converted.currency,
+      ...(Number.isFinite(taxRate) && taxRate > 0 ? { billTaxRate: taxRate } : {}),
+      ...(entry.clientNetTermsDays != null && Number.isFinite(netTerms)
+        ? { billNetTermsDays: Math.max(0, Math.floor(netTerms)) }
+        : {}),
+      ...(notes ? { billNotes: notes } : {}),
+    };
+  };
+
   const entries = [...byDayMemberProject.values()]
     .sort((a, b) => a.date.localeCompare(b.date))
-    .map((entry) => ({
-      date: entry.date,
-      memberId: entry.memberId,
-      memberName: memberNameMap.get(entry.memberId)?.name ?? "Unknown",
-      projectId: entry.projectId,
-      projectName: entry.projectName,
-      clientName: entry.clientName,
-      teamName: entry.teamName,
-      activeSeconds: entry.activeSeconds,
-      idleSeconds: entry.idleSeconds,
-      manualSeconds: entry.manualSeconds ?? 0,
-      ...spend(
-        round2(
-          ((entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600) *
-            resolveRateForDay(memberRates, entry.memberId, entry.date),
-        ),
-        resolveCurrencyForDay(memberRates, entry.memberId, entry.date),
-        entry.date,
-      ),
-    }));
+    .map((entry) => {
+      const hours = (entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600;
+      const payRate = resolveRateForDay(memberRates, entry.memberId, entry.date);
+      const payRateCurrency = resolveCurrencyForDay(memberRates, entry.memberId, entry.date);
+      return {
+        date: entry.date,
+        memberId: entry.memberId,
+        memberName: memberNameMap.get(entry.memberId)?.name ?? "Unknown",
+        projectId: entry.projectId,
+        projectName: entry.projectName,
+        clientName: entry.clientName,
+        teamName: entry.teamName,
+        activeSeconds: entry.activeSeconds,
+        idleSeconds: entry.idleSeconds,
+        manualSeconds: entry.manualSeconds ?? 0,
+        // The rate the amount below was worked out from, in the currency it
+        // is paid in - a pay slip states it; the converted amount cannot.
+        payRate,
+        payRateCurrency,
+        ...spend(round2(hours * payRate), payRateCurrency, entry.date),
+        ...billing(entry, hours),
+      };
+    });
 
   return { days, entries };
 }

@@ -1339,6 +1339,14 @@ GROUP BY task_id`,
   // client's calendar, not theirs. NULL means "use the member's own zone",
   // which is the right default and what every existing project keeps.
   `ALTER TABLE projects ADD COLUMN IF NOT EXISTS timezone VARCHAR(64)`,
+  // What this project's client pays per hour worked on it, and the currency
+  // that price is quoted in. Separate from anyone's pay rate: it is what a
+  // client statement multiplies the hours by. NULL means no rate was agreed,
+  // and a statement says so instead of billing zero.
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_hourly_rate NUMERIC(12,2)`,
+  `ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_rate_currency VARCHAR(3)`,
+  `ALTER TABLE projects DROP CONSTRAINT IF EXISTS projects_client_hourly_rate_check`,
+  `ALTER TABLE projects ADD CONSTRAINT projects_client_hourly_rate_check CHECK (client_hourly_rate IS NULL OR client_hourly_rate >= 0)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_status ON projects (status)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects (updated_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_projects_client ON projects (client_id)`,

@@ -7,6 +7,7 @@ import { canManageActivityData } from "@/features/auth"
 import { useRemovalRequestCount } from "@/features/activity/hooks/use-removal-request-count"
 import { cn } from "@/shared/utils/utils"
 import { ActivityMemberSelect } from "@/features/activity/components/activity-member-select"
+import { ActivityProjectSelect } from "@/features/activity/components/activity-project-select"
 import {
   ActivityToolbarDivider,
   ActivityToolbarIconButton,
@@ -129,6 +130,8 @@ export function ActivityControlBar({
         <ActivityToolbarDivider />
 
         <ActivityMemberSelect compact />
+
+        <ActivityProjectSelect />
 
         <div className="relative min-w-0 flex-1 basis-full sm:basis-48 sm:min-w-[11rem]">
           <Search

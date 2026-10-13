@@ -6,6 +6,8 @@ import { readJsonBody } from "../../http/read-json-body.js";
 import { getDb } from "../../config/firebase.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { buildMemberMetaMap } from "../activity/activity-scope.js";
+import { loadMemberPhotoUrls } from "../members/services/member-photo-urls.js";
+import { getMembersByIdsPg } from "../../lib/postgres/members-postgres.service.js";
 import {
   getManualTimeEntryRowsPg,
   getTimeAndActivityReportRowsPg,
@@ -260,9 +262,10 @@ async function loadTimeAndActivityReportPayloadUnscoped(db, memberIds, from, to,
   const memberIdsInResult = [
     ...new Set([...rawRows, ...manualRows].map((r) => r.member_id).filter(Boolean)),
   ];
-  const [nameMap, tzMap] = await Promise.all([
+  const [nameMap, tzMap, photoByMemberId] = await Promise.all([
     buildMemberMetaMap(db, memberIdsInResult),
     getMemberTimezones(db, memberIdsInResult),
+    loadReportMemberPhotos(db, memberIdsInResult),
   ]);
   let rateMap = new Map();
   if (viewer && memberIdsInResult.length > 0) {
@@ -271,8 +274,36 @@ async function loadTimeAndActivityReportPayloadUnscoped(db, memberIds, from, to,
       rateMap = await buildHistoricalRateMap(visibleRateMemberIds);
     }
   }
-  const payload = buildTimeAndActivityReportPayload(rawRows, nameMap, tzMap, from, to, rateMap, manualRows, currency);
-  return currency ? { ...payload, currency: currencyMeta(currency, oldestRateUsed(payload)) } : payload;
+  // What a client is charged is management's to see, not everyone's who can
+  // open the report.
+  const includeBilling = Boolean(viewer && isManagementRole(viewer.roleName));
+  const payload = buildTimeAndActivityReportPayload(rawRows, nameMap, tzMap, from, to, rateMap, manualRows, currency, {
+    includeBilling,
+  });
+  // Once per member, not once per row: a photo can be an inline data URL, and
+  // repeating it on every day a member worked is what a month-long report
+  // cannot afford. The client joins it back on by id.
+  const members = memberIdsInResult.map((id) => ({
+    id,
+    name: nameMap.get(id)?.name ?? "Unknown",
+    avatarUrl: photoByMemberId.get(String(id)) ?? nameMap.get(id)?.avatarUrl ?? null,
+  }));
+  const withMembers = { ...payload, members, billingIncluded: includeBilling };
+  return currency ? { ...withMembers, currency: currencyMeta(currency, oldestRateUsed(payload)) } : withMembers;
+}
+
+/** Profile photos for the people in a report. The photo lives on the member's
+ *  profile, and `members.avatar_url` is only a copy that is often still empty -
+ *  reading the copy alone is why the report showed initials for people whose
+ *  photo shows everywhere else. Cosmetic, so a failed lookup means initials. */
+async function loadReportMemberPhotos(db, memberIds) {
+  if (!memberIds.length) return new Map();
+  try {
+    return await loadMemberPhotoUrls(db, await getMembersByIdsPg(memberIds));
+  } catch (err) {
+    logSafeError("[reports/time-and-activity photos]", err);
+    return new Map();
+  }
 }
 
 /** The day of the staler rate any converted row leaned on, so the UI can say
@@ -345,8 +376,14 @@ export async function routeReports(req, res, url, origin) {
       ]);
 
       const memberMeta = await buildMemberMetaMap(getDb(), visibleMemberIds);
+      const photoByMemberId = await loadReportMemberPhotos(getDb(), [...memberMeta.keys()]);
       const members = [...memberMeta.entries()]
-        .map(([id, meta]) => ({ id, name: meta.name, initials: meta.initials }))
+        .map(([id, meta]) => ({
+          id,
+          name: meta.name,
+          initials: meta.initials,
+          avatarUrl: photoByMemberId.get(String(id)) ?? meta.avatarUrl ?? null,
+        }))
         .sort((a, b) => a.name.localeCompare(b.name));
 
       const projectRows = await listProjectsPg({ limit: 500 });
@@ -812,7 +849,9 @@ export async function routeReports(req, res, url, origin) {
         sendJson(res, origin, 403, { success: false, error: "Cannot delete activity outside your access scope." });
         return true;
       }
-      const result = await deleteMemberDayActivityWithChildrenPg(targetMemberId, day);
+      // The same zone the report used to put the session on this day.
+      const timeZone = (await getMemberTimezones(getDb(), [targetMemberId])).get(targetMemberId) ?? "UTC";
+      const result = await deleteMemberDayActivityWithChildrenPg(targetMemberId, day, timeZone);
       sendJson(res, origin, 200, { success: true, data: { memberId: targetMemberId, date: day, deleted: true, ...result } });
     } catch (e) {
       logSafeError("[reports/time-and-activity day delete]", e);

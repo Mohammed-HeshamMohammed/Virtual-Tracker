@@ -1,7 +1,6 @@
-import { ALL_MEMBERS_VALUE, ALL_PROJECTS_VALUE } from "@/features/reports/components/shared/constants"
 import type { TimeActivityDayRow, TimeActivityEntry, TimeActivityGroupBy, TimeActivityMemberSubRow } from "@/features/reports/models/time-and-activity"
 import { formatSecondsAsHMS } from "@/features/reports/utils/time-and-activity/row-aggregate"
-import type { ActivityLevelFilter, ManualTimeFilter, TrackedTimeFilter } from "@/features/reports/utils/time-and-activity/row-aggregate"
+import type { ActivityLevelFilter, ManualTimeFilter, NameFilter, TrackedTimeFilter } from "@/features/reports/utils/time-and-activity/row-aggregate"
 import { sumMoneyByCurrency } from "@/features/reports/utils/money"
 
 function initialsFor(name: string): string {
@@ -37,15 +36,15 @@ function weekLabel(weekStartKey: string): string {
 
 export function filterEntries(
   entries: TimeActivityEntry[],
-  memberFilter: string,
-  projectFilter: string,
+  memberFilter: NameFilter,
+  projectFilter: NameFilter,
   trackedTimeFilter: TrackedTimeFilter,
   manualTimeFilter: ManualTimeFilter = "all",
   activityLevelFilter: ActivityLevelFilter = "all",
 ): TimeActivityEntry[] {
   return entries.filter((e) => {
-    if (memberFilter !== ALL_MEMBERS_VALUE && e.memberName !== memberFilter) return false
-    if (projectFilter !== ALL_PROJECTS_VALUE && e.projectName !== projectFilter) return false
+    if (memberFilter.length > 0 && !memberFilter.includes(e.memberName)) return false
+    if (projectFilter.length > 0 && !projectFilter.includes(e.projectName)) return false
     if (trackedTimeFilter === "with" && e.activeSeconds <= 0) return false
     if (trackedTimeFilter === "without" && e.activeSeconds > 0) return false
     if (manualTimeFilter === "with" && e.manualSeconds <= 0) return false
@@ -100,10 +99,66 @@ function subKeyLabelFor(mode: "member" | "project" | "client" | "team", e: TimeA
   return [e.memberId, e.memberName]
 }
 
+/**
+ * The people under each day, counting only the given entries.
+ *
+ * The report's own per-day rows are a member's WHOLE day, whatever they worked
+ * on. That is right until the table is narrowed to a project: then a member
+ * who spent one hour on it and seven elsewhere still showed eight. Built from
+ * the entries instead (one per day, member and project), the day holds only
+ * the hours that belong to the projects asked for.
+ */
+export function buildDayMemberRows(
+  entries: TimeActivityEntry[],
+  photos: ReadonlyMap<string, string> = new Map(),
+): Record<string, TimeActivityMemberSubRow[]> {
+  const byDay = new Map<
+    string,
+    Map<string, { name: string; activeSeconds: number; idleSeconds: number; manualSeconds: number; spentPoints: SpentPoint[]; projects: Set<string> }>
+  >()
+  for (const e of entries) {
+    if (!byDay.has(e.date)) byDay.set(e.date, new Map())
+    const members = byDay.get(e.date)!
+    if (!members.has(e.memberId)) {
+      members.set(e.memberId, { name: e.memberName, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentPoints: [], projects: new Set() })
+    }
+    const m = members.get(e.memberId)!
+    m.activeSeconds += e.activeSeconds
+    m.idleSeconds += e.idleSeconds
+    m.manualSeconds += e.manualSeconds
+    m.spentPoints.push({ amount: e.spentAmount, currency: e.currency })
+    if (e.projectName) m.projects.add(e.projectName)
+  }
+  const out: Record<string, TimeActivityMemberSubRow[]> = {}
+  for (const [date, members] of byDay) {
+    out[date] = [...members.entries()].map(([memberId, m]) => ({
+      memberId,
+      name: m.name,
+      avatar: initialsFor(m.name),
+      avatarUrl: photos.get(memberId) ?? null,
+      regularHours: formatSecondsAsHMS(m.activeSeconds),
+      totalHours: formatSecondsAsHMS(m.activeSeconds + m.manualSeconds),
+      breakTime: "00:00:00",
+      activityPct: m.activeSeconds + m.idleSeconds > 0 ? Math.round((m.activeSeconds / (m.activeSeconds + m.idleSeconds)) * 100) : 0,
+      idlePct: pctString(m.idleSeconds, m.activeSeconds),
+      idleHr: formatSecondsAsHMS(m.idleSeconds),
+      totalSpent: sumMoneyByCurrency(m.spentPoints),
+      trackedHours: m.activeSeconds / 3600,
+      manualHours: m.manualSeconds / 3600,
+      projectNames: [...m.projects],
+    }))
+  }
+  return out
+}
+
 export function buildGroupedRows(
   entries: TimeActivityEntry[],
-  groupBy: TimeActivityGroupBy
+  groupBy: TimeActivityGroupBy,
+  photos: ReadonlyMap<string, string> = new Map(),
 ): { rows: TimeActivityDayRow[]; subRowsByKey: Record<string, TimeActivityMemberSubRow[]> } {
+  // Under a member or a week the rows beneath are projects (subKeyLabelFor),
+  // and a project has no photo.
+  const subRowsArePeople = groupBy !== "member" && groupBy !== "date_per_week"
   const buckets = new Map<string, Bucket>()
 
   function addTo(key: string, label: string, e: TimeActivityEntry, subKey: string, subLabel: string) {
@@ -167,6 +222,7 @@ export function buildGroupedRows(
       memberId: s.memberId,
       name: s.label,
       avatar: initialsFor(s.label),
+      avatarUrl: subRowsArePeople ? (photos.get(s.memberId) ?? null) : undefined,
       regularHours: formatSecondsAsHMS(s.activeSeconds),
       totalHours: formatSecondsAsHMS(s.activeSeconds + s.manualSeconds),
       breakTime: "00:00:00",

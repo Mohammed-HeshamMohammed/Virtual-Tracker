@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Check, ChevronDown, Search, X, XCircle } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
@@ -175,7 +175,8 @@ export function ReportToolbarMultiSelect({
 }: {
   label: string
   emptyLabel: string
-  options: { id: string; name: string }[]
+  /** `meta` is drawn before the name - a member's avatar, say. */
+  options: { id: string; name: string; meta?: ReactNode }[]
   selected: Set<string>
   onChange: (next: Set<string>) => void
   allSelected?: boolean
@@ -189,11 +190,18 @@ export function ReportToolbarMultiSelect({
 
   useEffect(() => {
     if (!open) return
-    function onPointerDown(event: MouseEvent) {
+    function onPointerDown(event: PointerEvent) {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false)
     }
-    document.addEventListener("mousedown", onPointerDown, true)
-    return () => document.removeEventListener("mousedown", onPointerDown, true)
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("pointerdown", onPointerDown, true)
+    document.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true)
+      document.removeEventListener("keydown", onKeyDown)
+    }
   }, [open])
 
   const shown = useMemo(() => {
@@ -317,6 +325,7 @@ export function ReportToolbarMultiSelect({
                       >
                         {active ? <Check className="h-3 w-3 text-white" strokeWidth={3} /> : null}
                       </span>
+                      {option.meta}
                       <span className="truncate">{option.name}</span>
                     </button>
                   )

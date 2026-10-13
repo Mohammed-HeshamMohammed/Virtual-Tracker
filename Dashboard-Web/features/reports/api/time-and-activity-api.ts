@@ -37,11 +37,22 @@ interface RawEntry {
   manualSeconds?: number
   spentAmount: number
   currency?: string
+  payRate?: number
+  payRateCurrency?: string
+  billRate?: number
+  billRateCurrency?: string
+  billAmount?: number
+  billCurrency?: string
+  billTaxRate?: number
+  billNetTermsDays?: number
+  billNotes?: string
 }
 
 interface RawTimeAndActivityReport {
   days: RawReportDay[]
   entries?: RawEntry[]
+  members?: { id: string; name: string; avatarUrl?: string | null }[]
+  billingIncluded?: boolean
   currency?: TimeActivityReportData["currency"]
   moneyHidden?: boolean
 }
@@ -66,7 +77,7 @@ function pctString(idleSeconds: number, activeSeconds: number): string {
   return `${Math.round((idleSeconds / total) * 100)}%`
 }
 
-function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
+function toMemberSubRow(member: RawMemberDay, photos: Map<string, string>): TimeActivityMemberSubRow {
   const manualSeconds = member.manualSeconds ?? 0
   const regularHours = formatSecondsAsHMS(member.activeSeconds)
   const totalHours = formatSecondsAsHMS(member.activeSeconds + manualSeconds)
@@ -74,7 +85,9 @@ function toMemberSubRow(member: RawMemberDay): TimeActivityMemberSubRow {
     memberId: member.memberId,
     name: member.name,
     avatar: initialsFor(member.name),
-    avatarUrl: member.avatarUrl,
+    // The report's own member list first: it carries the profile photo, where
+    // the row's field is only the copy on the member record (often empty).
+    avatarUrl: photos.get(member.memberId) ?? member.avatarUrl,
     regularHours,
     totalHours,
     breakTime: "00:00:00",
@@ -136,8 +149,17 @@ function toEntry(raw: RawEntry): TimeActivityEntry {
     activeSeconds: raw.activeSeconds,
     manualSeconds: raw.manualSeconds ?? 0,
     idleSeconds: raw.idleSeconds,
-    spentAmount: raw.spentAmount,
+    spentAmount: raw.spentAmount ?? 0,
     currency: raw.currency || "USD",
+    payRate: raw.payRate ?? 0,
+    payRateCurrency: raw.payRateCurrency || raw.currency || "USD",
+    billRate: raw.billRate,
+    billRateCurrency: raw.billRateCurrency,
+    billAmount: raw.billAmount,
+    billCurrency: raw.billCurrency,
+    billTaxRate: raw.billTaxRate,
+    billNetTermsDays: raw.billNetTermsDays,
+    billNotes: raw.billNotes,
   }
 }
 
@@ -184,12 +206,23 @@ function fillMissingDays(days: TimeActivityDayRow[], range?: { from: string; to:
 
 function mapReport(raw: RawTimeAndActivityReport, range?: { from: string; to: string }): TimeActivityReportData {
   const days = fillMissingDays(raw.days.map(toDayRow), range)
+  const members = raw.members ?? []
+  const photos = new Map<string, string>()
+  for (const m of members) if (m.avatarUrl) photos.set(m.id, m.avatarUrl)
   const memberRows: Record<string, TimeActivityMemberSubRow[]> = {}
   for (const day of raw.days) {
-    memberRows[day.date] = day.members.map(toMemberSubRow)
+    memberRows[day.date] = day.members.map((member) => toMemberSubRow(member, photos))
   }
   const entries = (raw.entries ?? []).map(toEntry)
-  return { days, memberRows, entries, currency: raw.currency, moneyHidden: raw.moneyHidden === true }
+  return {
+    days,
+    memberRows,
+    entries,
+    members,
+    billingIncluded: raw.billingIncluded === true,
+    currency: raw.currency,
+    moneyHidden: raw.moneyHidden === true,
+  }
 }
 
 export async function fetchTimeAndActivityReport(range: {
@@ -281,7 +314,17 @@ export async function scheduleTimeAndActivityReport(
   }
 }
 
-export async function deleteTimeAndActivityDay(memberId: string, date: string): Promise<void> {
+/** How much a day delete actually removed. All zero means the server found
+ *  nothing for that member on that day - the row should not have been there. */
+export interface DeletedDayCounts {
+  sessions: number
+  entries: number
+  screenshots: number
+  appLogs: number
+  urlLogs: number
+}
+
+export async function deleteTimeAndActivityDay(memberId: string, date: string): Promise<DeletedDayCounts> {
   const params = new URLSearchParams({ memberId, date })
   const res = await apiFetch(apiPath(`/api/reports/time-and-activity/day?${params.toString()}`), {
     method: "DELETE",
@@ -289,5 +332,14 @@ export async function deleteTimeAndActivityDay(memberId: string, date: string): 
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null
     throw new Error(body?.error || `Failed to delete this day's activity (${res.status}).`)
+  }
+  const json = (await res.json().catch(() => null)) as { data?: Partial<DeletedDayCounts> } | null
+  const count = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0)
+  return {
+    sessions: count(json?.data?.sessions),
+    entries: count(json?.data?.entries),
+    screenshots: count(json?.data?.screenshots),
+    appLogs: count(json?.data?.appLogs),
+    urlLogs: count(json?.data?.urlLogs),
   }
 }

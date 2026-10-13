@@ -17,7 +17,7 @@ export function TimesheetsViewEdit() {
   const canReview = canAccessReviewCenter(memberRole) || isEmployeeRole(memberRole)
   const canApproveReject = canReviewAssignments(memberRole)
   const { canToggleMyTeam, myTeamOnly, teamMemberIds, teamMemberIdsLoading } = usePeopleTeamScope()
-  const [memberOptions, setMemberOptions] = useState<{ id: string; name: string }[]>([])
+  const [memberOptions, setMemberOptions] = useState<{ id: string; name: string; avatarUrl?: string | null }[]>([])
   const [projectOptions, setProjectOptions] = useState<{ id: string; name: string }[]>([])
 
   const scopedMemberOptions = useMemo(() => {
@@ -33,7 +33,7 @@ export function TimesheetsViewEdit() {
       getMembers({ signal: ac.signal }).catch(() => []),
       getProjects({ signal: ac.signal }).catch(() => []),
     ]).then(([members, projects]) => {
-      setMemberOptions(members.map((m) => ({ id: m.id, name: m.name })))
+      setMemberOptions(members.map((m) => ({ id: m.id, name: m.name, avatarUrl: m.avatarUrl })))
       setProjectOptions(projects.map((p) => ({ id: p.id, name: p.name })))
     })
     return () => ac.abort()

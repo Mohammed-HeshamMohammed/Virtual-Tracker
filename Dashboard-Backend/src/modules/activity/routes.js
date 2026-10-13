@@ -41,7 +41,7 @@ import { readIdToken } from "../../http/auth-token.js";
 import { readJsonBody, MAX_ACTIVITY_EVENTS_BODY_BYTES } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
 import {
-  buildMemberMetaMap,
+  buildMemberMetaMapWithPhotos,
   memberOptionsFromMeta,
   resolveActivityFeedScope,
 } from "./activity-scope.js";
@@ -360,6 +360,13 @@ async function describeAgentPresence(memberId) {
     }
   }
   return { agentOnline: null, agentPresence: "unknown", agentLastSeenAt: null };
+}
+
+const FEED_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The `projectIds` query value: comma-separated UUIDs, anything else dropped. */
+export function parseFeedProjectIds(value) {
+  return [...new Set(String(value ?? "").split(",").map((part) => part.trim()).filter((part) => FEED_UUID_RE.test(part)))].slice(0, 200);
 }
 
 export async function routeActivity(req, res, url, origin) {
@@ -1333,7 +1340,7 @@ export async function routeActivity(req, res, url, origin) {
       }
       const projectScopeOnly = url.searchParams.get("projectScopeOnly") === "true";
       const scope = await resolveActivityFeedScope(db, member.memberId, { projectScopeOnly });
-      const memberMeta = await buildMemberMetaMap(db, scope.allowedMemberIds);
+      const memberMeta = await buildMemberMetaMapWithPhotos(db, scope.allowedMemberIds);
       const members = memberOptionsFromMeta(scope.allowedMemberIds, memberMeta, member.memberId);
       sendJson(res, origin, 200, {
         success: true,
@@ -1681,7 +1688,7 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
 
-      const memberMeta = await buildMemberMetaMap(
+      const memberMeta = await buildMemberMetaMapWithPhotos(
         db,
         scope.allowedMemberIds === null
           ? null
@@ -1691,6 +1698,19 @@ export async function routeActivity(req, res, url, origin) {
       );
       const memberOptions = memberOptionsFromMeta(scope.allowedMemberIds, memberMeta, member.memberId);
       const { lookup: categoryLookup, updatedAt: classificationsUpdatedAt } = await buildCategoryLookup();
+      // Every activity tab uses the same project scope, before its row limit.
+      const requestedProjectIds = parseFeedProjectIds(url.searchParams.get("projectIds"));
+      const reachableProjectIds = feedClientProjectIds ?? (requestedProjectIds.length > 0
+        ? await getViewerProjectIds(db, member.memberId, scope.roleName)
+        : null);
+      let feedProjectIds = feedClientProjectIds;
+      if (requestedProjectIds.length > 0) {
+        const reachable = reachableProjectIds === null ? null : new Set(reachableProjectIds);
+        const permitted = reachable === null ? requestedProjectIds : requestedProjectIds.filter((id) => reachable.has(id));
+        feedProjectIds = permitted.length > 0 ? permitted : [];
+      }
+      const feedOptions = feedProjectIds ? { projectIds: feedProjectIds } : {};
+
       const scopeMeta = {
         members: memberOptions,
         classificationsUpdatedAt,
@@ -1717,17 +1737,17 @@ export async function routeActivity(req, res, url, origin) {
           scope.targetMemberIds,
           dayFilter,
           screenshotLimit,
-          feedClientProjectIds ? { projectIds: feedClientProjectIds } : {},
+          feedOptions,
         );
         // A screenshot taken while a browser was focused is categorised by the
         // site that was open, not by the browser. Only fetch the URL logs
         // needed to do that when a browser actually appears in the results.
         const screenshotUrlIndex = pgRows.some((r) => isBrowserAppName(r.app_name || ""))
-          ? buildUrlIndex(await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, URL_INDEX_LIMIT))
+          ? buildUrlIndex(await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, URL_INDEX_LIMIT, feedOptions))
           : new Map();
         const rowMemberIds = [...new Set(pgRows.map((r) => String(r.member_id)).filter(Boolean))];
         const rowMemberMeta =
-          rowMemberIds.length > 0 ? await buildMemberMetaMap(db, rowMemberIds) : new Map();
+          rowMemberIds.length > 0 ? await buildMemberMetaMapWithPhotos(db, rowMemberIds) : new Map();
         const rows = pgRows.map((d) => {
           const memberId = String(d.member_id ?? "");
           const meta = rowMemberMeta.get(memberId) || { name: "Unknown", initials: "??" };
@@ -1830,9 +1850,9 @@ export async function routeActivity(req, res, url, origin) {
           byMember.set(memberIdKey, memRow);
         };
 
-        const pgRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500);
+        const pgRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500, feedOptions);
         const appsUrlIndex = pgRows.some((r) => isBrowserAppName(r.app_name || ""))
-          ? buildUrlIndex(await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, URL_INDEX_LIMIT))
+          ? buildUrlIndex(await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, URL_INDEX_LIMIT, feedOptions))
           : new Map();
         for (const d of pgRows) {
           ingestAppRow(d, String(d.member_id ?? ""), appsUrlIndex);
@@ -1999,8 +2019,8 @@ export async function routeActivity(req, res, url, origin) {
           );
         };
 
-        const urlRows = await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, 500);
-        const appRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500);
+        const urlRows = await fetchPgUrlLogs(scope.targetMemberIds, dayFilter, 500, feedOptions);
+        const appRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500, feedOptions);
         for (const d of urlRows) ingestUrlRow(d, "visited_at");
         for (const d of appRows) ingestAppUrlRow(d);
 

@@ -115,6 +115,48 @@ function memberLabel(data) {
   return memberDisplayLabel(data);
 }
 
+const CLIENT_RATE_COLUMNS = ["client_hourly_rate", "client_rate_currency"];
+
+/** What the client is charged per hour is for the people who run the project,
+ *  not for everyone working on it - a project row otherwise goes out whole. */
+function withoutClientRate(row, viewer) {
+  if (!row || (viewer && isManagementRole(viewer.roleName))) return row;
+  const out = { ...row };
+  for (const column of CLIENT_RATE_COLUMNS) delete out[column];
+  return out;
+}
+
+function clientRateForViewer(project, viewer) {
+  const visible = Boolean(viewer && isManagementRole(viewer.roleName));
+  const rate = visible ? Number(project.client_hourly_rate) : NaN;
+  return {
+    clientHourlyRate: Number.isFinite(rate) && rate > 0 ? rate : null,
+    clientRateCurrency: visible ? project.client_rate_currency || null : null,
+    canSetClientRate: visible,
+  };
+}
+
+/** The rate as sent by a client, or an error message. `undefined` = not sent. */
+function readClientRate(body) {
+  const rawRate = body.client_hourly_rate ?? body.clientHourlyRate;
+  const rawCurrency = body.client_rate_currency ?? body.clientRateCurrency;
+  const sentRate = "client_hourly_rate" in body || "clientHourlyRate" in body;
+  const sentCurrency = "client_rate_currency" in body || "clientRateCurrency" in body;
+  if (sentRate && rawRate !== null && (typeof rawRate !== "number" || !Number.isFinite(rawRate) || rawRate < 0)) {
+    return { error: "Client hourly rate must be zero or more." };
+  }
+  if (sentRate && rawRate > 9_999_999) return { error: "Client hourly rate is too large." };
+  if (sentCurrency && rawCurrency !== null && !/^[A-Za-z]{3}$/.test(String(rawCurrency).trim())) {
+    return { error: "Client rate currency must be a three-letter code." };
+  }
+  return {
+    fields: {
+      ...(sentRate ? { clientHourlyRate: rawRate } : {}),
+      ...(sentCurrency ? { clientRateCurrency: rawCurrency } : {}),
+    },
+  };
+}
+
 export { PROJECT_TYPES };
 
 /**
@@ -460,6 +502,7 @@ export async function routeProjects(req, res, url, db, origin) {
           endDate: toIso(project.end_date || project.endDate).slice(0, 10),
           timezone: project.timezone || null,
           canSetTimezone: canSetProjectTimezone(getAuthContext(req)?.roleName),
+          ...clientRateForViewer(project, getAuthContext(req)),
           managersCanEditBudget: project.managers_can_edit_budget !== false,
           managersCanEditMemberLimits: project.managers_can_edit_member_limits !== false,
           managersCanEditMembers: project.managers_can_edit_members !== false,
@@ -869,7 +912,7 @@ export async function routeProjects(req, res, url, db, origin) {
           const clientTrackable = viewer ? await clientMayTrackProject(viewer, row.id) : false;
           const orgAdminTrackable = viewer ? isAdminLevelRole(viewer.roleName) : false;
           return {
-            ...row,
+            ...withoutClientRate(row, viewer),
             project_timezone: row.timezone ?? null,
             timezone: ownZoneByProject.get(row.id) ?? row.timezone ?? null,
             has_tasks: projectTypeDef(row.type).hasTasks,
@@ -914,7 +957,13 @@ export async function routeProjects(req, res, url, db, origin) {
         sendJson(res, origin, 400, { success: false, error: newBreakTimeError });
         return true;
       }
+      const newClientRate = readClientRate(body);
+      if (newClientRate.error) {
+        sendJson(res, origin, 400, { success: false, error: newClientRate.error });
+        return true;
+      }
       const project = await createProjectPg({
+        ...newClientRate.fields,
         name: body.name,
         status: body.status,
         billable: body.billable,
@@ -968,7 +1017,7 @@ export async function routeProjects(req, res, url, db, origin) {
           sendJson(res, origin, 404, { success: false, error: "Project not found" });
           return true;
         }
-        sendJson(res, origin, 200, { success: true, data: project });
+        sendJson(res, origin, 200, { success: true, data: withoutClientRate(project, getAuthContext(req)) });
       } catch (e) {
         logSafeError("[projects/:id GET]", e);
         sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Failed to load project" });
@@ -1013,6 +1062,11 @@ export async function routeProjects(req, res, url, db, origin) {
             }
           }
         }
+        const clientRatePatch = readClientRate(body);
+        if (clientRatePatch.error) {
+          sendJson(res, origin, 400, { success: false, error: clientRatePatch.error });
+          return true;
+        }
         const patch = {
           name: body.name,
           status: body.status,
@@ -1036,6 +1090,7 @@ export async function routeProjects(req, res, url, db, origin) {
           clientCanTrack: body.client_can_track ?? body.clientCanTrack,
           timezone: resolveProjectTimezoneInput(body.timezone, viewer.roleName),
           ...ruleFields,
+          ...clientRatePatch.fields,
           updatedBy: body.updated_by ?? body.updatedBy ?? viewer.memberId,
           archivedBy: Object.prototype.hasOwnProperty.call(body, "archived_by")
             ? body.archived_by
