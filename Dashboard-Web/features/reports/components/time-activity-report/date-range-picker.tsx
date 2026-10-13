@@ -1,6 +1,6 @@
 "use client"
 
-import { useState as useComponentState } from "react"
+import { useEffect, useRef, useState as useComponentState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { DATE_RANGE_PRESETS } from "@/features/reports/components/shared/constants"
 import { computePresetRange, formatRangeLabel, startOfDay, endOfDay } from "@/features/reports/utils/time-and-activity"
@@ -29,6 +29,32 @@ export function ReportDateRangePicker({
   const [start, setStart] = useComponentState<Date | null>(seedStart)
   const [end, setEnd] = useComponentState<Date | null>(seedEnd)
   const [hovered, setHovered] = useComponentState<Date | null>(null)
+
+  // A click anywhere outside closes it, like every other menu on the toolbar -
+  // it used to stay open until Cancel or Apply was pressed. "Outside" excludes
+  // the wrapper this sits in, which also holds the button that opened it: that
+  // button toggles, and closing here first would have it open straight back up.
+  const rootRef = useRef<HTMLDivElement>(null)
+  const dismissRef = useRef(onDismiss)
+  dismissRef.current = onDismiss
+  useEffect(() => {
+    function onPointerDown(event: PointerEvent) {
+      const root = rootRef.current
+      if (!root) return
+      const target = event.target as Node
+      if (root.contains(target) || root.parentElement?.contains(target)) return
+      dismissRef.current()
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") dismissRef.current()
+    }
+    document.addEventListener("pointerdown", onPointerDown, true)
+    document.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true)
+      document.removeEventListener("keydown", onKeyDown)
+    }
+  }, [])
 
   const rightYear = leftMonth === 11 ? leftYear + 1 : leftYear
   const rightMonth = leftMonth === 11 ? 0 : leftMonth + 1
@@ -68,6 +94,7 @@ export function ReportDateRangePicker({
 
   return (
     <motion.div
+      ref={rootRef}
       initial={{ opacity: 0, y: -8, scale: 0.97 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: -8, scale: 0.97 }}

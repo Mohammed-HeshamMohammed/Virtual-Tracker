@@ -30,6 +30,7 @@ export interface Member {
   name: string
   email: string
   avatar: string
+  avatarUrl?: string | null
   color: string
 }
 

@@ -156,7 +156,7 @@ export async function updateOrgCurrency(displayCurrency: string): Promise<string
 }
 
 export interface ReportFilterOptions {
-  members: { id: string; name: string; initials: string }[]
+  members: { id: string; name: string; initials: string; avatarUrl?: string | null }[]
   projects: { id: string; name: string }[]
 }
 

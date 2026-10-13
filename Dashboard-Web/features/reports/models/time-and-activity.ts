@@ -31,9 +31,9 @@ export interface TimeActivityMemberSubRow {
   memberId: string
   name: string
   avatar: string
-  /** Real profile photo, when this member has one - absent (undefined) for
-   *  a grouped-mode sub-row, which aggregates from entries that don't carry
-   *  it; falls back to the initials avatar either way. */
+  /** Real profile photo, when this member has one - absent (undefined) when
+   *  the sub-row is a project rather than a person; falls back to the
+   *  initials avatar either way. */
   avatarUrl?: string | null
   regularHours: string
   totalHours: string
@@ -60,6 +60,29 @@ export interface TimeActivityEntry {
   manualSeconds: number
   spentAmount: number
   currency: string
+  /** The member's hourly pay rate on this day, in the currency it is paid
+   *  in. `spentAmount` is that rate times the hours, converted. */
+  payRate: number
+  payRateCurrency: string
+  /** What the project's client is charged per hour, and for this row's hours
+   *  (converted like `spentAmount`). Absent when the project has no client
+   *  rate, or the viewer may not see what clients are charged. */
+  billRate?: number
+  billRateCurrency?: string
+  billAmount?: number
+  billCurrency?: string
+  /** The client's own invoice terms, when it has set custom ones: tax as a
+   *  percentage, days to pay, and a note for its invoices. */
+  billTaxRate?: number
+  billNetTermsDays?: number
+  billNotes?: string
+}
+
+/** One person in the report, sent once rather than on every row they appear in. */
+export interface TimeActivityMember {
+  id: string
+  name: string
+  avatarUrl?: string | null
 }
 
 export interface TimeActivityColumnPickerLeafItem {
@@ -87,6 +110,9 @@ export interface TimeActivityReportData {
   days: TimeActivityDayRow[]
   memberRows: Record<string, TimeActivityMemberSubRow[]>
   entries: TimeActivityEntry[]
+  members?: TimeActivityMember[]
+  /** The viewer may see what clients are charged, so a client statement can be made. */
+  billingIncluded?: boolean
   currency?: {
     displayCurrency: string
     orgCurrency: string

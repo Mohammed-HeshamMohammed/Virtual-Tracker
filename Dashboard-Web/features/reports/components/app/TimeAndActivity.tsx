@@ -105,6 +105,8 @@ export function TimeAndActivityReport() {
       days={reportData.days}
       memberRows={reportData.memberRows}
       entries={reportData.entries}
+      members={reportData.members}
+      billingIncluded={reportData.billingIncluded}
       moneyHidden={reportData.moneyHidden}
       onRangeApply={(start, end) => setRange({ start, end })}
       range={{ from: toDateParam(range.start), to: toDateParam(range.end) }}

@@ -30,7 +30,9 @@ import {
 import {
   clearAllActivityScopePreferences,
   readStoredProjectScopeOnly,
+  joinSelectedMemberIds,
   readStoredSelectedMemberId,
+  splitSelectedMemberIds,
   writeStoredProjectScopeOnly,
   writeStoredSelectedMemberId,
 } from "@/features/activity/utils/activity-scope-preferences"
@@ -40,6 +42,7 @@ export interface ActivityMemberOption {
   id: string
   name: string
   initials: string
+  avatarUrl?: string | null
 }
 
 export type { ActivityFeedCacheEntry }
@@ -47,8 +50,12 @@ export type { ActivityFeedCacheEntry }
 interface ActivityFeedContextValue {
   scope: ActivityFeedScope | null
   canFilterByProject: boolean
+  /** "all", one member id, or several joined by commas - see splitSelectedMemberIds. */
   selectedMemberId: string
   setSelectedMemberId: (id: string) => void
+  /** Empty = every project. */
+  selectedProjectIds: string[]
+  setSelectedProjectIds: (ids: string[]) => void
   projectScopeOnly: boolean
   setProjectScopeOnly: (value: boolean) => void
   scopeLoading: boolean
@@ -81,12 +88,14 @@ export function ActivityFeedProvider({ children }: { children: ReactNode }) {
   const [scopeLoading, setScopeLoading] = useState(true)
   const [selectedMemberId, setSelectedMemberIdState] = useState(() => readStoredSelectedMemberId(viewerMemberId))
   const [projectScopeOnly, setProjectScopeOnlyState] = useState(readStoredProjectScopeOnly)
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
   const [isActivityPageActive, setActivityPageActive] = useState(false)
   const pingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const prevViewerMemberIdRef = useRef<string | null>(viewerMemberId ?? null)
   const prevProjectScopeOnlyRef = useRef<boolean | null>(null)
 
   useEffect(() => {
+    setSelectedProjectIds([])
     if (!viewerMemberId) {
       setSelectedMemberIdState("all")
       return
@@ -110,7 +119,7 @@ export function ActivityFeedProvider({ children }: { children: ReactNode }) {
       setScopeLoading(false)
       return
     }
-    if (!scope) setScopeLoading(true)
+    setScopeLoading(true)
     const next = await fetchActivityScope(projectScopeOnly)
     if (next) {
       setScope(next)
@@ -118,15 +127,17 @@ export function ActivityFeedProvider({ children }: { children: ReactNode }) {
       setSelectedMemberIdState((prev) => {
         let resolved = prev
         if (prev === "all" && !next.canSeeAllMembers) resolved = next.defaultMemberId
-        if (prev !== "all" && !next.members.some((member) => member.id === prev)) {
-          resolved = next.defaultMemberId
+        if (prev !== "all") {
+          // Keep the members still in scope; if none of them are, fall back.
+          const stillThere = splitSelectedMemberIds(prev).filter((id) => next.members.some((member) => member.id === id))
+          resolved = stillThere.length > 0 ? joinSelectedMemberIds(stillThere) : next.defaultMemberId
         }
         writeStoredSelectedMemberId(viewerMemberId, resolved)
         return resolved
       })
     }
     setScopeLoading(false)
-  }, [isLoggedIn, viewerMemberId, projectScopeOnly, scope])
+  }, [isLoggedIn, viewerMemberId, projectScopeOnly])
 
   useEffect(() => {
     const viewerChanged = prevViewerMemberIdRef.current !== (viewerMemberId ?? null)
@@ -205,8 +216,9 @@ export function ActivityFeedProvider({ children }: { children: ReactNode }) {
       type,
       memberId: selectedMemberId,
       projectScopeOnly,
+      ...(selectedProjectIds.length > 0 ? { projectIds: selectedProjectIds } : {}),
     }),
-    [selectedMemberId, projectScopeOnly],
+    [selectedMemberId, projectScopeOnly, selectedProjectIds],
   )
 
   const getCacheKey = useCallback(
@@ -241,6 +253,8 @@ export function ActivityFeedProvider({ children }: { children: ReactNode }) {
       canFilterByProject,
       selectedMemberId,
       setSelectedMemberId,
+      selectedProjectIds,
+      setSelectedProjectIds,
       projectScopeOnly,
       setProjectScopeOnly,
       scopeLoading: scopeLoading && !scope,
@@ -259,6 +273,7 @@ export function ActivityFeedProvider({ children }: { children: ReactNode }) {
       canFilterByProject,
       selectedMemberId,
       setSelectedMemberId,
+      selectedProjectIds,
       projectScopeOnly,
       setProjectScopeOnly,
       scopeLoading,

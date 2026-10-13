@@ -1,4 +1,3 @@
-import { ALL_MEMBERS_VALUE, ALL_PROJECTS_VALUE } from "@/features/reports/components/shared/constants"
 import type { TimeActivityDayRow, TimeActivityMemberSubRow, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
 import { moneyLabelToNumber, sumMoneyStrings } from "@/features/reports/utils/money"
 
@@ -90,19 +89,23 @@ function matchesActivityLevel(activityPct: number, filter: ActivityLevelFilter):
   return true
 }
 
+/** The Members and Projects filters hold the names picked; an empty list is
+ *  "all of them", so there is no separate "all" value to keep in step. */
+export type NameFilter = readonly string[]
+
 export function getFilteredSubRows(
   date: string,
-  memberFilter: string,
+  memberFilter: NameFilter,
   memberRows: Record<string, TimeActivityMemberSubRow[]>,
-  projectFilter: string = ALL_PROJECTS_VALUE,
+  projectFilter: NameFilter = [],
   trackedTimeFilter: TrackedTimeFilter = "all",
   manualTimeFilter: ManualTimeFilter = "all",
   activityLevelFilter: ActivityLevelFilter = "all",
 ): TimeActivityMemberSubRow[] {
   const rows = memberRows[date] ?? []
   return rows.filter((r) => {
-    if (memberFilter !== ALL_MEMBERS_VALUE && r.name !== memberFilter) return false
-    if (projectFilter !== ALL_PROJECTS_VALUE && !r.projectNames.includes(projectFilter)) return false
+    if (memberFilter.length > 0 && !memberFilter.includes(r.name)) return false
+    if (projectFilter.length > 0 && !r.projectNames.some((name) => projectFilter.includes(name))) return false
     if (trackedTimeFilter === "with" && r.trackedHours <= 0) return false
     if (trackedTimeFilter === "without" && r.trackedHours > 0) return false
     if (manualTimeFilter === "with" && r.manualHours <= 0) return false
@@ -114,16 +117,16 @@ export function getFilteredSubRows(
 
 export function buildDisplayDay(
   day: TimeActivityDayRow,
-  memberFilter: string,
+  memberFilter: NameFilter,
   memberRows: Record<string, TimeActivityMemberSubRow[]>,
-  projectFilter: string = ALL_PROJECTS_VALUE,
+  projectFilter: NameFilter = [],
   trackedTimeFilter: TrackedTimeFilter = "all",
   manualTimeFilter: ManualTimeFilter = "all",
   activityLevelFilter: ActivityLevelFilter = "all",
 ): TimeActivityDayRow {
   if (
-    memberFilter === ALL_MEMBERS_VALUE &&
-    projectFilter === ALL_PROJECTS_VALUE &&
+    memberFilter.length === 0 &&
+    projectFilter.length === 0 &&
     trackedTimeFilter === "all" &&
     manualTimeFilter === "all" &&
     activityLevelFilter === "all"

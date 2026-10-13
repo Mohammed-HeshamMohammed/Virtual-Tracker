@@ -8,6 +8,7 @@ import { cn } from "@/shared/utils/utils"
 import { Member } from "@/features/timesheets/components/approvals/types"
 import { FLOATING_MENU_ATTR, FLOATING_MENU_Z_CLASS } from "@/shared/ui/forms/floating-menu"
 import { useFloatingMenuPosition } from "@/shared/ui/forms/use-floating-menu-position"
+import { Avatar } from "@/shared/ui/avatar"
 
 interface MemberMultiSelectProps {
   members: Member[]
@@ -90,12 +91,7 @@ export function MemberMultiSelect({ members, selected, onChange }: MemberMultiSe
                         onClick={() => toggleMember(member.id)}
                         className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-slate-50 dark:hover:bg-slate-700/60 transition-colors"
                       >
-                        <div
-                          className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white shrink-0"
-                          style={{ backgroundColor: member.color }}
-                        >
-                          {member.avatar}
-                        </div>
+                        <Avatar initials={member.avatar} color={member.color} imageUrl={member.avatarUrl ?? undefined} size="sm" alt={member.name} />
                         <div className="text-left flex-1 min-w-0">
                           <div className="text-slate-700 dark:text-slate-200">{member.name}</div>
                         </div>

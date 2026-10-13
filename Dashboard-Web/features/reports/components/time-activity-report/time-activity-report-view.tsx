@@ -27,7 +27,7 @@ import {
 } from "lucide-react"
 import { useTimeAndActivityReport } from "@/features/reports/hooks/use-time-and-activity-report"
 import { cn } from "@/shared/utils/utils"
-import { useAuth, useTheme } from "@/shared/providers/app"
+import { useAuth } from "@/shared/providers/app"
 import { isManagementRole } from "@/features/auth"
 import { changedEvent } from "@/infrastructure/api/change-events"
 import { AddManualEntryDialog } from "@/features/reports/components/time-activity-report/add-manual-entry-dialog"
@@ -38,13 +38,24 @@ import { downloadTimeActivityXlsx } from "@/features/reports/utils/time-and-acti
 import {
   buildTimeActivityExportTable,
   describeExportFilters,
+  detailKindLabel,
   timeActivityFilename,
   timeActivityReportTitle,
 } from "@/features/reports/utils/time-and-activity/export-model"
+import {
+  billableProjectNames,
+  buildClientStatementSpec,
+  buildPaySlipSpec,
+  projectsWithoutClientRate,
+} from "@/features/reports/utils/time-and-activity/pdf-documents"
+import { PdfExportDialog, type PdfExportChoice } from "@/features/reports/components/time-activity-report/pdf-export-dialog"
+import { ReportToolbarMultiSelect } from "@/features/reports/components/shared/report-filters-panel"
+import { initialsFromName } from "@/features/members/utils/build-tree"
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
 import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
 import {
   deleteTimeAndActivityDay,
+  fetchTimeAndActivityReport,
   sendTimeAndActivityReport,
   scheduleTimeAndActivityReport,
 } from "@/features/reports/api/time-and-activity-api"
@@ -63,11 +74,8 @@ import { ReportPeriodMetricCell } from "@/features/reports/components/time-activ
 import { ReportTimeActivityChart } from "@/features/reports/components/time-activity-report/report-chart"
 import { ReportSortableTh } from "@/features/reports/components/time-activity-report/sortable-th"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
-import { SearchableSelectField, type SearchableSelectOption } from "@/shared/ui/forms/searchable-select-field"
 import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
-  ALL_MEMBERS_VALUE,
-  ALL_PROJECTS_VALUE,
   TABLE_METRIC_COLUMNS,
   STANDARD_REPORT_ORG_LABEL,
   MEMBER_TIMEZONE_LABEL,
@@ -87,6 +95,8 @@ export function TimeActivityReportView({
   days,
   memberRows,
   entries,
+  members,
+  billingIncluded = false,
   onRangeApply,
   range,
   onReload,
@@ -98,11 +108,11 @@ export function TimeActivityReportView({
   onDisplayCurrencyChange,
 }: TimeActivityReportViewProps) {
   const { memberRole, currentMember } = useAuth()
-  const { isDark } = useTheme()
   const canAddForOthers = isManagementRole(memberRole)
   const [addEntryOpen, setAddEntryOpen] = useComponentState(false)
   const [sendOpen, setSendOpen] = useComponentState(false)
   const [scheduleOpen, setScheduleOpen] = useComponentState(false)
+  const [pdfOpen, setPdfOpen] = useComponentState(false)
   const [deletingKey, setDeletingKey] = useComponentState<string | null>(null)
   const [deleteError, setDeleteError] = useComponentState<string | null>(null)
   const [exportError, setExportError] = useComponentState<string | null>(null)
@@ -156,21 +166,30 @@ export function TimeActivityReportView({
     handleSortClick,
     getSubRowsForDay,
     memberTotals,
+    photoByMemberId,
     groupColumnLabel,
-  } = useTimeAndActivityReport({ days, memberRows, entries, range, currentMemberName: currentMember?.name, moneyHidden })
+  } = useTimeAndActivityReport({ days, memberRows, entries, members, range, currentMemberName: currentMember?.name, moneyHidden })
 
-  // Same searchable, avatar-bearing member picker as Manual Time Requests
-  // (ManualTimeContent) and the Add Manual Entry dialog on this page, rather
-  // than the plain enum dropdown a fixed list like "Data grouped by" uses.
-  const memberSelectOptions = useMemo<SearchableSelectOption[]>(
+  // The same searchable, tick-several picker the other reports' toolbars use,
+  // with each member's avatar. The filters themselves are lists of names; an
+  // empty list is "all".
+  const memberSelectOptions = useMemo(
     () =>
       memberFilterOptions.map((o) => ({
-        value: o.value,
-        label: o.label,
-        meta: o.value === ALL_MEMBERS_VALUE ? undefined : <ReportMemberAvatar initials={o.avatar} imageUrl={o.avatarUrl} />,
+        id: o.value,
+        name: o.label,
+        meta: <ReportMemberAvatar initials={o.avatar} imageUrl={o.avatarUrl} />,
       })),
     [memberFilterOptions],
   )
+  const projectSelectOptions = useMemo(
+    () => projectFilterOptions.map((o) => ({ id: o.value, name: o.label })),
+    [projectFilterOptions],
+  )
+  const selectedMembers = useMemo(() => new Set(memberFilter), [memberFilter])
+  const selectedProjects = useMemo(() => new Set(projectFilter), [projectFilter])
+  // Under a member or a week the expanded rows are projects, not people.
+  const detailsAreProjects = detailKindLabel(groupBy) === "Project"
 
   // Keep the picker open/close behavior independent of the table's horizontal
   // scroll region so the menu can sit in the table header without swallowing
@@ -210,7 +229,14 @@ export function TimeActivityReportView({
     setDeleteError(null)
     setDeletingKey(key)
     deleteTimeAndActivityDay(memberId, date)
-      .then(() => {
+      .then((deleted) => {
+        // The server answered "done" but had nothing on that day to remove.
+        // Saying so beats a reload that brings the same row straight back.
+        if (deleted.sessions + deleted.entries === 0) {
+          setDeleteError(
+            `Nothing was found to delete for ${memberName} on ${dateLabel}. Reload the report - if the day is still listed, its time is booked to a different date.`,
+          )
+        }
         onReload?.()
         window.dispatchEvent(new Event(changedEvent("activity")))
       })
@@ -224,30 +250,30 @@ export function TimeActivityReportView({
   // match what is on screen: the same grouping, filters, sort and people
   // underneath each row. `allColumns` is for the spreadsheet (every column
   // the report has); the PDF keeps to the columns the viewer chose.
-  function buildExportTable(allColumns: boolean) {
+  function buildExportTable(allColumns: boolean, withoutMoney = moneyHidden) {
     return buildTimeActivityExportTable({
       rows: tableDisplayRows,
       getSubRows: getSubRowsForDay,
       groupBy,
       groupColumnLabel,
       metricColumns: allColumns ? TABLE_METRIC_COLUMNS : visibleMetricColumns,
-      moneyHidden,
+      moneyHidden: withoutMoney,
       formatManualHours: formatDecimalHoursClock,
     })
   }
 
-  function exportFilterLines(): string[] {
+  function exportFilterLines(withoutMoney = moneyHidden): string[] {
     const label = (opts: { value: string; label: string }[], value: string) =>
       value === "all" ? "" : (opts.find((o) => o.value === value)?.label ?? "")
     return describeExportFilters({
-      memberLabel: memberFilter === ALL_MEMBERS_VALUE ? "All members" : memberFilter,
-      projectLabel: projectFilter === ALL_PROJECTS_VALUE ? "All projects" : projectFilter,
+      memberLabel: memberFilter.length === 0 ? "All members" : memberFilter.join(", "),
+      projectLabel: projectFilter.length === 0 ? "All projects" : projectFilter.join(", "),
       groupColumnLabel,
       trackedTime: label(TRACKED_TIME_SELECT_OPTIONS, trackedTimeFilter),
       manualTime: label(MANUAL_TIME_SELECT_OPTIONS, manualTimeFilter),
       activityLevel: label(ACTIVITY_LEVEL_OPTIONS, activityLevelFilter),
       currency: resolvedDisplayCurrency ?? displayCurrency,
-      moneyHidden,
+      moneyHidden: withoutMoney,
     })
   }
 
@@ -265,28 +291,70 @@ export function TimeActivityReportView({
     ).catch((err) => setExportError(err instanceof Error ? err.message : "Could not build the Excel file."))
   }
 
-  function downloadPdf() {
+  // The pay slip and the client statement are worked out from the report's
+  // entries. Asked for in another currency, they are loaded again in it: the
+  // server converts each amount on the day it was earned, which a rate applied
+  // here to the totals could not reproduce.
+  async function entriesInCurrency(currency: string) {
+    const showing = resolvedDisplayCurrency ?? displayCurrency
+    if (!currency || currency === showing) {
+      return { entries, currency: showing || entries[0]?.currency || "USD" }
+    }
+    if (!range) throw new Error("No date range loaded yet.")
+    const data = await fetchTimeAndActivityReport({ from: range.from, to: range.to, displayCurrency: currency })
+    if (data.currency?.requestedUnavailable) {
+      throw new Error(`There is no exchange rate for ${currency} in this date range, so the amounts cannot be converted to it.`)
+    }
+    return { entries: data.entries, currency: data.currency?.displayCurrency ?? currency }
+  }
+
+  async function exportPdf(choice: PdfExportChoice) {
+    if (choice.kind === "report") {
+      downloadPdf(choice.includeAmounts)
+      return
+    }
+    const source = await entriesInCurrency(choice.currency)
+    const base = { entries: source.entries, currency: source.currency, rangeLabel: dateLabel, orgLabel: STANDARD_REPORT_ORG_LABEL }
+    downloadReportPdf(
+      choice.kind === "client"
+        ? buildClientStatementSpec({ ...base, projectNames: choice.projectNames })
+        : buildPaySlipSpec({ ...base, memberId: choice.memberId }),
+    )
+  }
+
+  const pdfProjectOptions = useMemo(() => billableProjectNames(entries), [entries])
+  const pdfMemberOptions = useMemo(() => {
+    const byId = new Map<string, string>()
+    for (const e of entries) if (e.activeSeconds + e.manualSeconds > 0) byId.set(e.memberId, e.memberName)
+    return [...byId.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
+  }, [entries])
+  // One member picked on the page is who the pay slip is most likely for.
+  const pdfDefaultMemberId =
+    memberFilter.length === 1 ? (pdfMemberOptions.find((m) => m.name === memberFilter[0])?.id ?? "") : ""
+
+  function downloadPdf(includeAmounts: boolean) {
+    const withoutMoney = moneyHidden || !includeAmounts
     // memberTotals comes straight from the filtered entries, so this chart
     // is per-member in EVERY grouping mode. Walking getSubRowsForDay here
     // used to plot project names under a "by member" title whenever the
     // table was grouped by member or by week, because a sub-row is only a
     // member in some modes (see the hook's own comment).
     const byMemberHours = new Map<string, number>(memberTotals.map((m) => [m.name, m.hours]))
-    const exportTable = buildExportTable(false)
+    const exportTable = buildExportTable(false, withoutMoney)
     downloadReportPdf({
       title: timeActivityReportTitle(groupColumnLabel),
-      subtitle: moneyHidden
+      subtitle: withoutMoney
         ? "Time worked and activity levels for the selected filters."
         : "Time worked, activity levels, and amounts earned for the selected filters.",
       orgLabel: STANDARD_REPORT_ORG_LABEL,
       timezoneLabel: MEMBER_TIMEZONE_LABEL,
       rangeLabel: dateLabel,
-      filterLines: exportFilterLines(),
+      filterLines: exportFilterLines(withoutMoney),
       orientation: exportTable.columns.length > 7 ? "landscape" : "portrait",
       summary: [
         { label: "Total time", value: totals.time },
         { label: "Average activity", value: `${totals.activity}%` },
-        ...(moneyHidden ? [] : [{ label: "Total spent", value: totals.spent }]),
+        ...(withoutMoney ? [] : [{ label: "Total spent", value: totals.spent }]),
       ],
       charts: [
         ...(sortedDisplayRows.length > 0
@@ -294,6 +362,8 @@ export function TimeActivityReportView({
               {
                 type: "line" as const,
                 title: `Tracked hours by ${groupColumnLabel.toLowerCase()}`,
+                yLabel: "Hours",
+                yUnit: "hours" as const,
                 points: sortedDisplayRows.map((d) => ({ label: d.dateLabel, value: Math.round(d.trackedHours * 100) / 100 })),
                 valueFormatter: formatDecimalHoursClock,
               },
@@ -304,6 +374,8 @@ export function TimeActivityReportView({
               {
                 type: "bar" as const,
                 title: "Tracked hours by member",
+                yLabel: "Hours",
+                yUnit: "hours" as const,
                 data: [...byMemberHours.entries()]
                   .sort(([, a], [, b]) => b - a)
                   .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 })),
@@ -336,24 +408,23 @@ export function TimeActivityReportView({
         <div className="relative z-50 flex flex-wrap items-end gap-3 gap-y-3">
           <div className="flex min-w-60 flex-col gap-1">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Members</div>
-            <SearchableSelectField
-              value={memberFilter}
-              onChange={(v) => setMemberFilter(v ?? ALL_MEMBERS_VALUE)}
+            <ReportToolbarMultiSelect
+              label="Members"
+              emptyLabel="All members"
               options={memberSelectOptions}
-              placeholder="All members"
-              isDark={isDark}
-              className="w-60"
+              selected={selectedMembers}
+              onChange={(next) => setMemberFilter([...next])}
             />
           </div>
 
           <div className="flex min-w-60 flex-col gap-1">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Projects</div>
-            <ReportSimpleDropdown
-              value={projectFilter}
-              onChange={setProjectFilter}
-              options={projectFilterOptions}
-              width="w-60"
-              accentBar={false}
+            <ReportToolbarMultiSelect
+              label="Projects"
+              emptyLabel="All projects"
+              options={projectSelectOptions}
+              selected={selectedProjects}
+              onChange={(next) => setProjectFilter([...next])}
             />
           </div>
 
@@ -448,6 +519,7 @@ export function TimeActivityReportView({
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
+                  aria-label="Export report"
                   className="flex items-center gap-1.5 rounded-lg bg-blue-500 dark:bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-600 dark:hover:bg-blue-700"
                 >
                   <Download className="h-3.5 w-3.5" />
@@ -456,7 +528,7 @@ export function TimeActivityReportView({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={downloadXlsx}>To Excel (formatted, one sheet per {groupColumnLabel.toLowerCase()})</DropdownMenuItem>
                 <DropdownMenuItem onClick={downloadCsv}>To CSV</DropdownMenuItem>
-                <DropdownMenuItem onClick={downloadPdf}>To PDF</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setPdfOpen(true)}>To PDF…</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -612,6 +684,12 @@ export function TimeActivityReportView({
                             ) : (
                               <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
                             )}
+                            {groupBy === "member" ? (
+                              <ReportMemberAvatar
+                                initials={initialsFromName(day.dateLabel)}
+                                imageUrl={photoByMemberId.get(day.date)}
+                              />
+                            ) : null}
                             <span className="whitespace-nowrap text-sm text-slate-700 dark:text-slate-200">
                               {day.dateLabel} ({day.memberCount})
                             </span>
@@ -683,7 +761,9 @@ export function TimeActivityReportView({
                               <ContextMenu.Portal>
                                 <ContextMenu.Content className="z-100 min-w-44 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-900">
                                   <ContextMenu.Item
-                                    onSelect={() => setMemberFilter(member.name)}
+                                    onSelect={() =>
+                                      detailsAreProjects ? setProjectFilter([member.name]) : setMemberFilter([member.name])
+                                    }
                                     className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none transition-colors hover:bg-slate-50 focus:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus:bg-slate-800"
                                   >
                                     <Focus className="h-4 w-4 text-blue-500 dark:text-blue-400" />
@@ -813,6 +893,20 @@ export function TimeActivityReportView({
           onSaved={() => onReload?.()}
         />
       ) : null}
+
+      <PdfExportDialog
+        open={pdfOpen}
+        onOpenChange={setPdfOpen}
+        onExport={exportPdf}
+        moneyHidden={moneyHidden}
+        billingAvailable={billingIncluded}
+        resolvedCurrency={resolvedDisplayCurrency ?? displayCurrency}
+        projectOptions={pdfProjectOptions}
+        defaultProjectNames={projectFilter}
+        projectsWithoutRate={(names) => projectsWithoutClientRate(entries, names)}
+        memberOptions={pdfMemberOptions}
+        defaultMemberId={pdfDefaultMemberId}
+      />
 
       <ReportSendDialog
         open={sendOpen}

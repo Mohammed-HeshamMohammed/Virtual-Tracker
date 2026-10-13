@@ -70,6 +70,10 @@ export interface CreateProjectFormPayload {
   endDate: string
   /** Leave undefined to keep the saved zone (e.g. the viewer may not set one). */
   timezone?: string
+  /** What the client pays per hour on this project. null = none agreed;
+   *  undefined = leave the saved rate alone (the viewer may not see it). */
+  clientHourlyRate?: number | null
+  clientRateCurrency?: string | null
   /** Undefined = leave the saved switches alone (the viewer cannot see the Management tab). */
   rules?: ProjectRuleSwitches
   /** Parts of the project not to write on this save: locked for this viewer, or switched off. */
@@ -911,6 +915,8 @@ export async function updateProjectWithDetails(
       breakTimeSeconds: payload.breakTimeSeconds,
       endDate: payload.endDate,
       timezone: payload.timezone,
+      clientHourlyRate: payload.clientHourlyRate,
+      clientRateCurrency: payload.clientRateCurrency,
       ...(payload.rules ?? {}),
       clientId: primaryClientId || "",
       ...(actorMemberId ? { updatedBy: actorMemberId } : {}),
@@ -993,6 +999,8 @@ export async function createProjectWithDetails(
     breakTimeSeconds: payload.breakTimeSeconds,
     endDate: payload.endDate,
     timezone: payload.timezone,
+    clientHourlyRate: payload.clientHourlyRate,
+    clientRateCurrency: payload.clientRateCurrency,
     ...(payload.rules ?? {}),
     clientId: primaryClientId,
     ...(actorMemberId ? { createdBy: actorMemberId } : {}),

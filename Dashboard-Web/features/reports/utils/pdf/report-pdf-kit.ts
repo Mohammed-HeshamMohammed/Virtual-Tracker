@@ -16,7 +16,19 @@ export interface ReportPdfSummaryItem {
   value: string
 }
 
-export interface ReportPdfBarChart {
+/** What a chart's Y axis counts. "hours" steps in clock-friendly amounts
+ *  (15 minutes, 1 hour, 4 hours...) and labels them "2h", "1h 30m". */
+export type ReportPdfAxisUnit = "number" | "hours"
+
+interface ReportPdfYAxis {
+  /** Printed sideways beside the axis: what the numbers are ("Hours"). */
+  yLabel?: string
+  yUnit?: ReportPdfAxisUnit
+  /** Overrides the gridline labels the unit would give. */
+  yTickFormatter?: (value: number) => string
+}
+
+export interface ReportPdfBarChart extends ReportPdfYAxis {
   type: "bar"
   title: string
   data: { label: string; value: number }[]
@@ -24,7 +36,7 @@ export interface ReportPdfBarChart {
   color?: [number, number, number]
 }
 
-export interface ReportPdfLineChart {
+export interface ReportPdfLineChart extends ReportPdfYAxis {
   type: "line"
   title: string
   points: { label: string; value: number }[]
@@ -64,6 +76,9 @@ export interface ReportPdfSpec {
     rowKinds?: ("group" | "detail")[]
     emptyMessage?: string
   }
+  /** Small print under the table: how a figure was worked out, or what is
+   *  missing from it. One paragraph each. */
+  notes?: string[]
   filename: string
 }
 
@@ -166,13 +181,66 @@ function drawSummary(doc: jsPDF, items: ReportPdfSummaryItem[], y: number): numb
 }
 
 const CHART_HEIGHT = 140
+const Y_TICKS = 4
 
-function drawBarChart(doc: jsPDF, chart: ReportPdfBarChart, y: number): number {
+/** Steps a clock reads naturally in: quarter hours up to half a day. Past
+ *  that the hours are just a count, and round numbers serve better. */
+const HOUR_STEPS = [0.25, 0.5, 1, 2, 3, 4, 6, 8, 12]
+const ROUND_STEPS = [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]
+
+/**
+ * The scale of a chart's Y axis: a round top value and the step between its
+ * gridlines, so every gridline can carry a label a reader can use ("2h", "4h")
+ * instead of whatever a quarter of the largest value happens to be.
+ */
+export function yAxisScale(maxValue: number, unit: ReportPdfAxisUnit = "number"): { top: number; step: number } {
+  const max = Number.isFinite(maxValue) && maxValue > 0 ? maxValue : 1
+  const hourStep = unit === "hours" ? HOUR_STEPS.find((s) => s * Y_TICKS >= max) : undefined
+  if (hourStep) return { top: hourStep * Y_TICKS, step: hourStep }
+  const raw = max / Y_TICKS
+  const magnitude = 10 ** Math.floor(Math.log10(raw))
+  const multipliers = unit === "hours" ? ROUND_STEPS : [1, 2, 2.5, 5, 10]
+  const step = (multipliers.find((m) => m * magnitude >= raw - 1e-9) ?? 10) * magnitude
+  return { top: step * Y_TICKS, step }
+}
+
+/** "1h 30m", "45m", "8h" - short enough to sit beside a gridline. */
+export function formatAxisHours(hours: number): string {
+  const totalMinutes = Math.round(hours * 60)
+  const h = Math.floor(totalMinutes / 60)
+  const m = totalMinutes % 60
+  if (h === 0) return `${m}m`
+  return m === 0 ? `${h}h` : `${h}h ${m}m`
+}
+
+function formatAxisNumber(value: number): string {
+  if (value >= 1000) return `${Math.round(value / 100) / 10}k`
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 100) / 100)
+}
+
+interface PlotArea {
+  plotLeft: number
+  plotW: number
+  plotTop: number
+  plotH: number
+  axisY: number
+  top: number
+}
+
+/**
+ * The frame both chart types share: the title, the Y axis with a labelled
+ * gridline at every step, and the axis title turned on its side. Returns where
+ * the marks go. The gutter is measured from the labels it has to hold, so
+ * "120h" and "30m" both fit without a fixed guess.
+ */
+function drawChartFrame(
+  doc: jsPDF,
+  chart: ReportPdfBarChart | ReportPdfLineChart,
+  y: number,
+  maxValue: number,
+): PlotArea {
   const left = PAGE_MARGIN
   const w = contentWidth(doc)
-  const leftPad = 4
-  const plotLeft = left + leftPad
-  const plotW = w - leftPad
   const plotTop = y + 20
   const plotH = CHART_HEIGHT
   const axisY = plotTop + plotH
@@ -182,27 +250,54 @@ function drawBarChart(doc: jsPDF, chart: ReportPdfBarChart, y: number): number {
   setInk(doc)
   doc.text(chart.title, left, y + 6)
 
+  const unit = chart.yUnit ?? "number"
+  const { top, step } = yAxisScale(maxValue, unit)
+  const formatTick = chart.yTickFormatter ?? (unit === "hours" ? formatAxisHours : formatAxisNumber)
+  const ticks = Array.from({ length: Y_TICKS + 1 }, (_, i) => i * step)
+  const labels = ticks.map(formatTick)
+
+  doc.setFont("helvetica", "normal")
+  doc.setFontSize(7)
+  const labelW = Math.max(...labels.map((l) => doc.getTextWidth(l)))
+  const titleW = chart.yLabel ? 12 : 0
+  const plotLeft = left + titleW + labelW + 8
+  const plotW = w - (plotLeft - left)
+
+  ticks.forEach((value, i) => {
+    const gy = axisY - (value / top) * plotH
+    doc.setDrawColor(i === 0 ? RULE.r : 241, i === 0 ? RULE.g : 245, i === 0 ? RULE.b : 249)
+    doc.setLineWidth(0.5)
+    doc.line(plotLeft, gy, plotLeft + plotW, gy)
+    setMuted(doc)
+    doc.text(labels[i], plotLeft - 5, gy + 2.5, { align: "right" })
+  })
+  doc.setDrawColor(RULE.r, RULE.g, RULE.b)
+  doc.line(plotLeft, plotTop, plotLeft, axisY)
+
+  if (chart.yLabel) {
+    setMuted(doc)
+    doc.setFontSize(7.5)
+    doc.text(chart.yLabel, left + 7, plotTop + plotH / 2 + doc.getTextWidth(chart.yLabel) / 2, { angle: 90 })
+  }
+
+  return { plotLeft, plotW, plotTop, plotH, axisY, top }
+}
+
+function drawBarChart(doc: jsPDF, chart: ReportPdfBarChart, y: number): number {
   const data = chart.data.slice(0, 12)
-  const max = Math.max(1, ...data.map((d) => d.value))
+  const { plotLeft, plotW, plotH, axisY, top } = drawChartFrame(doc, chart, y, Math.max(0, ...data.map((d) => d.value)))
   const fmt = chart.valueFormatter ?? ((v: number) => String(Math.round(v)))
   const [r, g, b] = chart.color ?? BRAND
-
-  doc.setDrawColor(241, 245, 249)
-  doc.setLineWidth(0.5)
-  for (let i = 0; i <= 4; i++) {
-    const gy = plotTop + (plotH * i) / 4
-    doc.line(plotLeft, gy, plotLeft + plotW, gy)
-  }
-  doc.setDrawColor(RULE.r, RULE.g, RULE.b)
-  doc.line(plotLeft, axisY, plotLeft + plotW, axisY)
 
   const n = data.length
   const slot = plotW / Math.max(1, n)
   const barW = Math.min(34, slot * 0.55)
-  doc.setFillColor(r, g, b)
   data.forEach((d, i) => {
     const cx = plotLeft + slot * i + slot / 2
-    const barH = (d.value / max) * plotH
+    const barH = (d.value / top) * plotH
+    // Set per bar: the label drawn after each one changes the colour jsPDF
+    // fills with, which left every bar past the first grey.
+    doc.setFillColor(r, g, b)
     doc.roundedRect(cx - barW / 2, axisY - barH, barW, Math.max(1, barH), 1.5, 1.5, "F")
 
     doc.setFont("helvetica", "normal")
@@ -218,33 +313,16 @@ function drawBarChart(doc: jsPDF, chart: ReportPdfBarChart, y: number): number {
 }
 
 function drawLineChart(doc: jsPDF, chart: ReportPdfLineChart, y: number): number {
-  const left = PAGE_MARGIN
-  const w = contentWidth(doc)
-  const plotTop = y + 20
-  const plotH = CHART_HEIGHT
-  const axisY = plotTop + plotH
-
-  doc.setFont("helvetica", "bold")
-  doc.setFontSize(10.5)
-  setInk(doc)
-  doc.text(chart.title, left, y + 6)
-
   const points = chart.points
-  const max = Math.max(1, ...points.map((p) => p.value))
+  const { plotLeft, plotW, plotH, axisY, top } = drawChartFrame(doc, chart, y, Math.max(0, ...points.map((p) => p.value)))
   const fmt = chart.valueFormatter ?? ((v: number) => String(Math.round(v)))
   const [r, g, b] = chart.color ?? BRAND
   const n = points.length
-  const xAt = (i: number) => left + (n <= 1 ? w / 2 : (i / (n - 1)) * w)
-  const yAt = (v: number) => plotTop + plotH - (v / max) * plotH
-
-  doc.setDrawColor(241, 245, 249)
-  doc.setLineWidth(0.5)
-  for (let i = 0; i <= 4; i++) {
-    const gy = plotTop + (plotH * i) / 4
-    doc.line(left, gy, left + w, gy)
-  }
-  doc.setDrawColor(RULE.r, RULE.g, RULE.b)
-  doc.line(left, axisY, left + w, axisY)
+  // Inset from both ends so the first and last points, and the value printed
+  // over each, do not sit on top of the Y axis or run off the page edge.
+  const inset = Math.min(18, plotW / 10)
+  const xAt = (i: number) => plotLeft + (n <= 1 ? plotW / 2 : inset + (i / (n - 1)) * (plotW - inset * 2))
+  const yAt = (v: number) => axisY - (v / top) * plotH
 
   doc.setDrawColor(r, g, b)
   doc.setLineWidth(1.5)
@@ -407,6 +485,23 @@ export function downloadReportPdf(spec: ReportPdfSpec): void {
         }
       },
     })
+  }
+
+  if (spec.notes && spec.notes.length > 0) {
+    const tableEnd = (doc as unknown as { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY
+    let ny = (rows.length === 0 || !tableEnd ? y + 30 : tableEnd) + 18
+    doc.setFont("helvetica", "normal")
+    doc.setFontSize(8)
+    setMuted(doc)
+    for (const note of spec.notes) {
+      const wrapped = doc.splitTextToSize(note, contentWidth(doc)) as string[]
+      if (ny + wrapped.length * 10 > bottomLimit) {
+        doc.addPage()
+        ny = PAGE_MARGIN + 8
+      }
+      doc.text(wrapped, PAGE_MARGIN, ny)
+      ny += wrapped.length * 10 + 6
+    }
   }
 
   const pageCount = doc.getNumberOfPages()

@@ -77,6 +77,9 @@ function toProjectPayload(
   if (input.endDate !== undefined) out.end_date = input.endDate || undefined
   // null clears it back to the member's own zone; undefined leaves it alone.
   if (input.timezone !== undefined) out.timezone = input.timezone || null
+  // null clears the rate; undefined leaves it alone.
+  if (input.clientHourlyRate !== undefined) out.client_hourly_rate = input.clientHourlyRate
+  if (input.clientRateCurrency !== undefined) out.client_rate_currency = input.clientRateCurrency
   if (input.clientId !== undefined) out.client_id = input.clientId || null
   if (input.managersNotes !== undefined) out.managers_notes = input.managersNotes
   if (input.usersNotes !== undefined) out.users_notes = input.usersNotes
@@ -177,6 +180,9 @@ export interface CreateProjectInput {
   endDate?: string
   /** null clears it back to each member's own zone. */
   timezone?: string | null
+  /** What the client pays per hour on this project; null clears it. */
+  clientHourlyRate?: number | null
+  clientRateCurrency?: string | null
   clientId?: string
   managersNotes?: string
   usersNotes?: string
@@ -205,6 +211,9 @@ export interface UpdateProjectInput {
   subProjectIds?: string[]
   /** null clears it back to each member's own zone. */
   timezone?: string | null
+  /** What the client pays per hour on this project; null clears it. */
+  clientHourlyRate?: number | null
+  clientRateCurrency?: string | null
   disableIdleTime?: boolean
   idleTimeSeconds?: number
   disableBreakLimit?: boolean

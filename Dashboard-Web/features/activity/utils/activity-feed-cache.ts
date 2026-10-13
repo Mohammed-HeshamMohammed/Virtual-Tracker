@@ -21,7 +21,8 @@ export function buildActivityFeedCacheKey(
 ): string {
   const day = query.day ?? "all"
   const teamScope = options?.myTeamOnly ? "team" : "org"
-  return `${viewerMemberId}:${teamScope}:${query.type}:${query.memberId}:${query.projectScopeOnly ? "projects" : "all"}:${day}`
+  const projects = (query.projectIds ?? []).join(",")
+  return `${viewerMemberId}:${teamScope}:${query.type}:${query.memberId}:${query.projectScopeOnly ? "projects" : "all"}:${projects}:${day}`
 }
 
 export function readActivityFeedCache(key: string): ActivityFeedCacheEntry | undefined {

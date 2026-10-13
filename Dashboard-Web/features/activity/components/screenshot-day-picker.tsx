@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ReactNode } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { ReportCalendarGrid } from "@/features/reports/components/time-activity-report/calendar-grid"
 
@@ -69,20 +69,29 @@ export function ScreenshotDayPickerPopover({
   onClose,
   children,
 }: ScreenshotDayPickerPopoverProps) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    function dismissOutside(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) onClose()
+    }
+    function dismissEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose()
+    }
+    document.addEventListener("pointerdown", dismissOutside, true)
+    document.addEventListener("keydown", dismissEscape)
+    return () => {
+      document.removeEventListener("pointerdown", dismissOutside, true)
+      document.removeEventListener("keydown", dismissEscape)
+    }
+  }, [open, onClose])
+
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       {children}
       <AnimatePresence>
         {open ? (
-          <>
-            <button
-              type="button"
-              className="fixed inset-0 z-40 cursor-default"
-              aria-label="Close calendar"
-              onClick={onClose}
-            />
             <ScreenshotDayPicker selectedDay={selectedDay} onSelectDay={onSelectDay} onClose={onClose} />
-          </>
         ) : null}
       </AnimatePresence>
     </div>

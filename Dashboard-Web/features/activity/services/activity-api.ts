@@ -29,14 +29,17 @@ export interface ActivityFeedScope {
   canFilterByProject: boolean
   canSeeAllMembers: boolean
   projectScopeOnly: boolean
-  members: { id: string; name: string; initials: string }[]
+  members: { id: string; name: string; initials: string; avatarUrl?: string | null }[]
   defaultMemberId: string
 }
 
 export interface ActivityFeedQuery {
   type: "screenshots" | "apps" | "urls"
+  /** "all", one member id, or several joined by commas. */
   memberId: string
   projectScopeOnly: boolean
+  /** Just these projects. Empty or absent = every project the viewer can see. */
+  projectIds?: string[]
   day?: string
   sort?: "newest" | "duration"
 }
@@ -165,7 +168,7 @@ export async function fetchActivityScope(projectScopeOnly: boolean): Promise<Act
 
 export interface ActivityFeedResult<T> {
   data: T
-  members: { id: string; name: string; initials: string }[]
+  members: { id: string; name: string; initials: string; avatarUrl?: string | null }[]
   /** When any app/site classification was last changed. Categories resolve at
    *  read time, so re-classifying changes what past periods report - this is
    *  what lets the UI say so rather than silently moving the numbers. */
@@ -333,6 +336,7 @@ function feedCacheKey(query: ActivityFeedQuery): string {
     query.type,
     query.memberId,
     query.projectScopeOnly ? "1" : "0",
+    (query.projectIds ?? []).join(","),
     query.day ?? "",
     query.sort ?? "newest",
   ].join(":")
@@ -353,6 +357,7 @@ export async function fetchActivityFeed<T>(query: ActivityFeedQuery): Promise<Ac
       params.set("memberId", "all")
     }
     if (query.projectScopeOnly) params.set("projectScopeOnly", "true")
+    if (query.projectIds?.length) params.set("projectIds", query.projectIds.join(","))
     if (query.day) params.set("day", query.day)
     params.set("sort", query.sort ?? "newest")
     const controller = new AbortController()

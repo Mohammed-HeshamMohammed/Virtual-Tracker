@@ -34,6 +34,7 @@ export function TimesheetsPage() {
             name: r.name || `${r.first_name || ""} ${r.last_name || ""}`.trim(),
             email: r.email || "",
             avatar: r.avatar || r.name?.slice(0, 2).toUpperCase() || "??",
+            avatarUrl: r.avatarUrl,
             color: r.color || "#64748b",
           })),
         )

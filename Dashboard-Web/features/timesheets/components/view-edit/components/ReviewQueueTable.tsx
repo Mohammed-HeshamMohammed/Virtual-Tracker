@@ -12,7 +12,9 @@ import {
   type ReviewQueueRow,
 } from "@/features/tasks/api/task-assignments-api"
 import { useReviewQueueMutations } from "@/features/timesheets/components/view-edit/hooks/use-review-queue-mutations"
-import { SearchableSelectField } from "@/shared/ui/forms/searchable-select-field";
+import { ReportToolbarMultiSelect } from "@/features/reports/components/shared/report-filters-panel"
+import { ReportMemberAvatar } from "@/features/reports/components/time-activity-report/report-member-avatar"
+import { initialsFromName } from "@/features/members/utils/build-tree"
 import { SelectField } from "@/shared/ui/forms/select-field";
 import {
   PRIORITY_CONFIG,
@@ -23,8 +25,6 @@ import {
 import { FilterBar, FilterField } from "@/features/timesheets/components/view-edit/components/FilterField"
 import {
   ALL_FILTER,
-  buildMemberFilterOptions,
-  buildProjectFilterOptions,
   PRIORITY_FILTER_OPTIONS,
 } from "@/features/timesheets/components/view-edit/components/filter-options"
 import { formatMinutes } from "@/features/timesheets/components/view-edit/utils"
@@ -84,7 +84,7 @@ function ParticipationCell({ row }: { row: ReviewQueueRow }) {
 }
 
 interface ReviewQueueTableProps {
-  memberOptions: { id: string; name: string }[]
+  memberOptions: { id: string; name: string; avatarUrl?: string | null }[]
   projectOptions: { id: string; name: string }[]
   variant: "needs-review" | "priority-monitor"
   canReviewAssignments?: boolean
@@ -111,8 +111,9 @@ export function ReviewQueueTable({
   const [priorityMonitor, setPriorityMonitor] = useState<ReviewQueueRow[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [projectFilter, setProjectFilter] = useState("")
-  const [memberFilter, setMemberFilter] = useState("")
+  // Both filters take several picks; empty means everyone / every project.
+  const [projectFilter, setProjectFilter] = useState<Set<string>>(() => new Set())
+  const [memberFilter, setMemberFilter] = useState<Set<string>>(() => new Set())
   const [priorityFilter, setPriorityFilter] = useState("")
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [reviewingId, setReviewingId] = useState<string | null>(null)
@@ -121,9 +122,9 @@ export function ReviewQueueTable({
     setLoading(true)
     setLoadError(null)
     try {
+      // Member and project are applied below, on the rows: the server takes
+      // one of each, and the queue is short enough to filter here.
       const data = await fetchReviewQueue({
-        projectId: projectFilter || undefined,
-        memberId: memberFilter || undefined,
         priority: priorityFilter || undefined,
       })
       setNeedsReview(data.needsReview)
@@ -135,7 +136,7 @@ export function ReviewQueueTable({
     } finally {
       setLoading(false)
     }
-  }, [projectFilter, memberFilter, priorityFilter])
+  }, [priorityFilter])
 
   useEffect(() => {
     void loadRows()
@@ -149,9 +150,27 @@ export function ReviewQueueTable({
 
   const rows = variant === "needs-review" ? needsReview : priorityMonitor
   const scopedRows = useMemo(() => {
-    if (!myTeamOnly || teamMemberIdsLoading || !teamMemberIds || teamMemberIds.size === 0) return rows
-    return rows.filter((row) => teamMemberIds.has(row.userId))
-  }, [rows, myTeamOnly, teamMemberIds, teamMemberIdsLoading])
+    const teamScoped =
+      !myTeamOnly || teamMemberIdsLoading || !teamMemberIds || teamMemberIds.size === 0
+        ? rows
+        : rows.filter((row) => teamMemberIds.has(row.userId))
+    // The filters only exist on the Needs Review table.
+    if (variant !== "needs-review") return teamScoped
+    return teamScoped.filter(
+      (row) =>
+        (memberFilter.size === 0 || memberFilter.has(row.userId)) &&
+        (projectFilter.size === 0 || (row.projectId !== null && projectFilter.has(row.projectId))),
+    )
+  }, [rows, variant, memberFilter, projectFilter, myTeamOnly, teamMemberIds, teamMemberIdsLoading])
+  const memberPickerOptions = useMemo(
+    () =>
+      memberOptions.map((m) => ({
+        id: m.id,
+        name: m.name,
+        meta: <ReportMemberAvatar initials={initialsFromName(m.name)} imageUrl={m.avatarUrl} />,
+      })),
+    [memberOptions],
+  )
   const { currentPage, setCurrentPage, totalPages, visibleRows, rowsPerPage } =
     usePaginatedTable(scopedRows, REVIEW_QUEUE_ROWS_PER_PAGE)
   const showFilters = variant === "needs-review"
@@ -188,25 +207,23 @@ export function ReviewQueueTable({
       {showFilters ? (
         <FilterBar>
           <FilterField label="Project" index={0}>
-            <SearchableSelectField
-              value={projectFilter || ALL_FILTER}
-              onChange={(value) => setProjectFilter(value === ALL_FILTER ? "" : value ?? "")}
-              placeholder="All projects"
-              menuMinWidth={240}
-              visibleOptionRows={5}
-              truncateOptions={false}
-              options={buildProjectFilterOptions(projectOptions)}
+            <ReportToolbarMultiSelect
+              label="Projects"
+              emptyLabel="All projects"
+              options={projectOptions}
+              selected={projectFilter}
+              onChange={setProjectFilter}
+              width="w-full"
             />
           </FilterField>
           <FilterField label="Employee" index={1}>
-            <SearchableSelectField
-              value={memberFilter || ALL_FILTER}
-              onChange={(value) => setMemberFilter(value === ALL_FILTER ? "" : value ?? "")}
-              placeholder="All employees"
-              menuMinWidth={240}
-              visibleOptionRows={5}
-              truncateOptions={false}
-              options={buildMemberFilterOptions(memberOptions)}
+            <ReportToolbarMultiSelect
+              label="Employees"
+              emptyLabel="All employees"
+              options={memberPickerOptions}
+              selected={memberFilter}
+              onChange={setMemberFilter}
+              width="w-full"
             />
           </FilterField>
           <FilterField label="Priority" className="sm:max-w-[180px]" index={2}>
@@ -295,7 +312,12 @@ export function ReviewQueueTable({
                         variant === "priority-monitor" && isHighPriority && "bg-amber-50/40 dark:bg-amber-950/20",
                       )}
                     >
-                      <td className="px-4 py-3.5 font-semibold text-slate-900 dark:text-slate-100">{row.employeeName}</td>
+                      <td className="px-4 py-3.5 font-semibold text-slate-900 dark:text-slate-100">
+                        <div className="flex items-center gap-2">
+                          <ReportMemberAvatar initials={initialsFromName(row.employeeName)} imageUrl={memberOptions.find((m) => m.id === row.userId)?.avatarUrl} />
+                          <span>{row.employeeName}</span>
+                        </div>
+                      </td>
                       <td className="px-4 py-3.5 text-slate-600 dark:text-slate-300 font-medium">{row.projectName || "—"}</td>
                       <td className="px-4 py-3.5 text-slate-700 dark:text-slate-200 font-medium">{row.taskTitle}</td>
                       <td className="px-4 py-3">

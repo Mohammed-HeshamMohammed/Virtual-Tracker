@@ -8,6 +8,7 @@ import { canExportActivity } from "@/features/auth"
 import { ActivityControlBar } from "@/features/activity/components/activity-control-bar"
 import { ActivityShellProvider, type ActivitySubPage, useActivityShell } from "@/features/activity/components/activity-shell-context"
 import { useActivityFeedContext } from "@/features/activity/components/activity-feed-context"
+import { splitSelectedMemberIds } from "@/features/activity/utils/activity-scope-preferences"
 import {
   ActivityCategoryFilter,
   ActivitySegmentedControl,
@@ -115,6 +116,8 @@ function ActivityShellStickyBar({ onNavigate }: { onNavigate?: (pageId: string) 
     scopeLoading,
     scope,
     selectedMemberId,
+    selectedProjectIds,
+    setSelectedProjectIds,
     clearAllCache,
   } = useActivityFeedContext()
 
@@ -131,9 +134,11 @@ function ActivityShellStickyBar({ onNavigate }: { onNavigate?: (pageId: string) 
   const pageFilters = useMemo(() => <ActivityPageFilters />, [])
 
   const memberLabel = useMemo(() => {
-    if (selectedMemberId === "all") return null
-    const member = scope?.members.find((m) => m.id === selectedMemberId)
-    return member ? member.name : null
+    const ids = splitSelectedMemberIds(selectedMemberId)
+    if (ids.length === 0) return null
+    const names = ids.map((id) => scope?.members.find((m) => m.id === id)?.name).filter((name): name is string => Boolean(name))
+    if (names.length === 0) return null
+    return names.length <= 2 ? names.join(", ") : `${names.length} members`
   }, [scope?.members, selectedMemberId])
 
   const hasActiveFilters = useMemo(() => {
@@ -143,13 +148,15 @@ function ActivityShellStickyBar({ onNavigate }: { onNavigate?: (pageId: string) 
     if (viewMode !== "grid") return true
     if (sortOrder !== "newest" && sortOrder !== "time") return true
     if (projectScopeOnly) return true
+    if (selectedProjectIds.length > 0) return true
     return false
-  }, [searchQuery, selectedCategory, showBlocked, viewMode, sortOrder, projectScopeOnly])
+  }, [searchQuery, selectedCategory, showBlocked, viewMode, sortOrder, projectScopeOnly, selectedProjectIds])
 
   const handleResetFilters = useCallback(() => {
     resetPageFilters()
     if (projectScopeOnly) setProjectScopeOnly(false)
-  }, [resetPageFilters, projectScopeOnly, setProjectScopeOnly])
+    setSelectedProjectIds([])
+  }, [resetPageFilters, projectScopeOnly, setProjectScopeOnly, setSelectedProjectIds])
 
   const handleRefresh = useCallback(() => {
     triggerRefresh()
