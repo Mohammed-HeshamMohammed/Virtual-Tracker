@@ -51,6 +51,9 @@ test("a single session on one project produces one entry carrying its client/tea
     activeSeconds: 3000,
     idleSeconds: 600,
     manualSeconds: 0,
+    // The rate the amount was worked out from; none is set here.
+    payRate: 0,
+    payRateCurrency: "USD",
     spentAmount: 0,
     currency: "USD",
     // Every money row now carries what it was actually earned in as well as
@@ -304,4 +307,76 @@ test("a member with a real avatarUrl in the name map carries it onto their day r
 test("a member with no avatarUrl on the name map gets null, not undefined - the frontend falls back to initials on either, but null is what a real 'no photo' member gets from memberMetaFromRow", () => {
   const { days } = buildTimeAndActivityReportPayload([session()], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25");
   assert.equal(days[0].members[0].avatarUrl, null);
+});
+
+// What the project's client is charged: the same hours at the project's own
+// hourly rate. A separate permission from pay, so it is only present when the
+// caller says this viewer may see it.
+
+const billedSession = (overrides = {}) =>
+  session({ active_seconds: 5400, idle_seconds: 0, client_hourly_rate: "40.00", client_rate_currency: "USD", ...overrides });
+
+test("an entry on a project with a client rate carries the rate and what the hours come to", () => {
+  const { entries } = buildTimeAndActivityReportPayload(
+    [billedSession()], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25", new Map(), [], null,
+    { includeBilling: true },
+  );
+  assert.equal(entries[0].billRate, 40);
+  assert.equal(entries[0].billRateCurrency, "USD");
+  assert.equal(entries[0].billAmount, 60, "1.5 hours at 40");
+  assert.equal(entries[0].billCurrency, "USD");
+});
+
+test("billing is left off unless the caller asks for it, whatever the project says", () => {
+  const { entries } = buildTimeAndActivityReportPayload(
+    [billedSession()], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25",
+  );
+  for (const field of ["billRate", "billRateCurrency", "billAmount", "billCurrency"]) {
+    assert.equal(field in entries[0], false, field);
+  }
+});
+
+test("a project with no client rate is not billed at zero - the fields are absent", () => {
+  for (const rate of [null, undefined, "0", "abc"]) {
+    const { entries } = buildTimeAndActivityReportPayload(
+      [billedSession({ client_hourly_rate: rate })], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25",
+      new Map(), [], null, { includeBilling: true },
+    );
+    assert.equal("billAmount" in entries[0], false, String(rate));
+  }
+});
+
+test("manual time on a billed project is billed too, and pay stays worked out from the pay rate", () => {
+  const rates = new Map([["m1", [{ effectiveDate: "2026-08-01", rate: 10, currency: "USD" }]]]);
+  const { entries } = buildTimeAndActivityReportPayload(
+    [billedSession({ active_seconds: 3600 })], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25", rates,
+    [manual({ manual_seconds: 3600, client_hourly_rate: "40.00", client_rate_currency: "USD" })], null,
+    { includeBilling: true },
+  );
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].billAmount, 80, "2 hours at the client rate");
+  assert.equal(entries[0].spentAmount, 20, "2 hours at the pay rate");
+  assert.equal(entries[0].payRate, 10);
+  assert.equal(entries[0].payRateCurrency, "USD");
+});
+
+test("a client with its own invoice terms carries tax, net terms and notes onto its billed rows; a plain one carries none", () => {
+  const withTerms = buildTimeAndActivityReportPayload(
+    [billedSession({ client_tax_rate: "14.00", client_net_terms_days: 45, client_billing_notes: "  Pay by wire.  " })],
+    memberNameMap, memberTimezones, "2026-08-25", "2026-08-25", new Map(), [], null, { includeBilling: true },
+  ).entries[0];
+  assert.equal(withTerms.billTaxRate, 14);
+  assert.equal(withTerms.billNetTermsDays, 45);
+  assert.equal(withTerms.billNotes, "Pay by wire.");
+
+  const plain = buildTimeAndActivityReportPayload(
+    [billedSession({ client_tax_rate: "0.00", client_net_terms_days: null, client_billing_notes: "" })],
+    memberNameMap, memberTimezones, "2026-08-25", "2026-08-25", new Map(), [], null, { includeBilling: true },
+  ).entries[0];
+  for (const f of ["billTaxRate", "billNetTermsDays", "billNotes"]) assert.equal(f in plain, false, f);
+
+  const hidden = buildTimeAndActivityReportPayload(
+    [billedSession({ client_tax_rate: "14.00" })], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25",
+  ).entries[0];
+  assert.equal("billTaxRate" in hidden, false, "never without the billing permission");
 });

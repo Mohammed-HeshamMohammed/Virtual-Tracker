@@ -302,12 +302,19 @@ export async function fetchPgAppLogs(memberIds, dayFilter, limit, options = {}) 
     params.push(options.sinceDay);
     where += ` AND ${localDay("l.started_at")} >= $${params.length}::date`;
   }
+  if (Array.isArray(options.projectIds)) {
+    if (options.projectIds.length === 0) return [];
+    params.push(options.projectIds);
+    where += ` AND COALESCE(t.project_id, s.project_id) = ANY($${params.length}::uuid[])`;
+  }
   params.push(limit);
   const result = await pgQuery(
     `SELECT l.id, l.member_id, l.session_id, l.task_id, l.task_title, a.name AS app_name, l.page_title,
             l.started_at, l.duration_seconds, l.source
      FROM activity_app_logs l
      JOIN apps a ON a.id = l.app_id
+     LEFT JOIN tasks t ON t.id = l.task_id
+     LEFT JOIN activity_sessions s ON s.id::text = l.session_id
      LEFT JOIN members m_tz ON m_tz.id = l.member_id
      ${where}
      ORDER BY l.started_at DESC
@@ -336,11 +343,18 @@ export async function fetchPgUrlLogs(memberIds, dayFilter, limit, options = {}) 
     params.push(options.sinceDay);
     where += ` AND ${localDay("u.visited_at")} >= $${params.length}::date`;
   }
+  if (Array.isArray(options.projectIds)) {
+    if (options.projectIds.length === 0) return [];
+    params.push(options.projectIds);
+    where += ` AND COALESCE(t.project_id, s.project_id) = ANY($${params.length}::uuid[])`;
+  }
   params.push(limit);
   const result = await pgQuery(
     `SELECT u.id, u.member_id, u.session_id, u.task_id, u.task_title, u.url, u.domain, u.page_title,
             u.visited_at, u.duration_seconds, u.source
      FROM activity_url_logs u
+     LEFT JOIN tasks t ON t.id = u.task_id
+     LEFT JOIN activity_sessions s ON s.id::text = u.session_id
      LEFT JOIN members m_tz ON m_tz.id = u.member_id
      ${where}
      ORDER BY u.visited_at DESC
@@ -589,23 +603,47 @@ export async function deleteActivitySessionWithChildrenPg(sessionId) {
   });
 }
 
-export async function deleteMemberDayActivityWithChildrenPg(memberId, day) {
+/**
+ * Everything one member did on one calendar day, as the Time & Activity report
+ * draws that day.
+ *
+ * The report books a session to the day it STARTED in the member's own time
+ * zone (see build-time-and-activity-rows.js). This used to match on
+ * `started_at::date`, which is the database's day (UTC): for anyone not in UTC,
+ * a session that began near midnight sat on one day in the report and on the
+ * neighbouring day here, so "delete this day" removed nothing and the row was
+ * still there after the reload. The same zone now decides both.
+ *
+ * A session that runs past midnight keeps capturing after the day has turned,
+ * so its screenshots and logs are removed by session as well as by day - the
+ * day match alone left them behind with no session to belong to.
+ */
+export async function deleteMemberDayActivityWithChildrenPg(memberId, day, timeZone = "UTC") {
   return withTransaction(async (client) => {
+    const sessions = await client.query(
+      `DELETE FROM activity_sessions
+       WHERE member_id = $1 AND (started_at AT TIME ZONE $3)::date = $2::date
+       RETURNING id`,
+      [memberId, day, timeZone],
+    );
+    const childParams = [memberId, day, timeZone, (sessions.rows ?? []).map((row) => String(row.id))];
     const screenshots = await client.query(
-      `DELETE FROM activity_screenshots WHERE member_id = $1 AND captured_at::date = $2::date`,
-      [memberId, day],
+      `DELETE FROM activity_screenshots
+       WHERE member_id = $1
+         AND ((captured_at AT TIME ZONE $3)::date = $2::date OR session_id = ANY($4::text[]))`,
+      childParams,
     );
     const appLogs = await client.query(
-      `DELETE FROM activity_app_logs WHERE member_id = $1 AND started_at::date = $2::date`,
-      [memberId, day],
+      `DELETE FROM activity_app_logs
+       WHERE member_id = $1
+         AND ((started_at AT TIME ZONE $3)::date = $2::date OR session_id = ANY($4::text[]))`,
+      childParams,
     );
     const urlLogs = await client.query(
-      `DELETE FROM activity_url_logs WHERE member_id = $1 AND visited_at::date = $2::date`,
-      [memberId, day],
-    );
-    const sessions = await client.query(
-      `DELETE FROM activity_sessions WHERE member_id = $1 AND started_at::date = $2::date`,
-      [memberId, day],
+      `DELETE FROM activity_url_logs
+       WHERE member_id = $1
+         AND ((visited_at AT TIME ZONE $3)::date = $2::date OR session_id = ANY($4::text[]))`,
+      childParams,
     );
     const entries = await client.query(`DELETE FROM time_entries WHERE member_id = $1 AND date = $2::date`, [
       memberId,

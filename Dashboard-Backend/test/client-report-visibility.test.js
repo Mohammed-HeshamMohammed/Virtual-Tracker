@@ -67,10 +67,29 @@ test("a client with no projects matches no project instead of everything", () =>
 test("the activity feed gives clients screenshots only, filtered to their projects", () => {
   const src = read("src/modules/activity/routes.js");
   assert.match(src, /feedClientProjectIds && feedType !== "screenshots"/);
-  assert.match(src, /feedClientProjectIds \? \{ projectIds: feedClientProjectIds \} : \{\}/);
+  // A client's own projects are the starting filter and the ceiling: a requested
+  // project list can only narrow them, never reach past them.
+  assert.match(src, /let feedProjectIds = feedClientProjectIds;/);
+  assert.match(src, /const reachableProjectIds = feedClientProjectIds \?\? /);
+  assert.match(src, /feedProjectIds \? \{ projectIds: feedProjectIds \} : \{\}/);
 });
 
 test("a single screenshot can't be fetched by id outside the client's projects", () => {
   const src = read("src/modules/activity/routes.js");
   assert.match(src, /isClientRole\(scope\.roleName\)[\s\S]{0,300}isScreenshotInProjectsPg\(resolvedId, own \?\? \[\]\)/);
+});
+
+test("a client login is never handed pay rates or what clients are charged", () => {
+  const out = stripReportMoney({
+    billingIncluded: true,
+    days: [],
+    entries: [{ date: "2026-09-28", memberId: "m1", activeSeconds: 3600, payRate: 17.25, payRateCurrency: "USD", billRate: 41.5, billRateCurrency: "USD", billAmount: 41.5, billCurrency: "USD" }],
+  });
+  assert.equal("billingIncluded" in out, false);
+  assert.deepEqual(out.entries[0], { date: "2026-09-28", memberId: "m1", activeSeconds: 3600 });
+});
+
+test("only management is told what a client is charged", () => {
+  const src = read("src/modules/reports/routes.js");
+  assert.match(src, /const includeBilling = Boolean\(viewer && isManagementRole\(viewer\.roleName\)\)/);
 });

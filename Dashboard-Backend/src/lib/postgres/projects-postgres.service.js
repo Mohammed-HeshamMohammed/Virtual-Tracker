@@ -29,6 +29,20 @@ function dateOrNull(value) {
   return value;
 }
 
+/** What the client pays per hour: a positive amount, or NULL for "none agreed".
+ *  Zero and anything unreadable are NULL too, so a blank field cannot turn
+ *  into a rate of nothing that a statement would then bill at. */
+export function toStoredClientHourlyRate(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const rate = Number(value);
+  return Number.isFinite(rate) && rate > 0 ? Math.round(rate * 100) / 100 : null;
+}
+
+export function toStoredClientRateCurrency(value) {
+  const code = String(value ?? "").trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(code) ? code : null;
+}
+
 export function toDayStrOrNull(value) {
   if (!value) return null;
   return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
@@ -44,9 +58,9 @@ export async function createProjectPg(data) {
        require_task_to_track, restrict_task_creation, require_stop_note, client_can_manage, client_can_track,
        timezone, created_by, updated_by,
        managers_can_edit_budget, managers_can_edit_member_limits, managers_can_edit_members,
-       budget_enabled, member_limits_enabled
+       budget_enabled, member_limits_enabled, client_hourly_rate, client_rate_currency
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$24,
-               $25,$26,$27,$28,$29)
+               $25,$26,$27,$28,$29,$30,$31)
      RETURNING *`,
     [
       id,
@@ -78,6 +92,8 @@ export async function createProjectPg(data) {
       data.managersCanEditMembers !== false,
       data.budgetEnabled !== false,
       data.memberLimitsEnabled !== false,
+      toStoredClientHourlyRate(data.clientHourlyRate),
+      toStoredClientRateCurrency(data.clientRateCurrency),
     ],
   );
   const project = rows[0] ?? null;
@@ -118,6 +134,8 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
     managersCanEditMembers: "managers_can_edit_members",
     budgetEnabled: "budget_enabled",
     memberLimitsEnabled: "member_limits_enabled",
+    clientHourlyRate: "client_hourly_rate",
+    clientRateCurrency: "client_rate_currency",
     updatedBy: "updated_by",
     archivedBy: "archived_by",
     archivedAt: "archived_at",
@@ -142,7 +160,11 @@ export async function updateProjectPg(id, patch, expectedUpdatedAt) {
             ? toStoredIdleTimeSeconds(patch[key])
             : key === "breakTimeSeconds"
               ? toStoredBreakTimeSeconds(patch[key])
-              : key === "clientCanManage" || key === "clientCanTrack" || key === "disableBreakLimit"
+              : key === "clientHourlyRate"
+                ? toStoredClientHourlyRate(patch[key])
+                : key === "clientRateCurrency"
+                  ? toStoredClientRateCurrency(patch[key])
+              : key ==="clientCanManage" || key === "clientCanTrack" || key === "disableBreakLimit"
                 ? patch[key] === true
                 : RULE_SWITCHES.has(key)
                   ? patch[key] !== false

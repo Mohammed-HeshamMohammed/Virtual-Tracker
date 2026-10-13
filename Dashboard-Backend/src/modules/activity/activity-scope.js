@@ -5,6 +5,7 @@ import { isEmployeeRole } from "../../http/role-hierarchy.js";
 
 import { getMemberByIdPg, getMembersByIdsPg, listMembersPg } from "../../lib/postgres/members-postgres.service.js";
 import { normalizeRoleKey } from "../../http/role-key.js";
+import { loadMemberPhotoUrls } from "../members/services/member-photo-urls.js";
 
 const PRIVILEGED_ROLES = new Set(["owner", "superadmin", "admin"]);
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
@@ -82,6 +83,42 @@ export async function buildMemberMetaMap(db, allowedIds) {
   return meta;
 }
 
+/** A person's photo lives on their profile; `members.avatar_url` is only a copy
+ *  that is often still empty. Past this many people the photos are skipped
+ *  rather than fetched - a picker of hundreds shows initials. */
+const MAX_PHOTO_LOOKUPS = 200;
+
+/**
+ * Profile photos for the members in a meta map, keyed by id, so a feed row can
+ * show the same picture the rest of the app does. Cosmetic: a failed lookup
+ * leaves the map exactly as it was and the avatar falls back to initials.
+ */
+export async function withMemberPhotos(db, meta) {
+  const ids = [...meta.keys()].slice(0, MAX_PHOTO_LOOKUPS);
+  if (ids.length === 0) return meta;
+  try {
+    const photos = await loadMemberPhotoUrls(db, await getMembersByIdsPg(ids));
+    for (const [id, url] of photos) {
+      const entry = meta.get(id);
+      if (entry) meta.set(id, { ...entry, avatarUrl: url });
+    }
+  } catch {
+    // initials it is
+  }
+  return meta;
+}
+
+export async function buildMemberMetaMapWithPhotos(db, allowedIds) {
+  return withMemberPhotos(db, await buildMemberMetaMap(db, allowedIds));
+}
+
+/** `all`, or one id, or several joined by commas - every one of them must be
+ *  somebody the viewer may see. */
+export function parseMemberIdFilter(value) {
+  const ids = [...new Set(String(value ?? "").split(",").map((part) => part.trim()).filter(Boolean))].slice(0, 200);
+  return ids.length === 0 || ids.includes("all") ? [] : ids;
+}
+
 export async function resolveActivityFeedScope(db, viewerMemberId, options = {}) {
   const memberIdFilter = String(options.memberId || "").trim();
   const projectScopeOnly = options.projectScopeOnly === true || options.projectScopeOnly === "true";
@@ -110,13 +147,14 @@ export async function resolveActivityFeedScope(db, viewerMemberId, options = {})
   }
 
   let targetMemberIds = null;
-  if (!memberIdFilter || memberIdFilter === "all") {
+  const requestedMemberIds = parseMemberIdFilter(memberIdFilter);
+  if (requestedMemberIds.length === 0) {
     targetMemberIds = allowedMemberIds;
   } else {
-    if (allowedMemberIds !== null && !allowedMemberIds.includes(memberIdFilter)) {
+    if (allowedMemberIds !== null && requestedMemberIds.some((id) => !allowedMemberIds.includes(id))) {
       return { forbidden: true, roleName, canFilterByProject, allowedMemberIds, targetMemberIds: [] };
     }
-    targetMemberIds = [memberIdFilter];
+    targetMemberIds = requestedMemberIds;
   }
 
   return {
@@ -134,13 +172,13 @@ export async function resolveActivityFeedScope(db, viewerMemberId, options = {})
 export function memberOptionsFromMeta(allowedMemberIds, memberMeta, viewerMemberId) {
   if (allowedMemberIds === null) {
     return [...memberMeta.entries()]
-      .map(([id, m]) => ({ id, name: m.name, initials: m.initials }))
+      .map(([id, m]) => ({ id, name: m.name, initials: m.initials, avatarUrl: m.avatarUrl ?? null }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
   return allowedMemberIds
     .map((id) => {
       const m = memberMeta.get(id) || { name: "Unknown", initials: "??" };
-      return { id, name: m.name, initials: m.initials };
+      return { id, name: m.name, initials: m.initials, avatarUrl: m.avatarUrl ?? null };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
 }

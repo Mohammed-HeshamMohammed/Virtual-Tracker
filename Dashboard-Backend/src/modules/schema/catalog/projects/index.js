@@ -32,6 +32,8 @@ export const projectSchemas = [
       managers_can_edit_members: "boolean",
       budget_enabled: "boolean",
       member_limits_enabled: "boolean",
+      client_hourly_rate: "decimal",
+      client_rate_currency: "string",
       status: "string",
       created_at: "timestamp",
       created_by: "uuid",

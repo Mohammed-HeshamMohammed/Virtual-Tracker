@@ -1,4 +1,19 @@
-const MONEY_FIELDS = ["spentAmount", "currency", "originalAmount", "originalCurrency", "rateAsOf"];
+const MONEY_FIELDS = [
+  "spentAmount",
+  "currency",
+  "originalAmount",
+  "originalCurrency",
+  "rateAsOf",
+  "payRate",
+  "payRateCurrency",
+  "billRate",
+  "billRateCurrency",
+  "billAmount",
+  "billCurrency",
+  "billTaxRate",
+  "billNetTermsDays",
+  "billNotes",
+];
 
 function withoutMoney(row) {
   const out = { ...row };
@@ -13,7 +28,7 @@ function withoutMoney(row) {
  * are never allowed to see pay (the Client role).
  */
 export function stripReportMoney(payload) {
-  const { currency: _currency, ...rest } = payload;
+  const { currency: _currency, billingIncluded: _billingIncluded, ...rest } = payload;
   return {
     ...rest,
     moneyHidden: true,

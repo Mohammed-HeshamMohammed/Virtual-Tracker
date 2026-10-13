@@ -13,7 +13,12 @@ export async function getTimeAndActivityReportRowsPg({ memberIds, fromDay, toDay
        s.project_id,
        COALESCE(t.title, '')  AS task_title,
        COALESCE(p.name, '')   AS project_name,
+       p.client_hourly_rate,
+       p.client_rate_currency,
        COALESCE(client_lookup.client_name, '') AS client_name,
+       ci.net_terms_days AS client_net_terms_days,
+       ci.tax_rate       AS client_tax_rate,
+       ci.notes          AS client_billing_notes,
        COALESCE(team_lookup.team_name, '')     AS team_name,
        s.started_at,
        s.ended_at,
@@ -28,13 +33,17 @@ export async function getTimeAndActivityReportRowsPg({ memberIds, fromDay, toDay
      -- project, so this takes the earliest-assigned link rather than
      -- fanning the report out into duplicate rows per extra client.
      LEFT JOIN LATERAL (
-       SELECT c.name AS client_name
+       SELECT c.id AS client_id, c.name AS client_name
        FROM client_projects cp
        JOIN clients c ON c.id = cp.client_id
        WHERE cp.project_id = p.id
        ORDER BY cp.assigned_at ASC
        LIMIT 1
      ) client_lookup ON p.id IS NOT NULL
+     -- The client's own invoice terms, when it has set any: a statement uses
+     -- them for tax and the due date, the way its invoices do.
+     LEFT JOIN client_invoicing ci
+       ON ci.client_id = client_lookup.client_id AND ci.custom_for_client = true
      -- Same reasoning for a member on more than one team.
      LEFT JOIN LATERAL (
        SELECT tm_t.name AS team_name
@@ -57,6 +66,11 @@ export async function getTimeAndActivityReportRowsPg({ memberIds, fromDay, toDay
     project_id: row.project_id,
     task_title: row.task_title,
     project_name: row.project_name,
+    client_hourly_rate: row.client_hourly_rate,
+    client_rate_currency: row.client_rate_currency,
+    client_net_terms_days: row.client_net_terms_days,
+    client_tax_rate: row.client_tax_rate,
+    client_billing_notes: row.client_billing_notes,
     client_name: row.client_name,
     team_name: row.team_name,
     started_at: row.started_at,
@@ -75,18 +89,25 @@ export async function getManualTimeEntryRowsPg({ memberIds, fromDay, toDay, proj
        te.date,
        te.duration,
        COALESCE(p.name, '') AS project_name,
+       p.client_hourly_rate,
+       p.client_rate_currency,
        COALESCE(client_lookup.client_name, '') AS client_name,
+       ci.net_terms_days AS client_net_terms_days,
+       ci.tax_rate       AS client_tax_rate,
+       ci.notes          AS client_billing_notes,
        COALESCE(team_lookup.team_name, '')     AS team_name
      FROM time_entries te
      LEFT JOIN projects p ON p.id = te.project_id
      LEFT JOIN LATERAL (
-       SELECT c.name AS client_name
+       SELECT c.id AS client_id, c.name AS client_name
        FROM client_projects cp
        JOIN clients c ON c.id = cp.client_id
        WHERE cp.project_id = p.id
        ORDER BY cp.assigned_at ASC
        LIMIT 1
      ) client_lookup ON p.id IS NOT NULL
+     LEFT JOIN client_invoicing ci
+       ON ci.client_id = client_lookup.client_id AND ci.custom_for_client = true
      LEFT JOIN LATERAL (
        SELECT tm_t.name AS team_name
        FROM team_members tm
@@ -116,6 +137,11 @@ export async function getManualTimeEntryRowsPg({ memberIds, fromDay, toDay, proj
     // entry, unconditionally. toISOString() first gives the actual UTC day.
     day: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date).slice(0, 10),
     project_name: row.project_name,
+    client_hourly_rate: row.client_hourly_rate,
+    client_rate_currency: row.client_rate_currency,
+    client_net_terms_days: row.client_net_terms_days,
+    client_tax_rate: row.client_tax_rate,
+    client_billing_notes: row.client_billing_notes,
     client_name: row.client_name,
     team_name: row.team_name,
     manual_seconds: Math.max(0, Number(row.duration) || 0),
