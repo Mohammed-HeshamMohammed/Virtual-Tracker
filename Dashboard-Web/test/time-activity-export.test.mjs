@@ -138,6 +138,6 @@ test("the view exports through the shared model, not a second hand-built table",
 })
 
 test("the pdf kit aligns headers with their columns", () => {
-  const kit = read("features/reports/utils/pdf/report-pdf-kit.ts")
+  const kit = read("shared/pdf-core/kit.ts")
   assert.match(kit, /section === "head"[\s\S]*?halign = align/)
 })

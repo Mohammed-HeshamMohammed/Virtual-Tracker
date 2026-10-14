@@ -98,7 +98,7 @@ test("Time & Activity chart: the peak keeps real headroom (item 7)", () => {
 })
 
 test("PDF line chart: every point is labelled, not just the last (item 3)", () => {
-  const src = code(read("features/reports/utils/pdf/report-pdf-kit.ts"))
+  const src = code(read("shared/pdf-core/kit.ts"))
 
   // The bug: one value printed at the far-right point, so the reader could
   // see that the line moved without being able to read between what.

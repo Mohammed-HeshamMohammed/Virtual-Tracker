@@ -42,20 +42,23 @@ import {
   timeActivityFilename,
   timeActivityReportTitle,
 } from "@/features/reports/utils/time-and-activity/export-model"
+import { PdfExportDialog } from "@/features/reports/components/time-activity-report/pdf-export-dialog"
+import { PdfSettingsForm } from "@/features/reports/components/time-activity-report/pdf-settings-form"
+import { usePdfOptions } from "@/features/reports/hooks/use-pdf-options"
 import {
   billableProjectNames,
-  buildClientStatementSpec,
-  buildPaySlipSpec,
   projectsWithoutClientRate,
-} from "@/features/reports/utils/time-and-activity/pdf-documents"
-import { PdfExportDialog, type PdfExportChoice } from "@/features/reports/components/time-activity-report/pdf-export-dialog"
+  type TeamGroupKey,
+  type TeamReportInput,
+} from "@/shared/pdf-core/documents"
+import type { PdfOptions } from "@/shared/pdf-core/options"
 import { ReportToolbarMultiSelect } from "@/features/reports/components/shared/report-filters-panel"
 import { initialsFromName } from "@/features/members/utils/build-tree"
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
 import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
 import {
   deleteTimeAndActivityDay,
-  fetchTimeAndActivityReport,
+  fetchTimeAndActivityPdf,
   sendTimeAndActivityReport,
   scheduleTimeAndActivityReport,
 } from "@/features/reports/api/time-and-activity-api"
@@ -74,7 +77,6 @@ import { ReportPeriodMetricCell } from "@/features/reports/components/time-activ
 import { ReportTimeActivityChart } from "@/features/reports/components/time-activity-report/report-chart"
 import { ReportSortableTh } from "@/features/reports/components/time-activity-report/sortable-th"
 import { ReportSimpleDropdown } from "@/features/reports/components/time-activity-report/simple-dropdown"
-import { downloadReportPdf } from "@/features/reports/utils/pdf/report-pdf-kit"
 import {
   TABLE_METRIC_COLUMNS,
   STANDARD_REPORT_ORG_LABEL,
@@ -86,6 +88,15 @@ import {
 import { useReportColumnAutoHide } from "@/features/reports/hooks/use-report-column-auto-hide"
 import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
 import { copyTextToClipboard } from "@/shared/utils/clipboard"
+
+const GROUP_KEY: Record<TimeActivityGroupBy, TeamGroupKey> = {
+  date_per_day: "date",
+  date_per_week: "week",
+  member: "member",
+  project: "project",
+  client: "client",
+  team: "team",
+}
 
 function parseDayParam(day: string): Date {
   return new Date(`${day}T00:00:00`)
@@ -113,6 +124,7 @@ export function TimeActivityReportView({
   const [sendOpen, setSendOpen] = useComponentState(false)
   const [scheduleOpen, setScheduleOpen] = useComponentState(false)
   const [pdfOpen, setPdfOpen] = useComponentState(false)
+  const [pdfOptions, setPdfOptions] = usePdfOptions()
   const [deletingKey, setDeletingKey] = useComponentState<string | null>(null)
   const [deleteError, setDeleteError] = useComponentState<string | null>(null)
   const [exportError, setExportError] = useComponentState<string | null>(null)
@@ -291,108 +303,105 @@ export function TimeActivityReportView({
     ).catch((err) => setExportError(err instanceof Error ? err.message : "Could not build the Excel file."))
   }
 
-  // The pay slip and the client statement are worked out from the report's
-  // entries. Asked for in another currency, they are loaded again in it: the
-  // server converts each amount on the day it was earned, which a rate applied
-  // here to the totals could not reproduce.
-  async function entriesInCurrency(currency: string) {
-    const showing = resolvedDisplayCurrency ?? displayCurrency
-    if (!currency || currency === showing) {
-      return { entries, currency: showing || entries[0]?.currency || "USD" }
-    }
-    if (!range) throw new Error("No date range loaded yet.")
-    const data = await fetchTimeAndActivityReport({ from: range.from, to: range.to, displayCurrency: currency })
-    if (data.currency?.requestedUnavailable) {
-      throw new Error(`There is no exchange rate for ${currency} in this date range, so the amounts cannot be converted to it.`)
-    }
-    return { entries: data.entries, currency: data.currency?.displayCurrency ?? currency }
-  }
-
-  async function exportPdf(choice: PdfExportChoice) {
-    if (choice.kind === "report") {
-      downloadPdf(choice.includeAmounts)
-      return
-    }
-    const source = await entriesInCurrency(choice.currency)
-    const base = { entries: source.entries, currency: source.currency, rangeLabel: dateLabel, orgLabel: STANDARD_REPORT_ORG_LABEL }
-    downloadReportPdf(
-      choice.kind === "client"
-        ? buildClientStatementSpec({ ...base, projectNames: choice.projectNames })
-        : buildPaySlipSpec({ ...base, memberId: choice.memberId }),
-    )
-  }
-
   const pdfProjectOptions = useMemo(() => billableProjectNames(entries), [entries])
   const pdfMemberOptions = useMemo(() => {
     const byId = new Map<string, string>()
     for (const e of entries) if (e.activeSeconds + e.manualSeconds > 0) byId.set(e.memberId, e.memberName)
     return [...byId.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name))
   }, [entries])
-  // One member picked on the page is who the pay slip is most likely for.
-  const pdfDefaultMemberId =
-    memberFilter.length === 1 ? (pdfMemberOptions.find((m) => m.name === memberFilter[0])?.id ?? "") : ""
 
-  function downloadPdf(includeAmounts: boolean) {
-    const withoutMoney = moneyHidden || !includeAmounts
-    // memberTotals comes straight from the filtered entries, so this chart
-    // is per-member in EVERY grouping mode. Walking getSubRowsForDay here
-    // used to plot project names under a "by member" title whenever the
-    // table was grouped by member or by week, because a sub-row is only a
-    // member in some modes (see the hook's own comment).
-    const byMemberHours = new Map<string, number>(memberTotals.map((m) => [m.name, m.hours]))
+  // The team report, described from what the table shows: the same grouping,
+  // filters, sort and people underneath each row.
+  function teamReportInput(o: PdfOptions): TeamReportInput {
+    const withoutMoney = moneyHidden || !o.includeAmounts
     const exportTable = buildExportTable(false, withoutMoney)
-    downloadReportPdf({
-      title: timeActivityReportTitle(groupColumnLabel),
-      subtitle: withoutMoney
-        ? "Time worked and activity levels for the selected filters."
-        : "Time worked, activity levels, and amounts earned for the selected filters.",
+    const label = (opts: { value: string; label: string }[], value: string) =>
+      value === "all" ? "" : (opts.find((x) => x.value === value)?.label ?? "")
+    const byDate = groupBy === "date_per_day"
+    // One calendar day per exported row, so the date format can be applied to them.
+    const rowIso: (string | undefined)[] = []
+    if (byDate) {
+      for (const day of tableDisplayRows) {
+        const count = 1 + getSubRowsForDay(day.date).length
+        for (let i = 0; i < count; i++) rowIso.push(day.date)
+      }
+    }
+    return {
+      groupKey: GROUP_KEY[groupBy],
+      detailKind: detailKindLabel(groupBy) === "Member" ? "member" : "project",
       orgLabel: STANDARD_REPORT_ORG_LABEL,
       timezoneLabel: MEMBER_TIMEZONE_LABEL,
       rangeLabel: dateLabel,
-      filterLines: exportFilterLines(withoutMoney),
-      orientation: exportTable.columns.length > 7 ? "landscape" : "portrait",
-      summary: [
-        { label: "Total time", value: totals.time },
-        { label: "Average activity", value: `${totals.activity}%` },
-        ...(withoutMoney ? [] : [{ label: "Total spent", value: totals.spent }]),
-      ],
-      charts: [
-        ...(sortedDisplayRows.length > 0
-          ? [
-              {
-                type: "line" as const,
-                title: `Tracked hours by ${groupColumnLabel.toLowerCase()}`,
-                yLabel: "Hours",
-                yUnit: "hours" as const,
-                points: sortedDisplayRows.map((d) => ({ label: d.dateLabel, value: Math.round(d.trackedHours * 100) / 100 })),
-                valueFormatter: formatDecimalHoursClock,
-              },
-            ]
-          : []),
-        ...(byMemberHours.size > 0
-          ? [
-              {
-                type: "bar" as const,
-                title: "Tracked hours by member",
-                yLabel: "Hours",
-                yUnit: "hours" as const,
-                data: [...byMemberHours.entries()]
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 })),
-                valueFormatter: formatDecimalHoursClock,
-              },
-            ]
-          : []),
-      ],
+      filters: {
+        members: memberFilter,
+        projects: projectFilter,
+        trackedTime: label(TRACKED_TIME_SELECT_OPTIONS, trackedTimeFilter),
+        manualTime: label(MANUAL_TIME_SELECT_OPTIONS, manualTimeFilter),
+        activityLevel: label(ACTIVITY_LEVEL_OPTIONS, activityLevelFilter),
+        currency: resolvedDisplayCurrency ?? displayCurrency,
+      },
+      totals,
+      hoursByGroup: sortedDisplayRows.map((d) => ({
+        label: d.dateLabel,
+        iso: byDate ? d.date : undefined,
+        value: Math.round(d.trackedHours * 100) / 100,
+      })),
+      // memberTotals comes straight from the filtered entries, so this chart
+      // is per-member in EVERY grouping mode (a sub-row is only a member in some).
+      hoursByMember: memberTotals.map((m) => ({ label: m.name, value: Math.round(m.hours * 100) / 100 })),
       table: {
         columns: exportTable.columns.map((c) => ({ header: c.header, key: c.key, align: c.align })),
         rows: exportTable.rows.map((r) => r.cells),
         rowKinds: exportTable.rows.map((r) => r.kind),
-        emptyMessage: "No data for this range.",
+        rowIso: byDate ? rowIso : undefined,
       },
+      withoutMoney,
       filename: timeActivityFilename(dateLabel, groupBy),
+    }
+  }
+
+  // Has the server build the document the PDF settings describe. The page
+  // sends its choices; the server loads the data, prices it and draws it - the
+  // client statement and pay slip never touch figures held in the browser.
+  // Only the team report sends anything of the page's: its table, as shown.
+  function renderPdfOnServer(o: PdfOptions, { preview }: { preview: boolean }) {
+    if (!range) return Promise.reject(new Error("No date range loaded yet."))
+    const isTeamReport = o.document === "report"
+    return fetchTimeAndActivityPdf({
+      from: range.from,
+      to: range.to,
+      rangeLabel: dateLabel,
+      // The money documents are priced in the currency chosen, or else the one the page shows.
+      pdfOptions: isTeamReport ? o : { ...o, currency: o.currency || (resolvedDisplayCurrency ?? displayCurrency) || "" },
+      team: isTeamReport ? teamReportInput(o) : undefined,
+      preview,
     })
   }
+
+  // Opening the dialog starts from what the page is already showing: the
+  // projects filtered to, and the one member filtered to, if any.
+  function openPdfDialog() {
+    const onlyMember = memberFilter.length === 1 ? pdfMemberOptions.find((m) => m.name === memberFilter[0])?.id : undefined
+    setPdfOptions((p) => ({
+      ...p,
+      projectNames: projectFilter.filter((n) => pdfProjectOptions.includes(n)),
+      memberId: onlyMember ?? (pdfMemberOptions.some((m) => m.id === p.memberId) ? p.memberId : ""),
+    }))
+    setPdfOpen(true)
+  }
+
+  const pdfFormProps = {
+    moneyHidden,
+    billingAvailable: billingIncluded,
+    resolvedCurrency: resolvedDisplayCurrency ?? displayCurrency,
+    projectOptions: pdfProjectOptions,
+    memberOptions: pdfMemberOptions,
+    projectsWithoutRate: (names: string[]) => projectsWithoutClientRate(entries, names),
+  }
+
+  // What the server is asked to build for an emailed or scheduled PDF: the
+  // same choices, in the currency the page is showing unless one was chosen.
+  const emailPdfOptions: PdfOptions = { ...pdfOptions, currency: pdfOptions.currency || (resolvedDisplayCurrency ?? displayCurrency) || "" }
 
   const statCards = [
     { icon: <Clock className="h-5 w-5 text-blue-500 dark:text-blue-400" />, label: "Total time", value: totals.time },
@@ -528,7 +537,7 @@ export function TimeActivityReportView({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={downloadXlsx}>To Excel (formatted, one sheet per {groupColumnLabel.toLowerCase()})</DropdownMenuItem>
                 <DropdownMenuItem onClick={downloadCsv}>To CSV</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setPdfOpen(true)}>To PDF…</DropdownMenuItem>
+                <DropdownMenuItem onClick={openPdfDialog}>To PDF…</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -897,20 +906,16 @@ export function TimeActivityReportView({
       <PdfExportDialog
         open={pdfOpen}
         onOpenChange={setPdfOpen}
-        onExport={exportPdf}
-        moneyHidden={moneyHidden}
-        billingAvailable={billingIncluded}
-        resolvedCurrency={resolvedDisplayCurrency ?? displayCurrency}
-        projectOptions={pdfProjectOptions}
-        defaultProjectNames={projectFilter}
-        projectsWithoutRate={(names) => projectsWithoutClientRate(entries, names)}
-        memberOptions={pdfMemberOptions}
-        defaultMemberId={pdfDefaultMemberId}
+        options={pdfOptions}
+        onOptionsChange={setPdfOptions}
+        render={renderPdfOnServer}
+        formProps={pdfFormProps}
       />
 
       <ReportSendDialog
         open={sendOpen}
         onOpenChange={setSendOpen}
+        pdfSettings={<PdfSettingsForm {...pdfFormProps} value={pdfOptions} onChange={setPdfOptions} />}
         onSend={async ({ emails, subject, message, fileType }) => {
           if (!range) throw new Error("No date range loaded yet.")
           const result = await sendTimeAndActivityReport({
@@ -920,6 +925,7 @@ export function TimeActivityReportView({
             subject,
             message,
             fileType: fileType.toLowerCase() === "csv" ? "csv" : "pdf",
+            pdfOptions: emailPdfOptions,
           })
           if (!result || result.sent === 0) throw new Error("Failed to send report.")
         }}
@@ -928,6 +934,7 @@ export function TimeActivityReportView({
       <ReportScheduleDialog
         open={scheduleOpen}
         onOpenChange={setScheduleOpen}
+        pdfSettings={<PdfSettingsForm {...pdfFormProps} value={pdfOptions} onChange={setPdfOptions} />}
         onSave={async ({ emails, subject, message, fileType, scheduleName, dateRange: dateRangeKind, frequency, deliveryTime }) => {
           const result = await scheduleTimeAndActivityReport({
             emails,
@@ -938,6 +945,7 @@ export function TimeActivityReportView({
             dateRangeKind,
             frequency,
             deliveryTime,
+            pdfOptions: emailPdfOptions,
           })
           if (!result) throw new Error("Failed to save schedule.")
         }}
