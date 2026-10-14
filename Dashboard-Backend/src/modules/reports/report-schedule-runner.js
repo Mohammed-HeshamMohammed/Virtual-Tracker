@@ -1,7 +1,9 @@
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { listReportSchedulesPg, markReportScheduleSentPg } from "../../lib/postgres/report-schedules-postgres.service.js";
 import { isReportScheduleDue, resolveDateRangeKind } from "./date-range-kind.js";
-import { loadTimeAndActivityReportPayloadForMemberIds, buildReportAttachment, rangeLabel } from "./routes.js";
+import { loadTimeAndActivityReportPayloadForMemberIds } from "./routes.js";
+import { buildReportAttachment, rangeLabel, resolvePdfRequest } from "./report-pdf-service.js";
+import { documentName, ReportDocumentError } from "./report-documents.js";
 import { getMemberTimezones } from "./member-timezones.js";
 import { resolveMemberRoleName } from "../activity/activity-scope.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
@@ -12,6 +14,9 @@ import { forEachActiveTenant } from "../../lib/postgres/active-tenants.js";
 import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
 
 const CHECK_INTERVAL_MS = 60 * 60 * 1000;
+
+/** What runReportSchedule answers when the schedule may no longer be delivered: neither sent nor failed. */
+const SKIPPED = "skipped";
 
 let reportScheduleTimer = null;
 
@@ -60,21 +65,41 @@ async function resolveScheduleAudience(db, schedule) {
 async function runReportSchedule(db, schedule, timeZone, audience) {
   const { from, to } = resolveDateRangeKind(schedule.date_range_kind, timeZone);
 
-  const payload = await loadTimeAndActivityReportPayloadForMemberIds(
-    db,
-    audience.memberIds,
-    from,
-    to,
-    audience.viewer,
-  );
-  const attachment = await buildReportAttachment(payload, schedule.file_type, rangeLabel(from, to));
+  // The PDF's design and which document it is were saved with the schedule.
+  // Re-checked on every run: a creator who has lost the right to see pay or
+  // what clients are charged stops getting that document, instead of it
+  // carrying on with the access they had the day they saved it.
+  const wantsPdf = String(schedule.file_type).toLowerCase() === "pdf";
+  let options = null;
+  let currency = null;
+  if (wantsPdf) {
+    try {
+      ({ options, currency } = await resolvePdfRequest(audience.viewer, schedule.pdf_options, { from, to }));
+    } catch (err) {
+      if (err instanceof ReportDocumentError) {
+        logSafeWarn(`[report-schedule] schedule ${schedule.id} skipped: ${err.message}`);
+        return SKIPPED;
+      }
+      throw err;
+    }
+  }
+  // A pay slip is for one member; everything else reports on the audience.
+  const memberIds = options?.document === "payslip" ? [options.memberId] : audience.memberIds;
+  if (options?.document === "payslip" && audience.memberIds !== null && !audience.memberIds.includes(options.memberId)) {
+    logSafeWarn(`[report-schedule] schedule ${schedule.id} skipped: its creator can no longer see that member`);
+    return SKIPPED;
+  }
+
+  const payload = await loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, audience.viewer, null, currency);
+  const attachment = await buildReportAttachment(payload, schedule.file_type, rangeLabel(from, to), options);
 
   const subject = schedule.subject?.trim() || "Time & Activity Report";
   const message = schedule.message?.trim() || "";
+  const reportName = options ? documentName(options) : "Time & Activity Report";
 
   const results = await Promise.all(
     schedule.emails.map((email) =>
-      sendEmailViaNotify("report-delivery", { email, subject, message, reportName: "Time & Activity Report", attachment }),
+      sendEmailViaNotify("report-delivery", { email, subject, message, reportName, attachment }),
     ),
   );
 
@@ -123,6 +148,7 @@ export async function processDueReportSchedules(db) {
         }
 
         const didSend = await runReportSchedule(db, schedule, timeZone, audience);
+        if (didSend === SKIPPED) return { processedHere: 0, sentHere: 0, skippedHere: 1 };
         if (didSend) {
           await markReportScheduleSentPg(schedule.id);
           return { processedHere: 1, sentHere: 1, skippedHere: 0 };

@@ -28,7 +28,19 @@ import {
 import { convertAmount } from "../../lib/currency/convert.js";
 import { getAllCategories } from "../classification/activity-categories.js";
 import { localDayFor } from "../../lib/time/timezone-utils.js";
-import { buildTimeAndActivityCsv, buildTimeAndActivityPdf } from "./build-report-files.js";
+import {
+  getReportPdfSettingsPg,
+  saveReportPdfSettingsPg,
+} from "../../lib/postgres/report-pdf-settings-postgres.service.js";
+import { documentName, ReportDocumentError } from "./report-documents.js";
+import {
+  buildReportAttachment,
+  buildRequestedPdf,
+  createPayloadCache,
+  pdfSettingsToStore,
+  rangeLabel,
+  resolvePdfRequest,
+} from "./report-pdf-service.js";
 import { sendEmailViaNotify } from "../../lib/notify/email-client.js";
 import { insertReportSchedulePg } from "../../lib/postgres/report-schedules-postgres.service.js";
 import {
@@ -81,6 +93,8 @@ import { normalizeBudget, getBudgetPeriodWindow, evaluateBudgetUsage } from "../
 import { resolveClientBudgetUsage } from "../clients/services/client-budget-usage.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+/** A team report's table can be a few thousand rows of text; the default body limit is smaller. */
+const MAX_PDF_REQUEST_BYTES = 3 * 1024 * 1024;
 const SAVEABLE_REPORT_PAGE_IDS = new Set([
   "reports-time",
   "reports-work-sessions",
@@ -327,33 +341,8 @@ async function loadTimeAndActivityReportPayload(db, viewer, { requestedMemberId,
   return loadTimeAndActivityReportPayloadForMemberIds(db, memberIds, from, to, viewer, projectIds, currency);
 }
 
-function rangeLabel(from, to) {
-  return from === to ? from : `${from} - ${to}`;
-}
-
-async function buildReportAttachment(payload, fileType, rangeLbl) {
-  const baseName = `time-and-activity-${new Date().toISOString().slice(0, 10)}`;
-  if (fileType === "csv") {
-    const csv = buildTimeAndActivityCsv(payload);
-    return {
-      filename: `${baseName}.csv`,
-      contentBase64: Buffer.from(csv, "utf8").toString("base64"),
-      contentType: "text/csv",
-    };
-  }
-  const pdf = await buildTimeAndActivityPdf(payload, {
-    title: "Time & Activity Report",
-    rangeLabel: rangeLbl,
-    // Whatever report-currency.js resolved for this request - the PDF used
-    // to print a hardcoded "$" here regardless of the workspace's currency.
-    currency: payload.currency?.displayCurrency,
-  });
-  return {
-    filename: `${baseName}.pdf`,
-    contentBase64: pdf.toString("base64"),
-    contentType: "application/pdf",
-  };
-}
+/** Report data loaded for the Export dialog's preview, kept for a few seconds - see createPayloadCache. */
+const previewPayloadCache = createPayloadCache();
 
 export async function routeReports(req, res, url, origin) {
   const pn = url.pathname.replace(/^\/api\/v1\//, "/api/");
@@ -552,6 +541,86 @@ export async function routeReports(req, res, url, origin) {
     return true;
   }
 
+  // The viewer's saved PDF look. null = never saved (the page then uses its defaults).
+  if (pn === "/api/reports/pdf-settings" && req.method === "GET") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    try {
+      const stored = await getReportPdfSettingsPg(viewer.memberId);
+      sendJson(res, origin, 200, { success: true, data: stored ? pdfSettingsToStore(stored) : null });
+    } catch (e) {
+      logSafeError("[reports/pdf-settings get]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to load PDF settings." });
+    }
+    return true;
+  }
+
+  if (pn === "/api/reports/pdf-settings" && req.method === "PUT") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+    try {
+      const body = (await readJsonBody(req, MAX_PDF_REQUEST_BYTES)) || {};
+      const saved = await saveReportPdfSettingsPg(viewer.memberId, pdfSettingsToStore(body));
+      sendJson(res, origin, 200, { success: true, data: saved });
+    } catch (e) {
+      logSafeError("[reports/pdf-settings save]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to save PDF settings." });
+    }
+    return true;
+  }
+
+  // The Export dialog's preview and download. The page sends choices - which
+  // document, its design, whose pay slip, which projects - and the server loads
+  // the data for this viewer, prices it and draws the PDF. The one thing the
+  // page does describe is the team report's table, which is what it is showing
+  // (see sanitizeTeamReportInput).
+  if (pn === "/api/reports/time-and-activity/pdf" && req.method === "POST") {
+    const viewer = requireAuthContext(req, res, origin);
+    if (!viewer) return true;
+
+    let body;
+    try {
+      body = (await readJsonBody(req, MAX_PDF_REQUEST_BYTES)) || {};
+    } catch (e) {
+      sendJson(res, origin, 400, { success: false, error: e instanceof Error ? e.message : "Invalid body" });
+      return true;
+    }
+    const from = parseDateParam(body.from);
+    const to = parseDateParam(body.to);
+    if (!from || !to || from > to) {
+      sendJson(res, origin, 400, { success: false, error: "Valid from/to (YYYY-MM-DD) are required." });
+      return true;
+    }
+
+    try {
+      const db = getDb();
+      const { buffer, filename } = await buildRequestedPdf({
+        viewer,
+        from,
+        to,
+        rangeLabel: typeof body.rangeLabel === "string" ? body.rangeLabel.trim().slice(0, 80) : "",
+        pdfOptions: body.pdfOptions,
+        team: body.team,
+        preview: body.preview === true,
+        cache: previewPayloadCache,
+        loadPayload: ({ requestedMemberId, currency }) =>
+          loadTimeAndActivityReportPayload(db, viewer, { requestedMemberId, from, to, currency }),
+      });
+      sendJson(res, origin, 200, {
+        success: true,
+        data: { filename, contentType: "application/pdf", contentBase64: buffer.toString("base64") },
+      });
+    } catch (e) {
+      if (e instanceof ReportDocumentError || e?.status) {
+        sendJson(res, origin, e.status ?? 400, { success: false, error: e.message });
+        return true;
+      }
+      logSafeError("[reports/time-and-activity/pdf]", e);
+      sendJson(res, origin, 500, { success: false, error: "Failed to build the PDF." });
+    }
+    return true;
+  }
+
   if (pn === "/api/reports/time-and-activity/send" && req.method === "POST") {
     const viewer = requireAuthContext(req, res, origin);
     if (!viewer) return true;
@@ -580,12 +649,14 @@ export async function routeReports(req, res, url, origin) {
     }
 
     const fileType = body.fileType === "csv" ? "csv" : "pdf";
-    const requestedMemberId = typeof body.memberId === "string" ? body.memberId : null;
+    let requestedMemberId = typeof body.memberId === "string" ? body.memberId : null;
 
     try {
       const db = getDb();
-      const payload = await loadTimeAndActivityReportPayload(db, viewer, { requestedMemberId, from, to });
-      const attachment = await buildReportAttachment(payload, fileType, rangeLabel(from, to));
+      const { options, currency } = fileType === "pdf" ? await resolvePdfRequest(viewer, body.pdfOptions, { from, to }) : { options: null, currency: null };
+      if (options?.document === "payslip") requestedMemberId = options.memberId;
+      const payload = await loadTimeAndActivityReportPayload(db, viewer, { requestedMemberId, from, to, currency });
+      const attachment = await buildReportAttachment(payload, fileType, rangeLabel(from, to), options);
 
       const subject = typeof body.subject === "string" && body.subject.trim() ? body.subject.trim() : "Time & Activity Report";
       const message = typeof body.message === "string" ? body.message.trim() : "";
@@ -596,7 +667,7 @@ export async function routeReports(req, res, url, origin) {
             email,
             subject,
             message,
-            reportName: "Time & Activity Report",
+            reportName: options ? documentName(options) : "Time & Activity Report",
             attachment,
           }),
         ),
@@ -605,6 +676,10 @@ export async function routeReports(req, res, url, origin) {
       const sentCount = results.filter((r) => r.sent).length;
       sendJson(res, origin, 200, { success: true, data: { sent: sentCount, total: emails.length } });
     } catch (e) {
+      if (e instanceof ReportDocumentError || e?.status) {
+        sendJson(res, origin, e.status ?? 400, { success: false, error: e.message });
+        return true;
+      }
       logSafeError("[reports/time-and-activity/send]", e);
       sendJson(res, origin, 500, { success: false, error: "Failed to send report." });
     }
@@ -656,10 +731,15 @@ export async function routeReports(req, res, url, origin) {
     }
 
     const fileType = body.fileType === "csv" ? "csv" : "pdf";
-    const requestedMemberId = typeof body.memberId === "string" ? body.memberId : null;
+    let requestedMemberId = typeof body.memberId === "string" ? body.memberId : null;
 
     try {
       const db = getDb();
+      // Checked now, at save time, and again each time it runs: the schedule
+      // keeps delivering only while its creator may still have this document.
+      const pdfOptions = fileType === "pdf" ? (await resolvePdfRequest(viewer, body.pdfOptions, { withCurrency: false })).options : null;
+      // A pay slip schedule is for one member: that member is who it reports on.
+      if (pdfOptions?.document === "payslip") requestedMemberId = pdfOptions.memberId;
       if (requestedMemberId) {
         await resolveMemberIdsFilter(db, viewer, requestedMemberId);
       }
@@ -679,6 +759,7 @@ export async function routeReports(req, res, url, origin) {
         frequency,
         deliveryTime,
         createdBy: viewer.memberId,
+        pdfOptions,
       });
 
       sendJson(res, origin, 200, { success: true, data: { id } });
@@ -1528,4 +1609,4 @@ export async function routeReports(req, res, url, origin) {
   return false;
 }
 
-export { resolveMemberIdsFilter, parseDateParam, loadTimeAndActivityReportPayload, buildReportAttachment, rangeLabel };
+export { resolveMemberIdsFilter, parseDateParam, loadTimeAndActivityReportPayload };
