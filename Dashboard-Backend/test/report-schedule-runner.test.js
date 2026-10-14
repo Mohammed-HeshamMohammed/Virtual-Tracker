@@ -15,6 +15,10 @@ const stub = {
   /** Arguments the payload loader was called with, so the tests can assert on
    *  who the report was actually built for and whether a viewer was passed. */
   loadCalls: [],
+  /** The PDF options each attachment was built with. */
+  attachmentOptions: [],
+  /** When set, the creator may not have the document the schedule asks for. */
+  documentRefusal: null,
 };
 
 // The runner lists schedules per live tenant (active-tenants.js); one tenant
@@ -55,12 +59,30 @@ mock.module("../src/modules/member-relationships/service.js", {
 
 mock.module("../src/modules/reports/routes.js", {
   namedExports: {
-    loadTimeAndActivityReportPayloadForMemberIds: async (_db, memberIds, from, to, viewer) => {
-      stub.loadCalls.push({ memberIds, from, to, viewer });
+    loadTimeAndActivityReportPayloadForMemberIds: async (_db, memberIds, from, to, viewer, ...rest) => {
+      stub.loadCalls.push({ memberIds, from, to, viewer, currency: rest[1] });
       return { days: [], entries: [] };
     },
-    buildReportAttachment: async () => ({ filename: "report.pdf", content: Buffer.from(""), contentType: "application/pdf" }),
+  },
+});
+
+// The PDF helpers live in their own module; the runner takes them from there.
+mock.module("../src/modules/reports/report-pdf-service.js", {
+  namedExports: {
+    buildReportAttachment: async (_payload, _fileType, _range, pdfOptions) => {
+      stub.attachmentOptions.push(pdfOptions);
+      return { filename: "report.pdf", content: Buffer.from(""), contentType: "application/pdf" };
+    },
     rangeLabel: () => "Sep 1 - Sep 2",
+    // The real one checks the options against the creator's rights; here it
+    // answers from the stub so each test can decide what the creator may have.
+    resolvePdfRequest: async (_viewer, raw) => {
+      if (stub.documentRefusal) {
+        const { ReportDocumentError } = await import("../src/modules/reports/report-documents.js");
+        throw new ReportDocumentError(stub.documentRefusal, 403);
+      }
+      return { options: raw ?? null, currency: raw?.currency ? { displayCurrency: raw.currency } : null };
+    },
   },
 });
 
@@ -81,6 +103,8 @@ const { processDueReportSchedules } = await import("../src/modules/reports/repor
 function reset() {
   stub.markedSentIds = [];
   stub.loadCalls = [];
+  stub.attachmentOptions = [];
+  stub.documentRefusal = null;
   stub.sendResult = { sent: true };
   stub.creatorRole = "Manager";
   stub.visibleIds = ["m1", "m2", "m3"];
@@ -191,4 +215,52 @@ test("an employee's schedule reports only on themselves", async () => {
   await processDueReportSchedules({});
 
   assert.deepEqual(stub.loadCalls[0].memberIds, ["m1"]);
+});
+
+// The PDF's design and which document it is are saved with the schedule and
+// used on every run; the creator's right to that document is checked again.
+
+test("a schedule's saved PDF options reach the attachment it builds", async () => {
+  reset();
+  stub.schedules = [{ ...baseSchedule(), pdf_options: { document: "report", template: "stripe", language: "ar" } }];
+  await processDueReportSchedules({});
+  assert.deepEqual(stub.attachmentOptions, [{ document: "report", template: "stripe", language: "ar" }]);
+});
+
+test("a schedule with no saved options still builds the default team report", async () => {
+  reset();
+  stub.schedules = [baseSchedule()];
+  const result = await processDueReportSchedules({});
+  assert.equal(result.sent, 1);
+  assert.deepEqual(stub.attachmentOptions, [null]);
+});
+
+test("a pay slip schedule reports on that one member, and the currency it asked for is used", async () => {
+  reset();
+  stub.schedules = [{ ...baseSchedule(), pdf_options: { document: "payslip", memberId: "m2", currency: "EGP" } }];
+  await processDueReportSchedules({});
+  assert.deepEqual(stub.loadCalls[0].memberIds, ["m2"]);
+  assert.deepEqual(stub.loadCalls[0].currency, { displayCurrency: "EGP" });
+});
+
+test("a pay slip for someone the creator can no longer see is skipped, not sent and not marked sent", async () => {
+  reset();
+  stub.visibleIds = ["m1"];
+  stub.schedules = [{ ...baseSchedule(), pdf_options: { document: "payslip", memberId: "m2" } }];
+  const result = await processDueReportSchedules({});
+  assert.equal(result.sent, 0);
+  assert.equal(result.skipped, 1);
+  assert.deepEqual(stub.markedSentIds, []);
+  assert.deepEqual(stub.attachmentOptions, []);
+});
+
+test("a creator who has lost the right to the document gets nothing, and the schedule is not marked sent", async () => {
+  reset();
+  stub.documentRefusal = "Client statements are for managers and above.";
+  stub.schedules = [{ ...baseSchedule(), pdf_options: { document: "client" } }];
+  const result = await processDueReportSchedules({});
+  assert.equal(result.sent, 0);
+  assert.equal(result.skipped, 1);
+  assert.deepEqual(stub.markedSentIds, []);
+  assert.deepEqual(stub.attachmentOptions, []);
 });

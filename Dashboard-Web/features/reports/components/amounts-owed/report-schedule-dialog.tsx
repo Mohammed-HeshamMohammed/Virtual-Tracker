@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState as useComponentState } from "react"
+import { useEffect, useMemo, useState as useComponentState, type ReactNode } from "react"
 import { Info } from "lucide-react"
 import { Button } from "@/shared/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/shared/ui/dialog"
@@ -36,12 +36,15 @@ export function ReportScheduleDialog({
   hasFiltersApplied = false,
   onRequestOpenFilters,
   onSave,
+  pdfSettings,
 }: {
   open: boolean
   onOpenChange: (next: boolean) => void
   hasFiltersApplied?: boolean
   onRequestOpenFilters?: () => void
   onSave?: (input: ReportScheduleInput) => Promise<void> | void
+  /** The PDF's design and contents, offered while the file type is PDF. */
+  pdfSettings?: ReactNode
 }) {
   const deliveryTimeOptions = useMemo(() => buildDeliveryTimeOptions(), [])
 
@@ -199,6 +202,14 @@ export function ReportScheduleDialog({
           <div className="space-y-1.5">
             <ReportModalFieldLabel>File type</ReportModalFieldLabel>
             <ReportFileTypeSelect value={fileType} onChange={setFileType} />
+            {pdfSettings && fileType.toUpperCase() === "PDF" ? (
+              <details className="group rounded-lg border border-slate-200 dark:border-slate-700">
+                <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                  PDF settings
+                </summary>
+                <div className="border-t border-slate-100 px-3 py-4 dark:border-slate-800">{pdfSettings}</div>
+              </details>
+            ) : null}
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">

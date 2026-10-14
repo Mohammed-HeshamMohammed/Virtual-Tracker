@@ -3,8 +3,8 @@ import { query } from "./client.js";
 export async function insertReportSchedulePg(input) {
   const rows = await query(
     `INSERT INTO report_schedules
-       (report_type, name, member_id, emails, subject, message, file_type, date_range_kind, frequency, delivery_time, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       (report_type, name, member_id, emails, subject, message, file_type, date_range_kind, frequency, delivery_time, created_by, pdf_options)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb)
      RETURNING id`,
     [
       input.reportType ?? "time-and-activity",
@@ -18,6 +18,7 @@ export async function insertReportSchedulePg(input) {
       input.frequency,
       input.deliveryTime,
       input.createdBy,
+      input.pdfOptions ? JSON.stringify(input.pdfOptions) : null,
     ],
   );
   return rows[0]?.id ?? null;

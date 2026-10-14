@@ -6,6 +6,8 @@ import { formatMoney, sumMoneyByCurrency } from "@/features/reports/utils/money"
 
 import { toDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 import { resolveViewerCurrency } from "@/features/reports/utils/viewer-currency"
+import type { TeamReportInput } from "@/shared/pdf-core/documents"
+import type { PdfOptions } from "@/shared/pdf-core/options"
 
 interface RawMemberDay {
   memberId: string
@@ -260,6 +262,8 @@ export interface SendTimeAndActivityReportInput {
   subject: string
   message: string
   fileType: "csv" | "pdf"
+  /** How the PDF looks and what it says; the server builds the same document the page previews. */
+  pdfOptions?: PdfOptions
 }
 
 export async function sendTimeAndActivityReport(
@@ -292,6 +296,7 @@ export interface ScheduleTimeAndActivityReportInput {
   dateRangeKind: string
   frequency: string
   deliveryTime: string
+  pdfOptions?: PdfOptions
 }
 
 export async function scheduleTimeAndActivityReport(
@@ -341,5 +346,53 @@ export async function deleteTimeAndActivityDay(memberId: string, date: string): 
     screenshots: count(json?.data?.screenshots),
     appLogs: count(json?.data?.appLogs),
     urlLogs: count(json?.data?.urlLogs),
+  }
+}
+
+export interface RenderedPdf {
+  filename: string
+  blob: Blob
+}
+
+export interface TimeAndActivityPdfRequest {
+  from: string
+  to: string
+  /** The date range as the page writes it ("Sep 1 - Sep 14, 2026"). */
+  rangeLabel: string
+  pdfOptions: PdfOptions
+  /** The team report's table as the page shows it. Only that document takes one; the others are computed on the server. */
+  team?: TeamReportInput
+  /** A redraw for the Export dialog's preview: the server may reuse data it loaded a moment ago. */
+  preview?: boolean
+}
+
+function blobFromBase64(base64: string, type: string): Blob {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return new Blob([bytes], { type })
+}
+
+/**
+ * A report PDF, built by the server. The page sends choices - which document,
+ * its design, whose pay slip, which projects, the currency - and the server
+ * loads the data for this viewer, prices it and draws it: what clients are
+ * charged, what people are paid and the tax all come from the database and
+ * the viewer's own permissions, never from figures held in the browser.
+ */
+export async function fetchTimeAndActivityPdf(input: TimeAndActivityPdfRequest): Promise<RenderedPdf> {
+  const res = await apiFetch(apiPath("/api/reports/time-and-activity/pdf"), {
+    method: "POST",
+    body: JSON.stringify(input),
+  })
+  const json = (await res.json().catch(() => null)) as
+    | { data?: { filename?: string; contentType?: string; contentBase64?: string }; error?: string }
+    | null
+  if (!res.ok || !json?.data?.contentBase64) {
+    throw new Error(json?.error || `Could not build the PDF (${res.status}).`)
+  }
+  return {
+    filename: json.data.filename || "report.pdf",
+    blob: blobFromBase64(json.data.contentBase64, json.data.contentType || "application/pdf"),
   }
 }

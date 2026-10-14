@@ -120,6 +120,7 @@ export const TENANT_SCOPED_TABLES = [
 
   // Reporting & comms
   "saved_reports",
+  "report_pdf_settings",
   "report_schedules",
   "notifications",
   "record_notices",

@@ -14,6 +14,7 @@
     "build": "node scripts/build.mjs",
     "start": "node index.js",
     "type-check": "tsc --noEmit",
+    "sync:pdf-core": "node scripts/sync-pdf-core.mjs",
     "test": "node --test \"test/*.test.mjs\"",
     "doctor": "npx react-doctor@latest"
   },

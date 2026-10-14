@@ -1981,6 +1981,11 @@ $$ LANGUAGE plpgsql`,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 )`,
+  // How the emailed PDF looks and which document it is (template, language,
+  // formats, show/hide switches, client statement projects, pay slip member).
+  // NULL = the default team report, which is what every schedule made before
+  // this column existed keeps getting.
+  `ALTER TABLE report_schedules ADD COLUMN IF NOT EXISTS pdf_options JSONB`,
   `CREATE INDEX IF NOT EXISTS idx_report_schedules_due ON report_schedules (frequency, last_sent_at)`,
   `CREATE TABLE IF NOT EXISTS saved_reports (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1992,6 +1997,14 @@ $$ LANGUAGE plpgsql`,
   UNIQUE (member_id, page_id)
 )`,
   `CREATE INDEX IF NOT EXISTS idx_saved_reports_member ON saved_reports (member_id, created_at DESC)`,
+  // How this member likes report PDFs to look (template, language, formats, logo,
+  // show/hide switches) - kept on the server so it follows them across devices.
+  `CREATE TABLE IF NOT EXISTS report_pdf_settings (
+  member_id  UUID PRIMARY KEY,
+  options    JSONB NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)`,
+  ...cascadeOnDelete("report_pdf_settings", "member_id", "members", { nullable: false }),
 
   ...cascadeOnDelete("activity_sessions", "member_id", "members", { nullable: false }),
   ...cascadeOnDelete("activity_sessions", "project_id", "projects"),

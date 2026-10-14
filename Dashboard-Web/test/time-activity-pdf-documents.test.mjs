@@ -7,12 +7,12 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
-import {
-  billableProjectNames,
-  buildClientStatementSpec,
-  buildPaySlipSpec,
-  projectsWithoutClientRate,
-} from "../features/reports/utils/time-and-activity/pdf-documents.ts"
+import * as core from "../shared/pdf-core/documents.ts"
+import { normalizePdfOptions } from "../shared/pdf-core/options.ts"
+
+const { billableProjectNames, projectsWithoutClientRate } = core
+const buildClientStatementSpec = (input, options = {}) => core.buildClientStatementSpec(input, normalizePdfOptions(options))
+const buildPaySlipSpec = (input, options = {}) => core.buildPaySlipSpec(input, normalizePdfOptions(options))
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url))
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
@@ -70,7 +70,12 @@ test("client statement: only the chosen projects, each with its days and a total
   const spec = buildClientStatementSpec({ ...base, projectNames: ["Apollo", "Zeus"], entries })
   assert.deepEqual(
     spec.table.rows.filter((_, i) => spec.table.rowKinds[i] === "group").map((r) => r.project),
-    ["Apollo", "Zeus", "Total"],
+    ["Apollo", "Zeus"],
+  )
+  assert.equal(spec.table.rowKinds[spec.table.rowKinds.length - 1], "total", "the total line is marked, so invoice templates can set it out as a block")
+  assert.deepEqual(
+    spec.table.rows.filter((_, i) => spec.table.rowKinds[i] === "total").map((r) => r.project),
+    ["Total"],
   )
   assert.equal(totalRow(spec).amount, "$65.00")
   assert.equal(summary(spec, "Hourly rate"), "Varies")
@@ -99,7 +104,7 @@ test("client statement: amounts are in the currency the report was loaded in", (
     projectNames: [],
     entries: [entry({ billAmount: 1950, billCurrency: "EGP" })],
   })
-  assert.equal(summary(spec, "Amount due"), "EGP 1950.00")
+  assert.equal(summary(spec, "Amount due"), "EGP 1,950.00")
   // The rate is quoted as it was agreed, in its own currency.
   assert.equal(summary(spec, "Hourly rate"), "$40.00 / hour")
   assert.ok(spec.filterLines.includes("Currency: EGP"))
@@ -177,27 +182,6 @@ test("both documents plot hours by date against a labelled hours axis", () => {
 
 // ── wiring ─────────────────────────────────────────────────────────────────
 
-test("the report's own PDF charts carry a labelled Y axis, and every chart gets gridline labels", () => {
-  const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
-  assert.equal((view.match(/yLabel: "Hours",\n\s+yUnit: "hours" as const,/g) ?? []).length, 2, "by date and by member")
-  const kit = read("features/reports/utils/pdf/report-pdf-kit.ts")
-  assert.match(kit, /function drawChartFrame\(/)
-  assert.match(kit, /doc\.text\(labels\[i\], plotLeft - 5, gy \+ 2\.5, \{ align: "right" \}\)/)
-  assert.equal((kit.match(/drawChartFrame\(doc, chart, y,/g) ?? []).length, 2, "bars and lines share the frame")
-})
-
-test("To PDF asks what the document is for; Total spent is off unless asked for", () => {
-  const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
-  assert.match(view, /<DropdownMenuItem onClick=\{\(\) => setPdfOpen\(true\)\}>To PDF…<\/DropdownMenuItem>/)
-  assert.match(view, /const withoutMoney = moneyHidden \|\| !includeAmounts/)
-  assert.match(view, /\.\.\.\(withoutMoney \? \[\] : \[\{ label: "Total spent", value: totals\.spent \}\]\)/)
-  const dialog = read("features/reports/components/time-activity-report/pdf-export-dialog.tsx")
-  assert.match(dialog, /const \[includeAmounts, setIncludeAmounts\] = useComponentState\(false\)/)
-  // A viewer who may not see money gets the team report only; the client
-  // statement needs the right to see what clients are charged.
-  assert.match(dialog, /moneyHidden \? \["report"\] : billingAvailable \? \["report", "client", "payslip"\] : \["report", "payslip"\]/)
-})
-
 test("Members and Projects take several picks, and a project filter counts only that project's hours", () => {
   const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
   assert.equal((view.match(/<ReportToolbarMultiSelect/g) ?? []).length, 2)
@@ -240,8 +224,9 @@ test("client statement: tax on the client's own rate, a due date from its net te
     spec.table.rows.slice(-3).map((r) => [r.project, r.amount]),
     [["Subtotal", "$80.00"], ["Tax (14%)", "$11.20"], ["Total", "$91.20"]],
   )
-  assert.ok(spec.filterLines.includes("Issued: Oct 1, 2026"))
-  assert.ok(spec.filterLines.includes("Due: Nov 15, 2026 (net 45 days)"))
+  assert.deepEqual(spec.info.find((row) => row.label === "Date of issue"), { label: "Date of issue", value: "Oct 1, 2026" })
+  assert.deepEqual(spec.info.find((row) => row.label === "Date due"), { label: "Date due", value: "Nov 15, 2026" })
+  assert.equal(spec.headline.due, "Nov 15, 2026")
   assert.ok(spec.notes.includes("Pay by wire."))
 })
 
@@ -250,7 +235,7 @@ test("client statement: a client with no terms gets no tax lines and no due date
   assert.equal(summary(spec, "Tax"), undefined)
   assert.equal(summary(spec, "Subtotal"), undefined)
   assert.equal(totalRow(spec).project, "Total")
-  assert.equal(spec.filterLines.some((l) => l.startsWith("Due:")), false)
+  assert.equal(spec.info.some((row) => row.label === "Date due"), false)
   assert.equal(summary(spec, "Amount due"), "$40.00")
 })
 
@@ -264,7 +249,7 @@ test("client statement: clients on different payment terms get no single due dat
       entry({ projectId: "p2", projectName: "Zeus", clientName: "Globex", billTaxRate: 10, billNetTermsDays: 60 }),
     ],
   })
-  assert.equal(spec.filterLines.some((l) => l.startsWith("Due:")), false)
+  assert.equal(spec.info.some((row) => row.label === "Date due"), false)
   assert.ok(spec.notes.some((n) => n.includes("different payment terms")))
   assert.equal(summary(spec, "Tax"), "$9.60", "5.60 on the first and 4.00 on the second")
 })
@@ -283,7 +268,7 @@ test("client statement: a client without payment terms does not inherit another 
     entry({ billNetTermsDays: 30 }),
     entry({ projectId: "p2", projectName: "Zeus", clientName: "Other client" }),
   ] })
-  assert.equal(spec.filterLines.some((line) => line.startsWith("Due:")), false)
+  assert.equal(spec.info.some((row) => row.label === "Date due"), false)
 })
 
 // ── Activity and Task Approvals ────────────────────────────────────────────
