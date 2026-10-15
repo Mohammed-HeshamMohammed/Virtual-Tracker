@@ -6,6 +6,7 @@ mod config;
 mod constants;
 mod buzz;
 mod notify;
+mod ui_watchdog;
 mod power_events;
 mod prefs;
 mod queue;
@@ -471,6 +472,7 @@ pub fn run() {
             buzz::buzz_take,
             buzz::buzz_dismiss,
             commands::work::is_session_on_break,
+            ui_watchdog::ui_heartbeat,
         ])
         .setup(move |app| {
             // Registration is separate from the handler wired into the plugin above - the
@@ -547,6 +549,8 @@ pub fn run() {
                     ));
                 }
             }));
+
+            ui_watchdog::start(app.handle().clone());
 
             remove_legacy_autostart(app.handle());
             // Off the setup path: registering the scheduled task spawns

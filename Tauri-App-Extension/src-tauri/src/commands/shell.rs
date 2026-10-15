@@ -20,8 +20,10 @@ pub fn minimize_current(window: tauri::WebviewWindow) -> Result<(), String> {
 
 /// With "Keep running in tray" on (the default), the titlebar close button only hides the
 /// window - tracking keeps running and the tray's Quit item is the real exit.
+// Async because quitting closes the session on the server first, which can take as long
+// as the connection does, and the window must not freeze meanwhile.
 #[tauri::command]
-pub fn close_window(
+pub async fn close_window(
     app: AppHandle,
     window: tauri::WebviewWindow,
     state: tauri::State<'_, AppState>,
@@ -30,7 +32,8 @@ pub fn close_window(
         window.hide().map_err(|e| e.to_string())?;
         return Ok(());
     }
-    state.controller.stop();
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || controller.stop()).await;
     app.exit(0);
     Ok(())
 }

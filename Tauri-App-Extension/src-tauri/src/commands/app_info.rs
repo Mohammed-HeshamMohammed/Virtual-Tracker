@@ -20,8 +20,8 @@ pub fn get_version() -> String {
 
 /// Whether applying an update would need an administrator prompt.
 #[tauri::command]
-pub fn update_install_readiness() -> UpdateInstallReadiness {
-    crate::update_readiness::probe()
+pub async fn update_install_readiness() -> Result<UpdateInstallReadiness, String> {
+    Ok(run_blocking(crate::update_readiness::probe).await)
 }
 
 #[tauri::command]
@@ -30,9 +30,12 @@ pub async fn report_agent_open(state: tauri::State<'_, AppState>) -> Result<(), 
     run_blocking(move || controller.report_agent_open()).await
 }
 
+// Off the window's thread: it waits on the API client, which a screenshot upload or a slow
+// server can hold for the whole request, and the window cannot draw while it waits.
 #[tauri::command]
-pub fn get_profile(state: tauri::State<'_, AppState>) -> ProfileInfo {
-    state.controller.get_profile()
+pub async fn get_profile(state: tauri::State<'_, AppState>) -> Result<ProfileInfo, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.get_profile()).await)
 }
 
 #[tauri::command]
@@ -41,11 +44,17 @@ pub async fn get_link_status(state: tauri::State<'_, AppState>) -> Result<LinkSt
     Ok(run_blocking(move || controller.get_link_status()).await)
 }
 
+// Off the window's thread: the first answer runs schtasks.exe.
 #[tauri::command]
-pub fn get_app_settings(app: AppHandle, state: tauri::State<'_, AppState>) -> crate::prefs::AppSettingsView {
+pub async fn get_app_settings(app: AppHandle, state: tauri::State<'_, AppState>) -> Result<crate::prefs::AppSettingsView, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || app_settings_view(&app, &controller)).await)
+}
+
+fn app_settings_view(app: &AppHandle, controller: &crate::agent::controller::AgentController) -> crate::prefs::AppSettingsView {
     // Only Windows rewrites `launch_at_login` below.
     #[cfg_attr(not(windows), allow(unused_mut))]
-    let mut view = state.controller.get_app_settings();
+    let mut view = controller.get_app_settings();
     // The stored preference records what the member asked for; this reports
     // what is actually registered. They diverge whenever registration was
     // refused, and showing the request back as though it had succeeded is how
@@ -65,14 +74,24 @@ pub fn get_app_settings(app: AppHandle, state: tauri::State<'_, AppState>) -> cr
     view
 }
 
+// Off the window's thread: registering autostart runs schtasks.exe.
 #[tauri::command]
-pub fn save_preferences(
+pub async fn save_preferences(
     app: AppHandle,
     state: tauri::State<'_, AppState>,
     preferences: UserPreferences,
 ) -> Result<crate::prefs::AppSettingsView, String> {
-    let previous = state.controller.get_app_settings().preferences;
-    state.controller.save_preferences(preferences.clone())?;
+    let controller = Arc::clone(&state.controller);
+    run_blocking(move || save_preferences_blocking(&app, &controller, preferences)).await
+}
+
+fn save_preferences_blocking(
+    app: &AppHandle,
+    controller: &crate::agent::controller::AgentController,
+    preferences: UserPreferences,
+) -> Result<crate::prefs::AppSettingsView, String> {
+    let previous = controller.get_app_settings().preferences;
+    controller.save_preferences(preferences.clone())?;
     // Only the two settings that decide the window's size move it - saving anything else
     // must not resize it or snap it back to the centre.
     if previous.layout != preferences.layout || previous.show_insights != preferences.show_insights {
@@ -82,10 +101,10 @@ pub fn save_preferences(
     }
     // Autostart registration is best-effort here, same as every other caller of
     // apply_autostart (see lines below) - a registry/OS failure must not report the whole
-    if let Err(err) = apply_autostart(&app, preferences.launch_at_login) {
+    if let Err(err) = apply_autostart(app, preferences.launch_at_login) {
         log::warn!("Could not update autostart registration: {err}");
     }
-    Ok(state.controller.get_app_settings())
+    Ok(controller.get_app_settings())
 }
 
 #[tauri::command]
@@ -118,7 +137,7 @@ mod tests {
     /// *something* rather than panicking - an update decision that throws is an update that
     #[test]
     fn update_install_readiness_reports_the_real_install_directory() {
-        let readiness = super::update_install_readiness();
+        let readiness = crate::update_readiness::probe();
         assert!(
             !readiness.install_dir.is_empty(),
             "the install directory must be reported so a blocked update can name it"

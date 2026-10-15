@@ -128,7 +128,7 @@ impl AgentController {
     /// real totals, so nothing keeps counting while the machine is off. The tracker is
     /// torn down the same way a stop is; the member starts a fresh one when they are back.
     pub fn stop_for_power(&self, reason: &str) {
-        if let Some(tracker) = self.tracker.lock().as_ref() {
+        if let Some(tracker) = self.current_tracker() {
             // Clears Pause/Break so the screen after waking does not claim one.
             tracker.note_stop_requested();
         }
@@ -155,7 +155,7 @@ impl AgentController {
     }
 
     fn flush_and_stop_tracker(&self, reason: &str) {
-        if let Some(tracker) = self.tracker.lock().as_ref() {
+        if let Some(tracker) = self.current_tracker() {
             if tracker.current_session_id().is_some() {
                 let (task_id, active_seconds, idle_seconds) = tracker.current_task_progress();
                 let _ = self.api.lock().post_session_action(
@@ -220,7 +220,7 @@ impl AgentController {
 
     pub fn save_preferences(&self, preferences: UserPreferences) -> Result<(), String> {
         self.settings.preferences_store().save(&preferences)?;
-        if let Some(tracker) = self.tracker.lock().as_ref() {
+        if let Some(tracker) = self.current_tracker() {
             tracker.apply_privacy_choices(&preferences.capture_screen, &preferences.blur_strength);
         }
         Ok(())
@@ -430,6 +430,13 @@ impl AgentController {
 
 
     /// Whether closing the window should hide it instead of quitting.
+    /// The tracker, without keeping its lock. Pause, Resume, Stop and quitting all wait on
+    /// the server, and the window reads the tracker every few seconds: holding the lock
+    /// through a slow request is what froze the window ("Not Responding").
+    pub(super) fn current_tracker(&self) -> Option<Arc<ActivityTracker>> {
+        self.tracker.lock().clone()
+    }
+
     pub fn close_to_tray(&self) -> bool {
         self.settings.preferences_store().load().close_to_tray
     }

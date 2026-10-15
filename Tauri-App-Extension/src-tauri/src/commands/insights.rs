@@ -65,9 +65,11 @@ pub async fn set_private_break(
     run_blocking(move || controller.set_private_break(minutes, &reason)).await
 }
 
+// Polled every 5 seconds, so it stays off the window's thread.
 #[tauri::command]
-pub fn capture_status(state: tauri::State<'_, AppState>) -> crate::types::CaptureStatus {
-    state.controller.capture_status()
+pub async fn capture_status(state: tauri::State<'_, AppState>) -> Result<crate::types::CaptureStatus, String> {
+    let controller = Arc::clone(&state.controller);
+    Ok(run_blocking(move || controller.capture_status()).await)
 }
 
 #[tauri::command]

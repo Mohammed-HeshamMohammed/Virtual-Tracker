@@ -74,7 +74,7 @@ impl AgentController {
     }
 
     pub(super) fn start_tracker(self: &Arc<Self>) {
-        if let Some(existing) = self.tracker.lock().as_ref() {
+        if let Some(existing) = self.current_tracker() {
             existing.stop();
         }
         let controller = Arc::clone(self);

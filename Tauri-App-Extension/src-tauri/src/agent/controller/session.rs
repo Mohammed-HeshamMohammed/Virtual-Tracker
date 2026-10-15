@@ -8,12 +8,9 @@ impl AgentController {
         let mut session = self.api.lock().current_session_info();
         // Idle state lives in the tracker, not the server - attach it to the poll the UI
         // already runs rather than adding a second one.
-        session.idle_stage = self
-            .tracker
-            .lock()
-            .as_ref()
-            .map(|t| t.idle_stage())
-            .unwrap_or(0);
+        let tracker = self.current_tracker();
+        session.idle_stage = tracker.as_ref().map(|t| t.idle_stage()).unwrap_or(0);
+        session.idle_stop = tracker.as_ref().and_then(|t| t.idle_stop());
         session
     }
 
@@ -36,8 +33,7 @@ impl AgentController {
     /// An idle-triggered stop from the *previous* session can still be queued for delivery
     /// (`ActivityTracker::flush_pending_stop`) at the moment the user clicks Start again.
     pub(super) fn blocked_by_pending_idle_stop(&self) -> Option<String> {
-        let tracker = self.tracker.lock();
-        match tracker.as_ref() {
+        match self.current_tracker() {
             Some(tracker) if !tracker.flush_pending_stop() => {
                 Some("Still finishing the previous idle stop. That needs a connection, so check yours and try again.".into())
             }
@@ -142,7 +138,7 @@ impl AgentController {
     /// `stop_note` carries what the member said they worked on, when the project has
     /// require_stop_note on.
     pub fn stop_session(&self, stop_note: Option<&str>) -> ActionResult {
-        let tracker = self.tracker.lock();
+        let tracker = self.current_tracker();
         let (task_id, active_seconds, idle_seconds) = tracker
             .as_ref()
             .map(|t| t.current_task_progress())
@@ -176,8 +172,7 @@ impl AgentController {
     /// The break button: marks the session idle (preserving its accumulated totals, unlike
     /// `stop_session`) and tells the tick loop to stop counting active time until
     pub fn pause_session(&self) -> ActionResult {
-        let tracker = self.tracker.lock();
-        let Some(tracker) = tracker.as_ref() else {
+        let Some(tracker) = self.current_tracker() else {
             return ActionResult { success: false, error: Some("No active session".into()), session: None };
         };
         match tracker.pause() {
@@ -211,8 +206,7 @@ impl AgentController {
                 log::warn!("could not end the break's capture block: {error}");
             }
         }
-        let tracker = self.tracker.lock();
-        let Some(tracker) = tracker.as_ref() else {
+        let Some(tracker) = self.current_tracker() else {
             return ActionResult { success: false, error: Some("No active session".into()), session: None };
         };
         match tracker.resume() {

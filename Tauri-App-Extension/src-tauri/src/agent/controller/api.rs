@@ -80,8 +80,7 @@ impl AgentController {
     }
 
     pub fn capture_status(&self) -> crate::types::CaptureStatus {
-        let guard = self.tracker.lock();
-        let Some(tracker) = guard.as_ref() else {
+        let Some(tracker) = self.current_tracker() else {
             return crate::types::CaptureStatus::default();
         };
         let gate = tracker.gate();

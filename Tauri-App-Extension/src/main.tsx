@@ -67,6 +67,11 @@ async function start() {
       import("./components/common/TourLayer"),
     ]);
   installGlobalErrorLogging();
+  // The app reloads a window on screen whose page has stopped reporting in
+  // (src-tauri/src/ui_watchdog.rs), which is the window that is open but blank.
+  const heartbeat = () => void invoke("ui_heartbeat").catch(() => {});
+  heartbeat();
+  window.setInterval(heartbeat, 15_000);
   root.render(
     <React.StrictMode>
       <AppErrorBoundary>
