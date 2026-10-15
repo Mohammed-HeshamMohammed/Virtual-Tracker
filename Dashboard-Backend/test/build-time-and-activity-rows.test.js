@@ -51,6 +51,9 @@ test("a single session on one project produces one entry carrying its client/tea
     activeSeconds: 3000,
     idleSeconds: 600,
     manualSeconds: 0,
+    // No screenshots in this session.
+    activitySum: 0,
+    activityCount: 0,
     // The rate the amount was worked out from; none is set here.
     payRate: 0,
     payRateCurrency: "USD",
@@ -379,4 +382,24 @@ test("a client with its own invoice terms carries tax, net terms and notes onto 
     [billedSession({ client_tax_rate: "14.00" })], memberNameMap, memberTimezones, "2026-08-25", "2026-08-25",
   ).entries[0];
   assert.equal("billTaxRate" in hidden, false, "never without the billing permission");
+});
+
+// Activity is the screenshots' levels, carried as a sum and a count so a day, a member
+// and a project all average the same screenshots - not active time over tracked time.
+test("activity totals the sessions' screenshot levels per entry and per member-day", () => {
+  const { entries, days } = buildTimeAndActivityReportPayload(
+    [
+      session({ activity_sum: 150, activity_count: 2 }),
+      session({ project_id: "p2", project_name: "Project Two", started_at: "2026-08-25T13:00:00.000Z", activity_sum: 40, activity_count: 1 }),
+    ],
+    memberNameMap,
+    memberTimezones,
+    "2026-08-25",
+    "2026-08-25",
+  );
+  const byProject = Object.fromEntries(entries.map((e) => [e.projectId, [e.activitySum, e.activityCount]]));
+  assert.deepEqual(byProject, { p1: [150, 2], p2: [40, 1] });
+  const member = days[0].members[0];
+  assert.equal(member.activitySum, 190);
+  assert.equal(member.activityCount, 3);
 });

@@ -38,6 +38,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover"
 import { ReportScheduleDialog } from "@/features/reports/components/amounts-owed/report-schedule-dialog"
 import { ReportSendDialog } from "@/features/reports/components/amounts-owed/report-send-dialog"
 import { WorkSessionsFiltersPanel } from "@/features/reports/components/work-sessions/work-sessions-filters-panel"
+import { activityLabel } from "@/features/reports/utils/time-and-activity/activity"
 import {
   ReportErrorState,
   ReportPageHeading,
@@ -598,7 +599,7 @@ export function WorkSessionsReport({ onNavigate }: { onNavigate?: (id: string) =
                                 <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800 dark:text-[#dce1fb]">{r.durationHms}</td>
                               ) : null}
                               {columnVisibility.activity ? (
-                                <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800 dark:text-[#dce1fb]">{r.activityPct}%</td>
+                                <td className="px-4 py-3 text-right text-sm tabular-nums text-slate-800 dark:text-[#dce1fb]">{activityLabel(r)}</td>
                               ) : null}
                               {canDelete ? (
                                 <td className="px-4 py-3 text-right">

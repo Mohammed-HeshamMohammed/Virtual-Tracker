@@ -24,7 +24,9 @@ export async function getTimeAndActivityReportRowsPg({ memberIds, fromDay, toDay
        s.ended_at,
        s.updated_at,
        s.active_seconds,
-       s.idle_seconds
+       s.idle_seconds,
+       shots.activity_sum,
+       shots.activity_count
      FROM activity_sessions s
      LEFT JOIN tasks t ON t.id = s.task_id
      LEFT JOIN projects p ON p.id = s.project_id
@@ -53,6 +55,14 @@ export async function getTimeAndActivityReportRowsPg({ memberIds, fromDay, toDay
        ORDER BY tm.joined_at ASC
        LIMIT 1
      ) team_lookup ON true
+     -- Activity is the screenshots' activity levels (as corrected by a manager),
+     -- the same figure the Screenshots, Apps and URLs pages show. Summed with a
+     -- count rather than averaged here, so any grouping of rows averages right.
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(SUM(sc.activity_level), 0) AS activity_sum, COUNT(*) AS activity_count
+       FROM activity_screenshots sc
+       WHERE sc.session_id = s.id::text
+     ) shots ON true
      WHERE s.started_at >= $1 AND s.started_at < $2
        AND ($3::uuid[] IS NULL OR s.member_id = ANY($3::uuid[]))
        AND ($4::uuid[] IS NULL OR s.project_id = ANY($4::uuid[]))
@@ -78,6 +88,8 @@ export async function getTimeAndActivityReportRowsPg({ memberIds, fromDay, toDay
     updated_at: row.updated_at,
     active_seconds: Math.max(0, Number(row.active_seconds) || 0),
     idle_seconds: Math.max(0, Number(row.idle_seconds) || 0),
+    activity_sum: Math.max(0, Number(row.activity_sum) || 0),
+    activity_count: Math.max(0, Number(row.activity_count) || 0),
   }));
 }
 

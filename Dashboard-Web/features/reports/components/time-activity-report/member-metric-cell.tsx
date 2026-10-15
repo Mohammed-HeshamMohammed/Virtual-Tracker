@@ -3,6 +3,7 @@
 import type { ReactNode } from "react"
 import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityMemberSubRow } from "@/features/reports/models/time-and-activity"
+import { activityLabel } from "@/features/reports/utils/time-and-activity/activity"
 
 export function ReportMemberMetricCell({
   member,
@@ -26,6 +27,9 @@ export function ReportMemberMetricCell({
     case "total_hours":
       return <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{member.totalHours}</span>
     case "activity_pct":
+      if (member.activityCount === 0) {
+        return <span className="text-sm text-slate-400 dark:text-slate-500">{activityLabel(member)}</span>
+      }
       return (
         <div className="flex items-center gap-2">
           <div className="h-1.5 w-16 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">

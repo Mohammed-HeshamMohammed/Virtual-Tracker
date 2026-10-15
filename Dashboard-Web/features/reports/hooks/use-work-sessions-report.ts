@@ -27,6 +27,7 @@ import {
 } from "@/features/reports/components/shared/constants"
 import { formatWorkSessionDuration } from "@/features/reports/utils/work-sessions"
 import { parseTimeToSeconds } from "@/features/reports/utils/time-and-activity/row-aggregate"
+import { activityLabel } from "@/features/reports/utils/time-and-activity/activity"
 
 const DEFAULT_COLS: Record<WorkSessionColumnKey, boolean> = {
   client: true,
@@ -264,7 +265,7 @@ export function useWorkSessionsReport() {
           started: r.startedLabel,
           stopped: r.stoppedBy ? `${r.stoppedLabel} (${r.stoppedBy})` : r.stoppedLabel,
           duration: r.durationHms,
-          activity: `${r.activityPct}%`,
+          activity: activityLabel(r),
         })),
         emptyMessage: "No work sessions match the current filters or date range.",
       },

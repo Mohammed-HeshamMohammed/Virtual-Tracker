@@ -10,6 +10,7 @@ import { canClassifyActivity, canExportActivity } from "@/features/auth"
 import { motion } from "framer-motion"
 import { Clock, Monitor, TrendingUp, TrendingDown, Minus } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
+import { ActivityPercent, activityCell } from "@/features/activity/components/activity-percent"
 import { formatActivityAppName } from "@/features/activity/utils/display-names"
 import { ActivityMemberAvatar } from "@/features/activity/components/activity-member-avatar"
 import {
@@ -46,6 +47,8 @@ interface AppUsage {
   /** True when this row's category came from the sites visited rather than
    *  from the app itself - browsers only. */
   viaUrl?: boolean
+  /** Average activity of the screenshots taken on this app; null when none were. */
+  activityPct?: number | null
 }
 
 interface MemberAppUsage {
@@ -58,6 +61,8 @@ interface MemberAppUsage {
   neutralTime: string
   unproductiveTime: string
   topApp: string
+  /** Average activity of this member's screenshots, as on the Screenshots page. */
+  activityPct?: number | null
 }
 
 const getCategoryColor = activityCategoryColor
@@ -192,6 +197,7 @@ export function ActivityAppsContent() {
       { header: "Percentage", key: "percentage", width: 12 },
       { header: "Trend", key: "trend", width: 10 },
       { header: "Sessions", key: "sessions", width: 12 },
+      { header: "Activity", key: "activity", width: 10 },
     ]
     
     const appRows = filteredApps.map((app) => ({
@@ -201,6 +207,7 @@ export function ActivityAppsContent() {
       percentage: `${app.percentage}%`,
       trend: app.trendValue,
       sessions: app.sessions,
+      activity: activityCell(app.activityPct),
     }))
     
     appRows.forEach(row => appsSheet.addRow(row))
@@ -221,6 +228,7 @@ export function ActivityAppsContent() {
       { header: "Productive %", key: "productivePercent", width: 15 },
       { header: "Neutral Time", key: "neutralTime", width: 15 },
       { header: "Unproductive Time", key: "unproductiveTime", width: 18 },
+      { header: "Activity", key: "activity", width: 10 },
     ]
     
     const memberRows = membersSource.map((member) => ({
@@ -230,6 +238,7 @@ export function ActivityAppsContent() {
       productivePercent: `${member.productivePercent}%`,
       neutralTime: member.neutralTime,
       unproductiveTime: member.unproductiveTime,
+      activity: activityCell(member.activityPct),
     }))
     
     memberRows.forEach(row => membersSheet.addRow(row))
@@ -368,7 +377,7 @@ export function ActivityAppsContent() {
               <table className="w-full min-w-[640px]">
                 <thead className="bg-slate-50/80 dark:bg-slate-800/60">
                     <tr className="border-b border-slate-200/80 dark:border-slate-800">
-                      {["Application", "Time", "Share", "Sessions", "Category"].map((h) => (
+                      {["Application", "Time", "Share", "Sessions", "Activity", "Category"].map((h) => (
                         <th
                           key={h}
                           className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400"
@@ -407,6 +416,9 @@ export function ActivityAppsContent() {
                           </div>
                         </td>
                         <td className="px-5 py-4 text-sm text-slate-600 dark:text-slate-300 font-medium">{app.sessions}</td>
+                        <td className="px-5 py-4">
+                          <ActivityPercent value={app.activityPct} where={`on ${app.name}`} />
+                        </td>
                         <td className="px-5 py-4">
                           <span
                             className={cn(
@@ -481,6 +493,7 @@ export function ActivityAppsContent() {
                               {member.productiveTime} tracked
                             </span>
                             <span>Top app: {member.topApp}</span>
+                            {member.activityPct != null ? <span>{member.activityPct}% activity</span> : null}
                           </div>
                         </div>
                       </div>

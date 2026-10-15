@@ -22,6 +22,8 @@ function attributeSessionToStartDay(session, timeZone) {
       day: localDayFor(start, timeZone),
       activeSeconds: session.active_seconds,
       idleSeconds: session.idle_seconds,
+      activitySum: session.activity_sum ?? 0,
+      activityCount: session.activity_count ?? 0,
     },
   ];
 }
@@ -115,12 +117,16 @@ export function buildTimeAndActivityReportPayload(
           activeSeconds: 0,
           idleSeconds: 0,
           manualSeconds: 0,
+          activitySum: 0,
+          activityCount: 0,
           projectNames: new Set(),
         });
       }
       const entry = byMember.get(row.member_id);
       entry.activeSeconds += segment.activeSeconds;
       entry.idleSeconds += segment.idleSeconds;
+      entry.activitySum += segment.activitySum;
+      entry.activityCount += segment.activityCount;
       if (row.project_name) entry.projectNames.add(row.project_name);
 
       const entryKey = `${segment.day}::${row.member_id}::${row.project_id ?? "none"}`;
@@ -140,11 +146,15 @@ export function buildTimeAndActivityReportPayload(
           activeSeconds: 0,
           idleSeconds: 0,
           manualSeconds: 0,
+          activitySum: 0,
+          activityCount: 0,
         });
       }
       const fine = byDayMemberProject.get(entryKey);
       fine.activeSeconds += segment.activeSeconds;
       fine.idleSeconds += segment.idleSeconds;
+      fine.activitySum += segment.activitySum;
+      fine.activityCount += segment.activityCount;
     }
   }
 
@@ -158,6 +168,8 @@ export function buildTimeAndActivityReportPayload(
         activeSeconds: 0,
         idleSeconds: 0,
         manualSeconds: 0,
+        activitySum: 0,
+        activityCount: 0,
         projectNames: new Set(),
       });
     }
@@ -182,6 +194,8 @@ export function buildTimeAndActivityReportPayload(
         activeSeconds: 0,
         idleSeconds: 0,
         manualSeconds: 0,
+        activitySum: 0,
+        activityCount: 0,
       });
     }
     const fine = byDayMemberProject.get(entryKey);
@@ -199,6 +213,8 @@ export function buildTimeAndActivityReportPayload(
         activeSeconds: entry.activeSeconds,
         idleSeconds: entry.idleSeconds,
         manualSeconds: entry.manualSeconds ?? 0,
+        activitySum: entry.activitySum,
+        activityCount: entry.activityCount,
         ...spend(
           round2(
             ((entry.activeSeconds + (entry.manualSeconds ?? 0)) / 3600) * resolveRateForDay(memberRates, memberId, date),
@@ -256,6 +272,8 @@ export function buildTimeAndActivityReportPayload(
         activeSeconds: entry.activeSeconds,
         idleSeconds: entry.idleSeconds,
         manualSeconds: entry.manualSeconds ?? 0,
+        activitySum: entry.activitySum,
+        activityCount: entry.activityCount,
         // The rate the amount below was worked out from, in the currency it
         // is paid in - a pay slip states it; the converted amount cannot.
         payRate,

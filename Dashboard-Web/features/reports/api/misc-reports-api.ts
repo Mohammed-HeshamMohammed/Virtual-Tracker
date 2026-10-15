@@ -11,6 +11,7 @@ import type { AppsUrlsReportData, UsageCategory } from "@/features/reports/model
 import { formatMoney } from "@/features/reports/utils/money"
 import { toDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 import { formatCurrency, resolveViewerCurrency } from "@/features/reports/utils/viewer-currency"
+import { activityPercent } from "@/features/reports/utils/time-and-activity/activity"
 
 function initialsFor(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -191,6 +192,8 @@ interface RawWorkSession {
   endedAt: string | null
   activeSeconds: number
   idleSeconds: number
+  activitySum?: number
+  activityCount?: number
   /** IANA zone of the member who worked the shift. */
   memberTimezone?: string
   /** The day the shift belongs to in that zone, resolved server-side so this
@@ -259,7 +262,9 @@ export async function fetchWorkSessionsReport(
       stoppedBy: s.stoppedBy ?? null,
       timezoneLabel: zoneAbbreviation(s.startedAt, s.memberTimezone),
       durationHms: formatHms(totalSeconds),
-      activityPct: totalSeconds > 0 ? Math.round((s.activeSeconds / totalSeconds) * 100) : 0,
+      activityPct: activityPercent(s.activitySum ?? 0, s.activityCount ?? 0),
+      activitySum: s.activitySum ?? 0,
+      activityCount: s.activityCount ?? 0,
     }
   })
   return { rows, truncated: data.truncated === true }

@@ -2,6 +2,7 @@ import type { TimeActivityDayRow, TimeActivityEntry, TimeActivityGroupBy, TimeAc
 import { formatSecondsAsHMS } from "@/features/reports/utils/time-and-activity/row-aggregate"
 import type { ActivityLevelFilter, ManualTimeFilter, NameFilter, TrackedTimeFilter } from "@/features/reports/utils/time-and-activity/row-aggregate"
 import { sumMoneyByCurrency } from "@/features/reports/utils/money"
+import { activityPercent } from "@/features/reports/utils/time-and-activity/activity"
 
 function initialsFor(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -49,8 +50,7 @@ export function filterEntries(
     if (trackedTimeFilter === "without" && e.activeSeconds > 0) return false
     if (manualTimeFilter === "with" && e.manualSeconds <= 0) return false
     if (manualTimeFilter === "without" && e.manualSeconds > 0) return false
-    const total = e.activeSeconds + e.idleSeconds
-    const activityPct = total > 0 ? Math.round((e.activeSeconds / total) * 100) : 0
+    const activityPct = activityPercent(e.activitySum, e.activityCount)
     if (activityLevelFilter === "under_50" && activityPct >= 50) return false
     if (activityLevelFilter === "50_to_79" && (activityPct < 50 || activityPct >= 80)) return false
     if (activityLevelFilter === "80_plus" && activityPct < 80) return false
@@ -65,6 +65,8 @@ type Bucket = {
   activeSeconds: number
   idleSeconds: number
   manualSeconds: number
+  activitySum: number
+  activityCount: number
   spentPoints: SpentPoint[]
   memberIds: Set<string>
   projectIds: Set<string>
@@ -76,6 +78,8 @@ type Bucket = {
       activeSeconds: number
       idleSeconds: number
       manualSeconds: number
+      activitySum: number
+      activityCount: number
       spentPoints: SpentPoint[]
     }
   >
@@ -114,18 +118,41 @@ export function buildDayMemberRows(
 ): Record<string, TimeActivityMemberSubRow[]> {
   const byDay = new Map<
     string,
-    Map<string, { name: string; activeSeconds: number; idleSeconds: number; manualSeconds: number; spentPoints: SpentPoint[]; projects: Set<string> }>
+    Map<
+      string,
+      {
+        name: string
+        activeSeconds: number
+        idleSeconds: number
+        manualSeconds: number
+        activitySum: number
+        activityCount: number
+        spentPoints: SpentPoint[]
+        projects: Set<string>
+      }
+    >
   >()
   for (const e of entries) {
     if (!byDay.has(e.date)) byDay.set(e.date, new Map())
     const members = byDay.get(e.date)!
     if (!members.has(e.memberId)) {
-      members.set(e.memberId, { name: e.memberName, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentPoints: [], projects: new Set() })
+      members.set(e.memberId, {
+        name: e.memberName,
+        activeSeconds: 0,
+        idleSeconds: 0,
+        manualSeconds: 0,
+        activitySum: 0,
+        activityCount: 0,
+        spentPoints: [],
+        projects: new Set(),
+      })
     }
     const m = members.get(e.memberId)!
     m.activeSeconds += e.activeSeconds
     m.idleSeconds += e.idleSeconds
     m.manualSeconds += e.manualSeconds
+    m.activitySum += e.activitySum
+    m.activityCount += e.activityCount
     m.spentPoints.push({ amount: e.spentAmount, currency: e.currency })
     if (e.projectName) m.projects.add(e.projectName)
   }
@@ -139,7 +166,9 @@ export function buildDayMemberRows(
       regularHours: formatSecondsAsHMS(m.activeSeconds),
       totalHours: formatSecondsAsHMS(m.activeSeconds + m.manualSeconds),
       breakTime: "00:00:00",
-      activityPct: m.activeSeconds + m.idleSeconds > 0 ? Math.round((m.activeSeconds / (m.activeSeconds + m.idleSeconds)) * 100) : 0,
+      activityPct: activityPercent(m.activitySum, m.activityCount),
+      activitySum: m.activitySum,
+      activityCount: m.activityCount,
       idlePct: pctString(m.idleSeconds, m.activeSeconds),
       idleHr: formatSecondsAsHMS(m.idleSeconds),
       totalSpent: sumMoneyByCurrency(m.spentPoints),
@@ -163,21 +192,45 @@ export function buildGroupedRows(
 
   function addTo(key: string, label: string, e: TimeActivityEntry, subKey: string, subLabel: string) {
     if (!buckets.has(key)) {
-      buckets.set(key, { label, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentPoints: [], memberIds: new Set(), projectIds: new Set(), sub: new Map() })
+      buckets.set(key, {
+        label,
+        activeSeconds: 0,
+        idleSeconds: 0,
+        manualSeconds: 0,
+        activitySum: 0,
+        activityCount: 0,
+        spentPoints: [],
+        memberIds: new Set(),
+        projectIds: new Set(),
+        sub: new Map(),
+      })
     }
     const b = buckets.get(key)!
     b.activeSeconds += e.activeSeconds
     b.idleSeconds += e.idleSeconds
     b.manualSeconds += e.manualSeconds
+    b.activitySum += e.activitySum
+    b.activityCount += e.activityCount
     b.spentPoints.push({ amount: e.spentAmount, currency: e.currency })
     b.memberIds.add(e.memberId)
     if (e.projectId) b.projectIds.add(e.projectId)
     if (!b.sub.has(subKey))
-      b.sub.set(subKey, { memberId: e.memberId, label: subLabel, activeSeconds: 0, idleSeconds: 0, manualSeconds: 0, spentPoints: [] })
+      b.sub.set(subKey, {
+        memberId: e.memberId,
+        label: subLabel,
+        activeSeconds: 0,
+        idleSeconds: 0,
+        manualSeconds: 0,
+        activitySum: 0,
+        activityCount: 0,
+        spentPoints: [],
+      })
     const s = b.sub.get(subKey)!
     s.activeSeconds += e.activeSeconds
     s.idleSeconds += e.idleSeconds
     s.manualSeconds += e.manualSeconds
+    s.activitySum += e.activitySum
+    s.activityCount += e.activityCount
     s.spentPoints.push({ amount: e.spentAmount, currency: e.currency })
   }
 
@@ -210,8 +263,9 @@ export function buildGroupedRows(
       regularHours: totalHours,
       breakTime: "00:00:00",
       totalHours: formatSecondsAsHMS(b.activeSeconds + b.manualSeconds),
-      activityPct:
-        b.activeSeconds + b.idleSeconds > 0 ? Math.round((b.activeSeconds / (b.activeSeconds + b.idleSeconds)) * 100) : 0,
+      activityPct: activityPercent(b.activitySum, b.activityCount),
+      activitySum: b.activitySum,
+      activityCount: b.activityCount,
       idlePct: pctString(b.idleSeconds, b.activeSeconds),
       idleHr: formatSecondsAsHMS(b.idleSeconds),
       totalSpent: sumMoneyByCurrency(b.spentPoints),
@@ -226,8 +280,9 @@ export function buildGroupedRows(
       regularHours: formatSecondsAsHMS(s.activeSeconds),
       totalHours: formatSecondsAsHMS(s.activeSeconds + s.manualSeconds),
       breakTime: "00:00:00",
-      activityPct:
-        s.activeSeconds + s.idleSeconds > 0 ? Math.round((s.activeSeconds / (s.activeSeconds + s.idleSeconds)) * 100) : 0,
+      activityPct: activityPercent(s.activitySum, s.activityCount),
+      activitySum: s.activitySum,
+      activityCount: s.activityCount,
       idlePct: pctString(s.idleSeconds, s.activeSeconds),
       idleHr: formatSecondsAsHMS(s.idleSeconds),
       totalSpent: sumMoneyByCurrency(s.spentPoints),

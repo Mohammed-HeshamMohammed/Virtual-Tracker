@@ -25,7 +25,12 @@ export interface WorkSessionRow {
    *  stop times above are never ambiguous about whose clock they are on. */
   timezoneLabel?: string
   durationHms: string
+  /** The average of the session's screenshot activity levels - the same activity the
+   *  Screenshots, Apps, URLs and Time & Activity pages show. */
   activityPct: number
+  activitySum: number
+  /** Screenshots in the session; 0 means its activity is unknown. */
+  activityCount: number
   breakHms?: string
 }
 

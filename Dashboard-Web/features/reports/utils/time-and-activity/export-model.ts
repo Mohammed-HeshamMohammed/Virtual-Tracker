@@ -4,6 +4,7 @@ import type {
   TimeActivityMemberSubRow,
 } from "@/features/reports/models/time-and-activity"
 import { hmsToSeconds, type RowMetrics } from "./export-flags.ts"
+import { activityLabel } from "./activity.ts"
 
 /**
  * One description of the Time & Activity table, built once and rendered by
@@ -100,7 +101,7 @@ function groupCell(day: TimeActivityDayRow, key: string, input: BuildExportInput
     case "total_hours":
       return day.totalHours
     case "activity_pct":
-      return `${day.activityPct}%`
+      return activityLabel(day)
     case "idle_pct":
       return day.idlePct
     case "idle_hr":
@@ -131,7 +132,7 @@ function detailCell(sub: TimeActivityMemberSubRow, key: string, input: BuildExpo
     case "total_hours":
       return sub.totalHours
     case "activity_pct":
-      return `${sub.activityPct}%`
+      return activityLabel(sub)
     case "idle_pct":
       return sub.idlePct
     case "idle_hr":

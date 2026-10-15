@@ -19,6 +19,7 @@ import { getSingleByMemberId } from "../../lib/postgres/member-data-store.js";
 import { recordScreenshotAccess } from "../compliance/data-retention.js";
 import { getActivityScoringSettings, setActivityScoringSettings } from "./scoring-settings.js";
 import { recordNotice, listRecordNotices, getDataHealth } from "./record-notices.js";
+import { activityDomainKey, activityFor, totalActivityBy } from "./activity-average.js";
 import { getVisibleMemberIds } from "../member-relationships/service.js";
 import { enabledCapabilities, eventAllowed, capabilityForEvent } from "../compliance/capability-gate.js";
 import { recordPolicyDrops } from "../compliance/policy-health.js";
@@ -110,6 +111,7 @@ import {
   fetchPgSessionScreenshots,
   updatePgScreenshotActivityLevels,
   fetchPgUrlLogs,
+  fetchPgScreenshotActivityLevels,
   findOpenPgSession,
   getPgSessionById,
   insertActivityAppLog,
@@ -196,6 +198,8 @@ function readActivitySignal(ev) {
  *  session to resolve; an unmatched row still falls back to the window title,
  *  so a short read degrades gracefully rather than mis-categorising. */
 const URL_INDEX_LIMIT = 2000;
+/** Screenshots averaged for the Apps and URLs pages' activity. */
+const SCREENSHOT_ACTIVITY_LIMIT = 5000;
 
 /** Category holding the most seconds; "unclassified" when there is nothing to
  *  weigh. Non-browser apps only ever accumulate one category, so this returns
@@ -1857,6 +1861,16 @@ export async function routeActivity(req, res, url, origin) {
         for (const d of pgRows) {
           ingestAppRow(d, String(d.member_id ?? ""), appsUrlIndex);
         }
+        // Activity from the screenshots taken on each app, the same levels (and
+        // corrections) the Screenshots page shows.
+        const appShots = await fetchPgScreenshotActivityLevels(
+          scope.targetMemberIds,
+          dayFilter,
+          SCREENSHOT_ACTIVITY_LIMIT,
+          feedOptions,
+        );
+        const activityByApp = totalActivityBy(appShots, (s) => normalizeAppName(s.app_name || ""));
+        const activityByAppMember = totalActivityBy(appShots, (s) => String(s.member_id ?? ""));
 
         const formatDur = (sec) => {
           const h = Math.floor(sec / 3600);
@@ -1889,6 +1903,7 @@ export async function routeActivity(req, res, url, origin) {
             sessions: r.sessions,
             lastActivityAt: r.lastActivityAt || null,
             iconDataUrl: appIcons.get(String(r.name).toLowerCase()) ?? null,
+            activityPct: activityFor(activityByApp, r.name),
           }));
 
         const memberRows = [...byMember.entries()].map(([id, r]) => {
@@ -1913,6 +1928,7 @@ export async function routeActivity(req, res, url, origin) {
             neutralTime: formatDur(neutralSeconds),
             unproductiveTime: formatDur(byCategory.distracting),
             topApp,
+            activityPct: activityFor(activityByAppMember, id),
           };
         });
 
@@ -2023,6 +2039,16 @@ export async function routeActivity(req, res, url, origin) {
         const appRows = await fetchPgAppLogs(scope.targetMemberIds, dayFilter, 500, feedOptions);
         for (const d of urlRows) ingestUrlRow(d, "visited_at");
         for (const d of appRows) ingestAppUrlRow(d);
+        // Activity from the screenshots taken on each site, the same levels (and
+        // corrections) the Screenshots page shows.
+        const urlShots = await fetchPgScreenshotActivityLevels(
+          scope.targetMemberIds,
+          dayFilter,
+          SCREENSHOT_ACTIVITY_LIMIT,
+          feedOptions,
+        );
+        const activityByDomain = totalActivityBy(urlShots, (s) => activityDomainKey(s.domain));
+        const activityByUrlMember = totalActivityBy(urlShots, (s) => (activityDomainKey(s.domain) ? String(s.member_id ?? "") : ""));
 
         const formatDur = (sec) => {
           const h = Math.floor(sec / 3600);
@@ -2049,6 +2075,8 @@ export async function routeActivity(req, res, url, origin) {
             avgTime: formatDur(Math.round(r.totalSeconds / Math.max(1, r.visits))),
             lastVisit: r.lastVisit ? new Date(r.lastVisit).toLocaleString() : "",
             sourceKind: r.sourceKind === "window" ? "window" : "url",
+            // A window-title row has no site to match screenshots on.
+            activityPct: r.sourceKind === "window" ? null : activityFor(activityByDomain, activityDomainKey(r.domain)),
           }));
 
         const members = [...byMember.entries()].map(([id, r]) => {
@@ -2073,6 +2101,7 @@ export async function routeActivity(req, res, url, origin) {
             neutralTime: formatDur(neutralSeconds),
             unproductiveTime: formatDur(byCategory.distracting),
             topDomain,
+            activityPct: activityFor(activityByUrlMember, id),
           };
         });
 
