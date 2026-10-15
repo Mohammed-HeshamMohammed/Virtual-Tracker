@@ -21,7 +21,7 @@ import {
   saveClassification,
   toClassificationMap,
 } from "@/features/activity/services/classification-api"
-import { clearActivityApiFeedCache } from "@/features/activity/services/activity-api"
+import { refreshAfterActivityChange } from "@/features/activity/utils/activity-data-changed"
 
 type MatchType = "app" | "domain" | "window_title"
 
@@ -475,8 +475,7 @@ export function ClassificationDialog({
       // categories until the TTL lapses. The event also refreshes any feed
       // instance the caller's onSaved doesn't explicitly reload (all-time
       // summaries, the other sub-page mounted behind a tab, ...).
-      clearActivityApiFeedCache()
-      window.dispatchEvent(new Event("vt-activity-feed-invalidate"))
+      refreshAfterActivityChange()
       onSaved?.()
       onOpenChange(false)
     } catch (e: unknown) {
