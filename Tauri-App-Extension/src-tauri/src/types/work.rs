@@ -69,6 +69,10 @@ pub struct SessionInfo {
     /// idling (15m, idle time reversed).
     #[serde(default)]
     pub idle_stage: u8,
+    /// Set while idle_stage is 3: what the stop did, so the member is told exactly why
+    /// the timer stopped and how much time moved, instead of seeing their hours drop.
+    #[serde(default)]
+    pub idle_stop: Option<IdleStopInfo>,
     #[serde(default)]
     pub active_seconds: u64,
     #[serde(default)]
@@ -79,6 +83,17 @@ pub struct SessionInfo {
     /// & Limits tab) instead of a task's daily hour cap.
     #[serde(default)]
     pub budget_capped: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdleStopInfo {
+    /// How long there had been no mouse or keyboard input.
+    pub idle_seconds: u64,
+    /// The project's idle allowance that was passed.
+    pub allowance_seconds: u64,
+    /// Worked time moved to idle by the stop.
+    pub moved_seconds: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

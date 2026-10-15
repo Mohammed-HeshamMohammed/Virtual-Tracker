@@ -49,6 +49,7 @@ import type {
 } from "./types";
 import { fmtClock, fmtHours, fmtWallClock, fmtWallDate } from "./utils/formatters";
 import { computeHomeStats } from "./utils/homeStats";
+import { describeIdleStop } from "./utils/idleStop";
 import { TodayPanel } from "./components/stats/TodayPanel";
 import { ActivityTile } from "./components/stats/ActivityTile";
 import { WeekTile } from "./components/stats/WeekTile";
@@ -1430,10 +1431,7 @@ function MainApp() {
     const prevStage = prevIdleStageRef.current;
     if (stage === 3 && prevStage < 3) {
       idleRewindFromRef.current = liveWorkedTodaySeconds;
-      void notify(
-        "Timer stopped",
-        "Stopped after being idle longer than this project allows. The idle time was removed from your hours.",
-      );
+      void notify("Timer stopped", describeIdleStop(session?.idleStop));
     }
     prevIdleStageRef.current = stage;
     // liveWorkedTodaySeconds is read at the moment of the transition only -
@@ -2920,8 +2918,8 @@ function MainApp() {
                 )}
 
                 {idleStage >= 3 ? (
-                  <p data-help="The timer stopped because you were idle for longer than this project allows. That idle time was taken out of your hours." className={`page-idle-banner stage-${idleStage}`}>
-                    Timer stopped after being idle longer than this project allows. The idle time was removed from your hours.
+                  <p data-help="The timer stops when there is no mouse or keyboard input for longer than this project allows. Idle time is not counted as worked time." className={`page-idle-banner stage-${idleStage}`}>
+                    {describeIdleStop(session?.idleStop)}
                   </p>
                 ) : null}
 

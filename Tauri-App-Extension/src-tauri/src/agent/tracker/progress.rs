@@ -3,23 +3,28 @@
 
 use super::*;
 
+/// The most one tick can credit. Longer than any slow tick (each request gives up after
+/// HTTP_TIMEOUT_SEC, and a tick makes a handful), short enough that a tracker that was
+/// frozen for real cannot bank a long stretch nobody saw.
+pub(super) const MAX_TICK_CREDIT_SEC: u64 = 5 * 60;
+
 impl ActivityTracker {
-    /// Seconds to credit for one tick: real elapsed wall time since the last credited
-    /// tick, not an assumed SESSION_POLL_SEC.
+    /// Seconds to credit for one tick: the awake time since the last credited tick, not
+    /// an assumed SESSION_POLL_SEC.
     ///
-    /// Clamped to `SESSION_POLL_SEC * 4` on purpose: a sleep/hibernate gap makes the
-    /// real elapsed time huge, and that must never be banked as active work. A resumed
-    /// laptop credits at most this, then idle escalation takes over and rewinds to the
-    /// last real input - which is the correct outcome for a suspend, not a fabricated
-    /// block of "active" time in a single tick.
+    /// Sleep and hibernation are already left out by the clock (awake_clock), so a long
+    /// tick is a slow one (a screenshot upload and a session check on a slow connection)
+    /// and is credited in full. The ceiling used to be SESSION_POLL_SEC * 4 (20s),
+    /// which silently dropped everything past it on exactly the machines that are slow.
+    /// MAX_TICK_CREDIT_SEC only bounds a tracker that was frozen outright.
     pub(super) fn credited_seconds(elapsed: Duration) -> u64 {
-        elapsed.as_secs().min(SESSION_POLL_SEC * 4)
+        elapsed.as_secs().min(MAX_TICK_CREDIT_SEC)
     }
 
     /// The part of `elapsed` that was credited, so the caller can roll the remainder into
     /// the next tick instead of dropping it.
     pub(super) fn consumed_span(elapsed: Duration, credited: u64) -> Duration {
-        let cap = Duration::from_secs(SESSION_POLL_SEC * 4);
+        let cap = Duration::from_secs(MAX_TICK_CREDIT_SEC);
         if elapsed > cap {
             return elapsed;
         }
@@ -40,7 +45,7 @@ impl ActivityTracker {
         let last_tick_at = &mut state.last_tick_at;
         let active_elapsed = &mut state.active_elapsed;
         let idle_elapsed = &mut state.idle_elapsed;
-        let now = Instant::now();
+        let now = AwakeInstant::now();
         let elapsed = now.duration_since(*last_tick_at);
         let delta = Self::credited_seconds(elapsed);
         // Not `now`: the sub-second remainder stays owed and is credited by the next tick
@@ -108,9 +113,10 @@ impl ActivityTracker {
         *idle_threshold_sec = IDLE_THRESHOLD_SEC;
         // A resumed session must not credit the gap since tracking stopped - without this,
         // signing back in after a long break would credit that entire gap (clamped to
-        *last_tick_at = Instant::now();
+        *last_tick_at = AwakeInstant::now();
         *self.task_progress.lock() = (None, 0, 0);
         *self.idle_stage.lock() = 0;
+        *self.idle_stop.lock() = None;
         self.progress.clear();
     }
 

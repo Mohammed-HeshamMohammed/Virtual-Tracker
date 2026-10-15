@@ -590,7 +590,7 @@ fn carried_remainders_eventually_credit_a_whole_second() {
 fn a_sleep_gap_is_clamped_and_leaves_nothing_owed() {
     let elapsed = Duration::from_secs(3_600);
     let credited = ActivityTracker::credited_seconds(elapsed);
-    assert_eq!(credited, crate::constants::SESSION_POLL_SEC * 4);
+    assert_eq!(credited, super::progress::MAX_TICK_CREDIT_SEC);
     assert_eq!(elapsed - ActivityTracker::consumed_span(elapsed, credited), Duration::ZERO);
 }
 
@@ -682,19 +682,27 @@ fn a_short_tick_credits_exactly_what_elapsed() {
     assert_eq!(ActivityTracker::credited_seconds(Duration::from_secs(5)), 5);
 }
 
+// The bug behind "minutes taken off for no reason": a tick slowed down by a screenshot
+// upload and a session check on a slow connection credited 20s and dropped the rest.
+#[test]
+fn a_slow_tick_is_credited_in_full() {
+    assert_eq!(ActivityTracker::credited_seconds(Duration::from_secs(45)), 45);
+    assert_eq!(ActivityTracker::credited_seconds(Duration::from_secs(150)), 150);
+}
+
 #[test]
 fn a_suspend_gap_cannot_bank_hours_nobody_worked() {
-    // Laptop closed for 2h: clamp to SESSION_POLL_SEC * 4, then let idle escalation
-    // take over and rewind to the last real input.
+    // Sleep is not on the tracker's clock at all (awake_clock); this is the ceiling for
+    // a tracker that was frozen outright, which credits no more than MAX_TICK_CREDIT_SEC.
     assert_eq!(
         ActivityTracker::credited_seconds(Duration::from_secs(7200)),
-        super::SESSION_POLL_SEC * 4,
+        super::progress::MAX_TICK_CREDIT_SEC,
     );
 }
 
 #[test]
 fn the_clamp_boundary_is_exact() {
-    let ceiling = super::SESSION_POLL_SEC * 4;
+    let ceiling = super::progress::MAX_TICK_CREDIT_SEC;
     assert_eq!(
         ActivityTracker::credited_seconds(Duration::from_secs(ceiling)),
         ceiling,

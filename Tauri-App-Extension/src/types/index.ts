@@ -115,6 +115,15 @@ export type CreateTaskResult = {
   selfAssigned: boolean;
 };
 
+export type IdleStopInfo = {
+  /** How long there had been no mouse or keyboard input. */
+  idleSeconds: number;
+  /** The project's idle allowance that was passed. */
+  allowanceSeconds: number;
+  /** Worked time moved to idle by the stop. */
+  movedSeconds: number;
+};
+
 export type SessionInfo = {
   id?: string | null;
   status: string;
@@ -122,6 +131,8 @@ export type SessionInfo = {
   taskTitle?: string | null;
   projectId?: string | null;
   idleStage?: number;
+  /** Set while idleStage is 3: what the idle stop did. */
+  idleStop?: IdleStopInfo | null;
   activeSeconds?: number;
   idleSeconds?: number;
   /** The server stopped counting against the task's daily cap on this sync. */

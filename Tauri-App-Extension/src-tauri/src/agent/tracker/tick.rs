@@ -18,7 +18,7 @@ impl ActivityTracker {
     pub(super) fn tick_local_progress(&self, state: &mut TickState) {
         if !state.was_active || state.current_session.is_empty() {
             // Not tracking - or paused by the server (C1).
-            state.last_tick_at = Instant::now();
+            state.last_tick_at = AwakeInstant::now();
             return;
         }
         let idle_now = self.tick_progress(state);
@@ -321,7 +321,7 @@ impl ActivityTracker {
 
         if !state.was_active {
             // Coming back from a pause (C1), or starting: count from now.
-            state.last_tick_at = Instant::now();
+            state.last_tick_at = AwakeInstant::now();
         }
         state.was_active = true;
 
@@ -483,6 +483,7 @@ impl ActivityTracker {
             if watch.stage != 0 {
                 watch.stage = 0;
                 *self.idle_stage.lock() = 0;
+                *self.idle_stop.lock() = None;
                 self.emit_status("Task session active");
             }
             watch.active_at_last_input = active_total;
@@ -533,8 +534,16 @@ impl ActivityTracker {
 
         watch.stage = 3;
         *self.idle_stage.lock() = 3;
+        *self.idle_stop.lock() = Some(crate::types::IdleStopInfo {
+            idle_seconds: idle_for,
+            allowance_seconds: idle_threshold_sec,
+            moved_seconds: reversed,
+        });
         watch.active_at_last_input = 0;
-        self.emit_status("Timer stopped — idle too long, idle time removed");
+        self.emit_status(&format!(
+            "Timer stopped — no mouse or keyboard for {} min",
+            idle_for.div_ceil(60)
+        ));
         true
     }
 
@@ -546,7 +555,7 @@ impl ActivityTracker {
             match self.resume() {
                 Ok(()) => {
                     // Counting restarts from now, the same as a manual resume.
-                    state.last_tick_at = now;
+                    state.last_tick_at = AwakeInstant::now();
                     self.emit_status("Break ended — timer resumed");
                     return;
                 }
@@ -569,9 +578,10 @@ impl ActivityTracker {
         }
         // Same carry as tick_progress - a break's seconds are counted the same way worked
         // ones are, so the remainder is owed here too rather than thrown away on every tick
-        let elapsed = now.duration_since(state.last_tick_at);
+        let clock_now = AwakeInstant::now();
+        let elapsed = clock_now.duration_since(state.last_tick_at);
         let delta = Self::credited_seconds(elapsed);
-        state.last_tick_at = now - (elapsed - Self::consumed_span(elapsed, delta));
+        state.last_tick_at = clock_now - (elapsed - Self::consumed_span(elapsed, delta));
         if !state.idle_time_disabled {
             state.idle_elapsed += delta;
         }
@@ -640,7 +650,7 @@ impl ActivityTracker {
                 log::warn!("could not undo the server's idle state: {error}");
             }
             // Nothing was credited for the tick the server had it wrong; count from now.
-            state.last_tick_at = Instant::now();
+            state.last_tick_at = AwakeInstant::now();
             return;
         }
         let task_id = text(&["taskId", "task_id"]);
@@ -694,7 +704,7 @@ impl ActivityTracker {
                 state.active_elapsed = 0;
                 state.idle_baseline = idle_total;
                 state.idle_elapsed = 0;
-                state.last_tick_at = Instant::now();
+                state.last_tick_at = AwakeInstant::now();
                 state.next_sync_at = Instant::now() + Duration::from_secs(SESSION_SYNC_INTERVAL_SEC);
                 true
             }

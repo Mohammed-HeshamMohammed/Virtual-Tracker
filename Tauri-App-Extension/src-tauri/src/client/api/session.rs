@@ -128,6 +128,7 @@ impl ApiClient {
                 task_title: None,
                 project_id: None,
                 idle_stage: 0,
+                idle_stop: None,
                 active_seconds: 0,
                 idle_seconds: 0,
                 timer_capped: false,
@@ -156,6 +157,7 @@ fn session_info_from_json(data: Option<&Value>) -> crate::types::SessionInfo {
         // Filled in by the controller from the live tracker - the server has no view of
         // local idle state.
         idle_stage: 0,
+        idle_stop: None,
         project_id: data
             .and_then(|d| d.get("projectId").or_else(|| d.get("project_id")))
             .and_then(|v| v.as_str())

@@ -17,6 +17,9 @@ use crate::constants::{
 };
 use crate::queue::EventQueue;
 
+mod awake_clock;
+use awake_clock::AwakeInstant;
+
 pub type StatusCallback = Arc<dyn Fn(String) + Send + Sync>;
 
 /// Consecutive failed session fetches before the UI is told the numbers are unconfirmed.
@@ -60,6 +63,8 @@ pub struct ActivityTracker {
     /// `pause()`/`resume()` - called directly from the controller, outside the tick loop -
     last_project_id: Arc<Mutex<String>>,
     idle_stage: Arc<Mutex<u8>>,
+    /// What the last idle stop did; cleared with idle_stage.
+    idle_stop: Arc<Mutex<Option<crate::types::IdleStopInfo>>>,
     /// An idle-escalation "stop" that hasn't reached the server yet.
     pending_stop: Arc<Mutex<Option<PendingStop>>>,
     /// AC-1: throttle for the synthetic-input warning below - a jiggler runs continuously,
@@ -112,7 +117,8 @@ struct TickState {
     next_break_end_attempt_at: Instant,
     next_sync_at: Instant,
     idle_watch: IdleWatch,
-    last_tick_at: Instant,
+    /// Awake time, not wall time: see awake_clock.
+    last_tick_at: AwakeInstant,
     /// MAC-3/CQ-4: due immediately on the first tick, then re-fetched every
     /// DISPLAY_NAME_REFRESH_INTERVAL_SEC - see maybe_refresh_display_names.
     next_display_name_refresh_at: Instant,
@@ -144,7 +150,7 @@ impl TickState {
             next_break_end_attempt_at: now,
             next_sync_at: now,
             idle_watch: IdleWatch::default(),
-            last_tick_at: now,
+            last_tick_at: AwakeInstant::now(),
             ticks_since_session_fetch: u32::MAX,
             failed_session_fetches: 0,
             next_display_name_refresh_at: now,
@@ -197,6 +203,7 @@ impl ActivityTracker {
             task_progress: Arc::new(Mutex::new((None, 0, 0))),
             last_project_id: Arc::new(Mutex::new(String::new())),
             idle_stage: Arc::new(Mutex::new(0)),
+            idle_stop: Arc::new(Mutex::new(None)),
             pending_stop: Arc::new(Mutex::new(None)),
             last_synthetic_warning_at: Mutex::new(None),
             idle_threshold_sec: AtomicU64::new(IDLE_THRESHOLD_SEC),
@@ -213,6 +220,10 @@ impl ActivityTracker {
 
     pub fn idle_stage(&self) -> u8 {
         *self.idle_stage.lock()
+    }
+
+    pub fn idle_stop(&self) -> Option<crate::types::IdleStopInfo> {
+        self.idle_stop.lock().clone()
     }
 
     /// Caller (`AgentController::start_tracker`) always stops any prior tracker and builds
