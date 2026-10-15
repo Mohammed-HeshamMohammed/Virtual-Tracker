@@ -1204,13 +1204,24 @@ export async function getProjectActivityMetricsPg({ projectIds = null, fromDay, 
        SELECT s.project_id, s.member_id,
               s.active_seconds AS active_seconds,
               s.idle_seconds   AS idle_seconds,
+              shots.activity_sum,
+              shots.activity_count,
               (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
        FROM activity_sessions s
        LEFT JOIN members m ON m.id = s.member_id
+       -- Activity is the screenshots' levels, the same figure every activity page
+       -- and report shows (see modules/activity/activity-average.js).
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(sc.activity_level), 0) AS activity_sum, COUNT(*) AS activity_count
+         FROM activity_screenshots sc
+         WHERE sc.session_id = s.id::text
+       ) shots ON true
        UNION ALL
        SELECT te.project_id, te.member_id,
               te.duration AS active_seconds,
               0           AS idle_seconds,
+              0           AS activity_sum,
+              0           AS activity_count,
               te.date     AS day
        FROM time_entries te
        WHERE te.status <> 'rejected'
@@ -1218,6 +1229,8 @@ export async function getProjectActivityMetricsPg({ projectIds = null, fromDay, 
      SELECT project_id,
             SUM(active_seconds) AS active_seconds,
             SUM(idle_seconds)   AS idle_seconds,
+            SUM(activity_sum)   AS activity_sum,
+            SUM(activity_count) AS activity_count,
             ARRAY_AGG(DISTINCT member_id) FILTER (WHERE member_id IS NOT NULL) AS member_ids
      FROM worked
      WHERE project_id IS NOT NULL
@@ -1232,6 +1245,8 @@ export async function getProjectActivityMetricsPg({ projectIds = null, fromDay, 
     byProject.set(String(row.project_id), {
       activeSeconds: Math.max(0, Number(row.active_seconds) || 0),
       idleSeconds: Math.max(0, Number(row.idle_seconds) || 0),
+      activitySum: Math.max(0, Number(row.activity_sum) || 0),
+      activityCount: Math.max(0, Number(row.activity_count) || 0),
       memberIds: new Set((row.member_ids ?? []).map((id) => String(id))),
     });
   }
@@ -1370,20 +1385,33 @@ export async function getMemberProjectActivityMetricsPg({ projectIds = null, mem
        SELECT s.project_id, s.member_id,
               s.active_seconds AS active_seconds,
               s.idle_seconds   AS idle_seconds,
+              shots.activity_sum,
+              shots.activity_count,
               (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
        FROM activity_sessions s
        LEFT JOIN members m ON m.id = s.member_id
+       -- Activity is the screenshots' levels, the same figure every activity page
+       -- and report shows (see modules/activity/activity-average.js).
+       LEFT JOIN LATERAL (
+         SELECT COALESCE(SUM(sc.activity_level), 0) AS activity_sum, COUNT(*) AS activity_count
+         FROM activity_screenshots sc
+         WHERE sc.session_id = s.id::text
+       ) shots ON true
        UNION ALL
        SELECT te.project_id, te.member_id,
               te.duration AS active_seconds,
               0           AS idle_seconds,
+              0           AS activity_sum,
+              0           AS activity_count,
               te.date     AS day
        FROM time_entries te
        WHERE te.status <> 'rejected'
      )
      SELECT project_id,
             SUM(active_seconds) AS active_seconds,
-            SUM(idle_seconds)   AS idle_seconds
+            SUM(idle_seconds)   AS idle_seconds,
+            SUM(activity_sum)   AS activity_sum,
+            SUM(activity_count) AS activity_count
      FROM worked
      WHERE project_id IS NOT NULL AND member_id = $4
        AND day >= $1::date AND day <= $2::date
@@ -1397,6 +1425,8 @@ export async function getMemberProjectActivityMetricsPg({ projectIds = null, mem
     byProject.set(String(row.project_id), {
       activeSeconds: Math.max(0, Number(row.active_seconds) || 0),
       idleSeconds: Math.max(0, Number(row.idle_seconds) || 0),
+      activitySum: Math.max(0, Number(row.activity_sum) || 0),
+      activityCount: Math.max(0, Number(row.activity_count) || 0),
     });
   }
   return byProject;

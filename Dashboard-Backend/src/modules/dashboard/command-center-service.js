@@ -17,6 +17,7 @@ import {
 } from "../../lib/postgres/projects-postgres.service.js";
 import { loadDashboardBase, pseudoDocsFromSerialized } from "./dashboard-base-loader.js";
 import { getMemberTimezone } from "../reports/member-timezones.js";
+import { averageActivity } from "../activity/activity-average.js";
 import {
   budgetSpent,
   buildTrendPaths,
@@ -275,7 +276,9 @@ function buildStats(projectRow, projectId, metrics, prevActiveSeconds) {
       ? Math.min(100, Math.round((projectRow.budgetSpent / projectRow.budgetTotal) * 100))
       : 0;
 
-  const activityPercent = trackedSeconds > 0 ? Math.round((activeSeconds / trackedSeconds) * 100) : 0;
+  // The screenshots' activity levels, averaged: the same activity the Screenshots,
+  // Apps, URLs and report pages show, so a correction there moves this too.
+  const activityPercent = averageActivity(metrics?.activitySum ?? 0, metrics?.activityCount ?? 0) ?? 0;
 
   const timeWorkedTrendPercent =
     prevActiveSeconds > 0
@@ -291,7 +294,7 @@ function buildStats(projectRow, projectId, metrics, prevActiveSeconds) {
     budgetLabel: hasBudget ? "Budget Used" : "No Budget",
     activityPercent,
     activityBadge:
-      trackedSeconds === 0
+      trackedSeconds === 0 || !(metrics?.activityCount > 0)
         ? "IDLE"
         : activityPercent >= 85
           ? "PEAK"
@@ -476,22 +479,27 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   }
 
   function metricsFor(projectId) {
-    if (projectId) return projectMetrics.get(projectId) ?? { activeSeconds: 0, idleSeconds: 0, memberIds: new Set() };
-    const all = { activeSeconds: 0, idleSeconds: 0, memberIds: new Set() };
+    if (projectId)
+      return projectMetrics.get(projectId) ?? { activeSeconds: 0, idleSeconds: 0, activitySum: 0, activityCount: 0, memberIds: new Set() };
+    const all = { activeSeconds: 0, idleSeconds: 0, activitySum: 0, activityCount: 0, memberIds: new Set() };
     for (const metrics of projectMetrics.values()) {
       all.activeSeconds += metrics.activeSeconds;
       all.idleSeconds += metrics.idleSeconds;
+      all.activitySum += metrics.activitySum ?? 0;
+      all.activityCount += metrics.activityCount ?? 0;
       for (const memberId of metrics.memberIds) all.memberIds.add(memberId);
     }
     return all;
   }
 
   function personalMetricsFor(projectId) {
-    if (projectId) return personalMetrics.get(projectId) ?? { activeSeconds: 0, idleSeconds: 0 };
-    const all = { activeSeconds: 0, idleSeconds: 0 };
+    if (projectId) return personalMetrics.get(projectId) ?? { activeSeconds: 0, idleSeconds: 0, activitySum: 0, activityCount: 0 };
+    const all = { activeSeconds: 0, idleSeconds: 0, activitySum: 0, activityCount: 0 };
     for (const metrics of personalMetrics.values()) {
       all.activeSeconds += metrics.activeSeconds;
       all.idleSeconds += metrics.idleSeconds;
+      all.activitySum += metrics.activitySum ?? 0;
+      all.activityCount += metrics.activityCount ?? 0;
     }
     return all;
   }

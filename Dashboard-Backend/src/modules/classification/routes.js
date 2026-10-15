@@ -1,3 +1,4 @@
+import { clearDashboardCache } from "../dashboard/dashboard-cache.js";
 import { requireAuthContext, isManagementRole } from "../../http/auth-context.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { sendJson } from "../../http/response.js";
@@ -86,6 +87,8 @@ export async function routeClassification(req, res, url, origin) {
         },
         { memberId: viewer.memberId, roleName: viewer.roleName },
       );
+      // Anything the dashboard built from the old categories is out of date.
+      clearDashboardCache();
       sendJson(res, origin, 200, { success: true, data: updated });
     } catch (e) {
       const status = (e && ERROR_STATUS[/** @type {{code?:string}} */ (e).code]) || 500;
@@ -108,6 +111,7 @@ export async function routeClassification(req, res, url, origin) {
     const id = pn.slice("/api/classification/categories/".length).split("/")[0];
     try {
       await removeCategory(id, { memberId: viewer.memberId, roleName: viewer.roleName });
+      clearDashboardCache();
       sendJson(res, origin, 200, { success: true, data: null });
     } catch (e) {
       const status = (e && ERROR_STATUS[/** @type {{code?:string}} */ (e).code]) || 500;
