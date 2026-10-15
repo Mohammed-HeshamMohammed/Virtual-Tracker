@@ -4,26 +4,59 @@
     {
       "name": "dashboard-web-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "Dashboard-Web", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "Dashboard-Web",
+        "run",
+        "dev"
+      ],
       "port": 3000
     },
     {
       "name": "tauri-app-vite",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "Tauri-App-Extension", "run", "dev", "--", "--port", "4173"],
+      "runtimeArgs": [
+        "--prefix",
+        "Tauri-App-Extension",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "4173"
+      ],
       "port": 4173
     },
     {
       "name": "static-hosting-public",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8099"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8099"
+      ],
       "port": 8099
     },
     {
       "name": "soft-fix-tracker-vite",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "Soft fix Tracker", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "Soft fix Tracker",
+        "run",
+        "dev"
+      ],
       "port": 1421
+    },
+    {
+      "name": "landing-web-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "Landing-Web",
+        "run",
+        "dev"
+      ],
+      "port": 3001
     }
   ]
 }
