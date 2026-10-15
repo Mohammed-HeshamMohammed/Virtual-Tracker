@@ -1,8 +1,10 @@
 "use client"
 
 import React from "react"
+import { detectWindowsGeneration } from "./windows-version"
 
-export type PlatformOption = "windows" | "mac" | "linux"
+/** "windows-legacy" is the build for Windows 7, 8 and 8.1 (Tauri-App-Extension/PLAN-windows-7-legacy-build.md). */
+export type PlatformOption = "windows" | "windows-legacy" | "mac" | "linux"
 
 export interface AgentDownloadChoicesProps {
   className?: string
@@ -67,15 +69,39 @@ export function AgentDownloadChoices({
   compact = false,
   apiBaseUrl,
 }: AgentDownloadChoicesProps) {
+  // Which Windows build is this computer's, so its card can say so. Both are always listed and
+  // each links straight to its own installer, so a wrong guess still leaves the right one a
+  // click away, picked by the Windows version written on it.
+  const [windowsBuild, setWindowsBuild] = React.useState<"legacy" | "modern" | null>(null)
+  React.useEffect(() => {
+    let live = true
+    void detectWindowsGeneration().then((found) => {
+      if (live) setWindowsBuild(found)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+  const isYours = (id: PlatformOption) => (id === "windows" && windowsBuild === "modern") || (id === "windows-legacy" && windowsBuild === "legacy")
+
   const options = [
     {
       id: "windows" as PlatformOption,
-      title: "Windows",
-      subtitle: ".exe / .msi installer",
+      title: "Windows 10 / 11",
+      subtitle: "Won't start on Windows 7 or 8. Not sure? Press the Windows key, type winver, press Enter.",
       icon: WindowsIcon,
       badge: "Win 10/11",
       accent: "hover:border-blue-500/40 text-blue-400",
       btnClass: "bg-blue-600 hover:bg-blue-500 text-white",
+    },
+    {
+      id: "windows-legacy" as PlatformOption,
+      title: "Windows 7 / 8 / 8.1",
+      subtitle: "For Windows versions Microsoft no longer supports. Also runs on 10 and 11, but is larger.",
+      icon: WindowsIcon,
+      badge: "Win 7/8/8.1",
+      accent: "hover:border-sky-500/40 text-sky-300",
+      btnClass: "bg-sky-700 hover:bg-sky-600 text-white",
     },
     {
       id: "mac" as PlatformOption,
@@ -106,10 +132,11 @@ export function AgentDownloadChoices({
             <a
               key={opt.id}
               href={resolveDownloadUrl(opt.id, apiBaseUrl)}
-              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border border-slate-700 bg-slate-800/80 hover:bg-slate-800 text-slate-200 text-xs font-semibold transition-all ${opt.accent}`}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl border bg-slate-800/80 hover:bg-slate-800 text-slate-200 text-xs font-semibold transition-all ${opt.accent} ${isYours(opt.id) ? "border-slate-300" : "border-slate-700"}`}
             >
               <Icon className="w-4 h-4 shrink-0" />
               <span>{opt.title}</span>
+              {isYours(opt.id) && <span className="text-[10px] font-medium text-slate-400">(your computer)</span>}
             </a>
           )
         })}
@@ -118,21 +145,21 @@ export function AgentDownloadChoices({
   }
 
   return (
-    <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 ${className}`}>
+    <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 ${className}`}>
       {options.map((opt) => {
         const Icon = opt.icon
         return (
           <div
             key={opt.id}
-            className={`group relative flex flex-col justify-between p-5 rounded-2xl border border-slate-800 bg-slate-900/90 transition-all duration-200 hover:scale-[1.02] ${opt.accent}`}
+            className={`group relative flex flex-col justify-between p-5 rounded-2xl border bg-slate-900/90 transition-all duration-200 hover:scale-[1.02] ${opt.accent} ${isYours(opt.id) ? "border-slate-300" : "border-slate-800"}`}
           >
             <div>
               <div className="flex items-center justify-between mb-3">
                 <div className="p-2.5 rounded-xl bg-slate-800 border border-slate-700">
                   <Icon className="w-6 h-6" />
                 </div>
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">
-                  {opt.badge}
+                <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${isYours(opt.id) ? "bg-slate-100 text-slate-900" : "bg-slate-800 text-slate-400"}`}>
+                  {isYours(opt.id) ? "Your computer" : opt.badge}
                 </span>
               </div>
               <h3 className="text-base font-bold text-white mb-0.5">{opt.title}</h3>
