@@ -88,6 +88,7 @@ import {
 import { useReportColumnAutoHide } from "@/features/reports/hooks/use-report-column-auto-hide"
 import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
 import { copyTextToClipboard } from "@/shared/utils/clipboard"
+import { activityLabel } from "@/features/reports/utils/time-and-activity/activity"
 
 const GROUP_KEY: Record<TimeActivityGroupBy, TeamGroupKey> = {
   date_per_day: "date",
@@ -789,7 +790,7 @@ export function TimeActivityReportView({
                                   <ContextMenu.Item
                                     onSelect={() =>
                                       void copyTextToClipboard(
-                                        `${member.name} — ${day.dateLabel}\nTotal hours: ${member.totalHours}\nActivity: ${member.activityPct}%${moneyHidden ? "" : `\nTotal spent: ${member.totalSpent}`}`,
+                                        `${member.name} — ${day.dateLabel}\nTotal hours: ${member.totalHours}\nActivity: ${activityLabel(member)}${moneyHidden ? "" : `\nTotal spent: ${member.totalSpent}`}`,
                                       )
                                     }
                                     className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 outline-none transition-colors hover:bg-slate-50 focus:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800 dark:focus:bg-slate-800"

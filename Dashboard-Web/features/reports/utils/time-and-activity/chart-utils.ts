@@ -1,5 +1,6 @@
 import type { TimeActivityDayRow, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
 import { formatMoney } from "@/shared/utils/workspace-currency"
+import { activityLabel } from "@/features/reports/utils/time-and-activity/activity"
 
 export function buildYTicks(maxVal: number, metric: TimeActivityMetric): number[] {
   if (maxVal <= 0) return metric === "activity" ? [0, 25, 50, 75, 100] : [0, 1, 2, 3, 4]
@@ -51,7 +52,7 @@ export function formatMetricDisplayValue(metric: TimeActivityMetric, d: TimeActi
     case "total_spent":
       return d.totalSpent
     case "activity":
-      return `${d.activityPct}%`
+      return activityLabel(d)
     default:
       return d.totalHours
   }

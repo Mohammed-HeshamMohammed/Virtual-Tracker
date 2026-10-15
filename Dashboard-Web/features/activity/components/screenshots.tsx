@@ -12,6 +12,7 @@ import {
   deleteActivityScreenshot,
   updateScreenshotActivityLevel,
 } from "@/features/activity/services/activity-api"
+import { clearActivityFeedCache } from "@/features/activity/utils/activity-feed-cache"
 import { ScreenshotActivityEditor } from "@/features/activity/components/screenshot-activity-editor"
 import { ScreenshotRemovalRequest } from "@/features/activity/components/screenshot-removal-request"
 import { ActivityEmptyState } from "@/features/activity/components/activity-empty-state"
@@ -448,6 +449,10 @@ export function ActivityScreenshots() {
       // reload({ force }) skips the persistent cache but not the in-memory
       // feed cache in activity-api — clear it or the rows re-serve stale.
       clearActivityApiFeedCache()
+      // The Apps and URLs pages average these same levels, so their saved
+      // copies are out of date too; the event refreshes any that are open.
+      clearActivityFeedCache()
+      window.dispatchEvent(new Event("vt-activity-feed-invalidate"))
       await Promise.all([reload({ force: true }), reloadInsights({ force: true })])
       setSelectedScreenshot((current) =>
         current && result.ids.includes(current.id) ? { ...current, activityLevel } : current,

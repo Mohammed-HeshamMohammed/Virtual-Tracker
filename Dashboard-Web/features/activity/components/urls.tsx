@@ -11,6 +11,7 @@ import { canClassifyActivity, canExportActivity, canManageActivityData } from "@
 import { motion } from "framer-motion"
 import { Clock, Globe, ExternalLink, TrendingUp, TrendingDown, Eye } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
+import { ActivityPercent, activityCell } from "@/features/activity/components/activity-percent"
 import {
   ActivityDayEmptyState,
   ActivityLoadingState,
@@ -42,6 +43,8 @@ interface URLUsage {
   avgTime: string
   lastVisit: string
   sourceKind?: "url" | "window"
+  /** Average activity of the screenshots taken on this site; null when none were. */
+  activityPct?: number | null
 }
 
 interface MemberUrlUsage {
@@ -54,6 +57,8 @@ interface MemberUrlUsage {
   neutralTime: string
   unproductiveTime: string
   topDomain: string
+  /** Average activity of this member's screenshots taken on websites. */
+  activityPct?: number | null
 }
 
 type UrlsFeed = { urls: URLUsage[]; members: MemberUrlUsage[] }
@@ -229,6 +234,7 @@ export function ActivityURLsContent() {
       { header: "Visits", key: "visits", width: 10 },
       { header: "Avg Time", key: "avgTime", width: 12 },
       { header: "Last Visit", key: "lastVisit", width: 20 },
+      { header: "Activity", key: "activity", width: 10 },
     ]
     
     const urlRows = filteredURLs.map((url) => ({
@@ -239,6 +245,7 @@ export function ActivityURLsContent() {
       visits: url.visits,
       avgTime: url.avgTime,
       lastVisit: url.lastVisit,
+      activity: activityCell(url.activityPct),
     }))
     
     urlRows.forEach(row => urlsSheet.addRow(row))
@@ -259,6 +266,7 @@ export function ActivityURLsContent() {
       { header: "Neutral Time", key: "neutralTime", width: 15 },
       { header: "Unproductive Time", key: "unproductiveTime", width: 18 },
       { header: "Top Domain", key: "topDomain", width: 25 },
+      { header: "Activity", key: "activity", width: 10 },
     ]
 
     membersSource.forEach((member) => {
@@ -269,6 +277,7 @@ export function ActivityURLsContent() {
         neutralTime: member.neutralTime,
         unproductiveTime: member.unproductiveTime,
         topDomain: member.topDomain,
+        activity: activityCell(member.activityPct),
       })
     })
 
@@ -432,6 +441,9 @@ export function ActivityURLsContent() {
                         Visits
                       </th>
                       <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        Activity
+                      </th>
+                      <th className="px-5 py-3 text-left text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">
                         Category
                       </th>
                       {canManage ? (
@@ -490,6 +502,9 @@ export function ActivityURLsContent() {
                           <p className="text-xs text-slate-500 dark:text-slate-400">Avg: {url.avgTime}</p>
                         </td>
                         <td className="px-5 py-4 text-sm text-slate-600 dark:text-slate-300">{url.visits}</td>
+                        <td className="px-5 py-4">
+                          <ActivityPercent value={url.activityPct} where={`on ${url.domain}`} />
+                        </td>
                         <td className="px-5 py-4">
                           <span
                             className={cn(
@@ -576,6 +591,7 @@ export function ActivityURLsContent() {
                               {member.productiveTime} tracked
                             </span>
                             <span>Top site: {member.topDomain}</span>
+                            {member.activityPct != null ? <span>{member.activityPct}% activity</span> : null}
                           </div>
                         </div>
                       </div>

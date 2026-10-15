@@ -1,5 +1,6 @@
 import type { WorkSessionGroupBy, WorkSessionRow, WorkSessionScope } from "@/features/reports/models/work-sessions"
 import { parseTimeToSeconds } from "@/features/reports/utils/time-and-activity/row-aggregate"
+import { activityPercent } from "@/features/reports/utils/time-and-activity/activity"
 
 export function formatWorkSessionDuration(totalSec: number): string {
   const h = Math.floor(totalSec / 3600)
@@ -58,13 +59,16 @@ export function aggregateWorkSessionTotals(rows: WorkSessionRow[]): {
   let timeSec = 0
   let breakSec = 0
   let actSum = 0
+  let actCount = 0
   for (const r of rows) {
     timeSec += parseTimeToSeconds(r.durationHms)
     if (r.breakHms) breakSec += parseTimeToSeconds(r.breakHms)
-    actSum += r.activityPct
+    // Every screenshot counts once, so a short session does not weigh as much as a
+    // long one, and a session without screenshots does not count as 0%.
+    actSum += r.activitySum
+    actCount += r.activityCount
   }
-  const n = rows.length
-  const avgActivity = n === 0 ? 0 : Math.round(actSum / n)
+  const avgActivity = activityPercent(actSum, actCount)
   return { timeSec, breakSec, avgActivity }
 }
 
@@ -212,7 +216,7 @@ export function exportWorkSessionsToCsv(rows: WorkSessionRow[]): string {
         r.startedLabel,
         r.stoppedBy ? `${r.stoppedLabel} (${r.stoppedBy})` : r.stoppedLabel,
         r.durationHms,
-        String(r.activityPct),
+        r.activityCount > 0 ? String(r.activityPct) : "",
       ]
         .map((c) => esc(String(c)))
         .join(",")

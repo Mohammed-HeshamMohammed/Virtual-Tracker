@@ -3,6 +3,7 @@
 import type { ReactNode } from "react"
 import { formatDecimalHoursClock } from "@/features/reports/utils/time-and-activity"
 import type { TimeActivityDayRow } from "@/features/reports/models/time-and-activity"
+import { activityLabel } from "@/features/reports/utils/time-and-activity/activity"
 
 export function ReportPeriodMetricCell({ day, colKey }: { day: TimeActivityDayRow; colKey: string }): ReactNode {
   switch (colKey) {
@@ -30,7 +31,7 @@ export function ReportPeriodMetricCell({ day, colKey }: { day: TimeActivityDayRo
     case "total_hours":
       return <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{day.totalHours}</span>
     case "activity_pct":
-      return <span className="text-sm text-slate-700 dark:text-slate-200">{day.activityPct}%</span>
+      return <span className="text-sm text-slate-700 dark:text-slate-200">{activityLabel(day)}</span>
     case "idle_pct":
       return <span className="text-sm text-slate-500 dark:text-slate-400">{day.idlePct}</span>
     case "idle_hr":

@@ -19,7 +19,11 @@ export interface TimeActivityDayRow {
   regularHours: string
   breakTime: string
   totalHours: string
+  /** The average of activitySum over activityCount (see utils/time-and-activity/activity). */
   activityPct: number
+  activitySum: number
+  /** Screenshots the activity covers; 0 means no activity is known. */
+  activityCount: number
   idlePct: string
   idleHr: string
   totalSpent: string
@@ -39,6 +43,8 @@ export interface TimeActivityMemberSubRow {
   totalHours: string
   breakTime: string
   activityPct: number
+  activitySum: number
+  activityCount: number
   idlePct: string
   idleHr: string
   totalSpent: string
@@ -58,6 +64,9 @@ export interface TimeActivityEntry {
   activeSeconds: number
   idleSeconds: number
   manualSeconds: number
+  /** The screenshots' activity levels in this row, summed, and how many there were. */
+  activitySum: number
+  activityCount: number
   spentAmount: number
   currency: string
   /** The member's hourly pay rate on this day, in the currency it is paid

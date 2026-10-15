@@ -1,5 +1,6 @@
 import type { TimeActivityDayRow, TimeActivityMemberSubRow, TimeActivityMetric } from "@/features/reports/models/time-and-activity"
 import { moneyLabelToNumber, sumMoneyStrings } from "@/features/reports/utils/money"
+import { activityPercent } from "@/features/reports/utils/time-and-activity/activity"
 
 export function parseTimeToSeconds(hms: string): number {
   const parts = hms.split(":").map(Number)
@@ -29,6 +30,8 @@ function aggregateMemberSubRows(subs: TimeActivityMemberSubRow[]): {
   breakTime: string
   totalHours: string
   activityPct: number
+  activitySum: number
+  activityCount: number
   idlePct: string
   idleHr: string
   totalSpent: string
@@ -41,6 +44,8 @@ function aggregateMemberSubRows(subs: TimeActivityMemberSubRow[]): {
       breakTime: "0:00:00",
       totalHours: "0:00:00",
       activityPct: 0,
+      activitySum: 0,
+      activityCount: 0,
       idlePct: "-",
       idleHr: "0:00:00",
       totalSpent: "$0.00",
@@ -54,19 +59,19 @@ function aggregateMemberSubRows(subs: TimeActivityMemberSubRow[]): {
   const idleSec = subs.reduce((a, s) => a + parseTimeToSeconds(s.idleHr), 0)
   const tracked = subs.reduce((a, s) => a + s.trackedHours, 0)
   const manual = subs.reduce((a, s) => a + s.manualHours, 0)
-  // Weighted by each member's actual active/idle seconds, not an average of their
-  // individual percentages - a member who tracked one minute at 100% shouldn't
-  // count as much as one who tracked 8 hours at 60%. regSec is exactly the sum of
-  // activeSeconds (regularHours is formatted straight from it in toMemberSubRow),
-  // so it doubles as the "active" side of that ratio without recomputing it from
-  // the already-summed tracked hours and risking float drift between the two.
-  const activityPct = regSec + idleSec > 0 ? Math.round((regSec / (regSec + idleSec)) * 100) : 0
+  // Every screenshot counts once, not each member's percentage: a member with one
+  // screenshot at 100% must not weigh as much as one with forty at 60%.
+  const activitySum = subs.reduce((a, s) => a + s.activitySum, 0)
+  const activityCount = subs.reduce((a, s) => a + s.activityCount, 0)
+  const activityPct = activityPercent(activitySum, activityCount)
   const idlePct = regSec + idleSec > 0 ? `${Math.round((idleSec / (regSec + idleSec)) * 100)}%` : "-"
   return {
     regularHours: formatSecondsAsHMS(regSec),
     breakTime: formatSecondsAsHMS(breakSec),
     totalHours: formatSecondsAsHMS(totSec),
     activityPct,
+    activitySum,
+    activityCount,
     idlePct,
     idleHr: formatSecondsAsHMS(idleSec),
     // sumMoneyStrings, not subs[0].totalSpent - the old code silently dropped
@@ -151,6 +156,8 @@ export function buildDisplayDay(
       breakTime: "0:00:00",
       totalHours: "0:00:00",
       activityPct: 0,
+      activitySum: 0,
+      activityCount: 0,
       trackedHours: 0,
       manualHours: 0,
     }
@@ -165,6 +172,8 @@ export function buildDisplayDay(
     breakTime: agg.breakTime,
     totalHours: agg.totalHours,
     activityPct: agg.activityPct,
+    activitySum: agg.activitySum,
+    activityCount: agg.activityCount,
     trackedHours: agg.trackedHours,
     idlePct: agg.idlePct,
     idleHr: agg.idleHr,

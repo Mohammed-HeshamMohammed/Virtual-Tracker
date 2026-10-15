@@ -6,6 +6,7 @@ import { formatMoney, sumMoneyByCurrency } from "@/features/reports/utils/money"
 
 import { toDateParam } from "@/features/reports/utils/time-and-activity/date-range"
 import { resolveViewerCurrency } from "@/features/reports/utils/viewer-currency"
+import { activityPercent } from "@/features/reports/utils/time-and-activity/activity"
 import type { TeamReportInput } from "@/shared/pdf-core/documents"
 import type { PdfOptions } from "@/shared/pdf-core/options"
 
@@ -16,6 +17,8 @@ interface RawMemberDay {
   activeSeconds: number
   idleSeconds: number
   manualSeconds?: number
+  activitySum?: number
+  activityCount?: number
   spentAmount?: number
   currency?: string
   projectNames: string[]
@@ -37,6 +40,8 @@ interface RawEntry {
   activeSeconds: number
   idleSeconds: number
   manualSeconds?: number
+  activitySum?: number
+  activityCount?: number
   spentAmount: number
   currency?: string
   payRate?: number
@@ -93,9 +98,9 @@ function toMemberSubRow(member: RawMemberDay, photos: Map<string, string>): Time
     regularHours,
     totalHours,
     breakTime: "00:00:00",
-    activityPct: member.activeSeconds + member.idleSeconds > 0
-      ? Math.round((member.activeSeconds / (member.activeSeconds + member.idleSeconds)) * 100)
-      : 0,
+    activityPct: activityPercent(member.activitySum ?? 0, member.activityCount ?? 0),
+    activitySum: member.activitySum ?? 0,
+    activityCount: member.activityCount ?? 0,
     idlePct: pctString(member.idleSeconds, member.activeSeconds),
     idleHr: formatSecondsAsHMS(member.idleSeconds),
     // Same formatter the day-total row below uses (sumMoneyByCurrency -> formatMoney),
@@ -112,6 +117,8 @@ function toDayRow(day: RawReportDay): TimeActivityDayRow {
   const totalActive = day.members.reduce((sum, m) => sum + m.activeSeconds, 0)
   const totalIdle = day.members.reduce((sum, m) => sum + m.idleSeconds, 0)
   const totalManual = day.members.reduce((sum, m) => sum + (m.manualSeconds ?? 0), 0)
+  const activitySum = day.members.reduce((sum, m) => sum + (m.activitySum ?? 0), 0)
+  const activityCount = day.members.reduce((sum, m) => sum + (m.activityCount ?? 0), 0)
   const projectNames = new Set(day.members.flatMap((m) => m.projectNames))
   const regularHours = formatSecondsAsHMS(totalActive)
   const totalHours = formatSecondsAsHMS(totalActive + totalManual)
@@ -127,7 +134,9 @@ function toDayRow(day: RawReportDay): TimeActivityDayRow {
     regularHours,
     breakTime: "00:00:00",
     totalHours,
-    activityPct: totalActive + totalIdle > 0 ? Math.round((totalActive / (totalActive + totalIdle)) * 100) : 0,
+    activityPct: activityPercent(activitySum, activityCount),
+    activitySum,
+    activityCount,
     idlePct: pctString(totalIdle, totalActive),
     idleHr: formatSecondsAsHMS(totalIdle),
     // Every member's amount is already in the report's display currency, so
@@ -151,6 +160,8 @@ function toEntry(raw: RawEntry): TimeActivityEntry {
     activeSeconds: raw.activeSeconds,
     manualSeconds: raw.manualSeconds ?? 0,
     idleSeconds: raw.idleSeconds,
+    activitySum: raw.activitySum ?? 0,
+    activityCount: raw.activityCount ?? 0,
     spentAmount: raw.spentAmount ?? 0,
     currency: raw.currency || "USD",
     payRate: raw.payRate ?? 0,
@@ -178,6 +189,8 @@ function zeroDayRow(date: string): TimeActivityDayRow {
     breakTime: "00:00:00",
     totalHours: "00:00:00",
     activityPct: 0,
+    activitySum: 0,
+    activityCount: 0,
     idlePct: pctString(0, 0),
     idleHr: "00:00:00",
     totalSpent: formatMoney(0),
