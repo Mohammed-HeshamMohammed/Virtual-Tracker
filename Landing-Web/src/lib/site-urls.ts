@@ -26,8 +26,9 @@ export function isExternalHref(href: string): boolean {
 const LANDING_API_URL = process.env.NEXT_PUBLIC_LANDING_API_URL?.trim() ?? ""
 
 /** `arch` only matters for a Mac, which has two builds: "arm64" (Apple Silicon) or "x64" (Intel). */
+/** "windows-legacy" is the build for Windows 7, 8 and 8.1 (Tauri-App-Extension/PLAN-windows-7-legacy-build.md). */
 export function getAgentDownloadUrl(
-  platform: "windows" | "mac" | "linux" = "windows",
+  platform: "windows" | "windows-legacy" | "mac" | "linux" = "windows",
   arch?: "arm64" | "x64",
 ): string {
   const base = LANDING_API_URL || ""

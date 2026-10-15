@@ -2,6 +2,7 @@
 
 import React from "react"
 import { getAgentDownloadUrl } from "@/lib/site-urls"
+import { detectWindowsGeneration } from "@/lib/windows-version"
 
 function WindowsIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -27,7 +28,7 @@ function LinuxIcon(props: React.SVGProps<SVGSVGElement>) {
   )
 }
 
-export type PlatformOption = "windows" | "mac" | "linux"
+export type PlatformOption = "windows" | "windows-legacy" | "mac" | "linux"
 
 export interface AgentDownloadChoicesProps {
   className?: string
@@ -35,6 +36,21 @@ export interface AgentDownloadChoicesProps {
 }
 
 export function AgentDownloadChoices({ className = "", compact = false }: AgentDownloadChoicesProps) {
+  // Which Windows build is this computer's, so its card can say so. Both are always listed and
+  // each links straight to its own installer, so a wrong guess, or no script at all, still
+  // leaves the member able to pick the right one by the Windows version written on it.
+  const [windowsBuild, setWindowsBuild] = React.useState<"legacy" | "modern" | null>(null)
+  React.useEffect(() => {
+    let live = true
+    void detectWindowsGeneration().then((found) => {
+      if (live) setWindowsBuild(found)
+    })
+    return () => {
+      live = false
+    }
+  }, [])
+  const isYours = (key: string) => (key === "windows" && windowsBuild === "modern") || (key === "windows-legacy" && windowsBuild === "legacy")
+
   const options: {
     key: string
     id: PlatformOption
@@ -50,12 +66,24 @@ export function AgentDownloadChoices({ className = "", compact = false }: AgentD
     {
       key: "windows",
       id: "windows" as PlatformOption,
-      title: "Windows",
+      title: "Windows 10 / 11",
       subtitle: ".exe / .msi (64-bit)",
       badge: "Windows 10 / 11",
+      hint: "Won't start on Windows 7 or 8. Not sure? Press the Windows key, type winver, press Enter.",
       icon: WindowsIcon,
       color: "hover:border-blue-500/50 hover:bg-blue-500/10 text-blue-400",
       btnBg: "bg-blue-600 hover:bg-blue-500 text-white",
+    },
+    {
+      key: "windows-legacy",
+      id: "windows-legacy" as PlatformOption,
+      title: "Windows 7 / 8 / 8.1",
+      subtitle: ".exe (32-bit), for older Windows",
+      badge: "Windows 7 / 8 / 8.1",
+      hint: "For Windows versions Microsoft no longer supports. Also runs on 10 and 11, but is larger.",
+      icon: WindowsIcon,
+      color: "hover:border-sky-500/50 hover:bg-sky-500/10 text-sky-300",
+      btnBg: "bg-sky-700 hover:bg-sky-600 text-white",
     },
     {
       key: "mac-arm64",
@@ -103,10 +131,11 @@ export function AgentDownloadChoices({ className = "", compact = false }: AgentD
             <a
               key={opt.key}
               href={downloadUrl}
-              className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold transition-all ${opt.color}`}
+              className={`inline-flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 text-white text-sm font-semibold transition-all ${opt.color} ${isYours(opt.key) ? "ring-2 ring-white/60" : ""}`}
             >
               <Icon className="w-5 h-5 shrink-0" />
               <span>Download for {opt.title}</span>
+              {isYours(opt.key) && <span className="text-[11px] font-medium text-white/70">(your computer)</span>}
             </a>
           )
         })}
@@ -115,22 +144,22 @@ export function AgentDownloadChoices({ className = "", compact = false }: AgentD
   }
 
   return (
-    <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 max-w-6xl mx-auto ${className}`}>
+    <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-5 max-w-7xl mx-auto ${className}`}>
       {options.map((opt) => {
         const Icon = opt.icon
         const downloadUrl = getAgentDownloadUrl(opt.id, opt.arch)
         return (
           <div
             key={opt.key}
-            className={`group relative flex flex-col justify-between p-6 rounded-2xl border border-white/10 bg-slate-900/60 backdrop-blur-md transition-all duration-300 hover:scale-[1.02] shadow-xl ${opt.color}`}
+            className={`group relative flex flex-col justify-between p-6 rounded-2xl border bg-slate-900/60 backdrop-blur-md transition-all duration-300 hover:scale-[1.02] shadow-xl ${opt.color} ${isYours(opt.key) ? "border-white/60" : "border-white/10"}`}
           >
             <div>
               <div className="flex items-center justify-between mb-4">
                 <div className="p-3 rounded-xl bg-white/5 border border-white/10">
                   <Icon className="w-8 h-8" />
                 </div>
-                <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-white/10 text-white/70">
-                  {opt.badge}
+                <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full ${isYours(opt.key) ? "bg-white text-slate-900" : "bg-white/10 text-white/70"}`}>
+                  {isYours(opt.key) ? "Your computer" : opt.badge}
                 </span>
               </div>
               <h3 className="text-xl font-bold text-white mb-1">{opt.title}</h3>
