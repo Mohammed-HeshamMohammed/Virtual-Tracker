@@ -113,6 +113,10 @@ export function buildEnv(source = process.env) {
         // can raise this gate to four platforms after that release is live.
         "windows-x86_64,linux-x86_64,darwin-aarch64",
       ),
+      // The update feed of the build for Windows 7, 8 and 8.1 (`windows-legacy`). "off" answers
+      // every legacy agent "no update" - the way to stop a bad legacy release from spreading
+      // while a fixed one is made. Normal agents are not affected either way.
+      legacyUpdatesEnabled: readString(source, "AGENT_LEGACY_UPDATES", "on").toLowerCase() !== "off",
     }),
 
     github: Object.freeze({
