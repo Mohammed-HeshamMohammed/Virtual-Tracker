@@ -87,6 +87,34 @@ export function pickMacDmg(assets, arch = "") {
   return wanted ?? dmgs[0];
 }
 
+/** The installer of the build for Windows 7, 8 and 8.1 (the release job names it
+ *  `..._windows-legacy_x86-setup.exe`; Tauri-App-Extension/PLAN-windows-7-legacy-build.md). */
+export const isLegacyWindowsAsset = (asset) => /windows-legacy/i.test(String(asset?.name || ""));
+
+const LEGACY_PLATFORMS = new Set(["windows-legacy", "win7", "win8", "legacy"]);
+export const isLegacyWindowsPlatform = (platform) => LEGACY_PLATFORMS.has(String(platform || "").toLowerCase());
+
+/**
+ * Whether a browser is on Windows 7, 8 or 8.1, judged from its User-Agent alone. Used only
+ * for a download link opened directly; the download pages decide in the browser first, with
+ * the platform-version hint, and ask for `platform=windows-legacy` themselves.
+ *
+ * - Firefox still reports the real version: "Windows NT 6.1" (7), "6.2" (8), "6.3" (8.1).
+ * - Chromium browsers (Chrome, Brave, Opera) report "Windows NT 10.0" on every Windows since
+ *   version 107, so the version tells nothing. But 109 is the last version Windows 7, 8 and
+ *   8.1 get, and a Windows 10 browser updates past it, so a Chromium browser at 109 or below
+ *   on Windows is taken to be old Windows. When that is wrong (a Windows 10 machine held on an
+ *   old browser) the member gets the legacy build, which also runs on Windows 10: the safe way
+ *   to be wrong.
+ */
+export function wantsLegacyWindows(userAgent) {
+  const ua = String(userAgent || "");
+  if (!/Windows NT/i.test(ua)) return false;
+  if (/Windows NT 6\.[123]\b/i.test(ua)) return true;
+  const chromium = ua.match(/\bChrom(?:e|ium)\/(\d+)/);
+  return chromium ? Number(chromium[1]) <= 109 : false;
+}
+
 export function findAsset(assets, platform, assetName, arch = "") {
   if (!Array.isArray(assets) || assets.length === 0) return null;
 
@@ -97,10 +125,17 @@ export function findAsset(assets, platform, assetName, arch = "") {
 
   const p = (platform || "windows").toLowerCase();
 
+  // Only ever the legacy installer: never the normal one, which cannot start on those systems.
+  if (isLegacyWindowsPlatform(p)) {
+    return assets.find((a) => isLegacyWindowsAsset(a) && a.name.endsWith(".exe")) ?? null;
+  }
+
   if (p === "win" || p === "windows" || p === "exe" || p === "msi") {
+    // The legacy installer is also an .exe; it must never be handed to a normal download.
+    const normal = assets.filter((a) => !isLegacyWindowsAsset(a));
     return (
-      assets.find((a) => a.name.endsWith("-setup.exe") || a.name.endsWith(".exe")) ||
-      assets.find((a) => a.name.endsWith(".msi"))
+      normal.find((a) => a.name.endsWith("-setup.exe") || a.name.endsWith(".exe")) ||
+      normal.find((a) => a.name.endsWith(".msi"))
     );
   }
 
@@ -138,13 +173,25 @@ export async function routeDownload(req, res, url, origin) {
   const repoOwner = env.github.repoOwner;
   const repoName = env.github.repoName;
 
-  const platform = url.searchParams.get("platform") || url.searchParams.get("os") || "windows";
+  let platform = url.searchParams.get("platform") || url.searchParams.get("os") || "windows";
   const assetName = url.searchParams.get("asset") || "";
   const arch = url.searchParams.get("arch") || "";
 
   try {
     const release = await getLatestRelease(repoOwner, repoName, pat);
+    // A plain Windows link opened on Windows 7, 8 or 8.1 gets the build that runs there, when
+    // this release has one. (The download pages normally ask for it by name already.)
+    if (!assetName && platform.toLowerCase() === "windows" && wantsLegacyWindows(req.headers["user-agent"]) && release.assets?.some(isLegacyWindowsAsset)) {
+      platform = "windows-legacy";
+    }
     const asset = findAsset(release.assets, platform, assetName, arch);
+
+    if (!asset && isLegacyWindowsPlatform(platform)) {
+      applyCors(res, origin);
+      res.writeHead(404, { "Content-Type": "application/json; charset=utf-8", ...corsHeaders(origin), ...getSecurityHeaders(req) });
+      res.end(JSON.stringify({ success: false, error: "The version for Windows 7, 8 and 8.1 is not published for the latest release yet. Please try again later." }));
+      return true;
+    }
 
     if (!asset) {
       applyCors(res, origin);

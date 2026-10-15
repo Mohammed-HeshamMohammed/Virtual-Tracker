@@ -32,6 +32,7 @@ const envSourceSchema = z
     AGENT_UPDATE_ROLLOUT_SALT: optionalTrimmedString,
     AGENT_FORCE_UPDATE_BELOW_VERSION: optionalTrimmedString,
     AGENT_UPDATE_REQUIRED_PLATFORMS: optionalTrimmedString,
+    AGENT_LEGACY_UPDATES: optionalTrimmedString,
     SKIP_ENV_VALIDATION: optionalTrimmedString,
   })
   .superRefine((data, ctx) => {

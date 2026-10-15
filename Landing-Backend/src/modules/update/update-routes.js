@@ -7,8 +7,20 @@ import { getLatestRelease } from "../download/download-routes.js";
 
 const UPDATE_PATH_RE = /^\/api\/agent\/update\/([^/]+)\/([^/]+)\/([^/]+)$/;
 
-let cachedManifest = null;
+/** Fetched manifests by release and asset name (the normal `latest.json`, the legacy build's `latest-legacy.json`). */
+const cachedManifests = new Map();
 const MANIFEST_CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** The update feed of the build for Windows 7, 8 and 8.1. That build asks for this target (its
+ *  updater is built with it), and is answered only from its own manifest, so it can never be
+ *  offered the normal build, which would not start on those systems. */
+export const LEGACY_TARGET = "windows-legacy";
+export const LEGACY_MANIFEST = "latest-legacy.json";
+
+/** Which manifest asset a target is answered from. */
+export function manifestNameFor(target) {
+  return target === LEGACY_TARGET ? LEGACY_MANIFEST : "latest.json";
+}
 
 /**
  * The first agent version whose updater can be trusted to survive an update
@@ -158,14 +170,19 @@ function assetFileName(downloadUrl) {
   return decodeURIComponent(path.slice(path.lastIndexOf("/") + 1));
 }
 
-async function fetchManifest(release, pat) {
+async function fetchManifest(release, pat, name = "latest.json") {
   const now = Date.now();
-  if (cachedManifest && cachedManifest.releaseId === release.id && now - cachedManifest.fetchedAt < MANIFEST_CACHE_TTL_MS) {
-    return cachedManifest.data;
+  const key = `${release.id}:${name}`;
+  const cached = cachedManifests.get(key);
+  if (cached && now - cached.fetchedAt < MANIFEST_CACHE_TTL_MS) {
+    return cached.data;
   }
 
-  const asset = release.assets.find((a) => a.name.toLowerCase() === "latest.json");
+  const asset = release.assets.find((a) => a.name.toLowerCase() === name);
   if (!asset) {
+    // The legacy build is published by its own job, which may fail without holding back the
+    // release: no legacy manifest means "no update" for legacy agents, never an error.
+    if (name !== "latest.json") return null;
     throw new Error("Release has no latest.json asset");
   }
 
@@ -183,7 +200,7 @@ async function fetchManifest(release, pat) {
   }
 
   const data = await res.json();
-  cachedManifest = { releaseId: release.id, data, fetchedAt: now };
+  cachedManifests.set(key, { data, fetchedAt: now });
   return data;
 }
 
@@ -261,6 +278,19 @@ export async function routeUpdateFeed(req, res, url, origin) {
 
     const [, target, arch, currentVersion] = match;
 
+    // The legacy build: its own manifest, its own kill switch, and "no update" whenever either
+    // says so. Everything after this (the version gates, the rollout) applies to it as well.
+    let feed = manifest;
+    if (target === LEGACY_TARGET) {
+      feed = env.agent.legacyUpdatesEnabled ? await fetchManifest(release, pat, LEGACY_MANIFEST) : null;
+      if (!feed || validateUpdateManifest(feed, []).ok === false) {
+        applyCors(res, origin);
+        res.writeHead(204, { "Cache-Control": "no-cache, no-store, must-revalidate", ...corsHeaders(origin), ...getSecurityHeaders(req) });
+        res.end();
+        return true;
+      }
+    }
+
     // C3: an agent too old to update itself safely is left alone. 204 is the
     // updater's own "no update available", so this needs no agent-side change
     // and reaches every already-installed copy.
@@ -275,7 +305,7 @@ export async function routeUpdateFeed(req, res, url, origin) {
       return true;
     }
 
-    if (!hasNewerVersion(currentVersion, manifest.version)) {
+    if (!hasNewerVersion(currentVersion, feed.version)) {
       applyCors(res, origin);
       res.writeHead(204, {
         "Cache-Control": "no-cache, no-store, must-revalidate",
@@ -303,7 +333,7 @@ export async function routeUpdateFeed(req, res, url, origin) {
       return true;
     }
 
-    const platform = selectPlatformEntry(manifest.platforms, target, arch);
+    const platform = selectPlatformEntry(feed.platforms, target, arch);
 
     if (!platform) {
       applyCors(res, origin);
@@ -317,9 +347,9 @@ export async function routeUpdateFeed(req, res, url, origin) {
     const downloadUrl = `${scheme}://${req.headers.host}/api/download-agent?asset=${encodeURIComponent(assetFileName(platform.url))}`;
 
     const body = JSON.stringify({
-      version: manifest.version,
-      notes: manifest.notes ?? "",
-      pub_date: manifest.pub_date,
+      version: feed.version,
+      notes: feed.notes ?? "",
+      pub_date: feed.pub_date,
       url: downloadUrl,
       signature: platform.signature,
     });
