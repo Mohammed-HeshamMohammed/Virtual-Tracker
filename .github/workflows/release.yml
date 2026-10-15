@@ -70,6 +70,16 @@ jobs:
         working-directory: Tauri-App-Extension/src-tauri
         run: cargo test --locked
 
+      # The legacy build (Windows 7, 8 and 8.1) is made from the same code with one switch.
+      # Checking it here, on the cheap runner, catches code that only breaks that build
+      # before the paid Windows job below finds it.
+      - name: cargo check, legacy build
+        working-directory: Tauri-App-Extension/src-tauri
+        run: cargo check --locked --no-default-features --features legacy-windows
+
+      - name: assert the agent is still on the Tauri line Windows 7 needs
+        run: node .github/scripts/assert-windows7-stack.mjs
+
       - name: frontend typecheck, test, build
         working-directory: Tauri-App-Extension
         run: |
@@ -313,6 +323,110 @@ jobs:
           includeUpdaterJson: true
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
+
+  # The agent for Windows 7, 8 and 8.1 (Tauri-App-Extension/PLAN-windows-7-legacy-build.md),
+  # built on every release next to the normal one. Its own job, after the normal release is
+  # published, and allowed to fail: a problem in the legacy build must never hold back the
+  # release every other member gets. It publishes a differently named installer and its own
+  # update manifest (latest-legacy.json), so it cannot disturb the normal release's files.
+  release-windows-legacy:
+    needs: [bump, release]
+    runs-on: windows-latest
+    continue-on-error: true
+    permissions:
+      contents: write
+    env:
+      # Windows 7 is a tier 3 Rust target: no prebuilt standard library, so it is built from
+      # source on a pinned nightly. Move the date only on purpose, after a test build.
+      LEGACY_TOOLCHAIN: nightly-2026-10-01
+      # 32-bit, because it runs on both 32- and 64-bit Windows and the members' machines are
+      # not known.
+      LEGACY_TARGET: i686-win7-windows-msvc
+      VERSION: ${{ needs.bump.outputs.version }}
+      TAG: ${{ needs.bump.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
+
+      - name: install the pinned nightly and the standard library source
+        shell: pwsh
+        run: rustup toolchain install $env:LEGACY_TOOLCHAIN --profile minimal --component rust-src
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: lts/*
+
+      - name: install frontend deps
+        working-directory: Tauri-App-Extension
+        run: npm ci
+
+      # ~150 MB, never committed. Where it comes from is a repository variable; the script
+      # refuses anything whose hash or Microsoft signatures do not match.
+      - name: fetch the WebView2 109 runtime
+        working-directory: Tauri-App-Extension
+        shell: pwsh
+        env:
+          WEBVIEW2_RUNTIME_URL: ${{ vars.WEBVIEW2_RUNTIME_URL }}
+          WEBVIEW2_RUNTIME_SHA256: ${{ vars.WEBVIEW2_RUNTIME_SHA256 }}
+          WEBVIEW2_ALLOW_OLDER: ${{ vars.WEBVIEW2_ALLOW_OLDER }}
+        run: ./scripts/fetch-webview2-runtime.ps1
+
+      # Two steps, because `tauri build` refuses a tier 3 target ("does not exist"): cargo
+      # compiles it, then `tauri bundle` packages the finished program, which it accepts.
+      - name: build the frontend
+        working-directory: Tauri-App-Extension
+        run: npm run build
+
+      - name: compile the legacy agent
+        working-directory: Tauri-App-Extension/src-tauri
+        shell: pwsh
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.LEGACY_TOOLCHAIN }}
+          # The C runtime goes inside the program: Windows 7, 8 and 8.1 do not have it.
+          RUSTFLAGS: -C target-feature=+crt-static
+        # tauri.legacy.conf.json goes to the compiler too (as TAURI_CONFIG; `tauri build` would
+        # pass it, cargo alone does not). The program also points WebView2 at its bundled
+        # copy itself (lib.rs, use_bundled_webview2), which is what the check below looks for.
+        run: |
+          $env:TAURI_CONFIG = Get-Content tauri.legacy.conf.json -Raw
+          cargo build --release --locked -Zbuild-std=std,panic_abort --target $env:LEGACY_TARGET --no-default-features --features legacy-windows,tauri/custom-protocol
+          $exe = "target/$env:LEGACY_TARGET/release/virtual-tracker-agent.exe"
+          if (-not (Select-String -Path $exe -Pattern "webview2-fixed-runtime" -SimpleMatch -Quiet)) {
+            throw "The legacy program does not point WebView2 at its bundled copy (was it built with --features legacy-windows?)."
+          }
+
+      - name: package the legacy installer
+        working-directory: Tauri-App-Extension
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          RUSTUP_TOOLCHAIN: ${{ env.LEGACY_TOOLCHAIN }}
+        run: npx tauri bundle --bundles nsis --config src-tauri/tauri.legacy.conf.json --target $env:LEGACY_TARGET --features legacy-windows
+
+      # Windows refuses to start a program with even one import it does not have, so this is
+      # checked on the built file rather than left to a member's machine.
+      - name: check it imports nothing Windows 7 lacks
+        run: node .github/scripts/check-win7-imports.mjs "Tauri-App-Extension/src-tauri/target/${{ env.LEGACY_TARGET }}/release/virtual-tracker-agent.exe"
+
+      - name: publish the legacy installer and its update manifest
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $dir = "Tauri-App-Extension/src-tauri/target/$env:LEGACY_TARGET/release/bundle/nsis"
+          $exe = Get-ChildItem $dir -Filter "*-setup.exe" | Select-Object -First 1
+          if (-not $exe) { throw "No NSIS installer in $dir" }
+          if (-not (Test-Path "$($exe.FullName).sig")) { throw "The installer was not signed for the updater" }
+          # "windows-legacy" in the name is what Landing-Backend keys on, both to hand this file
+          # to old Windows and to keep it away from everyone else.
+          $name = "My-Virtual-Tracker_v$($env:VERSION)_windows-legacy_x86-setup.exe"
+          Copy-Item $exe.FullName $name
+          Copy-Item "$($exe.FullName).sig" "$name.sig"
+          $url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$env:TAG/$name"
+          node .github/scripts/write-legacy-manifest.mjs $env:VERSION i686 $url "$name.sig" latest-legacy.json
+          gh release upload $env:TAG $name "$name.sig" latest-legacy.json --clobber
 
   verify-release:
     needs: [bump, release]

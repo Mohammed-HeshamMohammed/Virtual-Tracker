@@ -95,3 +95,15 @@ jobs:
       - name: cargo check
         working-directory: Tauri-App-Extension/src-tauri
         run: cargo check --all-targets --locked
+
+      # The build for Windows 7, 8 and 8.1 is the same code with one switch; on Windows this
+      # also compiles its own notification path (notify.rs). The real Windows 7 build, on the
+      # nightly toolchain, happens in release.yml.
+      - name: cargo check, legacy build
+        if: matrix.platform == 'windows-latest'
+        working-directory: Tauri-App-Extension/src-tauri
+        run: cargo check --all-targets --locked --no-default-features --features legacy-windows
+
+      - name: assert the agent is still on the Tauri line Windows 7 needs
+        if: matrix.platform == 'ubuntu-latest'
+        run: node .github/scripts/assert-windows7-stack.mjs

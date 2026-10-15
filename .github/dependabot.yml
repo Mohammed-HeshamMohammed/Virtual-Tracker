@@ -34,6 +34,10 @@ updates:
     directory: "/Tauri-App-Extension"
     schedule:
       interval: "weekly"
+    # Kept with the Rust side on Tauri 2.11 (see the cargo entry below).
+    ignore:
+      - dependency-name: "@tauri-apps/*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
 
   # Docker
   - package-ecosystem: "docker"
@@ -62,6 +66,18 @@ updates:
     directory: "/Tauri-App-Extension/src-tauri"
     schedule:
       interval: "weekly"
+    # Held on Tauri 2.11 for the Windows 7, 8 and 8.1 build (Tauri 2.12 dropped Windows 7;
+    # Tauri-App-Extension/PLAN-windows-7-legacy-build.md). Patch releases within the held
+    # lines are still proposed; minor and major ones would only fail the lockfile guard.
+    ignore:
+      - dependency-name: "tauri*"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "wry"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "tao"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
+      - dependency-name: "webview2-com"
+        update-types: ["version-update:semver-minor", "version-update:semver-major"]
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
