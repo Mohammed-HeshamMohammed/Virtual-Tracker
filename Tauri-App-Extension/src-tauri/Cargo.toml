@@ -125,6 +125,12 @@ windows = { version = "0.58", features = [
 # "win7") and, worse, would leave its start-up constructors out. These copies add "win7"
 # beside "pc" in those checks and change nothing else; no 0.8.x/0.3.x release has the fix
 # (ctor 1.x has, but tauri-utils 2.9 requires 0.8). Drop them when Tauri moves off ctor 0.8.
+# The app in front, asked of macOS directly (capture/window.rs). Both are already in the
+# build through Tauri, at these versions.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "libc", "NSWorkspace", "NSRunningApplication"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
+
 [patch.crates-io]
 ctor = { path = "patches/ctor-0.8.0" }
 dtor = { path = "patches/dtor-0.3.0" }

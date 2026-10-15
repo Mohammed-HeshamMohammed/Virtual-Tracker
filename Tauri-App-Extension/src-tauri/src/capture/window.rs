@@ -161,22 +161,36 @@ fn get_foreground_window_macos() -> ForegroundWindow {
         browser_hint: String::new(),
     };
 
+    // The app comes from macOS itself (NSWorkspace), which needs no permission and does
+    // not depend on listing windows. Finding it by looking for the focused window in
+    // xcap's list logged "Unknown app" whenever the list held no window marked focused,
+    // even when the screenshot taken at the same moment was fine.
+    let front = frontmost_app_macos();
     let windows = match xcap::Window::all() {
         Ok(w) => w,
         Err(err) => {
             log::warn!("xcap::Window::all() failed: {err}");
-            return unknown();
+            Vec::new()
         }
     };
-    let Some(focused) = windows.into_iter().find(|w| w.is_focused()) else {
-        return unknown();
+    // The title is extra detail: the front app's focused window if the list has one,
+    // otherwise that app's frontmost window (the list is ordered front to back).
+    let window = match &front {
+        Some((_, pid)) => windows
+            .iter()
+            .find(|w| w.pid() == *pid && w.is_focused())
+            .or_else(|| windows.iter().find(|w| w.pid() == *pid)),
+        None => windows.iter().find(|w| w.is_focused()),
     };
-
-    let app_name = focused.app_name().to_string();
-    let title_raw = focused.title().trim().to_string();
+    let app_name = match (&front, window) {
+        (Some((name, _)), _) => name.clone(),
+        (None, Some(window)) => window.app_name().to_string(),
+        (None, None) => return unknown(),
+    };
+    let title_raw = window.map(|w| w.title().trim().to_string()).unwrap_or_default();
     let title = if title_raw.is_empty() { "Unknown".to_string() } else { title_raw };
-    // MacOS has no separate exe-vs-display-name split the way Windows does - xcap's
-    // app_name() is already the display name ("Google Chrome"), and it's also exactly what
+    // MacOS has no separate exe-vs-display-name split the way Windows does - the app's
+    // name is already the display name ("Google Chrome"), and it's also exactly what
     let process_name = app_name.clone();
     let browser_hint = browser_hint_from_exe(&app_name.to_lowercase());
     let is_browser = !browser_hint.is_empty();
@@ -194,6 +208,17 @@ fn get_foreground_window_macos() -> ForegroundWindow {
         is_browser,
         browser_hint,
     }
+}
+
+/// The app in front and its process id, from NSWorkspace.
+#[cfg(target_os = "macos")]
+fn frontmost_app_macos() -> Option<(String, u32)> {
+    use objc2_app_kit::NSWorkspace;
+
+    let app = NSWorkspace::sharedWorkspace().frontmostApplication()?;
+    let name = app.localizedName()?.to_string().trim().to_string();
+    let pid = u32::try_from(app.processIdentifier()).ok()?;
+    (!name.is_empty()).then_some((name, pid))
 }
 
 /// The window class a packaged (Store/UWP) app's real window carries, inside the frame
