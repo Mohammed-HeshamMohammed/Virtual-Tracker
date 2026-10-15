@@ -10,3 +10,5 @@
 /gen/schemas
 Cargo.toml
 Tauri.toml
+# The patched crates need their manifests (see [patch.crates-io] in Cargo.toml).
+!/patches/*/Cargo.toml
