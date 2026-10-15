@@ -84,10 +84,18 @@ export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay, projectI
   const rows = await query(
     `SELECT s.id, s.member_id, s.task_id, s.project_id,
             COALESCE(t.title, '') AS task_title, COALESCE(p.name, '') AS project_name,
-            s.started_at, s.ended_at, s.active_seconds, s.idle_seconds, s.source, s.stop_reason
+            s.started_at, s.ended_at, s.active_seconds, s.idle_seconds, s.source, s.stop_reason,
+            shots.activity_sum, shots.activity_count
      FROM activity_sessions s
      LEFT JOIN tasks t ON t.id = s.task_id
      LEFT JOIN projects p ON p.id = s.project_id
+     -- The session's screenshots' activity levels: the same activity the
+     -- Screenshots, Apps, URLs and Time & Activity pages show.
+     LEFT JOIN LATERAL (
+       SELECT COALESCE(SUM(sc.activity_level), 0) AS activity_sum, COUNT(*) AS activity_count
+       FROM activity_screenshots sc
+       WHERE sc.session_id = s.id::text
+     ) shots ON true
      WHERE s.started_at >= $1 AND s.started_at < $2
        AND ($3::uuid[] IS NULL OR s.member_id = ANY($3::uuid[]))
        AND ($4::uuid[] IS NULL OR s.project_id = ANY($4::uuid[]))
@@ -109,6 +117,8 @@ export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay, projectI
     endedAt: r.ended_at,
     activeSeconds: Math.max(0, Number(r.active_seconds) || 0),
     idleSeconds: Math.max(0, Number(r.idle_seconds) || 0),
+    activitySum: Math.max(0, Number(r.activity_sum) || 0),
+    activityCount: Math.max(0, Number(r.activity_count) || 0),
     source: r.source,
     stopReason: r.stop_reason ?? null,
     })),

@@ -285,6 +285,49 @@ export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = 
   return result?.rows ?? [];
 }
 
+/**
+ * Just the activity levels of the screenshots in a scope (same member, day and project
+ * filters as fetchPgScreenshots), with the app and site each was taken on - what the
+ * Apps and URLs pages average so their activity matches the Screenshots page, manager
+ * corrections included.
+ */
+export async function fetchPgScreenshotActivityLevels(memberIds, dayFilter, limit, options = {}) {
+  const ids = filterMemberIds(memberIds);
+  if (Array.isArray(ids) && ids.length === 0) return [];
+
+  const params = [];
+  let where = "WHERE 1=1";
+  if (ids !== null) {
+    params.push(ids);
+    where += ` AND sc.member_id = ANY($${params.length}::uuid[])`;
+  }
+  if (dayFilter) {
+    params.push(dayFilter);
+    where += ` AND ${localDay("sc.captured_at")} = $${params.length}::date`;
+  } else if (options.sinceDay) {
+    params.push(options.sinceDay);
+    where += ` AND ${localDay("sc.captured_at")} >= $${params.length}::date`;
+  }
+  if (Array.isArray(options.projectIds)) {
+    if (options.projectIds.length === 0) return [];
+    params.push(options.projectIds);
+    where += ` AND (t.project_id = ANY($${params.length}::uuid[]) OR s.project_id = ANY($${params.length}::uuid[]))`;
+  }
+  params.push(limit);
+  const result = await pgQuery(
+    `SELECT sc.member_id, sc.app_name, sc.domain, sc.activity_level
+     FROM activity_screenshots sc
+     LEFT JOIN tasks t ON t.id = sc.task_id
+     LEFT JOIN activity_sessions s ON s.id::text = sc.session_id
+     LEFT JOIN members m_tz ON m_tz.id = sc.member_id
+     ${where}
+     ORDER BY sc.captured_at DESC
+     LIMIT $${params.length}`,
+    params,
+  );
+  return result?.rows ?? [];
+}
+
 export async function fetchPgAppLogs(memberIds, dayFilter, limit, options = {}) {
   const ids = filterMemberIds(memberIds);
   if (Array.isArray(ids) && ids.length === 0) return [];
