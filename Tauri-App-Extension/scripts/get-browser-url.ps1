@@ -94,7 +94,7 @@ function Test-InWebDocument($element) {
 
 function New-OrCondition([System.Windows.Automation.Condition[]]$conditions) {
     if ($conditions.Count -eq 1) { return $conditions[0] }
-    return [System.Windows.Automation.OrCondition]::new($conditions)
+    return New-Object System.Windows.Automation.OrCondition -ArgumentList (,$conditions)
 }
 
 # ONE tree walk, not one per id. A FindFirst that matches nothing has to

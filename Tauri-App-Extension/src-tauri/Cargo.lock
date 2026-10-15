@@ -857,8 +857,6 @@ dependencies = [
 [[package]]
 name = "ctor"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "352d39c2f7bef1d6ad73db6f5160efcaed66d94ef8c6c573a8410c00bf909a98"
 dependencies = [
  "ctor-proc-macro",
  "dtor",
@@ -1162,8 +1160,6 @@ dependencies = [
 [[package]]
 name = "dtor"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1057d6c64987086ff8ed0fd3fbf377a6b7d205cc7715868cd401705f715cbe4"
 dependencies = [
  "dtor-proc-macro",
 ]
@@ -5605,6 +5601,7 @@ dependencies = [
  "tiny_http",
  "tungstenite",
  "urlencoding",
+ "win7-notifications",
  "windows 0.58.0",
  "windows-core 0.58.0",
  "xcap",
@@ -5876,6 +5873,16 @@ name = "widestring"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72069c3113ab32ab29e5584db3c6ec55d416895e60715417b5b883a357c3e471"
+
+[[package]]
+name = "win7-notifications"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63b4745047a00800bd8f2b8fb4b0eb6f7d96822084127f0ff7d68d07f692fe38"
+dependencies = [
+ "once_cell",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "winapi"

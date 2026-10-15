@@ -651,3 +651,25 @@ mod tests {
         assert!(!api.refresh_token_if_needed());
     }
 }
+
+/// The machine's time zone as the window's browser engine sees it (an IANA name such as
+/// "Africa/Cairo"). Kept for the session calls, which say which calendar day the hours
+/// belong to; see `session::local_timezone` for why it is not read from the OS directly.
+static REPORTED_TIMEZONE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+pub(crate) fn reported_timezone() -> Option<String> {
+    REPORTED_TIMEZONE.lock().ok().and_then(|zone| zone.clone())
+}
+
+/// Sent by the frontend at start-up with `Intl.DateTimeFormat().resolvedOptions().timeZone`.
+#[tauri::command]
+pub fn report_local_timezone(zone: String) {
+    let zone = zone.trim();
+    // An IANA name is short and has no spaces; anything else is not a zone.
+    if zone.is_empty() || zone.len() > 64 || zone.contains(char::is_whitespace) {
+        return;
+    }
+    if let Ok(mut stored) = REPORTED_TIMEZONE.lock() {
+        *stored = Some(zone.to_string());
+    }
+}

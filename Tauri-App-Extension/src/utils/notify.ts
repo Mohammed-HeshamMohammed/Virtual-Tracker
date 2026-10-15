@@ -1,26 +1,11 @@
-import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { invoke } from "@tauri-apps/api/core";
 
-let permissionChecked = false;
-let permissionGranted = false;
-
-async function ensurePermission(): Promise<boolean> {
-  if (permissionChecked) return permissionGranted;
-  permissionChecked = true;
-  try {
-    permissionGranted = await isPermissionGranted();
-    if (!permissionGranted) {
-      permissionGranted = (await requestPermission()) === "granted";
-    }
-  } catch {
-    permissionGranted = false;
-  }
-  return permissionGranted;
-}
-
+/** A desktop notification. It goes through the app's own command rather than the
+ *  notification plugin's JS API, because the build for Windows 7, 8 and 8.1 has no
+ *  notification plugin (its toasts need WinRT) and shows notifications itself. */
 export async function notify(title: string, body: string): Promise<void> {
   try {
-    if (!(await ensurePermission())) return;
-    sendNotification({ title, body });
+    await invoke("show_notification", { title, body });
   } catch {
     /* best effort only - never let a notification failure interrupt the caller */
   }

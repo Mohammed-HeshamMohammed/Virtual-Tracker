@@ -30,6 +30,12 @@ void invoke<AppSettingsView>("get_app_settings")
     /* No prefs yet, or running outside Tauri - the OS preference stands. */
   });
 
+// The machine's time zone, for the session calls that say which day the hours belong to.
+// The build for Windows 7, 8 and 8.1 cannot ask the OS for it (src-tauri/src/client/api/session.rs).
+void invoke("report_local_timezone", { zone: Intl.DateTimeFormat().resolvedOptions().timeZone }).catch(() => {
+  /* Running outside Tauri. */
+});
+
 async function start() {
   const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
 

@@ -5,12 +5,18 @@ use serde_json::{json, Value};
 use super::{ApiClient, ApiError};
 use crate::constants::HTTP_TIMEOUT_SEC;
 
-/// The machine's IANA timezone name, or `None` if the OS won't tell us.
+/// The machine's IANA timezone name, or `None` if nothing will tell us.
+///
+/// The normal build asks the OS. The legacy build can't (on Windows the lookup goes
+/// through WinRT, which Windows 7, 8 and 8.1 lack), so it uses the zone the window
+/// reported at start-up (`report_local_timezone`), which the browser engine works out
+/// the same way. The normal build falls back to that too.
 fn local_timezone() -> Option<String> {
-    iana_time_zone::get_timezone()
-        .ok()
-        .map(|tz| tz.trim().to_string())
-        .filter(|tz| !tz.is_empty())
+    #[cfg(feature = "modern")]
+    if let Some(tz) = iana_time_zone::get_timezone().ok().map(|tz| tz.trim().to_string()).filter(|tz| !tz.is_empty()) {
+        return Some(tz);
+    }
+    super::reported_timezone()
 }
 
 /// The body of a session action.

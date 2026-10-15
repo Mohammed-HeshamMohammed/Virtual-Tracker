@@ -5,6 +5,7 @@ mod client;
 mod config;
 mod constants;
 mod buzz;
+mod notify;
 mod power_events;
 mod prefs;
 mod queue;
@@ -289,18 +290,44 @@ fn stop_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
 /// notice otherwise. Best-effort: a notification failure here must never surface as if
 /// the action itself failed.
 fn notify_shortcut_action(app: &AppHandle, action: &str) {
-    use tauri_plugin_notification::NotificationExt;
-    let _ = app
-        .notification()
-        .builder()
-        .title("My Virtual Tracker")
-        .body(format!("{action} tracking"))
-        .show();
+    notify::show(app, "My Virtual Tracker", &format!("{action} tracking"));
+}
+
+/// The update feed this build asks. The legacy build (Windows 7, 8 and 8.1) has its own,
+/// so it can never be handed a modern build, which would not start on those systems.
+fn updater_plugin() -> tauri::plugin::TauriPlugin<tauri::Wry, tauri_plugin_updater::Config> {
+    let builder = tauri_plugin_updater::Builder::new();
+    #[cfg(all(feature = "legacy-windows", not(feature = "modern")))]
+    let builder = builder.target("windows-legacy");
+    builder.build()
+}
+
+/// The legacy build (Windows 7, 8 and 8.1) ships its own WebView2 109 in a folder next to
+/// the program (tauri.legacy.conf.json), because those systems cannot install one. Tauri is
+/// meant to point WebView2 at it from that config, but the setting did not survive into the
+/// optimised program, so it is done here as well: before any window exists, and only when the
+/// folder is really there and nothing else has chosen a runtime.
+#[cfg(all(windows, feature = "legacy-windows", not(feature = "modern")))]
+fn use_bundled_webview2() {
+    const FOLDER: &str = "webview2-fixed-runtime";
+    if std::env::var_os("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER").is_some() {
+        return;
+    }
+    let Some(dir) = std::env::current_exe().ok().and_then(|exe| exe.parent().map(|parent| parent.join(FOLDER))) else {
+        return;
+    };
+    if dir.join("msedgewebview2.exe").is_file() {
+        std::env::set_var("WEBVIEW2_BROWSER_EXECUTABLE_FOLDER", &dir);
+    } else {
+        log::error!("The bundled WebView2 is missing from {}", dir.display());
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logging();
+    #[cfg(all(windows, feature = "legacy-windows", not(feature = "modern")))]
+    use_bundled_webview2();
 
     let settings = Settings::load();
     let prefs = settings.preferences_store().load();
@@ -326,7 +353,12 @@ pub fn run() {
     // chain, before `.setup()` runs.
     let shortcut_controller = Arc::clone(&controller);
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Windows 10/11 toasts; the legacy build shows its notifications itself (notify.rs).
+    #[cfg(feature = "modern")]
+    let builder = builder.plugin(tauri_plugin_notification::init());
+
+    builder
         // Must be registered first: a second launch hits this instead of running its own
         // app, so only one copy of the agent is ever tracking at once.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
@@ -340,9 +372,8 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec![]),
         ))
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(updater_plugin())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_notification::init())
         // System-wide, so Pause/Resume/Stop work while some other app is focused - the tray
         // menu (set_tray_status et al.) needs a click to even see, this needs neither.
         .plugin(
@@ -374,6 +405,8 @@ pub fn run() {
             controller: Arc::clone(&controller),
         })
         .invoke_handler(tauri::generate_handler![
+            notify::show_notification,
+            client::api::report_local_timezone,
             commands::auth::sign_in,
             commands::auth::sign_in_with_password,
             commands::auth::sign_up,

@@ -14,8 +14,22 @@ lto = true
 strip = true
 codegen-units = 1
 
+# Two builds from one codebase (PLAN-windows-7-legacy-build.md):
+# - default ("modern"): Windows 10 and 11, macOS, Linux.
+# - `--no-default-features --features legacy-windows`: Windows 7, 8 and 8.1. Those
+#   systems have no WinRT, and a binary that so much as imports it will not start
+#   there, so the two crates that use WinRT are left out of it.
+[features]
+default = ["modern"]
+modern = ["dep:tauri-plugin-notification", "dep:iana-time-zone"]
+legacy-windows = ["dep:win7-notifications"]
+
+# Tauri and its plugins are held on 2.11: Tauri 2.12 dropped Windows 7 (wry 0.57 moved
+# to windows-rs 0.62, which links combase.dll), and the legacy build needs this line.
+# CI checks the lockfile too (.github/scripts/assert-windows7-stack.mjs). Moving past
+# 2.11 means giving the legacy build its own manifest and lockfile first.
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "~2.6", features = [] }
 
 [dependencies]
 # tray-icon stays off on Linux: RUSTSEC-2024-0429 (unsound glib::VariantStrIter,
@@ -25,22 +39,23 @@ tauri-build = { version = "2", features = [] }
 # the accepted-risk decision. Disabling tray-icon doesn't remove the advisory,
 # it just avoids adding one more call site (libappindicator's GVariant usage)
 # into it, for zero functional loss on the other two platforms.
-tauri = { version = "2", features = ["macos-private-api"] }
-tauri-plugin-opener = "2"
-tauri-plugin-autostart = "2"
+tauri = { version = "~2.11", features = ["macos-private-api"] }
+tauri-plugin-opener = "~2.5"
+tauri-plugin-autostart = "~2.5"
 # Same crate the autostart plugin wraps - used directly only to remove the
 # start-at-login entry left under the pre-rename product name.
 auto-launch = "0.5"
-tauri-plugin-updater = "2"
-tauri-plugin-process = "2"
-tauri-plugin-notification = "2"
-tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "~2.11"
+tauri-plugin-process = "~2.3"
+# Windows 10/11 toasts are WinRT, so the legacy build has its own (see `features`).
+tauri-plugin-notification = { version = "~2.4", optional = true }
+tauri-plugin-global-shortcut = "~2.3"
 # "deep-link" feature: forwards the URL a second OS-spawned instance was
 # launched with (Windows/Linux custom-scheme launch) to the deep-link
 # plugin's on_open_url listener below, instead of only the raw argv this
 # plugin already hands the single-instance callback.
-tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
-tauri-plugin-deep-link = "2"
+tauri-plugin-single-instance = { version = "~2.4", features = ["deep-link"] }
+tauri-plugin-deep-link = "~2.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
@@ -55,7 +70,8 @@ parking_lot = "0.12"
 # transitively, so naming it directly adds no new code - just makes the
 # dependency honest. Never used for timestamps: the server still stamps every
 # session itself, so a wrong clock here cannot move tracked time.
-iana-time-zone = "0.1"
+# On Windows it asks WinRT, so the legacy build reads the zone from the window instead.
+iana-time-zone = { version = "0.1", optional = true }
 # Reading browser history databases as a URL fallback (capture/history.rs).
 # `bundled` so we never depend on a system sqlite being present.
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -72,9 +88,11 @@ keyring = { version = "4.1.6", default-features = false, features = ["v1"] }
 tungstenite = { version = "0.30.0", features = ["rustls-tls-webpki-roots"] }
 
 [target.'cfg(not(target_os = "linux"))'.dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "~2.11", features = ["tray-icon"] }
 
 [target.'cfg(windows)'.dependencies]
+# The legacy build's notifications: a small window drawn by the app, which Windows 7 can show.
+win7-notifications = { version = "0.4.5", optional = true }
 # The #[implement] macro expands to absolute ::windows_core paths, so the
 # crate has to be in scope by that name as well as via windows::core.
 windows-core = "0.58"
@@ -101,3 +119,12 @@ windows = { version = "0.58", features = [
   "Win32_Graphics_Gdi",
   "Win32_System_Variant",
 ] }
+
+# ctor 0.8.0 and dtor 0.3.0 (pulled in by tauri-utils) recognise Windows by the target's
+# vendor being "pc", so they refuse the Windows 7 target (`*-win7-windows-msvc`, vendor
+# "win7") and, worse, would leave its start-up constructors out. These copies add "win7"
+# beside "pc" in those checks and change nothing else; no 0.8.x/0.3.x release has the fix
+# (ctor 1.x has, but tauri-utils 2.9 requires 0.8). Drop them when Tauri moves off ctor 0.8.
+[patch.crates-io]
+ctor = { path = "patches/ctor-0.8.0" }
+dtor = { path = "patches/dtor-0.3.0" }

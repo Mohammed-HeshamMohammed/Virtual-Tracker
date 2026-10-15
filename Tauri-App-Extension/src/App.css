@@ -397,6 +397,7 @@ body {
 }
 
 .notification-item.unread {
+  background: var(--surface);
   background: color-mix(in srgb, var(--primary) 10%, var(--surface));
 }
 
@@ -506,8 +507,10 @@ body {
   gap: 12px;
   margin: 42px 10px 0;
   padding: 9px 11px;
+  border: 1px solid var(--outline-variant);
   border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--outline-variant));
   border-radius: 10px;
+  background: var(--surface);
   background: color-mix(in srgb, var(--primary) 9%, var(--surface));
   box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
 }
@@ -571,7 +574,9 @@ body {
 /* An update mid-countdown is about to take the window away - say so louder
    than an ordinary "available" notice. */
 .tracker-update-banner.state-countdown {
+  border-color: var(--primary);
   border-color: color-mix(in srgb, var(--primary) 60%, var(--outline-variant));
+  background: var(--surface);
   background: color-mix(in srgb, var(--primary) 16%, var(--surface));
 }
 
@@ -586,12 +591,14 @@ body {
   margin-top: 5px;
   border: 0;
   border-radius: 999px;
+  background: transparent;
   background: color-mix(in srgb, var(--primary) 20%, transparent);
   appearance: none;
 }
 
 .tracker-update-progress::-webkit-progress-bar {
   border-radius: 999px;
+  background: transparent;
   background: color-mix(in srgb, var(--primary) 20%, transparent);
 }
 
