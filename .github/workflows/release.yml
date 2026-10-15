@@ -390,7 +390,7 @@ jobs:
         # copy itself (lib.rs, use_bundled_webview2), which is what the check below looks for.
         run: |
           $env:TAURI_CONFIG = Get-Content tauri.legacy.conf.json -Raw
-          cargo build --release --locked -Zbuild-std=std,panic_abort --target $env:LEGACY_TARGET --no-default-features --features legacy-windows,tauri/custom-protocol
+          cargo build --release --locked "-Zbuild-std=std,panic_abort" --target $env:LEGACY_TARGET --no-default-features --features "legacy-windows,tauri/custom-protocol"
           $exe = "target/$env:LEGACY_TARGET/release/virtual-tracker-agent.exe"
           if (-not (Select-String -Path $exe -Pattern "webview2-fixed-runtime" -SimpleMatch -Quiet)) {
             throw "The legacy program does not point WebView2 at its bundled copy (was it built with --features legacy-windows?)."
