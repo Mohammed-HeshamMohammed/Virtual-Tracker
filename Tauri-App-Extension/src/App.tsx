@@ -50,6 +50,7 @@ import type {
 import { fmtClock, fmtHours, fmtWallClock, fmtWallDate } from "./utils/formatters";
 import { computeHomeStats } from "./utils/homeStats";
 import { describeIdleStop } from "./utils/idleStop";
+import { MiniTimer } from "./components/stats/MiniTimer";
 import { TodayPanel } from "./components/stats/TodayPanel";
 import { ActivityTile } from "./components/stats/ActivityTile";
 import { WeekTile } from "./components/stats/WeekTile";
@@ -261,6 +262,8 @@ function MainApp() {
     return () => window.clearInterval(id);
   }, []);
   const [busy, setBusy] = useState(false);
+  // The window shrunk to the timer bar and kept on top (src-tauri/src/mini_mode.rs).
+  const [miniMode, setMiniMode] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [savingTimezone, setSavingTimezone] = useState(false);
   // Seeded from disk at startup (see get_app_settings below) so the picker
@@ -627,6 +630,18 @@ function MainApp() {
     };
   }, [signedIn, refreshAgentNotifications]);
   const staleSession = connection === "signedOut" && signedIn;
+  const switchMiniMode = useCallback(async (enabled: boolean) => {
+    try {
+      await invoke("set_mini_mode", { enabled });
+      setMiniMode(enabled);
+    } catch (error) {
+      console.warn("Could not switch the mini timer", error);
+    }
+  }, []);
+  // Signing out leaves nothing for the mini timer to show.
+  useEffect(() => {
+    if (miniMode && !signedIn) void switchMiniMode(false);
+  }, [miniMode, signedIn, switchMiniMode]);
   const tracking =
     (session?.status || "").toLowerCase() === "active" ||
     (link?.status || "").toLowerCase().includes("active");
@@ -2346,6 +2361,38 @@ function MainApp() {
     />
   );
 
+  const clockSeconds = timerViewMode === "task" ? liveTaskActiveSeconds : liveActiveSeconds;
+  const clockLabel =
+    (tracking ? "Elapsed · Tracking" : paused ? (onBreak ? "On a break" : "Paused") : "Not tracking") +
+    (timerViewMode === "task" ? " · whole task" : "");
+
+  if (miniMode && signedIn && !monitoringNotice?.requiresAcknowledgement) {
+    return (
+      <MiniTimer
+        seconds={clockSeconds}
+        label={clockLabel}
+        onExit={() => void switchMiniMode(false)}
+        controls={{
+          tracking,
+          paused,
+          onBreak,
+          busy,
+          canStart: !startBlockedReason,
+          blockedReason: startBlockedReason,
+          onStart: () => void handleStart(),
+          onPause: () => void handlePause(),
+          onStartBreak: () => void handleStartBreak(),
+          onResume: () => void handleResume(),
+          onStop: () => {
+            // The stop note needs the full window to be typed into.
+            if (selectedProject?.requireStopNote && tracking) void switchMiniMode(false);
+            handleStopClick();
+          },
+        }}
+      />
+    );
+  }
+
   if (signedIn && monitoringNotice?.requiresAcknowledgement) {
     return (
       <MonitoringNoticePanel
@@ -2837,13 +2884,23 @@ function MainApp() {
             {signedIn && (selectedTaskId || (taskLessSession && selectedProjectId)) ? (
               <>
                 <div data-help="The timer. It shows the time worked today, or the whole task's time when you switch it with the round button, and it counts while you are tracking." className="page-clock page-content-swap">
-                  <span className="page-clock-value">
-                    {fmtClock(timerViewMode === "task" ? liveTaskActiveSeconds : liveActiveSeconds)}
-                  </span>
-                  <span className="page-clock-label">
-                    {tracking ? "Elapsed · Tracking" : paused ? (onBreak ? "On a break" : "Paused") : "Not tracking"}
-                    {timerViewMode === "task" ? " · whole task" : ""}
-                  </span>
+                  <span className="page-clock-value">{fmtClock(clockSeconds)}</span>
+                  <span className="page-clock-label">{clockLabel}</span>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Mini timer - just the timer, kept on top of other windows"
+                    aria-label="Mini timer"
+                    style={{ alignSelf: "center" }}
+                    onClick={() => void switchMiniMode(true)}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        fill="currentColor"
+                        d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5Zm2 0v14h14V5H5Zm6 2h6v4h-6V7Z"
+                      />
+                    </svg>
+                  </button>
                   {!taskLessSession && taskTracking ? (
                     <button
                       type="button"

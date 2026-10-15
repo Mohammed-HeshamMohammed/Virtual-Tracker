@@ -6,6 +6,7 @@ mod config;
 mod constants;
 mod buzz;
 mod notify;
+mod mini_mode;
 mod ui_watchdog;
 mod power_events;
 mod prefs;
@@ -473,6 +474,7 @@ pub fn run() {
             buzz::buzz_dismiss,
             commands::work::is_session_on_break,
             ui_watchdog::ui_heartbeat,
+            commands::shell::set_mini_mode,
         ])
         .setup(move |app| {
             // Registration is separate from the handler wired into the plugin above - the

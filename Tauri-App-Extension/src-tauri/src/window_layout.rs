@@ -199,6 +199,11 @@ fn eased_size(from: (f64, f64), to: (f64, f64), step: u32, steps: u32) -> (f64, 
     )
 }
 
+/// Stops a layout animation still running, so the window can be given another size.
+pub fn cancel_resize() {
+    RESIZE_GENERATION.fetch_add(1, Ordering::SeqCst);
+}
+
 fn finish_resize(window: &WebviewWindow, (width, height): (f64, f64)) {
     let size = LogicalSize::new(width, height);
     if let Err(err) = window.set_size(size) {

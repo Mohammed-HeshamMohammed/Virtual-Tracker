@@ -69,6 +69,22 @@ pub fn get_window_layout(
     }
 }
 
+/// The mini timer on or off (mini_mode.rs). Leaving it restores the layout the member
+/// chose in Settings.
+#[tauri::command]
+pub async fn set_mini_mode(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    if enabled {
+        return crate::mini_mode::enter(&window);
+    }
+    let controller = Arc::clone(&state.controller);
+    let prefs = run_blocking(move || controller.get_app_settings().preferences).await;
+    crate::mini_mode::leave(&window, &prefs.layout, prefs.show_insights)
+}
+
 #[tauri::command]
 pub async fn open_log_file(state: tauri::State<'_, AppState>) -> Result<(), String> {
     let controller = Arc::clone(&state.controller);
