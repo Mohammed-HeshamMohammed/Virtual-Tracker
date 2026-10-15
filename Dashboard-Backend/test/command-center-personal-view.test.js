@@ -131,16 +131,23 @@ test("Team Lead keeps the whole-project view - they manage a team", async () => 
   assert.equal(card.stats.timeWorked, "10h 0m");
 });
 
-test("activity percent is computed from the person's own active/idle split", async () => {
+// Activity is the screenshots' activity levels, averaged - the figure every activity page
+// shows - and a personal view averages the viewer's own screenshots only.
+test("activity percent is the average of the person's own screenshot levels", async () => {
   reset("employee");
+  stub.projectMetrics.get(PROJECT).activitySum = 900;
+  stub.projectMetrics.get(PROJECT).activityCount = 10;
+  stub.personalMetrics = new Map([[PROJECT, { activeSeconds: 1800, idleSeconds: 200, activitySum: 150, activityCount: 3 }]]);
   const card = projectCard(await getCommandCenterPayload({}, VIEWER));
-  // 1800 active of 2000 tracked = 90%, vs the project's 36000/40000 = 90%
-  // only by coincidence of this fixture - assert against the personal totals
-  // by changing the split so the two cannot agree.
-  stub.personalMetrics = new Map([[PROJECT, { activeSeconds: 1000, idleSeconds: 1000 }]]);
-  const recomputed = projectCard(await getCommandCenterPayload({}, VIEWER));
-  assert.equal(card.stats.activityPercent, 90);
-  assert.equal(recomputed.stats.activityPercent, 50, "50% is the viewer's own split, not the project's 90%");
+  assert.equal(card.stats.activityPercent, 50, "the viewer's 150 over 3 screenshots, not the project's 90%");
+});
+
+test("activity with no screenshots is 0 and badged idle, whatever the tracked time", async () => {
+  reset("employee");
+  stub.personalMetrics = new Map([[PROJECT, { activeSeconds: 1800, idleSeconds: 200, activitySum: 0, activityCount: 0 }]]);
+  const card = projectCard(await getCommandCenterPayload({}, VIEWER));
+  assert.equal(card.stats.activityPercent, 0);
+  assert.equal(card.stats.activityBadge, "IDLE");
 });
 
 test("the Active Members card is replaced by the person's own task counts", async () => {

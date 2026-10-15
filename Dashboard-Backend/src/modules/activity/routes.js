@@ -1,3 +1,4 @@
+import { clearDashboardCache } from "../dashboard/dashboard-cache.js";
 import crypto from "node:crypto";
 import { publishTenant, resolveTenantIdForAgentDevice, resolveTenantIdForMemberId } from "../../lib/postgres/tenant-resolution.js";
 import sharp from "sharp";
@@ -1595,6 +1596,8 @@ export async function routeActivity(req, res, url, origin) {
         editedBy: member.memberId,
         reason,
       });
+      // The dashboard averages these levels and holds its figures for a minute.
+      clearDashboardCache();
       sendJson(res, origin, 200, {
         success: true,
         data: { updated, ids: targetIds, activityLevel, runStart, runEnd },
