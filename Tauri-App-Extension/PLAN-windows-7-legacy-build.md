@@ -1,13 +1,70 @@
 # Plan: a legacy Windows build of the agent (Windows 7, 8 and 8.1)
 
-Revision 2, 2026-10-08. Agent version at time of writing: 1.1.10.
+Revision 4, 2026-10-14, agent 1.1.11: building started. Revision 3 (same day)
+reinforced the plan; revision 2 was 2026-10-08, at 1.1.10.
 
-**Status: plan only. No product code has been changed and no legacy build
-has been produced or run.** Revision 2 replaces assumptions from revision 1
+**Status: being built. Every release now builds both versions by default
+(owner's decision, 2026-10-14). Not yet run on Windows 7: see "Build status".** Revision 2 replaces assumptions from revision 1
 with things that were actually checked: the dependency sources, the import
 table of an existing build, and upstream documentation. What was checked and
 how is listed under "Evidence". What is still an assumption is listed under
 "Still unverified", each with the gate that settles it.
+
+**What revision 3 changed.** Rechecked against the code at 1.1.11 and
+against upstream sources:
+- The freeze has still not been done: the agent is on Tauri 2.11.5 but
+  `Cargo.toml` still says `tauri = "2"` (E25).
+- How old Windows is detected on the download page is now settled from
+  sources, and one assumption in it was wrong (E26 to E28, U12).
+- The two WebView2 109 builds differ in a way that matters: only the newer
+  one has the fix for an image flaw that was exploited in the wild. The
+  only build that can be sourced easily is the older one (E29, U10).
+- `EventSetInformation` is confirmed missing from Windows 7 before an
+  update, and the WebView2 loader imports it (E30, U4).
+
+## Build status (revision 4)
+
+Done, uncommitted, in the working tree:
+
+| Piece | Where | Checked how |
+| ----- | ----- | ----------- |
+| Freeze on Tauri 2.11 (phase 0) | `src-tauri/Cargo.toml` (`~2.11` etc.), `package.json`, `.github/scripts/assert-windows7-stack.mjs` in both workflows | Guard passes on the current lockfile |
+| Two builds from one codebase | `src-tauri/Cargo.toml` features `modern` (default) and `legacy-windows` | `cargo check` of both passes; 308 library tests and 356 frontend tests pass on the normal build |
+| No WinRT in the legacy build | `src-tauri/src/notify.rs` (own notification window, `win7-notifications`); time zone reported by the window (`report_local_timezone`, `src/main.tsx`) instead of `iana-time-zone`; frontend notifications go through the `show_notification` command | Import audit below |
+| Legacy update feed | `src-tauri/src/lib.rs` `updater_plugin()` asks `windows-legacy` | Server tests below |
+| ctor/dtor patched for the win7 target | `src-tauri/patches/ctor-0.8.0`, `dtor-0.3.0`, `[patch.crates-io]` | They refused the target outright, and would otherwise have dropped the start-up constructors silently |
+| Windows 7 build | `i686-win7-windows-msvc`, nightly-2026-10-01, `-Zbuild-std`, `+crt-static` | **Built locally: 15 MB, 32-bit. Import audit: nothing Windows 7 lacks except `EventSetInformation` (U4).** The same audit fails the normal build with 13 missing imports, so the check works. |
+| Legacy config | `src-tauri/tauri.legacy.conf.json`: NSIS only, fixed WebView2 runtime from `src-tauri/webview2-fixed-runtime/`, own installer hooks | U1 settled: `tauri build` refuses the tier 3 target ("does not exist"), so the release job compiles with cargo and packages with `tauri bundle --target i686-win7-windows-msvc`, which accepts it. Done locally with a placeholder runtime: a 32-bit NSIS installer came out, with the legacy hooks; the normal hooks also compile. Signing the updater artifact needs the release key, which only CI has. |
+| Installer check | `windows/installer-hooks-shared.nsh` + `installer-hooks.nsh` (normal: stops below Windows 10 with the legacy link) + `installer-hooks-legacy.nsh` (no check) | Not yet run on old Windows |
+| Release job | `.github/workflows/release.yml` `release-windows-legacy`: after the normal release, allowed to fail, fetches and verifies the runtime, builds, audits imports, uploads the installer and `latest-legacy.json` | Not yet run in CI |
+| Runtime fetch | `scripts/fetch-webview2-runtime.ps1`: hash check, Microsoft signature on every file, refuses anything but 109.0.1518.140 unless `WEBVIEW2_ALLOW_OLDER=1` | **Sourced: 109.0.1518.140 x86 from Microsoft's own server** (Microsoft Update Catalog, "Microsoft Edge-WebView2 Runtime Version 109 Update for x86 based Editions", 132 MB, SHA-256 `60b22c71…6a31`). It is an Edge Update package; the script unpacks it with 7-Zip (never runs it) to the same files as the runtime. Run locally: 395 MB unpacked, version matches, every program file signed by Microsoft after dropping Google's Widevine video plugin (signed by Google, not needed). Repository variables `WEBVIEW2_RUNTIME_URL` and `WEBVIEW2_RUNTIME_SHA256` are set. |
+| Server | `Landing-Backend` download route (`platform=windows-legacy`, never mixed with the normal installer, User-Agent fallback) and update route (`windows-legacy` reads `latest-legacy.json`, 204 when absent, kill switch `AGENT_LEGACY_UPDATES=off`) | 8 new tests, 31 pass |
+| Download pages | `Landing-Web` and `Dashboard-Web` download cards: "Windows 10 / 11" and "Windows 7 / 8 / 8.1" always shown, each linking straight to its installer; the detected one marked "Your computer" | Seen in the landing page preview on Windows 11 |
+| Chromium 109 CSS | `src/App.css`: a plain colour before each of the 7 `color-mix()` | |
+| PowerShell 2 | `scripts/get-browser-url.ps1` line 97 uses `New-Object` | |
+
+Found while building, and handled:
+
+- **The program has to be told where its WebView2 is.** Tauri reads that from
+  `tauri.legacy.conf.json` at compile time, but even with the file passed as
+  `TAURI_CONFIG` the setting reached the library and not the optimised
+  program, so it would have looked for an installed WebView2 these machines
+  do not have. The legacy build now sets it itself at start-up
+  (`use_bundled_webview2` in `src-tauri/src/lib.rs`), and the release job
+  fails if the built program lacks it. Checked in the packaged installer: the
+  runtime installs to `webview2-fixed-runtime\` beside the program, the
+  folder that code points at.
+- **Installer size with the real runtime: 141 MB (x86).** Every legacy update
+  downloads this too (U11).
+
+Still needed before the first legacy release:
+
+1. **A Windows 7 machine** for gates G2 to G4. Nothing in this build has run
+   on Windows 7, 8 or 8.1 yet.
+2. Not done on purpose: `supportedOS` entries in the app manifest (not needed
+   to start; changes how some APIs report the Windows version). The CSP is
+   unchanged, which is acceptable now that the shipped runtime is .140 (see
+   "Security notes").
 
 ## Summary
 
@@ -23,6 +80,13 @@ how is listed under "Evidence". What is still an assumption is listed under
   on a Windows update being present and has to be tested on a real system.
 - The one hard external dependency is a **Windows 7 machine to test on**.
   Everything up to gate G1 can be done without it. Nothing after G1 can.
+- The WebView2 109 build matters for security: 109.0.1518.140 has the fix
+  for an actively exploited image flaw, 109.0.1518.78 (the one that is easy
+  to download) does not. Shipping .78 is only acceptable with the image
+  restrictions under "Security notes".
+- The download page cannot rely on the browser's user-agent string: Chrome
+  and Brave on Windows 7 say "Windows 10". Detection uses the browser's
+  platform-version hint and the browser's own version instead.
 
 ## Who this is for
 
@@ -46,6 +110,7 @@ already have every system DLL the build asks for except the C runtime.
 | 2026-10-08 | Windows 11 Smart App Control is deferred. No code-signing certificate while the app is in development. |
 | 2026-10-08 | Windows 7 machine is on Service Pack 1. Bitness of the five machines is unknown. |
 | 2026-10-09 | One Download button for everyone. The download page detects old Windows and hands over the legacy installer. No wrapper installer that contains or downloads both builds. |
+| 2026-10-14 | Under the button, both installers are always listed by the Windows they are for, as the fallback if detection is wrong. |
 
 ## Decisions needed from the owner
 
@@ -91,6 +156,12 @@ What was checked for revision 2, and how.
 | E22 | `Tauri` config supports `webviewInstallMode: fixedRuntime`. | `tauri-utils-2.9.3/src/config.rs` |
 | E23 | Frontend: `color-mix()` is used 7 times in `src/App.css` and needs Chromium 111. No JavaScript API newer than Chromium 109 was found. | grep of `src/` |
 | E24 | `scripts/get-browser-url.ps1` line 97 uses `[Type]::new(...)`, which needs PowerShell 5. | Script source |
+| E25 | At agent 1.1.11 (2026-10-14) the lockfile is unchanged on the UI stack (`tauri` 2.11.5, `wry` 0.55.1, `webview2-com` 0.38.2), `Cargo.toml` still has `tauri = "2"` and every plugin at `"2"`, and `iana-time-zone` is still used at `src-tauri/src/client/api/session.rs` line 10. New frontend code since 1.1.10 adds nothing newer than Chromium 109 (`checkVisibility` in `src/utils/tour.ts` is Chromium 105 and is feature-tested; `color-mix()` is still 7 uses in `src/App.css`). | `Cargo.lock`, `Cargo.toml`, grep of `src/` |
+| E26 | Since Chrome 107, Chromium reports `Windows NT 10.0` in its user-agent string on every Windows version. A Windows 7 user on Chrome 109 has been seen reporting Windows 10. | Chromium's user-agent reduction page, MDN, AskWoody report |
+| E27 | The platform-version hint (`Sec-CH-UA-Platform-Version`, or `navigator.userAgentData.getHighEntropyValues(["platformVersion"])`) reports `0.0.0` on Windows 7, 8 and 8.1 alike, and 1 or higher on Windows 10 and 11. It exists in Chromium 95 and later. Firefox does not have it. | Eric Lawrence, "Determining OS Platform Version"; MDN |
+| E28 | Chrome 109 and Firefox ESR 115 are the last versions of each that run on Windows 7, 8 and 8.1. Firefox still reports the real `Windows NT 6.x`. | Chrome and Firefox support notices; Firefox does not freeze old Windows versions |
+| E29 | Edge 109.0.1518.140 (2023-09-15) fixed CVE-2023-4863, a heap overflow in WebP image decoding that was exploited in the wild. Builds before .140 are affected. The NuGet runtime package stops at 109.0.1518.78. | Microsoft release notes as quoted by the Canadian Centre for Cyber Security and AskWoody; nuget.org version index (E20) |
+| E30 | Microsoft's TraceLogging reference says `EventSetInformation` is not present in RTM Windows 7, and documents Windows 8 as its minimum. The existing build imports it statically, and the string is in `WebView2LoaderStatic.lib` for x86 and x64. | Microsoft Learn; E10 |
 
 ### Import audit
 
@@ -124,15 +195,15 @@ Each item names the gate that settles it.
 | U1 | `tauri build` accepts the tier 3 target with `-Zbuild-std` and produces an NSIS installer. | G1 |
 | U2 | C dependencies (`ring`, bundled SQLite) build for the `win7` target and for 32-bit. | G1 |
 | U3 | After the fixes, the release build imports nothing Windows 7 lacks. | G1 |
-| U4 | `EventSetInformation` is present on the members' Windows 7. | G2 |
+| U4 | `EventSetInformation` is present on the members' Windows 7. E30 confirms it is absent before an update; which update adds it is not confirmed (KB2882822 is the likely one). A fully updated Windows 7 SP1 probably has it. | G2, on two machines: a fully updated Windows 7 SP1 and one with no updates after SP1. If the second fails, the installer checks for the export and says which update to install |
 | U5 | The WebView2 loader from the current SDK starts a 109 runtime on Windows 7. Microsoft says SDKs from 1.0.1519 on do not support Windows 7. Tauri shipped this loader while still supporting Windows 7. | G2 |
 | U6 | The NuGet package's folder layout is the fixed-version layout Tauri expects, and every binary in it carries a valid Microsoft signature. | G1 |
 | U7 | The async runtime and networking stack (`tokio`, `mio`) work on Windows 7. | G3 |
 | U8 | The updater's certificate check passes with the root certificates on these machines. | G4 |
 | U9 | `scripts/get-app-icon.ps1` runs on PowerShell 2. | G3 |
-| U10 | WebView2 109.0.1518.140 contains the 2023 libwebp fix and 109.0.1518.78 does not. | Check Microsoft's Edge 109 release notes before choosing a build |
-| U11 | Installer and update size with the runtime bundled. Microsoft states current fixed-version binaries are over 250 MB unpacked. | G1 |
-| U12 | What old Chrome, Firefox and Brave on Windows 7, 8 and 8.1 report as their Windows version, in the user-agent string and through the platform-version hint. The download page's detection depends on it. | G2, by opening a test page in each browser on the test machine |
+| U10 | Settled. The 109.0.1518.140 runtime is unpacked from the same Microsoft package Edge 109.0.1518.140 ships in, so it carries the same fix (E29), and Microsoft's catalog server is the source. | Done |
+| U11 | Settled: the legacy installer is 141 MB (x86) with the runtime inside (395 MB unpacked). | Done |
+| U12 | Mostly settled by E26 to E28. Still to confirm: what Brave reports for the platform-version hint (Brave limits some high-entropy hints), and that Chrome 109 on Windows 8.1 reports `0.0.0` like Windows 7. | G2, by opening a test page in each browser on the test machine |
 
 ## Design
 
@@ -189,12 +260,19 @@ Mechanics:
 - **Why bundling is the only webview route**: E19 and E21.
 - **Architecture**: the runtime must match the app. A 32-bit agent needs the
   x86 runtime, which runs on 32-bit and 64-bit Windows.
+- **Which build**: 109.0.1518.140. It is the only 109 build with the fix
+  for the exploited WebP flaw (E29). Every earlier 109 build, including the
+  .78 on NuGet, decodes WebP images with a known, exploited bug.
 - **Sourcing options**, in order of preference:
-  1. The original Microsoft package for 109, if an archived copy can still
-     be obtained.
-  2. The files from a machine that already has WebView2 109.0.1518.140
-     installed. This is the newest 109 build.
-  3. The third-party NuGet package (E20), version 109.0.1518.78.
+  1. The original Microsoft fixed-version package for 109.0.1518.140, if an
+     archived copy can be obtained.
+  2. The files from a Windows 8.1 or Server 2012 R2 machine that has
+     WebView2 109.0.1518.140 installed (the Microsoft Update Catalog has the
+     .140 update for those systems; it updates an existing install rather
+     than installing fresh). Copy the version folder.
+  3. The third-party NuGet package (E20), version 109.0.1518.78. Only with
+     the image restrictions under "Security notes", which are then required,
+     not optional.
 - **Verification, whatever the source**: every `.exe` and `.dll` in the
   folder must carry a valid Microsoft Authenticode signature. The folder's
   SHA-256 manifest is recorded in the repo. CI refuses to bundle a runtime
@@ -252,18 +330,31 @@ never lands on an old system.
     `/api/download?platform=windows`:
     `Landing-Web/src/lib/site-urls.ts` and
     `Dashboard-Web/shared/ui/agent-download-choices.tsx`.
-  - **Detection, in order.** The first that gives an answer wins.
-    1. In the page, ask the browser for its platform version
-       (`navigator.userAgentData.getHighEntropyValues(["platformVersion"])`,
-       Chromium only). Windows 7, 8 and 8.1 report a major version of 0;
-       Windows 10 and 11 report 1 or more. **[unverified]**
-    2. Otherwise read the user-agent string: `Windows NT 6.1`, `6.2` or
-       `6.3` is old Windows. Firefox reports this truthfully.
-    3. Otherwise treat it as modern.
-  - **Why the user-agent string alone is not enough.** Chromium froze the
-    Windows version in its user-agent string at `Windows NT 10.0` around
-    version 107 to 110, so Chrome 109 or Brave on Windows 7 may claim to be
-    Windows 10. **[unverified]** Step 1 exists for that case.
+  - **Detection, in order.** Only on Windows; the first rule that answers
+    wins.
+    1. **The platform-version hint, in Chromium browsers.** In the page,
+       `navigator.userAgentData.getHighEntropyValues(["platformVersion"])`.
+       `0.0.0` (major version 0) is Windows 7, 8 or 8.1. A major version of
+       1 or more is Windows 10 or 11 (E27).
+    2. **The Windows version in the user-agent string, in Firefox.**
+       `Windows NT 6.1`, `6.2` or `6.3` is old Windows. Firefox reports this
+       truthfully (E28); Chromium does not (E26).
+    3. **The browser's own version, when 1 and 2 give no answer.** A
+       Chromium browser at version 109 or lower on Windows is almost
+       certainly on Windows 7, 8 or 8.1, because 109 is the last version
+       those systems get and Windows 10 browsers update past it (E28). A
+       Windows 10 machine held back on an old browser would also get the
+       legacy installer, which is the safe direction: it runs there too.
+    4. Otherwise treat it as modern.
+  - **Why not the user-agent string alone.** Since Chrome 107 every
+    Chromium browser says `Windows NT 10.0` on every Windows version (E26),
+    so on its own it would hand Windows 7 the modern installer, which cannot
+    start there.
+  - **A test page.** The same detection code, shown as text ("This looks
+    like Windows 7, 8 or 8.1: you'll get the legacy installer"), is what is
+    opened in each browser on the test machine at G2. The Download button
+    should show the same sentence under it, so a member can see the choice
+    and use the other link if it is wrong.
   - **What the page sends.** When it detects old Windows it links to
     `/api/download?platform=windows-legacy`. The choice is made in the
     page, so the server never has to guess from a frozen string.
@@ -271,14 +362,39 @@ never lands on an old system.
     - `findAsset` takes the first asset ending in `.exe` for Windows. It
       must skip `windows-legacy` assets there, and serve only those for
       `platform=windows-legacy`.
-    - As a fallback for links opened directly, `platform=windows` with a
-      user-agent of `Windows NT 6.1` to `6.3` is answered with the legacy
-      installer.
+    - As a fallback for links opened directly, `platform=windows` is
+      answered with the legacy installer when the request shows old
+      Windows: a user-agent of `Windows NT 6.1` to `6.3`, or a Chromium
+      version of 109 or lower on Windows. The server does not ask for the
+      platform-version hint; the page has already used it.
     - A release with no legacy asset answers 404 for `windows-legacy` with
       a clear message. It never falls back to the modern installer.
+  - **Both versions are always listed by Windows version.** Under the
+    Download button, on both pages, a short list names each installer by the
+    Windows it is for, so a member can pick the right one themselves if the
+    detection is wrong, JavaScript is off, or the page is opened on another
+    computer than the one being set up:
+
+    | Your Windows | Download |
+    | ------------ | -------- |
+    | Windows 10 or 11 | My Virtual Tracker (standard) |
+    | Windows 7, 8 or 8.1 (no longer supported by Microsoft) | My Virtual Tracker for older Windows |
+
+    - Each row links straight to its installer
+      (`/api/download?platform=windows` and
+      `/api/download?platform=windows-legacy`), not through detection.
+    - The row matching what was detected is marked ("Your computer"), so the
+      list and the main button never disagree on screen.
+    - One line explains how to check: "Not sure? Press the Windows key,
+      type winver and press Enter."
+    - One line says what happens on a wrong pick: the standard version will
+      not start on Windows 7, 8 or 8.1 and says so; the older-Windows
+      version also works on Windows 10 and 11 but is larger and kept on an
+      older browser engine, so it is only for older Windows.
+    - The list is plain links in the page's HTML, not built by script, so
+      it shows even when the page's script fails on an old browser.
   - **Safety nets for a wrong guess or a file passed along by hand.**
-    - A small "Windows 7 or 8? Get this version" link under the button, on
-      both pages.
+    - The list above, on both pages.
     - The modern installer refuses to run below Windows 10 and names the
       legacy download (phase 4).
     - The legacy installer needs no check. It also runs on Windows 10 and
@@ -294,7 +410,15 @@ never lands on an old system.
   Image decoding in an unpatched Chromium is the realistic exposure.
 - Legacy build: narrow `img-src` to the app itself, `data:`, `blob:` and the
   agent's own API host.
-- Prefer the newest 109 build that can be sourced (U10).
+- Narrowing the hosts is not enough on its own: avatars are uploaded by
+  members and served from the agent's own API host, so an attacker who is a
+  member could upload a crafted WebP image. If the legacy build ships any
+  109 build older than .140, it must also do one of these:
+  - show avatars as initials only, and load no member-uploaded image; or
+  - have the server re-encode every uploaded image to PNG or JPEG before
+    serving it (screenshots are already JPEG made by the agent).
+- Ship 109.0.1518.140 if it can be sourced; then the above is a hardening
+  step, not a requirement.
 - The modern installer's refusal to run on old systems (phase 4) keeps
   members from ending up on a build with a newer, incompatible runtime.
 
@@ -308,6 +432,10 @@ Effort is relative: S is hours, M is days, L is more than a week.
 2. Add the lockfile guard to CI.
 
 Exit: a `cargo update` can no longer move the agent off the Windows 7 line.
+
+Status at 1.1.11 (2026-10-14): not done (E25). Every agent release until it
+is done is one `cargo update` away from losing Windows 7. This is the one
+step worth doing now even if nothing else in the plan is scheduled.
 
 ### Phase 1: Spike (M)
 
@@ -400,6 +528,7 @@ least commonly tested. Each run uses the real installed exe.
 | Check | Pass |
 | ----- | ---- |
 | Download button, in old Chrome, Firefox and Brave | Each is handed the legacy installer |
+| The by-Windows list under the button, in the same browsers and with scripts turned off | Both rows show and each downloads its own installer; the detected row is marked when scripts run |
 | Install on a machine with no WebView2 | Completes with no download and no WebView2 installer |
 | First launch | Window opens, sign-in screen draws correctly |
 | Sign-in | Browser link flow and the `virtualtracker://` deep link both work |
@@ -524,4 +653,14 @@ install the agent.
 - [Microsoft: Distribute your app and the WebView2 Runtime](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)
 - [Microsoft Q&A: WebView2 Runtime 109.0.1518.140 on Windows 7](https://learn.microsoft.com/en-us/answers/questions/1661814/latest-version-of-microsoft-edge-webview2-runtime)
 - [NuGet: WebView2.Runtime.X86](https://www.nuget.org/packages/WebView2.Runtime.X86)
+- [Chromium: User-Agent reduction](https://chromium.org/updates/ua-reduction)
+- [MDN: User-Agent reduction](https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/user-agent_reduction)
+- [MDN: Sec-CH-UA-Platform-Version](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Sec-CH-UA-Platform-Version)
+- [Eric Lawrence: Determining OS platform version](https://textslashplain.com/2021/09/21/determining-os-platform-version/)
+- [AskWoody: Chrome 109 on Windows 7 reporting Windows 10](https://askwoody.com/forums/topic/chrome-user-agent-suddenly-showing-windows-10-instead-of-7)
+- [Canadian Centre for Cyber Security: Edge 109.0.1518.140 advisory](https://www.cyber.gc.ca/en/alerts-advisories/microsoft-edge-security-advisory-av23-561)
+- [AskWoody: Edge 109 WebP fix for Windows 7, 8, 8.1](https://askwoody.com/forums/topic/microsofts-edge-109-updates-for-windows-7-8-8-1-2012-r2)
+- [NVD: CVE-2023-4863](https://nvd.nist.gov/vuln/detail/cve-2023-4863)
+- [Microsoft: EventSetInformation](https://learn.microsoft.com/en-us/windows/desktop/api/evntprov/nf-evntprov-eventsetinformation)
+- [Microsoft: TraceLoggingSetInformation](https://learn.microsoft.com/en-us/windows/desktop/api/traceloggingprovider/nf-traceloggingprovider-traceloggingsetinformation)
 - [thunk-rs](https://docs.rs/thunk-rs/latest/thunk/): link-time shims for missing Windows APIs, a possible answer to U4. Third party and use-at-own-risk by its own description.
