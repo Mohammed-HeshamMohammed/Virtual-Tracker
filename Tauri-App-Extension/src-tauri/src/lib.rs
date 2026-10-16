@@ -1,3 +1,6 @@
+#[cfg(all(windows, feature = "legacy-windows"))]
+mod legacy_windows;
+
 mod agent;
 mod auth;
 mod capture;

@@ -1,16 +1,17 @@
 # Plan: a legacy Windows build of the agent (Windows 7, 8 and 8.1)
 
-Revision 4, 2026-10-14, agent 1.1.11: building started. Revision 3 (same day)
-reinforced the plan; revision 2 was 2026-10-08, at 1.1.10.
+Revision 5, 2026-10-16, agent 1.1.13: fixed the Windows 7 entry-point failure
+and rebuilt the legacy executable. Earlier evidence is retained below.
 
-**Status: being built. Every release now builds both versions by default
-(owner's decision, 2026-10-14). Not yet run on Windows 7: see "Build status".** Revision 2 replaces assumptions from revision 1
+**Status: legacy executable rebuilt and import-audited. Every release builds
+both versions by default (owner's decision, 2026-10-14). Startup, tracking and
+updating on old Windows still need real-machine verification.** Revision 2 replaces assumptions from revision 1
 with things that were actually checked: the dependency sources, the import
 table of an existing build, and upstream documentation. What was checked and
 how is listed under "Evidence". What is still an assumption is listed under
 "Still unverified", each with the gate that settles it.
 
-**What revision 3 changed.** Rechecked against the code at 1.1.11 and
+**Historical changes in revision 3 (superseded where noted below).** Rechecked against the code at 1.1.11 and
 against upstream sources:
 - The freeze has still not been done: the agent is on Tauri 2.11.5 but
   `Cargo.toml` still says `tauri = "2"` (E25).
@@ -22,9 +23,44 @@ against upstream sources:
 - `EventSetInformation` is confirmed missing from Windows 7 before an
   update, and the WebView2 loader imports it (E30, U4).
 
-## Build status (revision 4)
+## Windows 7 entry-point fix (revision 5, 2026-10-16)
 
-Done, uncommitted, in the working tree:
+A member's Windows 7 machine failed before startup because the WebView2 SDK's
+static loader imports `advapi32!EventSetInformation`. The previous audit only
+warned about it, allowing the incompatible installer to be published.
+
+The legacy-only `src-tauri/src/legacy_windows.rs` now supplies that import's
+function pointer locally. It resolves the real function through `GetProcAddress`
+when available and otherwise returns `ERROR_NOT_SUPPORTED`, following Microsoft's
+[TraceLogging fallback](https://learn.microsoft.com/windows/win32/api/traceloggingprovider/nf-traceloggingprovider-traceloggingsetinformation).
+This skips optional ETW provider configuration on old Windows; tracking and
+WebView2 startup do not depend on that configuration. The normal build is unchanged.
+
+The import audit now fails on this function in both normal and delayed imports,
+and runs before installer packaging. Its CLI regression tests run in both CI and
+release verification. Native tests cover the missing-export fallback and forwarding
+all arguments and return codes when the function exists.
+
+Validation on 2026-10-16:
+
+- The old 32-bit executable is rejected by the strengthened import audit for
+  `advapi32.dll!EventSetInformation`.
+- Rebuilt with `nightly-2026-10-01`, `i686-win7-windows-msvc`, `-Zbuild-std`
+  and `+crt-static`: 15,420,928 bytes, 16 DLLs, 450 imported functions.
+  The rebuilt executable passes the audit with no known forbidden imports.
+- Two native fallback/forwarding tests and eight PE audit CLI tests pass.
+- All 362 frontend tests and the TypeScript/Vite production build pass.
+- Rust library tests: 312 passed, one ignored, none failed.
+- The Tauri dependency-line and updater platform-trust guards pass.
+- Release verification repeats the tests; the legacy job audits the actual
+  release executable before it can package or upload the installer.
+
+Actual startup, tracking and updating on Windows 7, 8 and 8.1 still require the
+member's machine or a VM; passing an import audit alone does not settle G2–G4.
+
+## Build status (revision 4, historical)
+
+Implemented in revision 4 (the EventSetInformation exception is superseded by revision 5):
 
 | Piece | Where | Checked how |
 | ----- | ----- | ----------- |
@@ -33,7 +69,7 @@ Done, uncommitted, in the working tree:
 | No WinRT in the legacy build | `src-tauri/src/notify.rs` (own notification window, `win7-notifications`); time zone reported by the window (`report_local_timezone`, `src/main.tsx`) instead of `iana-time-zone`; frontend notifications go through the `show_notification` command | Import audit below |
 | Legacy update feed | `src-tauri/src/lib.rs` `updater_plugin()` asks `windows-legacy` | Server tests below |
 | ctor/dtor patched for the win7 target | `src-tauri/patches/ctor-0.8.0`, `dtor-0.3.0`, `[patch.crates-io]` | They refused the target outright, and would otherwise have dropped the start-up constructors silently |
-| Windows 7 build | `i686-win7-windows-msvc`, nightly-2026-10-01, `-Zbuild-std`, `+crt-static` | **Built locally: 15 MB, 32-bit. Import audit: nothing Windows 7 lacks except `EventSetInformation` (U4).** The same audit fails the normal build with 13 missing imports, so the check works. |
+| Windows 7 build | `i686-win7-windows-msvc`, nightly-2026-10-01, `-Zbuild-std`, `+crt-static` | **Revision 5 rebuilt locally: 15,420,928 bytes, 32-bit. Import audit passes, including the EventSetInformation check.** |
 | Legacy config | `src-tauri/tauri.legacy.conf.json`: NSIS only, fixed WebView2 runtime from `src-tauri/webview2-fixed-runtime/`, own installer hooks | U1 settled: `tauri build` refuses the tier 3 target ("does not exist"), so the release job compiles with cargo and packages with `tauri bundle --target i686-win7-windows-msvc`, which accepts it. Done locally with a placeholder runtime: a 32-bit NSIS installer came out, with the legacy hooks; the normal hooks also compile. Signing the updater artifact needs the release key, which only CI has. |
 | Installer check | `windows/installer-hooks-shared.nsh` + `installer-hooks.nsh` (normal: stops below Windows 10 with the legacy link) + `installer-hooks-legacy.nsh` (no check) | Not yet run on old Windows |
 | Release job | `.github/workflows/release.yml` `release-windows-legacy`: after the normal release, allowed to fail, fetches and verifies the runtime, builds, audits imports, uploads the installer and `latest-legacy.json` | Not yet run in CI |
@@ -57,10 +93,11 @@ Found while building, and handled:
 - **Installer size with the real runtime: 141 MB (x86).** Every legacy update
   downloads this too (U11).
 
-Still needed before the first legacy release:
+Still needed for full old-Windows runtime validation:
 
-1. **A Windows 7 machine** for gates G2 to G4. Nothing in this build has run
-   on Windows 7, 8 or 8.1 yet.
+1. **A Windows 7 machine** for gates G2 to G4. The earlier member launch failed
+   before startup; the revision 5 fix still needs a successful launch and
+   tracking/update tests on Windows 7, 8 and 8.1.
 2. Not done on purpose: `supportedOS` entries in the app manifest (not needed
    to start; changes how some APIs report the Windows version). The CSP is
    unchanged, which is acceptable now that the shipped runtime is .140 (see
@@ -72,12 +109,11 @@ Still needed before the first legacy release:
   It ships its own copy of the WebView2 109 files inside the app folder, so
   nothing has to be installed on the member's machine (Route A).
 - The agent is currently on the **last Tauri line that can run on Windows 7**
-  (2.11). Tauri 2.12 dropped Windows 7. The agent's `Cargo.toml` allows any
-  2.x, so an ordinary dependency update would end this plan. Freezing that is
-  the first action.
-- The existing build cannot start on Windows 7 for five separate reasons
-  found in its import table. Four have a known fix in this plan. One depends
-  on a Windows update being present and has to be tested on a real system.
+  (2.11). The agent is pinned to that line and CI checks its lockfile.
+  Moving to Tauri 2.12 or later requires a separate legacy dependency line.
+- The original build had five classes of incompatible native imports.
+  The legacy build now addresses them, including optional runtime lookup
+  of `EventSetInformation`. Real-machine testing still settles G2 to G4.
 - The one hard external dependency is a **Windows 7 machine to test on**.
   Everything up to gate G1 can be done without it. Nothing after G1 can.
 - The WebView2 109 build matters for security: 109.0.1518.140 has the fix
@@ -178,7 +214,7 @@ Imports that Windows 7 SP1 cannot satisfy:
 | `bcryptprimitives.dll`: `ProcessPrng`; `kernel32.dll`: `GetSystemTimePreciseAsFileTime` | Rust standard library, `getrandom` | 7 | Windows 7 Rust target |
 | `api-ms-win-core-winrt-l1-1-0.dll`: `RoGetActivationFactory` | `windows-core`, used by `iana-time-zone` and `tauri-winrt-notification` | 7 | Remove both WinRT users from the legacy build |
 | `combase.dll`: `CoCreateFreeThreadedMarshaler`, `CoIncrementMTAUsage` | `windows-core` 0.62 through `iana-time-zone` | 7 | Same |
-| `advapi32.dll`: `EventSetInformation` | WebView2 loader | 7 without update KB2882822 **[unverified]** | Test on a clean Windows 7 SP1. If missing: installer prerequisite check, or a link-time shim. |
+| `advapi32.dll`: `EventSetInformation` | WebView2 loader | Windows 7 installations without that export | Revision 5: local import pointer, runtime lookup, `ERROR_NOT_SUPPORTED` fallback. No OS update prerequisite. |
 
 Everything else in `kernel32`, `user32`, `gdi32`, `shell32`, `ole32`,
 `advapi32`, `crypt32`, `ws2_32`, `dwmapi`, `comctl32`, `propsys` and `ntdll`
@@ -195,7 +231,7 @@ Each item names the gate that settles it.
 | U1 | `tauri build` accepts the tier 3 target with `-Zbuild-std` and produces an NSIS installer. | G1 |
 | U2 | C dependencies (`ring`, bundled SQLite) build for the `win7` target and for 32-bit. | G1 |
 | U3 | After the fixes, the release build imports nothing Windows 7 lacks. | G1 |
-| U4 | `EventSetInformation` is present on the members' Windows 7. E30 confirms it is absent before an update; which update adds it is not confirmed (KB2882822 is the likely one). A fully updated Windows 7 SP1 probably has it. | G2, on two machines: a fully updated Windows 7 SP1 and one with no updates after SP1. If the second fails, the installer checks for the export and says which update to install |
+| U4 | Superseded by revision 5: the member confirmed the export is missing. The agent now resolves it optionally instead of requiring it at load time. | Import audit and native fallback tests; G2 still requires a real Windows 7 startup test |
 | U5 | The WebView2 loader from the current SDK starts a 109 runtime on Windows 7. Microsoft says SDKs from 1.0.1519 on do not support Windows 7. Tauri shipped this loader while still supporting Windows 7. | G2 |
 | U6 | The NuGet package's folder layout is the fixed-version layout Tauri expects, and every binary in it carries a valid Microsoft signature. | G1 |
 | U7 | The async runtime and networking stack (`tokio`, `mio`) work on Windows 7. | G3 |
@@ -448,7 +484,7 @@ that has no fix inside phase 2.
    branch.
 2. Build the release exe for the `win7` target with the pinned nightly.
 3. Audit the import table again. Pass: no import from the table above
-   remains, apart from `EventSetInformation`.
+   remains, including `EventSetInformation`.
 4. Obtain a 109 runtime, verify its signatures, bundle it, build the NSIS
    installer and record its size.
 

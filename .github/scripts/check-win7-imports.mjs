@@ -21,6 +21,7 @@ const MISSING_DLLS = [
 ];
 /** Functions that are missing even though their DLL exists on Windows 7. */
 const MISSING_FUNCTIONS = new Set([
+  "EventSetInformation", // optional WebView2 ETW API: resolve it at runtime on Windows 7
   "GetSystemTimePreciseAsFileTime",
   "WaitOnAddress",
   "WakeByAddressAll",
@@ -35,9 +36,6 @@ const MISSING_FUNCTIONS = new Set([
   "CreateFile2",
   "CopyFile2",
 ]);
-/** Missing on Windows 7 before an update, present once it is updated. Reported, not failed. */
-const NEEDS_UPDATE = new Map([["EventSetInformation", "Windows 7 before the 2013 ETW update (WebView2 loader)"]]);
-
 function importsOf(file) {
   const buf = fs.readFileSync(file);
   const pe = buf.readUInt32LE(0x3c);
@@ -97,17 +95,14 @@ if (!file) {
 }
 const { is64, dlls } = importsOf(file);
 const failures = [];
-const notes = [];
 for (const [dll, functions] of Object.entries(dlls)) {
   if (MISSING_DLLS.some((pattern) => pattern.test(dll))) failures.push(`${dll} (${functions.join(", ")})`);
   for (const name of functions) {
     if (MISSING_FUNCTIONS.has(name)) failures.push(`${dll}!${name}`);
-    if (NEEDS_UPDATE.has(name)) notes.push(`${dll}!${name}: missing on ${NEEDS_UPDATE.get(name)}`);
   }
 }
 const count = Object.values(dlls).reduce((sum, functions) => sum + functions.length, 0);
 console.log(`${file}: ${is64 ? "64" : "32"}-bit, ${Object.keys(dlls).length} DLLs, ${count} imported functions.`);
-for (const note of notes) console.log(`::warning::${note}`);
 if (failures.length) {
   for (const failure of failures) console.error(`::error::Imports something Windows 7 does not have: ${failure}`);
   process.exit(1);

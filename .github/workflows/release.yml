@@ -80,6 +80,9 @@ jobs:
       - name: assert the agent is still on the Tauri line Windows 7 needs
         run: node .github/scripts/assert-windows7-stack.mjs
 
+      - name: test the Windows 7 import audit
+        run: node --test .github/scripts/check-win7-imports.test.mjs
+
       - name: frontend typecheck, test, build
         working-directory: Tauri-App-Extension
         run: |
@@ -378,6 +381,16 @@ jobs:
         working-directory: Tauri-App-Extension
         run: npm run build
 
+      - name: test the legacy Windows API fallback
+        shell: pwsh
+        working-directory: Tauri-App-Extension
+        run: |
+          $test = Join-Path $env:RUNNER_TEMP "legacy-windows-tests.exe"
+          rustc --edition 2021 --test src-tauri/src/legacy_windows.rs -o $test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $test
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: compile the legacy agent
         working-directory: Tauri-App-Extension/src-tauri
         shell: pwsh
@@ -396,6 +409,11 @@ jobs:
             throw "The legacy program does not point WebView2 at its bundled copy (was it built with --features legacy-windows?)."
           }
 
+      # Windows refuses to start a program with even one import it does not have, so this is
+      # checked on the built file rather than left to a member's machine.
+      - name: check it imports nothing Windows 7 lacks
+        run: node .github/scripts/check-win7-imports.mjs "Tauri-App-Extension/src-tauri/target/${{ env.LEGACY_TARGET }}/release/virtual-tracker-agent.exe"
+
       - name: package the legacy installer
         working-directory: Tauri-App-Extension
         shell: pwsh
@@ -404,11 +422,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           RUSTUP_TOOLCHAIN: ${{ env.LEGACY_TOOLCHAIN }}
         run: npx tauri bundle --bundles nsis --config src-tauri/tauri.legacy.conf.json --target $env:LEGACY_TARGET --features legacy-windows
-
-      # Windows refuses to start a program with even one import it does not have, so this is
-      # checked on the built file rather than left to a member's machine.
-      - name: check it imports nothing Windows 7 lacks
-        run: node .github/scripts/check-win7-imports.mjs "Tauri-App-Extension/src-tauri/target/${{ env.LEGACY_TARGET }}/release/virtual-tracker-agent.exe"
 
       - name: publish the legacy installer and its update manifest
         shell: pwsh
