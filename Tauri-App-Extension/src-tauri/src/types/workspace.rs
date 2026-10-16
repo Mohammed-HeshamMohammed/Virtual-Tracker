@@ -100,7 +100,7 @@ pub struct AgentWorkspace {
     pub capabilities: WorkspaceCapabilities,
 }
 
-/// Active vs idle seconds for a day - the ratio behind the activity meter.
+/// A day's tracked activity and approved manual time; only tracked time feeds the meter.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TodayActivity {
@@ -108,6 +108,8 @@ pub struct TodayActivity {
     pub active_seconds: i64,
     #[serde(default)]
     pub idle_seconds: i64,
+    #[serde(default)]
+    pub manual_seconds: i64,
 }
 
 

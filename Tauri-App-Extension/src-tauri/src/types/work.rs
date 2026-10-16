@@ -252,8 +252,7 @@ pub struct MemberLimits {
     pub week_days: Vec<WeekDay>,
 }
 
-/// One day of the member's week - active seconds from the daily rollup, idle seconds from
-/// the sessions that started that day.
+/// One day of the member's week, with approved manual time kept separate from activity.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct WeekDay {
@@ -265,6 +264,8 @@ pub struct WeekDay {
     pub active_seconds: i64,
     #[serde(default)]
     pub idle_seconds: i64,
+    #[serde(default)]
+    pub manual_seconds: i64,
 }
 
 // ── Agent workspace (GET /api/activity/workspace) ────────────────────────── Everything
