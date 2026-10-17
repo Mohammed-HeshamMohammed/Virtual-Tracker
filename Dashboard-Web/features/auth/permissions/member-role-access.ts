@@ -149,7 +149,9 @@ export function canViewParticipationMetrics(role: string): boolean {
 }
 
 export function canSeePmTasksSection(role: string): boolean {
-  const rank = ROLE_PRIVILEGE_RANK[normalizeMemberRole(role)] ?? -1
+  const key = normalizeMemberRole(role)
+  if (key === "client") return true
+  const rank = ROLE_PRIVILEGE_RANK[key] ?? -1
   return rank >= ROLE_PRIVILEGE_RANK.intern
 }
 

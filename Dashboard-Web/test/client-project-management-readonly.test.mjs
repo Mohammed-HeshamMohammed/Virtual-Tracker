@@ -5,9 +5,44 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
+import { createRequire } from "node:module"
+import { runInNewContext } from "node:vm"
+import ts from "typescript"
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url))
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
+
+const nodeRequire = createRequire(import.meta.url)
+function loadTs(rel, requireModule = nodeRequire) {
+  const module = { exports: {} }
+  const code = ts.transpileModule(read(rel), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText
+  runInNewContext(code, { module, exports: module.exports, require: requireModule })
+  return module.exports
+}
+const nav = loadTs("shared/ui/layout/config/nav-sections.ts")
+const access = loadTs("features/auth/permissions/member-role-access.ts", (name) => {
+  assert.equal(name, "@/shared/ui/layout")
+  return nav
+})
+
+test("Client navigation, route guard and task visibility agree without granting writes", () => {
+  for (const role of ["Client", " client "]) {
+    assert.equal(access.canSeePmTasksSection(role), true)
+    assert.equal(access.isReadOnlyRole(role), true)
+    assert.equal(access.canManageProjects(role), false)
+    assert.equal(access.canCreateTasks(role), false)
+    const pm = access.visibleNavSections(role).find((s) => s.id === "project-management")
+    assert.ok(pm)
+    assert.deepEqual(Array.from(pm.pages, (p) => p.id).sort(), ["calendar-timeoff", "pm-overview", "pm-projects", "pm-tasks"])
+    for (const page of pm.pages) assert.equal(access.isPageAllowedForRole(page.id, role), true)
+    for (const page of ["pm-clients", "pm-new", "people-members"]) {
+      assert.equal(access.isPageAllowedForRole(page, role), false)
+    }
+  }
+  assert.equal(access.canSeePmTasksSection("Viewer"), false)
+})
 
 test("the client allowlist includes Project Management minus Clients", () => {
   const src = read("features/auth/permissions/member-role-access.ts")
