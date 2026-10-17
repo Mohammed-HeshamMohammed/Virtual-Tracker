@@ -7,6 +7,7 @@ import { hasHierarchyAssignmentRestriction } from "../hierarchy/hierarchy-placem
 import { canCreateTeams } from "../../http/team-member-assign-policy.js";
 import { enforcePrivilegedRoleGovernanceForMember } from "../members/services/privileged-role-governance.js";
 import { normalizeRoleKey } from "../members/services/relation-sync.js";
+import { getViewerProjectIds } from "../../http/project-access.js";
 
 const PROJECT_SCOPE_ROLES = new Set(["owner", "superadmin", "admin"]);
 const ORG_TASK_CREATE_ROLES = new Set(["owner", "superadmin", "admin", "supermanager", "supermanger"]);
@@ -37,7 +38,7 @@ function canAccessAllSidebarTabs(roleName) {
 }
 
 function defaultNavItemForRole(_roleName) {
-  return "general";
+  return "command-center";
 }
 
 function buildMemberSummary(memberData, memberId, roleName) {
@@ -82,6 +83,22 @@ async function getDashboardSummaryCounts(db, viewer) {
       tasks: taskRows[0]?.count ?? 0,
       members: memberRows[0]?.count ?? 0,
       teams: teamRows[0]?.count ?? 0,
+    };
+  }
+
+  if (normalized === "client") {
+    const projectIds = await getViewerProjectIds(db, viewer.memberId, viewer.roleName);
+    const taskRows = await pgQuery(
+      "SELECT COUNT(*)::int AS count FROM tasks WHERE project_id = ANY($1::uuid[])",
+      [projectIds],
+    );
+    return {
+      ready: true,
+      scoped: true,
+      projects: projectIds.length,
+      tasks: taskRows[0]?.count ?? 0,
+      members: null,
+      teams: 0,
     };
   }
 
@@ -141,7 +158,7 @@ export async function getBootstrapPayload(db, viewer) {
       canCreateTransferRequests: canCreateTransferRequests(roleName),
       hierarchyAssignmentRequired: hasHierarchyAssignmentRestriction(memberData),
       canAccessReviewCenter: management || normalizedRole === "client",
-      canSeePmTasksSection: roleRank(roleName) >= ROLE_PRIVILEGE_RANK.intern,
+      canSeePmTasksSection: normalizedRole === "client" || roleRank(roleName) >= ROLE_PRIVILEGE_RANK.intern,
       canCreateTasks: ORG_TASK_CREATE_ROLES.has(normalizedRole),
       isManagementRole: management,
     },

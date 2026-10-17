@@ -446,6 +446,22 @@ export async function listProjectIdsForMemberPg(memberId) {
   return rows.map((r) => r.project_id);
 }
 
+// Older project records use projects.client_id; current assignments use the
+// link table. Explicit links take precedence so a stale primary client cannot
+// retain access after the project has been reassigned.
+const CLIENT_PROJECT_IDS_SQL = `
+  SELECT cp.project_id
+  FROM client_projects cp
+  JOIN clients c ON c.id = cp.client_id
+  WHERE c.member_id = $1
+  UNION
+  SELECT p.id AS project_id
+  FROM projects p
+  JOIN clients c ON c.id = p.client_id
+  WHERE c.member_id = $1
+    AND NOT EXISTS (SELECT 1 FROM client_projects cp WHERE cp.project_id = p.id)
+`;
+
 export async function listViewerProjectIdsPg(memberId) {
   if (!memberId) return [];
   const rows = await query(
@@ -453,10 +469,7 @@ export async function listViewerProjectIdsPg(memberId) {
      UNION
      SELECT id AS project_id FROM projects WHERE created_by = $1
      UNION
-     SELECT cp.project_id
-     FROM client_projects cp
-     JOIN clients c ON c.id = cp.client_id
-     WHERE c.member_id = $1
+     ${CLIENT_PROJECT_IDS_SQL}
      LIMIT 500`,
     [memberId],
   );
@@ -466,11 +479,8 @@ export async function listViewerProjectIdsPg(memberId) {
 export async function listClientManagedProjectIdsPg(memberId) {
   if (!memberId) return new Set();
   const rows = await query(
-    `SELECT cp.project_id
-     FROM client_projects cp
-     JOIN clients c ON c.id = cp.client_id
-     JOIN projects p ON p.id = cp.project_id
-     WHERE c.member_id = $1 AND p.client_can_manage = true`,
+    `SELECT p.id AS project_id FROM projects p
+     WHERE p.id IN (${CLIENT_PROJECT_IDS_SQL}) AND p.client_can_manage = true`,
     [memberId],
   );
   return new Set(rows.map((r) => String(r.project_id)));
@@ -479,11 +489,8 @@ export async function listClientManagedProjectIdsPg(memberId) {
 export async function listClientTrackableProjectIdsPg(memberId) {
   if (!memberId) return new Set();
   const rows = await query(
-    `SELECT cp.project_id
-     FROM client_projects cp
-     JOIN clients c ON c.id = cp.client_id
-     JOIN projects p ON p.id = cp.project_id
-     WHERE c.member_id = $1 AND p.client_can_track = true`,
+    `SELECT p.id AS project_id FROM projects p
+     WHERE p.id IN (${CLIENT_PROJECT_IDS_SQL}) AND p.client_can_track = true`,
     [memberId],
   );
   return new Set(rows.map((r) => String(r.project_id)));
@@ -711,11 +718,17 @@ export async function linkClientProjectPg(clientId, projectId, actorId) {
      ON CONFLICT (client_id, project_id) DO NOTHING RETURNING *`,
     [id, clientId, projectId, uuidOrNull(actorId)],
   );
+  if (rows.length) void publishChange("projects", projectId, "updated", uuidOrNull(actorId) ?? undefined);
   return rows[0] ?? null;
 }
 
 export async function unlinkClientProjectPg(clientId, projectId) {
-  await query("DELETE FROM client_projects WHERE client_id = $1 AND project_id = $2", [clientId, projectId]);
+  await withTransaction(async (tx) => {
+    await tx.query("DELETE FROM client_projects WHERE client_id = $1 AND project_id = $2", [clientId, projectId]);
+    // Removing the last link must not reactivate the legacy primary assignment.
+    await tx.query("UPDATE projects SET client_id = NULL WHERE id = $2 AND client_id = $1", [clientId, projectId]);
+  });
+  void publishChange("projects", projectId, "updated");
 }
 
 export async function listClientIdsForProjectPg(projectId) {
