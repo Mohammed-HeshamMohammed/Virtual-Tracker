@@ -1,6 +1,13 @@
+import { subscribeChanges } from "../realtime/change-bus.js";
 
 const DEFAULT_TTL_MS = 60_000;
 const cache = new Map();
+
+subscribeChanges((message) => {
+  if (["projects", "clients", "project-members", "members", "roles"].includes(message.resource)) {
+    clearDashboardCache();
+  }
+});
 
 export function getDashboardCache(key) {
   const hit = cache.get(key);

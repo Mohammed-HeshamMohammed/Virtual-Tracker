@@ -1177,6 +1177,7 @@ export async function routeProjects(req, res, url, db, origin) {
   if (pn === "/api/project-members" && req.method === "GET") {
     try {
       const projectId = url.searchParams.get("project_id");
+      if (projectId && !(await assertProjectAccessible(req, res, origin, db, projectId))) return true;
       const rows = projectId ? await listProjectMembersPg(projectId) : await scopedRows(await pgQuery("SELECT * FROM project_members LIMIT 3000"));
       sendJson(res, origin, 200, { success: true, data: rows });
     } catch (e) {
@@ -1249,6 +1250,7 @@ export async function routeProjects(req, res, url, db, origin) {
   if (pn === "/api/project-budgets" && req.method === "GET") {
     try {
       const projectId = url.searchParams.get("project_id");
+      if (projectId && !(await assertProjectAccessible(req, res, origin, db, projectId))) return true;
       const rows = projectId ? [await getProjectBudgetPg(projectId)].filter(Boolean) : await scopedRows(await getAllProjectBudgetsPg());
       const spentByProject = await computeProjectSpentForAllPg(
         db,
@@ -1480,6 +1482,7 @@ export async function routeProjects(req, res, url, db, origin) {
   if (pn === "/api/project-member-limits" && req.method === "GET") {
     try {
       const projectId = url.searchParams.get("project_id");
+      if (projectId && !(await assertProjectAccessible(req, res, origin, db, projectId))) return true;
       const rows = projectId ? await listProjectMemberLimitsPg(projectId) : await scopedRows(await getAllProjectMemberLimitsPg());
       sendJson(res, origin, 200, { success: true, data: rows });
     } catch (e) {
@@ -1553,6 +1556,7 @@ export async function routeProjects(req, res, url, db, origin) {
   if (pn === "/api/client-projects" && req.method === "GET") {
     try {
       const projectId = url.searchParams.get("project_id");
+      if (projectId && !(await assertProjectAccessible(req, res, origin, db, projectId))) return true;
       const clientId = url.searchParams.get("client_id");
       let rows;
       if (projectId) {
@@ -1562,7 +1566,7 @@ export async function routeProjects(req, res, url, db, origin) {
       } else {
         rows = await pgQuery("SELECT * FROM client_projects LIMIT 2000");
       }
-      sendJson(res, origin, 200, { success: true, data: rows });
+      sendJson(res, origin, 200, { success: true, data: await scopedRows(rows) });
     } catch (e) {
       logSafeError("[client-projects GET]", e);
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Failed to load client-project links" });
@@ -1616,6 +1620,7 @@ export async function routeProjects(req, res, url, db, origin) {
   if (pn === "/api/team-projects" && req.method === "GET") {
     try {
       const projectId = url.searchParams.get("project_id");
+      if (projectId && !(await assertProjectAccessible(req, res, origin, db, projectId))) return true;
       const teamId = url.searchParams.get("team_id");
       let rows;
       if (projectId) {
@@ -1625,7 +1630,7 @@ export async function routeProjects(req, res, url, db, origin) {
       } else {
         rows = await pgQuery("SELECT * FROM team_projects LIMIT 2000");
       }
-      sendJson(res, origin, 200, { success: true, data: rows });
+      sendJson(res, origin, 200, { success: true, data: await scopedRows(rows) });
     } catch (e) {
       logSafeError("[team-projects GET]", e);
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Failed to load team-project links" });
