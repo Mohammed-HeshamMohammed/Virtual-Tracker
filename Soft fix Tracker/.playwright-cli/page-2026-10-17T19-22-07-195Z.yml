@@ -1,0 +1,254 @@
+- generic [ref=e3]:
+  - link "Skip to content" [ref=e4] [cursor=pointer]:
+    - /url: "#workspace-content"
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - img "Soft Fix" [ref=e7]
+      - navigation "Modes" [ref=e10]:
+        - button "Lounge" [ref=e11] [cursor=pointer]
+        - button "Work" [pressed] [ref=e15] [cursor=pointer]
+        - button "Dashboard" [ref=e21] [cursor=pointer]
+    - generic "Search pages, projects and people (Ctrl K)" [ref=e29]:
+      - combobox "Search workspace" [ref=e32]
+      - generic [ref=e33]: Ctrl K
+    - generic [ref=e35]:
+      - button "Change the window" [ref=e37] [cursor=pointer]
+      - button "Notifications, 3 unread" [ref=e41] [cursor=pointer]
+      - button "Quick settings" [ref=e46] [cursor=pointer]
+      - button "Your profile" [ref=e50] [cursor=pointer]:
+        - generic [ref=e51]: AM
+  - generic [ref=e52]:
+    - text: Direct Messages Soft Fix Nova Vanguard Buffalo Campaign RWS Campaign Soft Fix Internal Add a Server Explore Channels
+    - generic [ref=e54]:
+      - complementary [ref=e55]:
+        - navigation "Work navigation" [ref=e56]:
+          - button "Overview" [ref=e57] [cursor=pointer]
+          - button "My tasks" [ref=e61] [cursor=pointer]
+          - button "My timesheet" [ref=e65] [cursor=pointer]
+          - button "My schedule" [ref=e69] [cursor=pointer]
+        - generic [ref=e73]:
+          - generic [ref=e74]:
+            - generic [ref=e75]: YOUR PROJECTS
+            - generic [ref=e76]: "4"
+          - group "Pick a project" [ref=e77]:
+            - generic [ref=e78]:
+              - button "Nova Vanguard 2" [pressed] [ref=e80] [cursor=pointer]:
+                - generic [aria-hidden] [ref=e81]: NV
+                - generic [ref=e82]: Nova Vanguard
+                - generic [ref=e83]: "2"
+              - button "Open Nova Vanguard in the Dashboard" [ref=e84] [cursor=pointer]
+            - generic [ref=e87]:
+              - button "Buffalo Campaign 2" [ref=e89] [cursor=pointer]:
+                - generic [aria-hidden] [ref=e90]: BC
+                - generic [ref=e91]: Buffalo Campaign
+                - generic [ref=e92]: "2"
+              - button "Open Buffalo Campaign in the Dashboard" [ref=e93] [cursor=pointer]
+            - generic [ref=e96]:
+              - button "RWS Campaign 1" [ref=e98] [cursor=pointer]:
+                - generic [aria-hidden] [ref=e99]: RC
+                - generic [ref=e100]: RWS Campaign
+                - generic [ref=e101]: "1"
+              - button "Open RWS Campaign in the Dashboard" [ref=e102] [cursor=pointer]
+            - generic [ref=e105]:
+              - button "Soft Fix Internal 1" [ref=e107] [cursor=pointer]:
+                - generic [aria-hidden] [ref=e108]: SF
+                - generic [ref=e109]: Soft Fix Internal
+                - generic [ref=e110]: "1"
+              - button "Open Soft Fix Internal in the Dashboard" [ref=e111] [cursor=pointer]
+        - generic [ref=e114]:
+          - generic [ref=e115]:
+            - generic [ref=e116]:
+              - generic [ref=e119]: This week
+              - strong [ref=e120]:
+                - text: "0.0"
+                - generic [ref=e121]: / 0h
+            - paragraph [ref=e123]: 35.0 hours to your weekly goal
+          - 'button "Organization: Soft Fix studio. Switch organization" [ref=e125] [cursor=pointer]':
+            - generic [ref=e126]: S
+            - generic [ref=e127]:
+              - strong [ref=e128]: Soft Fix studio
+              - generic [ref=e129]: Owner · 6 people
+      - main [ref=e133]:
+        - generic [ref=e134]:
+          - generic [ref=e135]:
+            - generic [ref=e136]:
+              - heading "Good evening, Aria." [level=1] [ref=e137]
+              - paragraph [ref=e138]: A little focus. A little progress. A great day ahead.
+            - generic [ref=e139]:
+              - generic [ref=e140]: Saturday
+              - strong [ref=e141]: Oct 17, 2026
+          - generic [ref=e142]:
+            - generic [ref=e143]:
+              - generic [ref=e144]: Time today
+              - strong [ref=e147]: 0h 00m
+              - generic [ref=e148]:
+                - generic [ref=e149]: 38%
+                - text: of your 8h daily goal
+            - generic [ref=e150]:
+              - generic [ref=e151]: Tasks completed
+              - strong [ref=e154]:
+                - text: "0"
+                - emphasis [ref=e155]: / 0
+              - text: Every small win counts
+            - generic [ref=e156]:
+              - generic [ref=e157]: This week
+              - strong [ref=e160]: 0h 00m
+              - generic [ref=e161]: Across 3 projects
+            - generic [ref=e162]:
+              - generic [ref=e163]: Focus sessions
+              - strong [ref=e166]: "0"
+              - text: Completed today
+          - generic [ref=e167]:
+            - generic [ref=e168]:
+              - generic [ref=e169]:
+                - generic [ref=e170]:
+                  - heading "Your focus session" [level=2] [ref=e172]
+                  - generic [ref=e173]: Ready when you are
+                - generic [ref=e175]:
+                  - generic [ref=e176]: WORKING ON
+                  - generic [ref=e177]:
+                    - generic [ref=e178]:
+                      - generic [ref=e179]:
+                        - generic [aria-hidden] [ref=e180]: NV
+                        - text: Nova Vanguard
+                      - strong [ref=e181]: Ship the Lounge navigation revision
+                    - button "Choose what to work on" [ref=e183] [cursor=pointer]: Change
+                - timer "0 seconds elapsed" [ref=e187]:
+                  - generic [aria-hidden] [ref=e188]:
+                    - generic [ref=e189]: "0"
+                    - generic [ref=e190]: "0"
+                    - generic [ref=e191]: ":"
+                    - generic [ref=e192]: "0"
+                    - generic [ref=e193]: "0"
+                    - generic [ref=e194]: ":"
+                    - generic [ref=e195]: "0"
+                    - generic [ref=e196]: "0"
+                    - generic [ref=e197]: ".000"
+                - button "Start focus session" [ref=e262] [cursor=pointer]
+                - generic [ref=e265]:
+                  - generic [ref=e266]:
+                    - text: SESSION NOTE
+                    - generic [ref=e267]: Optional
+                  - textbox "SESSION NOTE Optional" [ref=e268]:
+                    - /placeholder: What are you working towards?
+                - generic [ref=e269]:
+                  - generic [ref=e270]: Choose a task and make it happen
+                  - button "Session history" [ref=e272] [cursor=pointer]
+              - generic [ref=e275]:
+                - generic [ref=e276]:
+                  - generic [ref=e277]:
+                    - heading "Up next" [level=2] [ref=e278]
+                    - generic [ref=e279]:
+                      - generic [aria-hidden] [ref=e280]: NV
+                      - generic [ref=e281]: Nova Vanguard
+                  - button "All tasks" [ref=e282] [cursor=pointer]
+                - generic [ref=e285]:
+                  - generic [ref=e286]:
+                    - button "Complete Ship the Lounge navigation revision" [ref=e287] [cursor=pointer]
+                    - button "Ship the Lounge navigation revision High priority · due Oct 18 Selected" [ref=e291] [cursor=pointer]:
+                      - strong [ref=e292]: Ship the Lounge navigation revision
+                      - generic [ref=e293]:
+                        - generic [ref=e294]: High priority · due Oct 18
+                        - emphasis [ref=e295]: Selected
+                    - button "Start Ship the Lounge navigation revision" [ref=e296] [cursor=pointer]
+                  - generic [ref=e299]:
+                    - button "Complete Pair on the authentication flow" [ref=e300] [cursor=pointer]
+                    - button "Pair on the authentication flow Medium priority · due Oct 19" [ref=e304] [cursor=pointer]:
+                      - strong [ref=e305]: Pair on the authentication flow
+                      - generic [ref=e306]: Medium priority · due Oct 19
+                    - button "Start Pair on the authentication flow" [ref=e308] [cursor=pointer]
+              - generic [ref=e311]:
+                - generic [ref=e312]:
+                  - heading "Your week in focus" [level=2] [ref=e314]
+                  - strong [ref=e315]: 5h 00m
+                - generic [ref=e316]:
+                  - button "View Mon timesheet, 0.0 hours" [ref=e317] [cursor=pointer]:
+                    - generic [ref=e318]: —
+                    - generic [ref=e320]: Mon
+                  - button "View Tue timesheet, 0.0 hours" [ref=e321] [cursor=pointer]:
+                    - generic [ref=e322]: —
+                    - generic [ref=e324]: Tue
+                  - button "View Wed timesheet, 0.0 hours" [ref=e325] [cursor=pointer]:
+                    - generic [ref=e326]: —
+                    - generic [ref=e328]: Wed
+                  - button "View Thu timesheet, 2.0 hours" [ref=e329] [cursor=pointer]:
+                    - generic [ref=e330]: 0.0h
+                    - generic [ref=e332]: Thu
+                  - button "View Fri timesheet, 0.0 hours" [ref=e333] [cursor=pointer]:
+                    - generic [ref=e334]: —
+                    - generic [ref=e336]: Fri
+                  - button "View Sat timesheet, 3.0 hours" [ref=e337] [cursor=pointer]:
+                    - generic [ref=e338]: 0.0h
+                    - generic [ref=e340]: Sat
+                  - button "View Sun timesheet, 0.0 hours" [ref=e341] [cursor=pointer]:
+                    - generic [ref=e342]: —
+                    - generic [ref=e344]: Sun
+            - generic [ref=e345]:
+              - generic [ref=e346]:
+                - generic [ref=e347]:
+                  - heading "On your agenda" [level=2] [ref=e348]
+                  - button "Open schedule" [ref=e349] [cursor=pointer]
+                - generic [ref=e352]:
+                  - generic [ref=e353]:
+                    - time [ref=e354]: 09:00
+                    - generic [ref=e355]:
+                      - strong [ref=e356]: Deep work · Lounge navigation
+                      - generic [ref=e357]:
+                        - text: 90 min ·
+                        - generic [ref=e358]:
+                          - generic [aria-hidden] [ref=e359]: NV
+                          - generic [ref=e360]: Nova Vanguard
+                    - button "Complete Deep work · Lounge navigation" [ref=e361] [cursor=pointer]
+                  - generic [ref=e364]:
+                    - time [ref=e365]: 11:00
+                    - generic [ref=e366]:
+                      - strong [ref=e367]: Design review with the team
+                      - generic [ref=e368]:
+                        - text: 30 min ·
+                        - generic [ref=e369]:
+                          - generic [aria-hidden] [ref=e370]: NV
+                          - generic [ref=e371]: Nova Vanguard
+                    - button "Complete Design review with the team" [ref=e372] [cursor=pointer]
+                  - generic [ref=e375]:
+                    - time [ref=e376]: 14:00
+                    - generic [ref=e377]:
+                      - strong [ref=e378]: Weekly report preparation
+                      - generic [ref=e379]:
+                        - text: 60 min ·
+                        - generic [ref=e380]:
+                          - generic [aria-hidden] [ref=e381]: BC
+                          - generic [ref=e382]: Buffalo Campaign
+                    - button "Complete Weekly report preparation" [ref=e383] [cursor=pointer]
+                - button "View today's schedule" [ref=e386] [cursor=pointer]
+              - generic [ref=e389]:
+                - generic [ref=e390]:
+                  - heading "Your team today" [level=2] [ref=e392]
+                  - generic [ref=e393]: 3 online
+                - generic [ref=e395]:
+                  - generic [ref=e396]:
+                    - generic [ref=e397]: SA
+                    - generic [ref=e399]:
+                      - strong [ref=e400]: Sara Ahmed
+                      - generic [ref=e401]: Focusing · Design
+                    - button "Message Sara Ahmed" [ref=e402] [cursor=pointer]
+                  - generic [ref=e405]:
+                    - generic [ref=e406]: YK
+                    - generic [ref=e408]:
+                      - strong [ref=e409]: Youssef Khaled
+                      - generic [ref=e410]: Available · Engineering
+                    - button "Message Youssef Khaled" [ref=e411] [cursor=pointer]
+                  - generic [ref=e414]:
+                    - generic [ref=e415]: MN
+                    - generic [ref=e417]:
+                      - strong [ref=e418]: Mariam Nabil
+                      - generic [ref=e419]: Away · Design
+                    - button "Message Mariam Nabil" [ref=e420] [cursor=pointer]
+                  - generic [ref=e423]:
+                    - generic [ref=e424]: OA
+                    - generic [ref=e426]:
+                      - strong [ref=e427]: Omar Adel
+                      - generic [ref=e428]: Available · Engineering
+                    - button "Message Omar Adel" [ref=e429] [cursor=pointer]
+                - button "Meet in the Lounge" [ref=e432] [cursor=pointer]
+  - button "Chat, 5 unread" [ref=e437] [cursor=pointer]:
+    - generic [ref=e440]: "5"

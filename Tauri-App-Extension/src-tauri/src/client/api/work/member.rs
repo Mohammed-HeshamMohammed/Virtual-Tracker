@@ -83,6 +83,7 @@ impl ApiClient {
                 crate::types::TodayActivity {
                     active_seconds: field("activeSeconds"),
                     idle_seconds: field("idleSeconds"),
+                    manual_seconds: field("manualSeconds"),
                 }
             },
             project_today_activity: data.get("projectTodayActivity").filter(|v| !v.is_null()).map(|node| {
@@ -92,6 +93,7 @@ impl ApiClient {
                 crate::types::TodayActivity {
                     active_seconds: field("activeSeconds"),
                     idle_seconds: field("idleSeconds"),
+                    manual_seconds: field("manualSeconds"),
                 }
             }),
             today_day: data.get("todayDay").and_then(|v| v.as_str()).unwrap_or("").to_string(),

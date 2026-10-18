@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useState } from "react";
+import { ProjectAvatar } from "./components/ProjectAvatar";
 import { AppToolbar } from "./components/AppToolbar";
 import { DashboardShell } from "./components/dashboard/DashboardShell";
 import { LoungeShell } from "./components/LoungeShell";
@@ -109,7 +110,7 @@ function WorkspaceApp() {
     ...projects.map((project) => ({
       label: project.name,
       detail: "Open project in the Dashboard",
-      icon: Folder,
+      icon: () => <ProjectAvatar projectId={project.id} size="xs" />,
       action: () => navigate("dashboard", "pm-project", project.id),
     })),
     ...members

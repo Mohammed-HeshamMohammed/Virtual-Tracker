@@ -32,7 +32,7 @@ export function TeamsPage({ ctx }: { ctx: PageContext }) {
             </div>
             <div className="db-avatar-row">
               {people.map((member) => (
-                <Avatar key={member.id} name={member.name} color={member.color} />
+                <Avatar key={member.id} memberId={member.id} name={member.name} color={member.color} />
               ))}
             </div>
             <dl className="db-team-stats">

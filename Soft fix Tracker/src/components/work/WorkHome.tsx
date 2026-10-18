@@ -1,3 +1,4 @@
+import { ProjectAvatar, ProjectLabel } from "../ProjectAvatar";
 import { ArrowRight, ArrowUpRight, CaretDown, Check, CheckCircle, Clock, Flame, Pause, Play, Stop, Target } from "@phosphor-icons/react";
 import type { CSSProperties } from "react";
 import { formatDuration, useWorkspace } from "../../workspace";
@@ -44,7 +45,7 @@ export function WorkHome({ seconds, note, onNote, onStart, onPause, onStop, view
     const choices = item.tasks.filter(task => !task.done || task.id === timer.taskId);
     // A project that doesn't need a task (Calling, Support, a retainer...) can be timed as it is.
     const itself: MenuEntry[] = item.requireTask === false ? [{ kind: "item", id: `${item.id}-itself`, label: item.tasks.length ? "The project itself" : "Time this project", detail: "No task needed", active: timer.projectId === item.id && !timer.taskId, onSelect: () => onFocusTask(item.id, "") }] : [];
-    return choices.length || itself.length ? [{ kind: "heading", label: item.name }, ...choices.map((task): MenuEntry => ({ kind: "item", id: task.id, label: task.title, active: task.id === timer.taskId, onSelect: () => onFocusTask(item.id, task.id) })), ...itself] : [];
+    return choices.length || itself.length ? [{ kind: "heading", label: item.name, icon: <ProjectAvatar projectId={item.id} size="xs" /> }, ...choices.map((task): MenuEntry => ({ kind: "item", id: task.id, label: task.title, active: task.id === timer.taskId, onSelect: () => onFocusTask(item.id, task.id) })), ...itself] : [];
   });
   const todayPlan = plan.filter(block => block.date === today).sort((a, b) => a.time.localeCompare(b.time)).slice(0, 3);
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening";
@@ -66,7 +67,7 @@ export function WorkHome({ seconds, note, onNote, onStart, onPause, onStop, view
               <span className="wk-focus-label">WORKING ON</span>
               <div className="wk-focus-pick">
                 <span className="wk-focus-copy">
-                  <small><span className={`wk-project-dot ${project?.color ?? ""}`} />{project?.name ?? "No project"}</small>
+                  <small><ProjectAvatar projectId={project?.id} size="xs" />{project?.name ?? "No project"}</small>
                   <strong>{focusedTask?.title ?? (project && project.requireTask === false && !timer.taskId ? project.name : "Choose a task to begin")}</strong>
                 </span>
                 {!active && taskMenu.length > 0 && <MenuButton label="Choose what to work on" title="Choose what to work on" align="end" className="wk-focus-menu" fixed entries={taskMenu}>Change <CaretDown size={13} weight="bold" /></MenuButton>}
@@ -79,7 +80,7 @@ export function WorkHome({ seconds, note, onNote, onStart, onPause, onStop, view
             <div className="wk-focus-footer"><span><span className="wk-green-dot" /> {active ? "Finish this session before switching tasks" : "Choose a task and make it happen"}</span><button className="wk-text-button" onClick={() => navigate("work", "timesheet")}>Session history <ArrowUpRight size={15} /></button></div>
           </section>
           <section className="sf-card wk-next-card">
-            <div className="wk-card-heading"><div><span className="wk-eyebrow">KEEP THE MOMENTUM</span><h2>Up next</h2>{viewProject && <span className="wk-next-scope"><span className={`wk-project-dot ${viewProject.color}`} /><span className="wk-ellipsis">{viewProject.name}</span></span>}</div><button className="wk-text-button" onClick={() => navigate("work", "tasks")}>All tasks <ArrowRight size={16} /></button></div>
+            <div className="wk-card-heading"><div><span className="wk-eyebrow">KEEP THE MOMENTUM</span><h2>Up next</h2>{viewProject && <span className="wk-next-scope"><ProjectAvatar projectId={viewProject.id} size="xs" /><span className="wk-ellipsis">{viewProject.name}</span></span>}</div><button className="wk-text-button" onClick={() => navigate("work", "tasks")}>All tasks <ArrowRight size={16} /></button></div>
             <div className="wk-next-list">
               {upNext.map(task => {
                 const current = task.id === timer.taskId;
@@ -104,7 +105,7 @@ export function WorkHome({ seconds, note, onNote, onStart, onPause, onStop, view
         </div>
         <div className="wk-overview-secondary">
           <section className="sf-card wk-goal-card"><span className="wk-eyebrow">STEADY PROGRESS</span><div className="wk-goal-ring" style={{ "--sweep": `${progress}%` } as CSSProperties}><div><strong>{Math.round(progress)}<span>%</span></strong><small>daily goal</small></div></div><h2>{progress >= 100 ? "You reached your goal." : "You're finding your flow."}</h2><p>{progress >= 100 ? "Great work. Make some time to recharge." : `${formatDuration(Math.max(0, dailyGoal - todaySeconds))} to your daily goal. One session at a time.`}</p><button className="wk-text-button" onClick={() => navigate("work", "schedule")}>Plan the rest of your day <ArrowRight size={16} /></button></section>
-          <section className="sf-card wk-plan-preview"><div className="wk-card-heading"><h2>On your agenda</h2><button className="wk-text-button" onClick={() => navigate("work", "schedule")} aria-label="Open schedule"><ArrowUpRight size={17} /></button></div><div className="wk-agenda-list">{todayPlan.map(block => <div className={`wk-agenda-row ${block.done ? "done" : ""}`} key={block.id}><time>{block.time}</time><div><strong>{block.title}</strong><small>{block.minutes} min · {projects.find(item => item.id === block.projectId)?.name ?? "Personal"}</small></div><button className={`wk-check ${block.done ? "checked" : ""}`} onClick={() => onPlanToggle(block.id)} aria-label={`${block.done ? "Reopen" : "Complete"} ${block.title}`}><Check size={13} /></button></div>)}{todayPlan.length === 0 && <p className="wk-muted">A clear day. Add a focus block to get started.</p>}</div><button className="wk-text-button wk-full-link" onClick={() => navigate("work", "schedule")}>View today's schedule <ArrowRight size={16} /></button></section>
+          <section className="sf-card wk-plan-preview"><div className="wk-card-heading"><h2>On your agenda</h2><button className="wk-text-button" onClick={() => navigate("work", "schedule")} aria-label="Open schedule"><ArrowUpRight size={17} /></button></div><div className="wk-agenda-list">{todayPlan.map(block => <div className={`wk-agenda-row ${block.done ? "done" : ""}`} key={block.id}><time>{block.time}</time><div><strong>{block.title}</strong><small>{block.minutes} min · {block.projectId ? <ProjectLabel projectId={block.projectId} /> : "Personal"}</small></div><button className={`wk-check ${block.done ? "checked" : ""}`} onClick={() => onPlanToggle(block.id)} aria-label={`${block.done ? "Reopen" : "Complete"} ${block.title}`}><Check size={13} /></button></div>)}{todayPlan.length === 0 && <p className="wk-muted">A clear day. Add a focus block to get started.</p>}</div><button className="wk-text-button wk-full-link" onClick={() => navigate("work", "schedule")}>View today's schedule <ArrowRight size={16} /></button></section>
           <WorkTeamPane onMessage={name => name ? openChat(members.find(member => member.name === name)?.id) : navigate("lounge", "home")} />
         </div>
       </div>

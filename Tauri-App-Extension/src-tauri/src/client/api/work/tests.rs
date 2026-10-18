@@ -31,6 +31,59 @@ mod tests {
     }
 
     #[test]
+    fn member_limits_preserve_manual_hours_between_the_api_and_the_webview() {
+        let url = fake_server(|request| {
+            assert_eq!(request.url(), "/api/activity/limits?projectId=p-test");
+            (200, serde_json::json!({
+                "data": {
+                    "timerAllowance": { "workedTodaySeconds": 0, "workedWeekSeconds": 26 },
+                    "todayDay": "2026-10-17",
+                    "timeZone": "Africa/Cairo",
+                    "projectId": "p-test",
+                    "todayActivity": { "activeSeconds": 0, "idleSeconds": 0, "manualSeconds": 10800 },
+                    "projectTodayActivity": { "activeSeconds": 0, "idleSeconds": 0, "manualSeconds": 7200 },
+                    "weekDays": [
+                        { "day": "2026-10-13", "label": "Tue", "activeSeconds": 26, "idleSeconds": 5, "manualSeconds": 0 },
+                        { "day": "2026-10-17", "label": "Sat", "activeSeconds": 0, "idleSeconds": 0, "manualSeconds": 10800 }
+                    ]
+                }
+            }).to_string())
+        });
+        let mut api = authed_client(url);
+        let limits = api.fetch_member_limits(Some("p-test")).expect("limits load");
+        // Tauri serializes the native result before handing it to React. Checking
+        // that payload catches fields silently discarded by the Rust types/parser.
+        let payload = serde_json::to_value(limits).expect("limits serialize");
+        assert_eq!(payload["todayActivity"]["manualSeconds"], 10800);
+        assert_eq!(payload["projectTodayActivity"]["manualSeconds"], 7200);
+        assert_eq!(payload["weekDays"][1]["manualSeconds"], 10800);
+        assert_eq!(payload["weekDays"][0]["activeSeconds"], 26);
+        assert_eq!(payload["workedTodaySeconds"], 0, "manual hours stay separate from timer allowance");
+        assert_eq!(payload["todayDay"], "2026-10-17");
+        assert_eq!(payload["timeZone"], "Africa/Cairo");
+    }
+
+    #[test]
+    fn member_limits_without_manual_fields_default_to_zero_for_older_servers() {
+        let url = fake_server(|_request| {
+            (200, serde_json::json!({
+                "data": {
+                    "todayActivity": { "activeSeconds": 30, "idleSeconds": 10 },
+                    "projectTodayActivity": { "activeSeconds": 12, "idleSeconds": 3 },
+                    "weekDays": [{ "day": "2026-10-17", "label": "Sat", "activeSeconds": 30, "idleSeconds": 10 }]
+                }
+            }).to_string())
+        });
+        let mut api = authed_client(url);
+        let limits = api.fetch_member_limits(None).expect("older limits load");
+        let payload = serde_json::to_value(limits).expect("limits serialize");
+        assert_eq!(payload["todayActivity"]["manualSeconds"], 0);
+        assert_eq!(payload["projectTodayActivity"]["manualSeconds"], 0);
+        assert_eq!(payload["weekDays"][0]["manualSeconds"], 0);
+        assert_eq!(payload["todayActivity"]["activeSeconds"], 30);
+    }
+
+    #[test]
     fn assign_task_to_self_posts_to_the_per_task_assignments_endpoint_not_the_flat_one() {
         let url = fake_server(|request| {
             let path = request.url().to_string();

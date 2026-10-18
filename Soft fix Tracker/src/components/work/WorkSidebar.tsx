@@ -1,3 +1,4 @@
+import { ProjectAvatar } from "../ProjectAvatar";
 import { ArrowUpRight, CalendarBlank, CheckSquare, Clock, House } from "@phosphor-icons/react";
 import type { WorkProject } from "../../data/work";
 import { formatDuration, useWorkspace } from "../../workspace";
@@ -55,7 +56,7 @@ export function WorkSidebar({ view, onNavigate, projects, viewProjectId, trackin
               <div key={project.id} className={`wk-project-row ${picked ? "active" : ""}`}>
                 <Tip content={<><strong>{project.name}</strong><small>{open} open · {project.tasks.length - open} done</small><small>{formatDuration(tracked)} tracked in total</small>{tracking && <small>Your timer is running here</small>}</>}>
                   <button className={`db-scope-row ${picked ? "active" : ""}`} aria-pressed={picked} onClick={() => onPickProject(project.id)}>
-                    <span className={`db-scope-dot ${project.color} ${tracking ? "pulse" : ""}`} />
+                    <ProjectAvatar projectId={project.id} size="xs" className={tracking ? "tracking" : ""} />
                     <span>{project.name}</span>
                     <small>{open}</small>
                   </button>

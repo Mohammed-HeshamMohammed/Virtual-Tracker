@@ -1,4 +1,5 @@
-import { ArrowUpRight, ArrowRight, ArrowDownRight, CheckCircle, Clock, Folder, Play } from "@phosphor-icons/react";
+import { ProjectAvatar } from "../ProjectAvatar";
+import { ArrowUpRight, ArrowRight, ArrowDownRight, CheckCircle, Clock, Play } from "@phosphor-icons/react";
 import type { CSSProperties } from "react";
 import { useWorkspace, formatDuration } from "../../workspace";
 import { Avatar, Badge, StatTile } from "./DashboardParts";
@@ -22,7 +23,7 @@ const COPY: Record<Lens, { title: string; lead: string; projects: string; projec
  *  sees how their projects are going. */
 export function DashboardHome({ ctx }: { ctx: PageContext }) {
   const { sessions, projects, go } = ctx;
-  const { members, profile, preferences, navigate } = useWorkspace();
+  const { members, profile, preferences, navigate, projectMeta } = useWorkspace();
   const lens: Lens = profile.role === "Member" ? "member" : profile.role === "Client" ? "client" : "team";
   const copy = COPY[lens];
   const attention = useAttention(ctx);
@@ -52,6 +53,22 @@ export function DashboardHome({ ctx }: { ctx: PageContext }) {
   const highPriority = tasks.filter((task) => !task.done && task.priority === "High").length;
   const projectName = (id: string) => projects.find((project) => project.id === id)?.name ?? "Project";
   const headline = attention[0];
+  const selectedProject = ctx.projectScope === "all" ? undefined : projects[0];
+  const selectedMeta = selectedProject ? projectMeta[selectedProject.id] : undefined;
+  const selectedSessions = selectedProject ? ctx.allSessions.filter((session) => session.projectId === selectedProject.id) : [];
+  const selectedSeconds = selectedSessions.reduce((sum, session) => sum + session.seconds, 0);
+  const nextTasks = selectedProject
+    ? selectedProject.tasks
+        .filter((task) => !task.done)
+        .sort((a, b) => {
+          const priority = { High: 0, Medium: 1, Low: 2 };
+          return (priority[a.priority ?? "Medium"] - priority[b.priority ?? "Medium"]) || (a.due || "9999").localeCompare(b.due || "9999");
+        })
+        .slice(0, 3)
+    : [];
+  const dueLabel = selectedMeta?.due
+    ? new Date(`${selectedMeta.due}T00:00:00`).toLocaleDateString("en", { month: "short", day: "numeric" })
+    : "No deadline";
 
   return (
     <div className="sf-page db-page">
@@ -188,25 +205,67 @@ export function DashboardHome({ ctx }: { ctx: PageContext }) {
           )}
         </section>
 
-        <section className="sf-card db-projects-tile">
+        <section className={`sf-card db-projects-tile${selectedProject ? " is-project-focused" : ""}`}>
           <div className="db-card-heading">
             <div>
-              <h2>{copy.projects}</h2>
-              <p>{copy.projectsLead}</p>
+              <h2>{selectedProject ? "Project board" : copy.projects}</h2>
+              <p>{selectedProject ? "A focused view of this project" : copy.projectsLead}</p>
             </div>
-            <button className="db-pill-button" onClick={() => go("pm-projects")}>
-              View all <ArrowRight size={14} weight="bold" />
+            <button className="db-pill-button" onClick={() => go(selectedProject ? "pm-project" : "pm-projects", selectedProject?.id)}>
+              {selectedProject ? "Open project" : "View all"} <ArrowRight size={14} weight="bold" />
             </button>
           </div>
-          <div className="db-prows">
+          {selectedProject ? (
+            <div className="db-project-profile">
+              <div className={`db-project-cover ${selectedProject.color}`} aria-hidden="true">
+                <span>PROJECT PROFILE</span>
+              </div>
+              <div className="db-project-profile-identity">
+                <ProjectAvatar projectId={selectedProject.id} size="lg" />
+                <div className="db-project-focus-name">
+                  <strong>{selectedProject.name}</strong>
+                  <span>{selectedProject.tasks.filter((task) => task.done).length} of {selectedProject.tasks.length} tasks complete</span>
+                </div>
+                <strong className="db-project-focus-percent">
+                  {selectedProject.tasks.length ? Math.round((selectedProject.tasks.filter((task) => task.done).length / selectedProject.tasks.length) * 100) : 0}%
+                </strong>
+              </div>
+              <div className="db-project-profile-board">
+                <div className="db-project-profile-widgets">
+                  <div className="db-project-progress-widget">
+                    <span>Task progress</span>
+                    <div className="db-project-focus-progress" aria-hidden="true">
+                      <span style={{ width: `${selectedProject.tasks.length ? (selectedProject.tasks.filter((task) => task.done).length / selectedProject.tasks.length) * 100 : 0}%` }} />
+                    </div>
+                    <strong>{selectedProject.tasks.filter((task) => !task.done).length} tasks to go</strong>
+                  </div>
+                  <div className="db-project-focus-stats">
+                    <div><span>Open tasks</span><strong>{selectedProject.tasks.filter((task) => !task.done).length}</strong></div>
+                    <div><span>Time tracked</span><strong>{formatDuration(selectedSeconds)}</strong></div>
+                    <div><span>Due date</span><strong>{dueLabel}</strong></div>
+                  </div>
+                </div>
+                <div className="db-project-focus-next">
+                  <div className="db-project-focus-label">UP NEXT</div>
+                  {nextTasks.length ? nextTasks.map((task) => (
+                    <button key={task.id} className="db-project-focus-task" onClick={() => go("pm-tasks", task.id)}>
+                      <span className={`db-project-focus-dot ${task.priority?.toLowerCase() ?? "medium"}`} />
+                      <span>{task.title}</span>
+                      <small>{task.due ? new Date(`${task.due}T00:00:00`).toLocaleDateString("en", { month: "short", day: "numeric" }) : task.priority ?? "Open"}</small>
+                    </button>
+                  )) : (
+                    <p className="db-project-focus-empty">{selectedProject.tasks.length ? "All tasks are complete. Nice work." : "No tasks yet. Add the first task to get moving."}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : <div className="db-prows">
             {projects.map((project) => {
               const complete = project.tasks.filter((task) => task.done).length;
               const percent = project.tasks.length ? Math.round((complete / project.tasks.length) * 100) : 0;
               return (
                 <button key={project.id} className="db-prow" onClick={() => go("pm-project", project.id)}>
-                  <span className={`db-project-icon ${project.color}`}>
-                    <Folder weight="fill" />
-                  </span>
+                  <ProjectAvatar projectId={project.id} />
                   <span className="db-prow-copy">
                     <strong>{project.name}</strong>
                     <small>
@@ -220,7 +279,7 @@ export function DashboardHome({ ctx }: { ctx: PageContext }) {
                 </button>
               );
             })}
-          </div>
+          </div>}
         </section>
 
         <section className="sf-card db-recent-tile">
@@ -236,7 +295,7 @@ export function DashboardHome({ ctx }: { ctx: PageContext }) {
               const member = members.find((person) => person.id === session.memberId);
               return (
                 <button key={session.id} className="db-recent" onClick={() => go("timesheets-submissions", session.id)}>
-                  <Avatar name={lens === "member" ? projectName(session.projectId) : member?.name || "Team member"} color={member?.color} />
+                  {lens === "member" ? <ProjectAvatar projectId={session.projectId} size="sm" /> : <Avatar name={member?.name || "Team member"} color={member?.color} />}
                   <span className="db-recent-copy">
                     <strong>{lens === "member" ? session.taskTitle : member?.name || "Team member"}</strong>
                     <small>{lens === "member" ? projectName(session.projectId) : session.taskTitle}</small>

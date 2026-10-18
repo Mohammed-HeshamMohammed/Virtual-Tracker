@@ -1,3 +1,4 @@
+import { ProjectLabel } from "../../ProjectAvatar";
 import { useEffect, useState, type FormEvent } from "react";
 import { PencilSimple, Plus, Trash } from "@phosphor-icons/react";
 import { formatDuration, usePersistentState, useWorkspace } from "../../../workspace";
@@ -119,8 +120,7 @@ export function TasksPage({ ctx }: { ctx: PageContext }) {
                       <strong>{task.title}</strong>
                     )}
                     <small>
-                      <i className={`db-scope-dot ${task.color}`} />
-                      {task.projectName} · {due(task)}
+                      <ProjectLabel projectId={task.projectId} /> · {due(task)}
                     </small>
                     {task.description && <p>{task.description}</p>}
                     {canEdit && (
@@ -176,7 +176,7 @@ export function TasksPage({ ctx }: { ctx: PageContext }) {
                       ) : (
                         <strong>{row.title}</strong>
                       )}
-                      <small>{row.projectName}</small>
+                      <small><ProjectLabel projectId={row.projectId} /></small>
                     </div>
                   </div>
                 </div>
@@ -322,7 +322,7 @@ export function ClientsPage({ ctx }: { ctx: PageContext }) {
         emptyHint="Add the companies you do work for."
         columns={[
           { header: "Client", cell: (row) => <div className="db-person-cell"><div><strong>{row.name}</strong><small>{row.contact} · {row.email}</small></div></div>, csv: (row) => row.name },
-          { header: "Projects", cell: (row) => row.projectIds.map((id) => projects.find((project) => project.id === id)?.name).filter(Boolean).join(", ") || "None yet", csv: (row) => row.projectIds.join("; ") },
+          { header: "Projects", cell: (row) => row.projectIds.length ? <span className="sf-project-labels">{row.projectIds.map((id) => <ProjectLabel key={id} projectId={id} />)}</span> : "None yet", csv: (row) => row.projectIds.join("; ") },
           { header: "Invoiced", numeric: true, cell: (row) => money(row.invoiced), csv: (row) => row.invoiced },
           { header: "Outstanding", numeric: true, cell: (row) => money(row.owed), csv: (row) => row.owed },
         ]}

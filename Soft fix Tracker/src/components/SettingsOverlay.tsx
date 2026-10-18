@@ -10,6 +10,8 @@ import {
   GearSix,
   HardDrives,
   Headphones,
+  MagnifyingGlass,
+  PencilSimple,
   PaintBrushBroad,
   Plug,
   ShieldCheck,
@@ -20,22 +22,28 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import { Avatar } from "./Avatar";
+import { AccountSettings, ProfileCustomizer } from "./ProfileSettings";
 import { Modal } from "./ui";
 import { easyScales } from "./mode/EasyShell";
-import { isOpenOrgKey, peekOrg, useOrganizations, type Organization } from "../organizations";
+import {
+  isOpenOrgKey,
+  peekOrg,
+  useOrganizations,
+  type Organization,
+} from "../organizations";
 import { NewOrganizationDialog, orgInitial } from "./OrganizationMenu";
 import { Plus } from "lucide-react";
 import {
   useWorkspace,
   usePersistentState,
   type Preferences,
-  type Member,
   type Mode,
 } from "../workspace";
 import "./settings.css";
 
 type CategoryId =
   | "account"
+  | "profiles"
   | "privacy"
   | "notifications"
   | "voice"
@@ -52,6 +60,7 @@ type CategoryId =
   | "integrations";
 const icons: Record<CategoryId, Icon> = {
   account: UserCircle,
+  profiles: PaintBrushBroad,
   privacy: ShieldCheck,
   notifications: Bell,
   voice: Headphones,
@@ -86,7 +95,8 @@ const layouts: Record<Mode, Layout> = {
       {
         label: "User settings",
         items: [
-          { id: "account", label: "My account" },
+          { id: "account", label: "Account" },
+          { id: "profiles", label: "Profiles" },
           { id: "privacy", label: "Privacy & safety" },
           { id: "notifications", label: "Notifications" },
           { id: "voice", label: "Voice & audio" },
@@ -118,6 +128,7 @@ const layouts: Record<Mode, Layout> = {
         label: "You",
         items: [
           { id: "account", label: "Account" },
+          { id: "profiles", label: "Profiles" },
           { id: "appearance", label: "Appearance" },
           { id: "data", label: "Data & privacy" },
           { id: "storage", label: "Storage & sync" },
@@ -149,6 +160,7 @@ const layouts: Record<Mode, Layout> = {
           { id: "storage", label: "Storage & sync" },
           { id: "appearance", label: "Appearance" },
           { id: "account", label: "Account" },
+          { id: "profiles", label: "Profiles" },
           { id: "about", label: "About Soft Fix" },
         ],
       },
@@ -157,32 +169,85 @@ const layouts: Record<Mode, Layout> = {
 };
 /** The toggles on the Notifications page, which differ because each mode notifies about
  *  different things. They all save to the same three preferences. */
-const notificationCopy: Record<Mode, { intro: string; toggles: { key: "notifications" | "sounds" | "weeklyDigest"; title: string; description: string }[] }> = {
+const notificationCopy: Record<
+  Mode,
+  {
+    intro: string;
+    toggles: {
+      key: "notifications" | "sounds" | "weeklyDigest";
+      title: string;
+      description: string;
+    }[];
+  }
+> = {
   lounge: {
-    intro: "Choose how the Lounge lets you know about messages. Preferences are saved locally.",
+    intro:
+      "Choose how the Lounge lets you know about messages. Preferences are saved locally.",
     toggles: [
-      { key: "notifications", title: "Unread badges", description: "Show the unread indicator in the top bar." },
-      { key: "sounds", title: "Message sounds", description: "Save your sound preference for new messages." },
+      {
+        key: "notifications",
+        title: "Unread badges",
+        description: "Show the unread indicator in the top bar.",
+      },
+      {
+        key: "sounds",
+        title: "Message sounds",
+        description: "Save your sound preference for new messages.",
+      },
     ],
   },
   work: {
-    intro: "Choose the reminders you want while you work. Preferences are saved locally.",
+    intro:
+      "Choose the reminders you want while you work. Preferences are saved locally.",
     toggles: [
-      { key: "notifications", title: "Reminders", description: "Show the unread indicator in the top bar." },
-      { key: "sounds", title: "Reminder sounds", description: "Save your sound preference for timer reminders." },
-      { key: "weeklyDigest", title: "Weekly summary", description: "Include your weekly progress in the updates you get." },
+      {
+        key: "notifications",
+        title: "Reminders",
+        description: "Show the unread indicator in the top bar.",
+      },
+      {
+        key: "sounds",
+        title: "Reminder sounds",
+        description: "Save your sound preference for timer reminders.",
+      },
+      {
+        key: "weeklyDigest",
+        title: "Weekly summary",
+        description: "Include your weekly progress in the updates you get.",
+      },
     ],
   },
   dashboard: {
-    intro: "Choose what the Dashboard tells you about. Preferences are saved locally.",
+    intro:
+      "Choose what the Dashboard tells you about. Preferences are saved locally.",
     toggles: [
-      { key: "notifications", title: "Review requests", description: "Show the unread indicator when timesheets, requests or invoices need you." },
-      { key: "weeklyDigest", title: "Weekly team summary", description: "Include team progress in the updates you get." },
-      { key: "sounds", title: "Notification sounds", description: "Save your sound preference for workspace updates." },
+      {
+        key: "notifications",
+        title: "Review requests",
+        description:
+          "Show the unread indicator when timesheets, requests or invoices need you.",
+      },
+      {
+        key: "weeklyDigest",
+        title: "Weekly team summary",
+        description: "Include team progress in the updates you get.",
+      },
+      {
+        key: "sounds",
+        title: "Notification sounds",
+        description: "Save your sound preference for workspace updates.",
+      },
     ],
   },
 };
-const timeZones = ["Africa/Cairo", "Europe/London", "America/New_York", "Asia/Dubai", "Asia/Kolkata", "UTC"];
+const timeZones = [
+  "Africa/Cairo",
+  "Europe/London",
+  "America/New_York",
+  "Asia/Dubai",
+  "Asia/Kolkata",
+  "UTC",
+];
 function Toggle({
   title,
   description,
@@ -217,12 +282,16 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
     </section>
   );
 }
-export function SettingsOverlay({ onClose, page }: { onClose: () => void; /** A page to open on, if this mode has it; otherwise the mode's own first page. */ page?: string }) {
+export function SettingsOverlay({
+  onClose,
+  page,
+}: {
+  onClose: () => void;
+  /** A page to open on, if this mode has it; otherwise the mode's own first page. */ page?: string;
+}) {
   const {
     profile,
-    setProfile,
     members,
-    setMembers,
     preferences,
     setPreferences,
     viewMode,
@@ -235,15 +304,48 @@ export function SettingsOverlay({ onClose, page }: { onClose: () => void; /** A 
   } = useWorkspace();
   const mode: Mode = route.mode in layouts ? route.mode : "work";
   const layout = layouts[mode];
+  const settingsGroups = layout.groups
+    .map((group) => ({
+      ...group,
+      items: [...group.items].sort(
+        (a, b) =>
+          (a.id === "account" ? 0 : a.id === "profiles" ? 1 : 2) -
+          (b.id === "account" ? 0 : b.id === "profiles" ? 1 : 2),
+      ),
+    }))
+    .sort(
+      (a, b) =>
+        Number(b.items.some((item) => item.id === "account")) -
+        Number(a.items.some((item) => item.id === "account")),
+    );
   const notifications = notificationCopy[mode];
-  const [active, setActive] = useState<CategoryId>(() => (layout.groups.some((group) => group.items.some((item) => item.id === page)) ? (page as CategoryId) : layout.landing));
-  const { orgs, active: openOrg, switchTo: switchOrg, rename: renameOrg, remove: removeOrg } = useOrganizations();
+  const [active, setActive] = useState<CategoryId>(() =>
+    layout.groups.some((group) => group.items.some((item) => item.id === page))
+      ? (page as CategoryId)
+      : layout.landing,
+  );
+  const {
+    orgs,
+    active: openOrg,
+    switchTo: switchOrg,
+    rename: renameOrg,
+    remove: removeOrg,
+  } = useOrganizations();
   const [orgName, setOrgName] = useState(openOrg.name);
   const [orgError, setOrgError] = useState("");
   const [creatingOrg, setCreatingOrg] = useState(false);
   const [deletingOrg, setDeletingOrg] = useState<Organization | null>(null);
-  const labelOf = (id: CategoryId) => layout.groups.flatMap((group) => group.items).find((item) => item.id === id)?.label ?? "Settings";
-  const [draft, setDraft] = useState(profile);
+  const labelOf = (id: CategoryId) =>
+    layout.groups.flatMap((group) => group.items).find((item) => item.id === id)
+      ?.label ?? "Settings";
+  const [search, setSearch] = useState("");
+  const [accountSection, setAccountSection] = useState("account-info");
+  const [profileDirty, setProfileDirty] = useState(false);
+  const [discardTarget, setDiscardTarget] = useState<
+    "close" | "account" | null
+  >(null);
+  const closeSettings = () =>
+    profileDirty ? setDiscardTarget("close") : onClose();
   const [audio, setAudio] = usePersistentState("audio-preferences", {
     input: "System default",
     output: "System default",
@@ -334,140 +436,153 @@ export function SettingsOverlay({ onClose, page }: { onClose: () => void; /** A 
   }
   return (
     <Modal
-      title={layout.title}
-      description={layout.description}
-      className={`st-for-${mode}`}
-      onClose={onClose}
+      title={active === "profiles" ? "Main Profile" : labelOf(active)}
+      className={`st-discord st-for-${mode}${active === "profiles" ? " st-profile-mode" : ""}`}
+      onClose={closeSettings}
       wide
     >
       <div className="st-layout">
         <nav className="st-nav" aria-label="Settings categories">
-          {layout.groups.map((group) => (
-            <div className="st-nav-group" role="group" aria-label={group.label} key={group.label}>
-              <span className="st-nav-heading">{group.label}</span>
-              {group.items.map(({ id, label }) => {
-                const Icon = icons[id];
-                return (
-                  <button key={id} className={active === id ? "active" : ""} aria-current={active === id ? "page" : undefined} onClick={() => setActive(id)}>
-                    <Icon size={18} />
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+          <button
+            type="button"
+            className="st-profile-shortcut"
+            onClick={() => setActive("profiles")}
+          >
+            <Avatar
+              initials={profile.name
+                .split(" ")
+                .map((part) => part[0])
+                .slice(0, 2)
+                .join("")}
+              memberId="me"
+              size="lg"
+            />
+            <span>
+              <strong>{profile.name}</strong>
+              <small>
+                Edit Profiles <PencilSimple size={12} />
+              </small>
+            </span>
+          </button>
+          <label className="st-search">
+            <MagnifyingGlass size={17} />
+            <input
+              aria-label="Search settings"
+              placeholder="Search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+          {settingsGroups
+            .filter((group) =>
+              group.items.some((item) =>
+                item.label.toLowerCase().includes(search.toLowerCase()),
+              ),
+            )
+            .map((group) => (
+              <div
+                className="st-nav-group"
+                role="group"
+                aria-label={group.label}
+                key={group.label}
+              >
+                <span className="st-nav-heading">{group.label}</span>
+                {group.items
+                  .filter((item) =>
+                    item.label.toLowerCase().includes(search.toLowerCase()),
+                  )
+                  .map(({ id, label }) => {
+                    const Icon = icons[id];
+                    return (
+                      <div key={id}>
+                        <button
+                          className={active === id ? "active" : ""}
+                          aria-current={active === id ? "page" : undefined}
+                          onClick={() => setActive(id)}
+                        >
+                          <Icon size={18} />
+                          {label}
+                        </button>
+                        {id === "account" && active === "account" && (
+                          <div className="st-subnav">
+                            {[
+                              { id: "account-info", label: "Account Info" },
+                              { id: "public-profile", label: "Your Profile" },
+                              {
+                                id: "workspace-access",
+                                label: "Workspace Access",
+                              },
+                            ].map((section) => (
+                              <button
+                                type="button"
+                                key={section.id}
+                                className={
+                                  accountSection === section.id ? "active" : ""
+                                }
+                                aria-current={
+                                  accountSection === section.id
+                                    ? "location"
+                                    : undefined
+                                }
+                                onClick={() => {
+                                  setAccountSection(section.id);
+                                  document
+                                    .getElementById(section.id)
+                                    ?.scrollIntoView({
+                                      behavior: preferences.reducedMotion
+                                        ? "instant"
+                                        : "smooth",
+                                      block: "start",
+                                    });
+                                }}
+                              >
+                                {section.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            ))}
+          {search &&
+            !layout.groups.some((group) =>
+              group.items.some((item) =>
+                item.label.toLowerCase().includes(search.toLowerCase()),
+              ),
+            ) && <p className="st-search-empty">No settings found.</p>}
           <div className="st-local">
             <span className="st-dot" />
             Local workspace preview
           </div>
         </nav>
         <div className="st-content">
-          <h2>{labelOf(active)}</h2>
-          {active === "account" && (
-            <>
-              <div className="st-profile">
-                <Avatar
-                  initials={profile.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .slice(0, 2)
-                    .join("")}
-                  size="lg"
-                  color="blue"
-                />
-                <div>
-                  <strong>{profile.name}</strong>
-                  <small>{profile.title}</small>
-                </div>
-                <span className="sf-badge blue">{profile.role}</span>
-              </div>
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const clean = {
-                    ...draft,
-                    name: draft.name.trim(),
-                    title: draft.title.trim(),
-                  };
-                  if (!clean.name) return;
-                  setProfile(clean);
-                  setMembers((old) =>
-                    old.map((member) =>
-                      member.id === "me"
-                        ? {
-                            ...member,
-                            name: clean.name,
-                            email: clean.email,
-                            status: clean.status as Member["status"],
-                            initials: clean.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .slice(0, 2)
-                              .join(""),
-                          }
-                        : member,
-                    ),
-                  );
-                  notify("Profile updated across your workspace");
-                }}
-              >
-                <label>
-                  Display name
-                  <input
-                    className="sf-input"
-                    required
-                    maxLength={60}
-                    value={draft.name}
-                    onChange={(event) =>
-                      setDraft({ ...draft, name: event.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Work email
-                  <input
-                    className="sf-input"
-                    required
-                    type="email"
-                    value={draft.email}
-                    onChange={(event) =>
-                      setDraft({ ...draft, email: event.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Job title
-                  <input
-                    className="sf-input"
-                    maxLength={80}
-                    value={draft.title}
-                    onChange={(event) =>
-                      setDraft({ ...draft, title: event.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Status
-                  <select
-                    className="sf-input"
-                    value={draft.status}
-                    onChange={(event) =>
-                      setDraft({ ...draft, status: event.target.value })
-                    }
-                  >
-                    {["Available", "Focusing", "Away", "Offline"].map(
-                      (status) => (
-                        <option key={status}>{status}</option>
-                      ),
-                    )}
-                  </select>
-                </label>
-                <div className="sf-form-actions">
-                  <button className="sf-button primary">Save changes</button>
-                </div>
-              </form>
-            </>
+          {active !== "profiles" && (
+            <div className="st-page-top">{labelOf(active)}</div>
           )}
+          <div className="st-content-scroll">
+            {active !== "profiles" && active !== "account" && (
+              <h2>{labelOf(active)}</h2>
+            )}
+            {active === "account" && (
+              <AccountSettings
+                onCustomize={() => setActive("profiles")}
+                onPrivacy={() =>
+                  setActive(mode === "lounge" ? "privacy" : "data")
+                }
+              />
+            )}
+            {active === "profiles" && (
+              <ProfileCustomizer
+                onBack={() =>
+                  profileDirty
+                    ? setDiscardTarget("account")
+                    : setActive("account")
+                }
+                onDirtyChange={setProfileDirty}
+              />
+            )}
           {active === "appearance" && (
             <>
               <p className="st-description">
@@ -978,8 +1093,40 @@ export function SettingsOverlay({ onClose, page }: { onClose: () => void; /** A 
               </p>
             </>
           )}
+          </div>
         </div>
       </div>
+      {discardTarget && (
+        <Modal
+          title="Discard profile changes?"
+          description="Your changes have not been saved."
+          className="dc-edit-modal"
+          onClose={() => setDiscardTarget(null)}
+        >
+          <div className="sf-form-actions">
+            <button
+              type="button"
+              className="sf-button"
+              onClick={() => setDiscardTarget(null)}
+            >
+              Keep editing
+            </button>
+            <button
+              type="button"
+              className="sf-button primary"
+              onClick={() => {
+                const target = discardTarget;
+                setProfileDirty(false);
+                setDiscardTarget(null);
+                if (target === "close") onClose();
+                else setActive("account");
+              }}
+            >
+              Discard changes
+            </button>
+          </div>
+        </Modal>
+      )}
     </Modal>
   );
 }

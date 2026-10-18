@@ -1,0 +1,124 @@
+- generic [ref=e3]:
+  - link "Skip to content" [ref=e4] [cursor=pointer]:
+    - /url: "#workspace-content"
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - img "Soft Fix" [ref=e7]
+      - navigation "Modes" [ref=e10]:
+        - button "Lounge" [pressed] [ref=e11] [cursor=pointer]
+        - button "Work" [ref=e15] [cursor=pointer]
+        - button "Dashboard" [ref=e21] [cursor=pointer]
+    - generic "Search pages, projects and people (Ctrl K)" [ref=e29]:
+      - combobox "Search workspace" [ref=e32]
+      - generic [ref=e33]: Ctrl K
+    - generic [ref=e35]:
+      - button "Change the window" [ref=e37] [cursor=pointer]
+      - button "Notifications, 3 unread" [ref=e41] [cursor=pointer]
+      - button "Quick settings" [ref=e46] [cursor=pointer]
+      - button "Your profile" [ref=e50] [cursor=pointer]:
+        - generic [ref=e51]: AM
+  - generic [ref=e828]:
+    - navigation "Lounge servers" [ref=e829]:
+      - button "Direct Messages" [ref=e831] [cursor=pointer]
+      - button "Soft Fix" [ref=e836] [cursor=pointer]
+      - button "Nova Vanguard" [ref=e840] [cursor=pointer]
+      - button "Buffalo Campaign" [ref=e843] [cursor=pointer]:
+        - generic [aria-hidden] [ref=e844]: BC
+        - text: Buffalo Campaign
+      - button "RWS Campaign" [ref=e846] [cursor=pointer]:
+        - generic [aria-hidden] [ref=e847]: RC
+        - text: RWS Campaign
+      - button "Soft Fix Internal" [ref=e849] [cursor=pointer]:
+        - generic [aria-hidden] [ref=e850]: SF
+        - text: Soft Fix Internal
+      - button "Add a Server" [ref=e852] [cursor=pointer]
+      - button "Explore Channels" [ref=e856] [cursor=pointer]
+    - complementary [ref=e859]:
+      - generic [ref=e860]:
+        - button "Nova Vanguard" [expanded] [active] [ref=e1051] [cursor=pointer]:
+          - strong [ref=e1052]:
+            - generic [ref=e1053]: Nova Vanguard
+        - generic [ref=e1174]:
+          - button "Invite People" [ref=e1175] [cursor=pointer]
+          - button "Create Channel" [ref=e1178] [cursor=pointer]
+          - button "Browse Channels" [ref=e1181] [cursor=pointer]
+          - button "Server Settings" [ref=e1184] [cursor=pointer]
+      - generic [ref=e862]:
+        - navigation "Server" [ref=e1058]:
+          - button "Browse Channels" [ref=e1059] [cursor=pointer]
+        - generic [ref=e1062]:
+          - generic [ref=e1063]:
+            - generic [ref=e1064]:
+              - button "Text Channels" [expanded] [ref=e1065] [cursor=pointer]
+              - button "Create a channel in Text Channels" [ref=e1068] [cursor=pointer]
+            - navigation "Text Channels" [ref=e1071]:
+              - button "nova-vanguard" [ref=e1073] [cursor=pointer]
+          - generic [ref=e1077]:
+            - generic [ref=e1078]:
+              - button "Voice Channels" [expanded] [ref=e1079] [cursor=pointer]
+              - button "Create a channel in Voice Channels" [ref=e1082] [cursor=pointer]
+            - navigation "Voice Channels" [ref=e1085]:
+              - button "General" [ref=e1087] [cursor=pointer]
+    - main [ref=e1091]:
+      - generic [ref=e1092]:
+        - generic [ref=e1093]:
+          - heading "nova-vanguard" [level=1] [ref=e1095]
+          - paragraph [ref=e1097]: The place to connect and share progress on Nova Vanguard.
+        - generic [ref=e1098]:
+          - button "Mute channel" [ref=e1099] [cursor=pointer]
+          - button "Leave channel" [ref=e1102] [cursor=pointer]
+          - button "Member list" [pressed] [ref=e1105] [cursor=pointer]
+          - 'textbox "Search #nova-vanguard" [ref=e1109]':
+            - /placeholder: Search
+          - button "Saved messages" [ref=e1112] [cursor=pointer]
+      - log "Messages in nova-vanguard" [ref=e1115]:
+        - generic [ref=e1116]:
+          - 'heading "Welcome to #nova-vanguard!" [level=2] [ref=e1119]'
+          - paragraph [ref=e1120]: "This is the start of the #nova-vanguard channel. The place to connect and share progress on Nova Vanguard."
+        - generic [ref=e1121]:
+          - generic [ref=e1122]: October 17, 2026
+          - article [ref=e1124]:
+            - generic [ref=e1125] [cursor=pointer]: SA
+            - generic [ref=e1126]:
+              - strong [ref=e1127] [cursor=pointer]: Sara Ahmed
+              - time [ref=e1128]: Today at 9:15 AM
+            - paragraph [ref=e1129]: "Welcome to #nova-vanguard. The place to connect and share progress on Nova Vanguard."
+        - article [ref=e1131]:
+          - generic [ref=e1132] [cursor=pointer]: YK
+          - generic [ref=e1133]:
+            - strong [ref=e1134] [cursor=pointer]: Youssef Khaled
+            - time [ref=e1135]: Today at 9:32 AM
+          - paragraph [ref=e1136]: I’ve added my notes for the week. Looking forward to hearing what everyone is working on.
+      - generic [ref=e1139]:
+        - button "Upload a file" [ref=e1140] [cursor=pointer]
+        - 'textbox "Message #nova-vanguard" [ref=e1143]'
+        - button "Select emoji" [ref=e1145] [cursor=pointer]
+    - complementary "Members" [ref=e1148]:
+      - generic [ref=e1149]:
+        - heading "Online — 3" [level=2] [ref=e1150]
+        - button "Aria Morgan, you" [disabled] [ref=e1151]:
+          - generic [ref=e1152]: AM
+          - generic [ref=e1155]:
+            - strong [ref=e1156]: Aria Morgan
+            - generic [ref=e1157]: Design
+        - button "Message Sara Ahmed" [ref=e1158] [cursor=pointer]:
+          - generic [ref=e1159]: SA
+          - generic [ref=e1162]:
+            - strong [ref=e1163]: Sara Ahmed
+            - generic [ref=e1164]: Design
+        - button "Message Youssef Khaled" [ref=e1165] [cursor=pointer]:
+          - generic [ref=e1166]: YK
+          - generic [ref=e1169]:
+            - strong [ref=e1170]: Youssef Khaled
+            - generic [ref=e1171]: Engineering
+    - region "Voice and profile controls" [ref=e1032]:
+      - generic [ref=e1033]:
+        - button "Open profile settings" [ref=e1034] [cursor=pointer]:
+          - generic [ref=e1035]: AM
+          - generic [ref=e1038]:
+            - strong [ref=e1039]: Aria Morgan
+            - generic [ref=e1040]: Available
+        - generic [ref=e1041]:
+          - button "Unmute microphone preview" [pressed] [ref=e1042] [cursor=pointer]
+          - button "Deafen audio preview" [ref=e1045] [cursor=pointer]
+          - button "User settings" [ref=e1048] [cursor=pointer]

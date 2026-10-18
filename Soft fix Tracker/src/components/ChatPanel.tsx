@@ -1,3 +1,4 @@
+import { ProjectAvatar } from "./ProjectAvatar";
 import { useEffect, useRef, useState, type FormEvent, type ReactElement } from "react";
 import {
   ArrowBendUpLeft,
@@ -8,9 +9,9 @@ import {
   Hash,
   MagnifyingGlass,
   Plus,
-  SignOut,
   Smiley,
   SmileySticker,
+  SpeakerHigh,
   Tray,
   UserCircle,
   UsersThree,
@@ -34,14 +35,13 @@ type Props = {
   route: LoungeRoute;
   data: LoungeData;
   room?: LoungeRoom;
+  onVoiceRoom: () => void;
   contextOpen: boolean;
   onContext: () => void;
   onDraft: (value: string) => void;
   onSend: (body: string, attachment?: string, replyTo?: string) => void;
   onBookmark: (id: string) => void;
   onReact: (id: string, emoji: string) => void;
-  onJoin: () => void;
-  onLeave: () => void;
   onMute: () => void;
   onSaved: () => void;
 };
@@ -64,14 +64,13 @@ export function ChatPanel({
   route,
   data,
   room,
+  onVoiceRoom,
   contextOpen,
   onContext,
   onDraft,
   onSend,
   onBookmark,
   onReact,
-  onJoin,
-  onLeave,
   onMute,
   onSaved,
 }: Props) {
@@ -90,7 +89,6 @@ export function ChatPanel({
   const composer = useRef<HTMLTextAreaElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const attachment = attachments[key];
-  const canCompose = !room || room.joined;
   const muted = room ? data.mutedRooms.includes(room.id) : false;
 
   useEffect(() => {
@@ -106,11 +104,11 @@ export function ChatPanel({
     if (!field) return;
     field.style.height = "auto";
     field.style.height = `${Math.min(field.scrollHeight, 320)}px`;
-  }, [draft, key, canCompose]);
+  }, [draft, key]);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (!canCompose || (!draft.trim() && !attachment)) return;
+    if (!draft.trim() && !attachment) return;
     onSend(draft.trim(), attachment, reply?.id);
     setAttachments((previous) => ({ ...previous, [key]: "" }));
     setReply(null);
@@ -141,8 +139,8 @@ export function ChatPanel({
         <div className="lg-topbar-title">
           {room ? (
             <>
-              <Hash />
-              <h1>{room.name}</h1>
+              {room.projectId ? <ProjectAvatar projectId={room.projectId} size="sm" /> : <Hash />}
+              <h1>{route.page === "voice-chat" ? `${room.name} · voice chat` : room.name}</h1>
               <span className="lg-topbar-divider" />
               <p className="lg-topic" title={room.description}>
                 {room.description}
@@ -151,7 +149,7 @@ export function ChatPanel({
           ) : (
             <>
               <span className="lg-avatar-status">
-                <Avatar initials={person?.initials ?? "AM"} color={person?.color} size="sm" />
+                <Avatar memberId={person?.id} initials={person?.initials ?? "AM"} color={person?.color} size="sm" />
                 <i className={`lg-status-dot ${(person?.status ?? "Offline").toLowerCase()}`} />
               </span>
               <h1>{name}</h1>
@@ -160,6 +158,7 @@ export function ChatPanel({
           )}
         </div>
         <div className="lg-topbar-tools">
+          {route.page === "voice-chat" && topbarIcon(false, "Back to voice room", onVoiceRoom, <SpeakerHigh />)}
           {room &&
             topbarIcon(
               muted,
@@ -167,8 +166,6 @@ export function ChatPanel({
               onMute,
               muted ? <BellSlash weight="fill" /> : <Bell weight="fill" />,
             )}
-          {room?.joined &&
-            topbarIcon(false, "Leave channel", onLeave, <SignOut weight="fill" />)}
           {topbarIcon(
             contextOpen,
             room ? "Member list" : "User profile",
@@ -194,22 +191,23 @@ export function ChatPanel({
         </div>
       </header>
 
+
       <div className="lg-message-scroller" ref={scroller} role="log" aria-label={`Messages in ${name}`}>
         {!query && (
           <section className="lg-intro">
             {room ? (
               <span className="lg-intro-icon">
-                <Hash weight="bold" />
+                {room.projectId ? <ProjectAvatar projectId={room.projectId} size="rail" /> : <Hash weight="bold" />}
               </span>
             ) : (
               <span className="lg-intro-avatar">
-                <Avatar initials={person?.initials ?? "AM"} color={person?.color} size="lg" />
+                <Avatar memberId={person?.id} initials={person?.initials ?? "AM"} color={person?.color} size="lg" />
               </span>
             )}
-            <h2>{room ? `Welcome to #${room.name}!` : name}</h2>
+            <h2>{room ? (route.page === "voice-chat" ? `${room.name} voice chat` : `Welcome to #${room.name}!`) : name}</h2>
             <p>
               {room ? (
-                <>This is the start of the #{room.name} channel. {room.description}</>
+                <>{route.page === "voice-chat" ? "Messages shared in this voice room stay here." : `This is the start of the #${room.name} channel. ${room.description}`}</>
               ) : (
                 <>
                   This is the beginning of your direct message history with <strong>{name}</strong>.
@@ -251,6 +249,7 @@ export function ChatPanel({
                 {quoted && (
                   <div className="lg-reply-ref">
                     <Avatar
+                      memberId={quoted.personId}
                       initials={members.find((member) => member.id === quoted.personId)?.initials ?? "AM"}
                       color={members.find((member) => member.id === quoted.personId)?.color}
                       size="sm"
@@ -264,7 +263,7 @@ export function ChatPanel({
                     {time.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                   </time>
                 ) : (
-                  <Avatar initials={author?.initials ?? "AM"} color={author?.color} size="lg" />
+                  <Avatar memberId={author?.id} initials={author?.initials ?? "AM"} color={author?.color} size="lg" />
                 )}
                 {!grouped && (
                   <div className="lg-message-meta">
@@ -363,7 +362,7 @@ export function ChatPanel({
       </div>
 
       <footer className="lg-composer-wrap">
-        {canCompose ? (
+        {(
           <form onSubmit={submit} className="lg-composer">
             {reply && (
               <div className="lg-reply-preview">
@@ -459,16 +458,6 @@ export function ChatPanel({
               )}
             </div>
           </form>
-        ) : (
-          <div className="lg-join-prompt">
-            <div>
-              <strong>You are viewing a preview of #{name}</strong>
-              <p>Join this channel to take part in the conversation.</p>
-            </div>
-            <button className="sf-button primary" onClick={onJoin}>
-              Join Channel
-            </button>
-          </div>
         )}
       </footer>
     </main>

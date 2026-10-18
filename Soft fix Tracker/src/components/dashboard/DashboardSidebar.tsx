@@ -1,3 +1,4 @@
+import { ProjectAvatar } from "../ProjectAvatar";
 import type { ReactElement } from "react";
 import {
   CalendarBlank,
@@ -84,7 +85,7 @@ export function DashboardSidebar({
                 title={scope === project.id ? "Show every project again" : `Show only ${project.name}`}
                 onClick={() => onScope(scope === project.id ? "all" : project.id)}
               >
-                <span className={`db-scope-dot ${project.color}`} />
+                <ProjectAvatar projectId={project.id} size="xs" />
                 <span>{project.name}</span>
                 <small>{project.tasks.filter((task) => !task.done).length}</small>
               </button>

@@ -1,3 +1,4 @@
+import { ProjectAvatar } from "../../ProjectAvatar";
 import { useMemo, useState, type DragEvent, type FormEvent } from "react";
 import { CalendarBlank, CaretLeft, CaretRight, Plus } from "@phosphor-icons/react";
 import { usePersistentState, useWorkspace } from "../../../workspace";
@@ -36,6 +37,7 @@ type Event = {
   title: string;
   sub: string;
   taskId?: string;
+  projectId?: string;
   done?: boolean;
   people?: string[];
 };
@@ -90,7 +92,7 @@ export function CalendarPage({ ctx }: { ctx: PageContext }) {
     for (const task of tasks) {
       if (!task.due) continue;
       const waiting = task.done && !stores.taskReviews[task.id];
-      list.push({ id: `task-${task.id}`, kind: waiting ? "review" : "deadline", day: task.due, time: "", title: task.title, sub: waiting ? `${task.projectName} · waiting for sign-off` : `${task.projectName} · ${task.priority} priority`, taskId: task.id, done: task.done && !waiting });
+      list.push({ id: `task-${task.id}`, kind: waiting ? "review" : "deadline", day: task.due, time: "", title: task.title, sub: waiting ? `${task.projectName} · waiting for sign-off` : `${task.projectName} · ${task.priority} priority`, taskId: task.id, projectId: task.projectId, done: task.done && !waiting });
     }
     for (const entry of stores.timeOff) {
       if (entry.status !== "Approved" || !(ctx.canManage || entry.memberId === "me")) continue;
@@ -99,7 +101,7 @@ export function CalendarPage({ ctx }: { ctx: PageContext }) {
     if (project === "all" || ctx.projects.some((item) => item.id === project)) {
       for (const block of plan) {
         if (project !== "all" && block.projectId !== project) continue;
-        list.push({ id: `plan-${block.id}`, kind: "planning", day: block.date, time: block.time, title: block.title, sub: `${block.minutes} min · ${ctx.projects.find((item) => item.id === block.projectId)?.name ?? "Personal"}`, done: block.done });
+        list.push({ id: `plan-${block.id}`, kind: "planning", projectId: block.projectId, day: block.date, time: block.time, title: block.title, sub: `${block.minutes} min · ${ctx.projects.find((item) => item.id === block.projectId)?.name ?? "Personal"}`, done: block.done });
       }
     }
     return list.sort((a, b) => a.day.localeCompare(b.day) || a.time.localeCompare(b.time) || a.title.localeCompare(b.title));
@@ -272,7 +274,7 @@ export function CalendarPage({ ctx }: { ctx: PageContext }) {
                   <span className="cal-event-time">{event.time || "All day"}</span>
                   <span className="cal-event-copy">
                     <strong>{event.title}</strong>
-                    <small>{event.sub}</small>
+                    <small>{event.projectId && <ProjectAvatar projectId={event.projectId} size="xs" />} {event.sub}</small>
                   </span>
                   {event.people && (
                     <span className="cal-people">
@@ -301,7 +303,7 @@ export function CalendarPage({ ctx }: { ctx: PageContext }) {
                   <span className="cal-event-copy">
                     <strong>{event.title}</strong>
                     <small>
-                      {parse(event.day).toLocaleDateString("en", { weekday: "short" })} · {event.time || event.sub}
+                      {event.projectId && <ProjectAvatar projectId={event.projectId} size="xs" />} {parse(event.day).toLocaleDateString("en", { weekday: "short" })} · {event.time || event.sub}
                     </small>
                   </span>
                 </button>

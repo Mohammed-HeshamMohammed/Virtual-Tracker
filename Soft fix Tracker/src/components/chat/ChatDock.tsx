@@ -79,7 +79,7 @@ export function ChatDock() {
                   <ArrowLeft size={17} />
                 </button>
                 <span className="chat-who">
-                  <Avatar initials={person.initials || initialsOf(person.name)} color={person.color} size="sm" />
+                  <Avatar memberId={person.id} initials={person.initials || initialsOf(person.name)} color={person.color} size="sm" />
                   <span>
                     <strong>{person.name}</strong>
                     <small>
@@ -138,7 +138,7 @@ export function ChatDock() {
                 {listed.map(({ person: item, last, unread: count }) => (
                   <button key={item.id} className="chat-row" onClick={() => openChat(item.id)}>
                     <span className="chat-avatar">
-                      <Avatar initials={item.initials || initialsOf(item.name)} color={item.color} size="sm" />
+                      <Avatar memberId={item.id} initials={item.initials || initialsOf(item.name)} color={item.color} size="sm" />
                       <i className={`chat-dot ${item.status.toLowerCase()}`} />
                     </span>
                     <span className="chat-row-copy">

@@ -1,18 +1,16 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { CheckCircle } from "@phosphor-icons/react";
-import { usePersistentState, useWorkspace } from "../../../workspace";
+import { useWorkspace } from "../../../workspace";
 import type { WorkProject } from "../../../data/work";
+import type { ProjectMeta } from "../../../data/projectMeta";
 import { PROJECT_TYPES, projectTypeDef, type ProjectType } from "../../../data/projectTypes";
 import { Avatar, PageHeading } from "../DashboardParts";
 import type { PageContext } from "./kit";
 import { AvatarPicker, type ProjectPicture } from "./AvatarPicker";
-import { ProjectAvatar, type AvatarCrop } from "./project-facts";
+import { ProjectAvatar } from "./project-facts";
 import { logAudit, useDashboardStores } from "./stores";
 import "../project-form.css";
 
-/** What the Projects pages keep about a project besides the project itself. `avatar` is its picture as a
- *  data URL; an animated one also keeps how it is framed, and one from the search keeps its credit. */
-export type ProjectMeta = { description: string; budget: number; due: string; resets?: "Never" | "Weekly" | "Monthly"; notifyAt?: number; avatar?: string; avatarCrop?: AvatarCrop; avatarCredit?: string };
 const COLORS = ["blue", "violet", "cyan", "green", "gold", "orange"];
 const STEPS = [
   { label: "Type", hint: "How it tracks time" },
@@ -54,7 +52,7 @@ const blank = (type: ProjectType): Form => {
 export function NewProjectPage({ ctx }: { ctx: PageContext }) {
   const { projects, setProjects, members, notify, profile, route } = useWorkspace();
   const stores = useDashboardStores();
-  const [meta, setMeta] = usePersistentState<Record<string, ProjectMeta>>("dashboard.project-meta", {});
+  const { projectMeta: meta, setProjectMeta: setMeta } = useWorkspace();
   const project: WorkProject | undefined = projects.find((item) => item.id === route.target);
   const editing = Boolean(project);
   const [step, setStep] = useState<number>(editing ? 1 : 0);
@@ -72,7 +70,7 @@ export function NewProjectPage({ ctx }: { ctx: PageContext }) {
       description: kept?.description ?? "",
       due: kept?.due ?? "",
       color: project.color,
-      picture: kept?.avatar ? { src: kept.avatar, crop: kept.avatarCrop, credit: kept.avatarCredit } : null,
+      picture: kept?.avatar || kept?.avatarGlyph ? { src: kept.avatar ?? "", crop: kept.avatarCrop, credit: kept.avatarCredit, glyph: kept.avatarGlyph } : null,
       billable: project.billable ?? def.billable,
       requireTask: project.requireTask ?? def.requiresTask,
       clientId: stores.clients.find((client) => client.projectIds.includes(project.id))?.id ?? "",
@@ -149,7 +147,7 @@ export function NewProjectPage({ ctx }: { ctx: PageContext }) {
       }
     }
     const fields = { color: form.color, type: form.type, billable: form.billable, requireTask: def.hasTasks ? form.requireTask : false, managerIds: form.managerIds, memberIds: [...new Set([...form.memberIds, ...form.managerIds])] };
-    const kept: ProjectMeta = { description: form.description.trim(), budget: form.useBudget ? Number(form.hours) : 0, due: form.due, resets: form.resets, notifyAt: Number(form.notifyAt), ...(form.picture ? { avatar: form.picture.src, avatarCrop: form.picture.crop, avatarCredit: form.picture.credit } : {}) };
+    const kept: ProjectMeta = { description: form.description.trim(), budget: form.useBudget ? Number(form.hours) : 0, due: form.due, resets: form.resets, notifyAt: Number(form.notifyAt), ...(form.picture ? { avatar: form.picture.src, avatarCrop: form.picture.crop, avatarCredit: form.picture.credit, avatarGlyph: form.picture.glyph } : {}) };
     const ids = editing ? [project!.id] : names.map(() => crypto.randomUUID());
     setProjects((old) => (editing ? old.map((item) => (item.id === project!.id ? { ...item, name: names[0], ...fields } : item)) : [...old, ...names.map((name, index): WorkProject => ({ id: ids[index], name, tasks: [], ...fields }))]));
     setMeta((old) => ({ ...old, ...Object.fromEntries(ids.map((id) => [id, kept])) }));
@@ -203,7 +201,7 @@ export function NewProjectPage({ ctx }: { ctx: PageContext }) {
           </ol>
           {step > 0 && (
             <div className="np-preview" aria-hidden="true">
-              <ProjectAvatar name={names[0] ?? "?"} color={form.color} src={form.picture?.src} crop={form.picture?.crop} />
+              <ProjectAvatar name={names[0] ?? "?"} color={form.color} src={form.picture?.src} crop={form.picture?.crop} glyph={form.picture?.glyph} />
               <span>
                 <strong>{names[0] ?? "Untitled project"}</strong>
                 <small>
@@ -345,7 +343,7 @@ export function NewProjectPage({ ctx }: { ctx: PageContext }) {
                     {managers.map((member) => (
                       <label key={member.id}>
                         <input type="checkbox" checked={form.managerIds.includes(member.id)} onChange={() => toggle("managerIds", member.id)} />
-                        <Avatar name={member.name} color={member.color} />
+                        <Avatar memberId={member.id} name={member.name} color={member.color} />
                         <span>
                           <strong>{member.name}</strong>
                           <small>{member.role}</small>
@@ -370,7 +368,7 @@ export function NewProjectPage({ ctx }: { ctx: PageContext }) {
                       {people.map((member) => (
                         <label key={member.id}>
                           <input type="checkbox" checked={form.memberIds.includes(member.id)} onChange={() => toggle("memberIds", member.id)} />
-                          <Avatar name={member.name} color={member.color} />
+                          <Avatar memberId={member.id} name={member.name} color={member.color} />
                           <span>
                             <strong>{member.name}</strong>
                             <small>

@@ -1,13 +1,13 @@
+import { ProjectAvatar, ProjectLabel } from "../../ProjectAvatar";
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowSquareOut, CheckCircle, Circle, CurrencyDollar, Folder, HourglassMedium, ListChecks, Pulse, UsersThree } from "@phosphor-icons/react";
-import { formatDuration, usePersistentState, useWorkspace } from "../../../workspace";
+import { formatDuration, useWorkspace } from "../../../workspace";
 import { Modal } from "../../ui";
 import { PageHeading } from "../DashboardParts";
 import { hours, type PageContext } from "./kit";
 import { dayKey, useDashboardStores } from "./stores";
 import "./pages-extra.css";
 
-type Meta = Record<string, { description: string; budget: number; due: string }>;
 type Health = "On track" | "At risk" | "Stalled" | "Done";
 type TaskState = "todo" | "review" | "done";
 
@@ -40,7 +40,7 @@ function BudgetBar({ used, total }: { used: number; total: number }) {
 export function PmOverviewPage({ ctx }: { ctx: PageContext }) {
   const { members } = useWorkspace();
   const stores = useDashboardStores();
-  const [meta] = usePersistentState<Meta>("dashboard.project-meta", {});
+  const { projectMeta: meta } = useWorkspace();
   const [state, setState] = useState<TaskState | null>(null);
   const [openTask, setOpenTask] = useState<string | null>(null);
 
@@ -146,7 +146,7 @@ export function PmOverviewPage({ ctx }: { ctx: PageContext }) {
                   <tr key={row.id} onClick={() => ctx.go("pm-project", row.id)} tabIndex={0} onKeyDown={(event) => event.key === "Enter" && ctx.go("pm-project", row.id)}>
                     <td>
                       <span className="po-name">
-                        <i className={`db-color-dot ${row.color}`} />
+                        <ProjectAvatar projectId={row.id} size="xs" />
                         {row.name}
                       </span>
                     </td>
@@ -208,7 +208,7 @@ export function PmOverviewPage({ ctx }: { ctx: PageContext }) {
                   <span className="po-task-copy">
                     <strong className={task.state === "done" ? "struck" : ""}>{task.title}</strong>
                     <small>
-                      {task.projectName} · <em className={`prio-${(task.priority ?? "Medium").toLowerCase()}`}>{task.priority ?? "Medium"}</em>
+                      <ProjectLabel projectId={task.projectId} /> · <em className={`prio-${(task.priority ?? "Medium").toLowerCase()}`}>{task.priority ?? "Medium"}</em>
                     </small>
                   </span>
                 </button>
@@ -235,7 +235,7 @@ export function PmOverviewPage({ ctx }: { ctx: PageContext }) {
               <div key={row.id} className="po-activity-row">
                 <div>
                   <span className="po-name">
-                    <i className={`db-color-dot ${row.color}`} />
+                    <ProjectAvatar projectId={row.id} size="xs" />
                     {row.name}
                   </span>
                   <small>

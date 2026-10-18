@@ -1,0 +1,63 @@
+- generic [ref=f1e4]:
+  - banner [ref=f1e5]:
+    - strong [ref=f1e7]: Focus
+    - generic [ref=f1e8]:
+      - button "Keep in front of other windows" [pressed] [ref=f1e9] [cursor=pointer]
+      - button "Open the full app" [ref=f1e12] [cursor=pointer]
+  - main [ref=f1e15]:
+    - region "Timer" [ref=f1e16]:
+      - generic [ref=f1e17]:
+        - generic [ref=f1e18]:
+          - generic [ref=f1e19]: Project
+          - combobox "Project" [ref=f1e22]:
+            - option "Nova Vanguard" [selected]
+            - option "Buffalo Campaign"
+            - option "RWS Campaign"
+            - option "Soft Fix Internal"
+        - generic [ref=f1e23]:
+          - generic [ref=f1e24]: Task
+          - combobox "Task" [ref=f1e25]:
+            - option "Ship the Lounge navigation revision" [selected]
+            - option "Pair on the authentication flow"
+      - timer "Ready, 0h 00m" [ref=f1e26]:
+        - generic [aria-hidden] [ref=f1e27]:
+          - generic [ref=f1e28]: "0"
+          - generic [ref=f1e29]: "0"
+          - generic [ref=f1e30]: ":"
+          - generic [ref=f1e31]: "0"
+          - generic [ref=f1e32]: "0"
+          - generic [ref=f1e33]: ":"
+          - generic [ref=f1e34]: "0"
+          - generic [ref=f1e35]: "0"
+          - generic [ref=f1e36]: ".000"
+      - paragraph [ref=f1e100]: Ready
+      - generic [ref=f1e102]:
+        - button "Start" [ref=f1e103] [cursor=pointer]
+        - button "Stop" [disabled] [ref=f1e106]
+      - textbox "Session note" [ref=f1e109]:
+        - /placeholder: What are you working on?
+    - region "Today" [ref=f1e110]:
+      - generic [ref=f1e111]:
+        - generic [ref=f1e112]: Today
+        - strong [ref=f1e113]:
+          - text: 3h 00m
+          - generic [ref=f1e114]: of 8h
+      - progressbar "Progress toward your daily goal" [ref=f1e115]
+    - region "Up next" [ref=f1e117]:
+      - heading "Up next" [level=2] [ref=f1e118]
+      - list [ref=f1e119]:
+        - listitem [ref=f1e120]:
+          - generic [ref=f1e121]:
+            - strong [ref=f1e122]: Pair on the authentication flow
+            - generic [ref=f1e123]: Nova Vanguard
+          - button "Start Pair on the authentication flow" [ref=f1e127] [cursor=pointer]
+        - listitem [ref=f1e130]:
+          - generic [ref=f1e131]:
+            - strong [ref=f1e132]: Draft the client budget report
+            - generic [ref=f1e134]:
+              - generic [aria-hidden] [ref=f1e135]: BC
+              - generic [ref=f1e136]: Buffalo Campaign
+          - button "Start Draft the client budget report" [ref=f1e137] [cursor=pointer]
+  - contentinfo [ref=f1e140]:
+    - button "Easy mode" [ref=f1e141] [cursor=pointer]
+    - button "Open Soft Fix" [ref=f1e144] [cursor=pointer]

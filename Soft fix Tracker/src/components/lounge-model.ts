@@ -3,13 +3,13 @@ import type { WorkProject } from "../data/work";
 
 export type LoungeRoom = { id: string; name: string; description: string; category: "Workspace" | "Project"; members: string[]; joined: boolean; projectId?: string };
 export type LoungeMessage = { id: string; personId: string; body: string; time: string; attachment?: string; replyTo?: string; reactions?: string[] };
-export type LoungeRoute = { page: "home" | "people" | "requests" | "blocked" | "saved" | "rooms" | "dm" | "channel"; id?: string };
+export type LoungeRoute = { page: "home" | "people" | "requests" | "blocked" | "saved" | "rooms" | "dm" | "channel" | "voice" | "voice-chat"; id?: string };
 export type LoungeInvite = { id: string; email: string; role: string };
 /** What a server shows in the rail: an uploaded picture, a built-in glyph, or neither (initials). */
 export type ServerIcon = { image?: string; glyph?: string };
 /** Key of the workplace server in `serverIcons`; project servers use their project id. */
 export const WORKPLACE_SERVER = "workplace";
-export type LoungeData = { /** When each conversation was last read, as an ISO time (for the unread counts). */ reads?: Record<string, string>; serverIcons?: Record<string, ServerIcon>; rooms: LoungeRoom[]; messages: Record<string, LoungeMessage[]>; drafts: Record<string, string>; bookmarks: string[]; requests: Member[]; contacts: string[]; invites: LoungeInvite[]; mutedRooms: string[]; blocked: string[] };
+export type LoungeData = { voiceRooms?: LoungeRoom[]; /** When each conversation was last read, as an ISO time (for the unread counts). */ reads?: Record<string, string>; serverIcons?: Record<string, ServerIcon>; rooms: LoungeRoom[]; messages: Record<string, LoungeMessage[]>; drafts: Record<string, string>; bookmarks: string[]; requests: Member[]; contacts: string[]; invites: LoungeInvite[]; mutedRooms: string[]; blocked: string[] };
 export const conversationKey = (route: LoungeRoute) => `${route.page}:${route.id}`;
 export const loungeId = () => typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 

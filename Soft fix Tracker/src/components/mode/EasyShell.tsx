@@ -1,3 +1,4 @@
+import { ProjectAvatar, ProjectLabel } from "../ProjectAvatar";
 import type { CSSProperties } from "react";
 import { ArrowsOutSimple, ChatsCircle, Check, Clock, ListChecks, Minus, Pause, Play, Plus, Stop, Target } from "@phosphor-icons/react";
 import { formatDuration, useWorkspace, type Mode } from "../../workspace";
@@ -94,13 +95,13 @@ export function EasyShell() {
           <div className="mode-pickers">
             <label>
               <span>Project</span>
-              <select value={timer.projectId} disabled={timer.active} onChange={(event) => timer.selectProject(event.target.value)}>
+              <div className="mode-project-select"><ProjectAvatar projectId={timer.projectId} size="sm" /><select value={timer.projectId} disabled={timer.active} onChange={(event) => timer.selectProject(event.target.value)}>
                 {projects.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
                 ))}
-              </select>
+              </select></div>
             </label>
             <label>
               <span>Task</span>
@@ -152,7 +153,7 @@ export function EasyShell() {
                   </button>
                   <span>
                     <strong>{task.title}</strong>
-                    <small>{task.projectName}</small>
+                    <small><ProjectLabel projectId={task.projectId} /></small>
                   </span>
                   <button
                     type="button"

@@ -1,3 +1,4 @@
+import { ProjectAvatar } from "../ProjectAvatar";
 import { useState } from "react";
 import {
   ArrowRight,
@@ -136,7 +137,7 @@ export function ActivityPage({ sessions }: { sessions: Session[] }) {
           <ul className="db-legend-list">
             {allocations.map((project) => (
               <li key={project.id}>
-                <i className={`db-color-dot ${project.color}`} />
+                <i className={`db-color-dot ${project.color}`} /><ProjectAvatar projectId={project.id} size="xs" />
                 <span>{project.name}</span>
                 <strong>{total ? Math.round((project.seconds / total) * 100) : 0}%</strong>
               </li>
@@ -155,7 +156,7 @@ export function ActivityPage({ sessions }: { sessions: Session[] }) {
           <div className="db-contributors">
             {contributors.map(({ member, seconds }) => (
               <button key={member.id} onClick={() => setDetail(member.id)}>
-                <Avatar name={member.name} color={member.color} />
+                <Avatar memberId={member.id} name={member.name} color={member.color} />
                 <span className="db-contributor-copy">
                   <strong>{member.name}</strong>
                   <small>
@@ -197,7 +198,7 @@ export function ActivityPage({ sessions }: { sessions: Session[] }) {
               <button key={project.id} onClick={() => navigate("dashboard", "pm-project", project.id)}>
                 <div>
                   <span>
-                    <i className={`db-color-dot ${project.color}`} />
+                    <i className={`db-color-dot ${project.color}`} /><ProjectAvatar projectId={project.id} size="xs" />
                     {project.name}
                   </span>
                   <strong>{formatDuration(project.seconds)}</strong>

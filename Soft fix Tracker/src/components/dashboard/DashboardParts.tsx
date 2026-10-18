@@ -1,15 +1,21 @@
+import { ProjectAvatar } from "../ProjectAvatar";
 import { ArrowUpRight } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
+import { useWorkspace } from "../../workspace";
+import { cropStyle } from "../ProjectAvatar";
 export function Avatar({
   name,
   color = "blue",
+  memberId,
 }: {
   name: string;
   color?: string;
+  memberId?: string;
 }) {
+  const { profile } = useWorkspace();
   return (
-    <span className={`db-avatar ${color}`} aria-hidden="true">
-      {name
+    <span className={`db-avatar ${color}`} aria-hidden="true" style={{ position: "relative", overflow: "hidden" }}>
+      {memberId === "me" && profile.avatar ? <img src={profile.avatar} alt="" style={profile.avatarCrop ? cropStyle(profile.avatarCrop) : { width: "100%", height: "100%", objectFit: "cover" }} /> : name
         .split(" ")
         .map((word) => word[0])
         .join("")
@@ -113,6 +119,7 @@ export function FilterSelect({
   return (
     <label className="db-filter-select">
       <span>{label}</span>
+      {label === "Project" && value !== "all" && <ProjectAvatar projectId={value} size="xs" />}
       <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
         {options.map((option) => (
           <option key={option.value} value={option.value}>

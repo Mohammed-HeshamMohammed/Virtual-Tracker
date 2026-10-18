@@ -376,3 +376,361 @@
 }
 /* Each mode's settings take its accent: the Dashboard's and the Lounge's palette comes from
    dashboard-style.css. */
+.sf-modal.st-discord.wide {
+  --settings-gutter: clamp(8px, 1.5vw, 24px);
+  container: settings-shell / inline-size;
+  width: min(1480px, calc(100vw - var(--settings-gutter) * 2));
+  max-width: none;
+  height: min(960px, calc(100dvh - var(--settings-gutter) * 2));
+  max-height: calc(100dvh - var(--settings-gutter) * 2);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius, 20px);
+  background: var(--panel);
+  color: var(--text);
+}
+.st-discord > .sf-modal-header {
+  position: absolute;
+  z-index: 10;
+  top: 12px;
+  right: 13px;
+  display: block;
+  padding: 0;
+  border: 0;
+  pointer-events: none;
+}
+.st-discord > .sf-modal-header > div {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.st-discord > .sf-modal-header > button {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  padding: 6px;
+  border-radius: 8px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  pointer-events: auto;
+}
+.st-discord > .sf-modal-header > button:hover {
+  color: var(--text);
+  background: var(--line);
+}
+.st-discord > .sf-modal-body {
+  padding: 0;
+  height: 100%;
+}
+.st-discord .st-layout {
+  grid-template-columns: clamp(210px, 20cqi, 248px) minmax(0, 1fr);
+  gap: 0;
+  height: 100%;
+  min-height: 0;
+}
+.st-discord .st-nav {
+  padding: 16px;
+  border: 0;
+  background: var(--bg);
+  gap: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #44444c transparent;
+}
+.st-discord .st-profile-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 9px;
+  margin-bottom: 9px;
+  background: var(--panel-raised);
+  color: var(--text);
+  border-radius: 9px;
+}
+.st-profile-shortcut > .avatar {
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+}
+.st-profile-shortcut > span:last-child {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 6px;
+}
+.st-profile-shortcut strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+}
+.st-profile-shortcut small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.st-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 0 0 14px;
+  background: var(--bg);
+  color: var(--text);
+}
+.st-search input {
+  width: 100%;
+  min-width: 0;
+  outline: none;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+}
+.st-search input::placeholder {
+  color: var(--muted-2);
+}
+.st-discord .st-nav-group {
+  gap: 1px;
+}
+.st-discord .st-nav-group + .st-nav-group {
+  margin-top: 17px;
+  border-top: 1px solid var(--line);
+  padding-top: 17px;
+}
+.st-discord .st-nav-heading {
+  padding: 4px 9px 10px;
+  color: var(--muted-2);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.st-discord .st-nav-group button {
+  width: 100%;
+  padding: 9px 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 8px;
+}
+.st-discord .st-nav-group button:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.st-discord .st-nav-group button.active {
+  color: var(--text);
+  background: var(--panel-soft);
+  font-weight: 600;
+}
+.st-discord .st-subnav {
+  margin: 6px 0 9px 16px;
+  border-left: 2px solid var(--line);
+  padding-left: 9px;
+}
+.st-discord .st-subnav button {
+  font-size: 12px;
+  padding: 8px 7px;
+}
+.st-discord .st-subnav button.active {
+  margin-left: -11px;
+  padding-left: 16px;
+  width: calc(100% + 11px);
+  border-left: 2px solid var(--text);
+  border-radius: 0;
+  color: var(--text);
+  background: transparent;
+}
+.st-search-empty {
+  color: var(--muted-2);
+  padding: 10px;
+  font-size: 12px;
+}
+.st-discord .st-local {
+  padding: 28px 8px 8px;
+  margin-top: auto;
+  color: var(--muted-2);
+}
+.st-discord .st-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  max-height: none;
+  overflow: hidden;
+}
+.st-page-top {
+  flex: 0 0 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 60px 0 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+}
+.st-content-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(24px, 5vh, 56px) clamp(20px, 4cqi, 72px) 40px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+.st-content-scroll > :not(.dc-customizer) {
+  max-width: 700px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.st-content-scroll > h2 {
+  margin-bottom: 28px;
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.35px;
+}
+.st-discord .st-section {
+  margin-top: 30px;
+}
+.st-discord .st-section > h3 {
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+  padding: 18px 0;
+}
+.st-discord .sf-input {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--line);
+}
+.st-discord .sf-button {
+  background: var(--panel-soft);
+  color: var(--text);
+  border-color: transparent;
+  border-radius: 7px;
+}
+.st-discord .sf-button.primary {
+  background: var(--accent-strong);
+  color: var(--db-on-accent, #fff);
+}
+.st-discord .st-info {
+  background: var(--accent-soft);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+}
+.st-discord .st-toggle strong {
+  font-size: 14px;
+}
+.st-discord .st-toggle small {
+  font-size: 12px;
+}
+.st-discord .st-toggle input:checked {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+.st-profile-mode .st-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
+.st-profile-mode .st-nav {
+  display: none;
+}
+.st-profile-mode .st-content-scroll {
+  padding: 0;
+  overflow: hidden;
+}
+.st-profile-mode .st-content-scroll > .dc-customizer {
+  max-width: none;
+  margin: 0;
+}
+.st-discord .sf-modal-notice {
+  z-index: 15;
+  bottom: 16px;
+}
+@media (max-width: 750px) {
+  .st-discord .st-layout {
+    grid-template-columns: 185px minmax(0, 1fr);
+  }
+  .st-discord .st-nav {
+    padding: 12px 8px;
+  }
+  .st-discord .st-profile-shortcut {
+    gap: 8px;
+  }
+  .st-profile-shortcut > .avatar {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
+  }
+  .st-profile-shortcut strong {
+    font-size: 12px;
+  }
+  .st-content-scroll {
+    padding: 35px 22px;
+  }
+  .st-profile-mode .st-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 550px) {
+  .sf-modal.st-discord.wide {
+    width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    border: 0;
+  }
+  .st-discord .st-layout {
+    display: flex;
+    flex-direction: column;
+  }
+  .st-discord .st-nav {
+    flex-direction: row;
+    gap: 7px;
+    max-height: 100px;
+    max-width: none;
+    flex: 0 0 auto;
+    overflow-x: auto;
+    padding: 12px 50px 10px 10px;
+  }
+  .st-discord .st-nav-group {
+    display: flex;
+    flex-direction: row;
+    gap: 4px;
+  }
+  .st-discord .st-nav-group + .st-nav-group {
+    border: 0;
+    padding: 0;
+    margin: 0;
+  }
+  .st-discord .st-nav-group button {
+    white-space: nowrap;
+  }
+  .st-discord .st-subnav,
+  .st-discord .st-local,
+  .st-discord .st-nav-heading,
+  .st-discord .st-profile-shortcut,
+  .st-discord .st-search {
+    display: none;
+  }
+  .st-discord .st-content {
+    flex: 1;
+  }
+  .st-content-scroll {
+    padding: 30px 20px;
+  }
+  .st-profile-mode .st-nav {
+    display: none;
+  }
+}

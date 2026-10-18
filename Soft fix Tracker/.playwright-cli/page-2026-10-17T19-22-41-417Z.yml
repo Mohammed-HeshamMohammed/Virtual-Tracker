@@ -1,0 +1,191 @@
+- generic [ref=e3]:
+  - link "Skip to content" [ref=e4] [cursor=pointer]:
+    - /url: "#workspace-content"
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - img "Soft Fix" [ref=e7]
+      - navigation "Modes" [ref=e10]:
+        - button "Lounge" [ref=e11] [cursor=pointer]
+        - button "Work" [ref=e15] [cursor=pointer]
+        - button "Dashboard" [pressed] [ref=e21] [cursor=pointer]
+    - generic "Search pages, projects and people (Ctrl K)" [ref=e29]:
+      - combobox "Search workspace" [ref=e32]
+      - generic [ref=e33]: Ctrl K
+    - generic [ref=e35]:
+      - button "Change the window" [ref=e37] [cursor=pointer]
+      - button "Notifications, 3 unread" [ref=e41] [cursor=pointer]
+      - button "Quick settings" [ref=e46] [cursor=pointer]
+      - button "Your profile" [ref=e50] [cursor=pointer]:
+        - generic [ref=e51]: AM
+  - generic [ref=e52]:
+    - text: Direct Messages Soft Fix Nova Vanguard Buffalo Campaign RWS Campaign Soft Fix Internal Add a Server Explore Channels
+    - generic [ref=e443]:
+      - complementary [ref=e444]:
+        - navigation "Dashboard navigation" [ref=e445]:
+          - button "Overview" [ref=e447] [cursor=pointer]
+          - button "Timesheets" [ref=e452] [cursor=pointer]
+          - button "Activity" [ref=e457] [cursor=pointer]
+          - button "Projects" [ref=e462] [cursor=pointer]
+          - button "Calendar" [ref=e467] [cursor=pointer]
+          - button "Reports" [ref=e472] [cursor=pointer]
+          - generic [ref=e476]:
+            - generic [ref=e477]: MANAGE
+            - button "People 6" [ref=e478] [cursor=pointer]:
+              - generic [ref=e481]: People
+              - generic [ref=e482]: "6"
+          - button "Financials" [ref=e484] [cursor=pointer]
+          - button "Settings" [ref=e489] [cursor=pointer]
+        - generic [ref=e493]:
+          - generic [ref=e494]:
+            - generic [ref=e495]: PROJECTS
+            - generic [ref=e496]: "4"
+          - group "Narrow the Dashboard to one project" [ref=e497]:
+            - button "All projects" [pressed] [ref=e498] [cursor=pointer]
+            - button "Nova Vanguard 2" [ref=e501] [cursor=pointer]:
+              - generic [aria-hidden] [ref=e502]: NV
+              - generic [ref=e503]: Nova Vanguard
+              - generic [ref=e504]: "2"
+            - button "Buffalo Campaign 2" [ref=e505] [cursor=pointer]:
+              - generic [aria-hidden] [ref=e506]: BC
+              - generic [ref=e507]: Buffalo Campaign
+              - generic [ref=e508]: "2"
+            - button "RWS Campaign 1" [ref=e509] [cursor=pointer]:
+              - generic [aria-hidden] [ref=e510]: RC
+              - generic [ref=e511]: RWS Campaign
+              - generic [ref=e512]: "1"
+            - button "Soft Fix Internal 1" [ref=e513] [cursor=pointer]:
+              - generic [aria-hidden] [ref=e514]: SF
+              - generic [ref=e515]: Soft Fix Internal
+              - generic [ref=e516]: "1"
+        - 'button "Organization: Soft Fix studio. Switch organization" [ref=e519] [cursor=pointer]':
+          - generic [ref=e520]: S
+          - generic [ref=e521]:
+            - strong [ref=e522]: Soft Fix studio
+            - generic [ref=e523]: Owner · 6 people
+      - main [ref=e527]:
+        - generic [ref=e528]:
+          - generic [ref=e529]:
+            - generic [ref=e530]: Projects
+            - button "Projects pages" [ref=e534] [cursor=pointer]:
+              - strong [ref=e535]: Edit project
+          - generic [ref=e538]:
+            - generic [ref=e539]:
+              - generic [ref=e540]: Preview as
+              - combobox "Dashboard role preview" [ref=e541] [cursor=pointer]:
+                - option "Owner" [selected]
+                - option "Admin"
+                - option "Manager"
+                - option "Member"
+                - option "Client"
+            - combobox "Dashboard date range" [ref=e545] [cursor=pointer]:
+              - option "This week" [selected]
+              - option "This month"
+              - option "All time"
+            - button "Export dashboard data" [ref=e546] [cursor=pointer]
+        - generic [ref=e688]:
+          - generic [ref=e689]:
+            - generic [ref=e690]:
+              - generic [ref=e691]: GOOD THINGS, IN PROGRESS
+              - heading "Edit project" [level=1] [ref=e692]
+              - paragraph [ref=e693]: Change how Nova Vanguard is set up.
+            - button "Cancel" [ref=e695] [cursor=pointer]
+          - generic [ref=e696]:
+            - complementary [ref=e697]:
+              - list "Steps" [ref=e698]:
+                - listitem [ref=e699]:
+                  - button "Type Normal project" [disabled] [ref=e700]:
+                    - generic [ref=e704]:
+                      - strong [ref=e705]: Type
+                      - generic [ref=e706]: Normal project
+                - listitem [ref=e707]:
+                  - button "2 Details Name, dates, billing" [ref=e708] [cursor=pointer]:
+                    - generic [ref=e709]: "2"
+                    - generic [ref=e710]:
+                      - strong [ref=e711]: Details
+                      - generic [ref=e712]: Name, dates, billing
+                - listitem [ref=e713]:
+                  - button "3 People Client, managers, team" [ref=e714] [cursor=pointer]:
+                    - generic [ref=e715]: "3"
+                    - generic [ref=e716]:
+                      - strong [ref=e717]: People
+                      - generic [ref=e718]: Client, managers, team
+                - listitem [ref=e719]:
+                  - button "4 Budget Hours and refills" [ref=e720] [cursor=pointer]:
+                    - generic [ref=e721]: "4"
+                    - generic [ref=e722]:
+                      - strong [ref=e723]: Budget
+                      - generic [ref=e724]: Hours and refills
+              - generic [aria-hidden] [ref=e725]:
+                - generic [aria-hidden] [ref=e726]: NV
+                - generic [ref=e727]:
+                  - strong [ref=e728]: Nova Vanguard
+                  - generic [ref=e729]: Normal project
+              - generic [ref=e730]:
+                - generic [ref=e731]:
+                  - term [ref=e732]: Billing
+                  - definition [ref=e733]: Billable
+                - generic [ref=e734]:
+                  - term [ref=e735]: Tracking
+                  - definition [ref=e736]: A task is required
+                - generic [ref=e737]:
+                  - term [ref=e738]: People
+                  - definition [ref=e739]: Everyone · Nova Labs
+                - generic [ref=e740]:
+                  - term [ref=e741]: Budget
+                  - definition [ref=e742]: 80h
+            - generic [ref=e743]:
+              - generic [ref=e744]:
+                - heading "Details" [level=2] [ref=e745]
+                - paragraph [ref=e746]: Normal project. Give it a name and say how it is billed and tracked.
+              - generic [ref=e747]:
+                - generic [ref=e748]:
+                  - text: Project name
+                  - textbox "Project name" [active] [ref=e749]: Nova Vanguard
+                - generic [ref=e751]:
+                  - generic [aria-hidden] [ref=e752]: NV
+                  - generic [ref=e753]:
+                    - strong [ref=e754]: Project picture
+                    - generic [ref=e755]: Optional. Upload an image or an animated GIF, or search pictures by topic, then choose the part that shows. Without one, the project shows its initials on its colour.
+                    - generic [ref=e756]:
+                      - generic [ref=e757] [cursor=pointer]:
+                        - text: Upload image
+                        - button "Upload image" [ref=e758]
+                      - button "Search pictures" [ref=e759] [cursor=pointer]
+                - generic [ref=e760]:
+                  - text: Description
+                  - textbox "Description" [ref=e761]:
+                    - /placeholder: What are we working toward?
+                - generic [ref=e762]:
+                  - generic [ref=e763]:
+                    - text: End date
+                    - textbox "End date Optional. It only informs; nothing closes on it." [ref=e764]
+                    - generic [ref=e765]: Optional. It only informs; nothing closes on it.
+                  - group "Colour" [ref=e766]:
+                    - generic "blue" [ref=e768] [cursor=pointer]:
+                      - radio "blue" [ref=e769]
+                    - generic "violet" [ref=e772] [cursor=pointer]:
+                      - radio "violet" [checked] [ref=e773]
+                    - generic "cyan" [ref=e778] [cursor=pointer]:
+                      - radio "cyan" [ref=e779]
+                    - generic "green" [ref=e782] [cursor=pointer]:
+                      - radio "green" [ref=e783]
+                    - generic "gold" [ref=e786] [cursor=pointer]:
+                      - radio "gold" [ref=e787]
+                    - generic "orange" [ref=e790] [cursor=pointer]:
+                      - radio "orange" [ref=e791]
+                - generic [ref=e794]:
+                  - generic [ref=e795] [cursor=pointer]:
+                    - checkbox "Billable Its time can be invoiced." [checked] [ref=e796]
+                    - generic [ref=e797]:
+                      - strong [ref=e798]: Billable
+                      - generic [ref=e799]: Its time can be invoiced.
+                  - generic [ref=e800]:
+                    - checkbox "Require a task to start tracking Always on for a normal project." [checked] [disabled] [ref=e801]
+                    - generic [ref=e802]:
+                      - strong [ref=e803]: Require a task to start tracking
+                      - generic [ref=e804]: Always on for a normal project.
+              - generic [ref=e806]:
+                - button "Next" [ref=e807] [cursor=pointer]
+                - button "Save changes" [ref=e808] [cursor=pointer]
+  - button "Chat, 5 unread" [ref=e437] [cursor=pointer]:
+    - generic [ref=e440]: "5"

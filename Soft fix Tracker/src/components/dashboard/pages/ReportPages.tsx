@@ -1,6 +1,7 @@
+import { ProjectLabel } from "../../ProjectAvatar";
 import type { ReactNode } from "react";
 import { ArrowLeft, ArrowRight } from "@phosphor-icons/react";
-import { formatDuration, usePersistentState, useWorkspace, type Session } from "../../../workspace";
+import { formatDuration, useWorkspace, type Session } from "../../../workspace";
 import { pageAllowed, reportGroups, reportLabel } from "../../../data/dashboard";
 import { Badge, PageHeading } from "../DashboardParts";
 import { activityLevel, appUsage, siteUsage } from "./activity-data";
@@ -87,7 +88,7 @@ const BUCKETS = ["Not yet due", "1-30 days", "31-60 days", "Over 60 days"];
 export function ReportPage({ id, ctx }: { id: string; ctx: PageContext }) {
   const stores = useDashboardStores();
   const { members, projects, preferences } = useWorkspace();
-  const [meta] = usePersistentState<Record<string, { description: string; budget: number; due: string }>>("dashboard.project-meta", {});
+  const { projectMeta: meta } = useWorkspace();
   const sessions = ctx.sessions;
   const all = ctx.allSessions;
   const name = (memberId: string) => members.find((member) => member.id === memberId)?.name ?? "Team member";
@@ -128,7 +129,7 @@ export function ReportPage({ id, ctx }: { id: string; ctx: PageContext }) {
           search: (row) => `${name(row.memberId)} ${row.taskTitle} ${projectName(row.projectId)}`,
           columns: [
             { header: "Member", cell: (row) => <Person id={row.memberId} detail={row.taskTitle} />, csv: (row) => name(row.memberId) },
-            { header: "Project", cell: (row) => projectName(row.projectId), csv: (row) => projectName(row.projectId) },
+            { header: "Project", cell: (row) => <ProjectLabel projectId={row.projectId} />, csv: (row) => projectName(row.projectId) },
             { header: "Date", cell: (row) => dateLabel(row.startedAt), csv: (row) => dayOf(row) },
             { header: "Duration", numeric: true, cell: (row) => formatDuration(row.seconds), csv: (row) => hours(row.seconds) },
             { header: "Status", cell: (row) => <Badge text={row.status} />, csv: (row) => row.status },
@@ -164,7 +165,7 @@ export function ReportPage({ id, ctx }: { id: string; ctx: PageContext }) {
           search: (row) => `${name(row.memberId)} ${row.reason}`,
           columns: [
             { header: "Member", cell: (row) => <Person id={row.memberId} detail={row.reason} />, csv: (row) => name(row.memberId) },
-            { header: "Project", cell: (row) => projectName(row.projectId), csv: (row) => projectName(row.projectId) },
+            { header: "Project", cell: (row) => <ProjectLabel projectId={row.projectId} />, csv: (row) => projectName(row.projectId) },
             { header: "Date", cell: (row) => dateLabel(row.date), csv: (row) => row.date },
             { header: "Minutes", numeric: true, cell: (row) => row.minutes, csv: (row) => row.minutes },
             { header: "Status", cell: (row) => <Badge text={row.status} />, csv: (row) => row.status },
@@ -331,7 +332,7 @@ export function ReportPage({ id, ctx }: { id: string; ctx: PageContext }) {
           key: (row) => row.id,
           search: (row) => row.name,
           columns: [
-            { header: "Project", cell: (row) => <strong>{row.name}</strong>, csv: (row) => row.name },
+            { header: "Project", cell: (row) => <ProjectLabel projectId={row.id} />, csv: (row) => row.name },
             { header: "Budget", numeric: true, cell: (row) => `${row.budget}h`, csv: (row) => row.budget },
             { header: "Used", numeric: true, cell: (row) => `${row.used}h`, csv: (row) => row.used },
             { header: "Used share", cell: (row) => <span className="db-share"><i style={{ width: `${Math.min(100, row.percent)}%` }} /><b>{row.percent}%</b></span>, csv: (row) => row.percent },

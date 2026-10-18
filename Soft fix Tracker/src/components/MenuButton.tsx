@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode 
 import { Check } from "@phosphor-icons/react";
 
 export type MenuEntry =
-  | { kind: "heading"; label: string }
+  | { kind: "heading"; label: string; icon?: ReactNode }
   | { kind: "item"; id: string; label: string; detail?: string; icon?: ReactNode; active?: boolean; disabled?: boolean; onSelect: () => void };
 
 /** A button that opens a small menu under it. Arrow keys move through the items, Enter picks one,
@@ -112,7 +112,7 @@ export function MenuButton({
           {entries.map((entry, index) =>
             entry.kind === "heading" ? (
               <div className="menu-heading" role="presentation" key={`${entry.label}-${index}`}>
-                {entry.label}
+                {entry.icon} {entry.label}
               </div>
             ) : (
               <button

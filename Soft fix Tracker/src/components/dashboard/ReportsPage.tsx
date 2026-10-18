@@ -1,3 +1,4 @@
+import { ProjectLabel } from "../ProjectAvatar";
 import { useState } from "react";
 import {
   ChartBar,
@@ -34,7 +35,7 @@ export function ReportsPage({ sessions }: { sessions: Session[] }) {
     filtered.reduce<
       Record<
         string,
-        { label: string; seconds: number; sessions: number; approved: number }
+        { label: string; projectId?: string; seconds: number; sessions: number; approved: number }
       >
     >((result, session) => {
       const label =
@@ -49,7 +50,7 @@ export function ReportsPage({ sessions }: { sessions: Session[] }) {
                 month: "short",
                 year: "numeric",
               });
-      result[label] ||= { label, seconds: 0, sessions: 0, approved: 0 };
+      result[label] ||= { label, projectId: groupBy === "project" ? session.projectId : undefined, seconds: 0, sessions: 0, approved: 0 };
       result[label].seconds += session.seconds;
       result[label].sessions++;
       if (session.status === "Approved")
@@ -234,7 +235,7 @@ export function ReportsPage({ sessions }: { sessions: Session[] }) {
                 {grouped.map((row) => (
                   <tr key={row.label}>
                     <td>
-                      <strong>{row.label}</strong>
+                      <strong>{row.projectId ? <ProjectLabel projectId={row.projectId} /> : row.label}</strong>
                     </td>
                     <td>{row.sessions}</td>
                     <td className="db-number">{formatDuration(row.seconds)}</td>

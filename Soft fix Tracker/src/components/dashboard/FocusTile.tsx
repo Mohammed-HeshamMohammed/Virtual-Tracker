@@ -1,3 +1,4 @@
+import { ProjectAvatar } from "../ProjectAvatar";
 import { ArrowRight, CaretDown, Pause, Play, Stop } from "@phosphor-icons/react";
 import { formatDuration, useWorkspace } from "../../workspace";
 import { useWorkTimer } from "../../useWorkTimer";
@@ -34,7 +35,7 @@ export function FocusTile({
     const itself: MenuEntry[] = item.requireTask === false ? [{ kind: "item", id: `${item.id}-itself`, label: item.tasks.length ? "The project itself" : "Time this project", detail: "No task needed", active: item.id === timer.projectId && !timer.taskId, onSelect: () => timer.focus(item.id, null) }] : [];
     if (!open.length && !itself.length) return [];
     return [
-      { kind: "heading", label: item.name },
+      { kind: "heading", label: item.name, icon: <ProjectAvatar projectId={item.id} size="xs" /> },
       ...open.map(
         (entry): MenuEntry => ({
           kind: "item",
@@ -50,7 +51,7 @@ export function FocusTile({
 
   const working = (
     <>
-      <i className={`db-color-dot ${project?.color ?? ""}`} />
+      <ProjectAvatar projectId={project?.id} size="sm" />
       <span className="db-focus-task">
         <strong>{task?.title ?? (project?.requireTask === false ? project.name : "Choose a task")}</strong>
         <small>{project?.name ?? "No project"}</small>

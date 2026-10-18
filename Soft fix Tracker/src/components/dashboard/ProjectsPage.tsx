@@ -4,7 +4,6 @@ import { useWorkspace, usePersistentState, formatDuration } from "../../workspac
 import { EmptyState, SearchField } from "../ui";
 import { FilterSelect, PageHeading } from "./DashboardParts";
 import { Kpis, dateLabel, type PageContext } from "./pages/kit";
-import type { ProjectMeta } from "./pages/NewProjectPage";
 import { BudgetMeter, PeopleStack, ProjectAvatar, StatusPill, hoursText, needsAttention, projectFacts, refillText } from "./pages/project-facts";
 import { useDashboardStores } from "./pages/stores";
 
@@ -15,7 +14,7 @@ const RANGE_TEXT: Record<string, string> = { week: "this week", month: "this mon
 export function ProjectsPage({ ctx }: { ctx: PageContext }) {
   const { members, route, navigate } = useWorkspace();
   const stores = useDashboardStores();
-  const [meta] = usePersistentState<Record<string, ProjectMeta>>("dashboard.project-meta", {});
+  const { projectMeta: meta } = useWorkspace();
   const [layout, setLayout] = usePersistentState<string>("dashboard.projects-layout", "grid");
   const [sort, setSort] = usePersistentState<string>("dashboard.projects-sort", "recent");
   const [query, setQuery] = useState("");
@@ -160,7 +159,7 @@ export function ProjectsPage({ ctx }: { ctx: PageContext }) {
                   <tr key={row.project.id} className={fresh.includes(row.project.id) ? "fresh" : undefined} tabIndex={0} onClick={() => open(row.project.id)} onKeyDown={(event) => event.key === "Enter" && open(row.project.id)}>
                     <td>
                       <span className="pj-cell-name">
-                        <ProjectAvatar name={row.project.name} color={row.project.color} src={row.avatar} crop={row.avatarCrop} size="sm" />
+                        <ProjectAvatar projectId={row.project.id} size="sm" />
                         <span>
                           <strong>{row.project.name}</strong>
                           <small>
@@ -214,7 +213,7 @@ export function ProjectsPage({ ctx }: { ctx: PageContext }) {
             return (
               <button key={row.project.id} className={`sf-card pj-card ${isFresh ? "fresh" : ""}`} onClick={() => open(row.project.id)}>
                 <span className="pj-card-head">
-                  <ProjectAvatar name={row.project.name} color={row.project.color} src={row.avatar} crop={row.avatarCrop} />
+                  <ProjectAvatar projectId={row.project.id} />
                   <span className="pj-card-name">
                     <strong>{row.project.name}</strong>
                     <small>

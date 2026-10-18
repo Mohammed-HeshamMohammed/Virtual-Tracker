@@ -27,6 +27,21 @@ describe("WeekChart - time added by hand", () => {
     expect(html).not.toContain("week-chart-manual");
     expect(html).not.toContain("activity-dot manual");
   });
+
+  it("shows a three-hour manual-only day instead of an empty chart", () => {
+    const html = renderToStaticMarkup(
+      <WeekChart
+        days={[{ day: "2026-10-17", label: "Sat", activeSeconds: 0, idleSeconds: 0, manualSeconds: 10800 }]}
+        todayDay="2026-10-17"
+        loading={false}
+      />,
+    );
+    expect(html).toContain("3h 0s worked");
+    expect(html).toContain("3h 0s by hand");
+    expect(html).toContain("week-chart-manual");
+    expect(html).toContain("week-chart-day is-today");
+    expect(html).not.toContain("Nothing tracked this week yet");
+  });
 });
 
 describe("WeekChart", () => {

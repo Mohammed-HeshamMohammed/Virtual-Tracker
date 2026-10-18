@@ -1,3 +1,4 @@
+import { ProjectLabel } from "../ProjectAvatar";
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
@@ -264,7 +265,7 @@ export function TimesheetsPage({
                       </div>
                     </div>
                   </td>
-                  <td>{projectName(session.projectId)}</td>
+                  <td><ProjectLabel projectId={session.projectId} /></td>
                   <td>
                     <ShortDate value={session.startedAt} />
                   </td>

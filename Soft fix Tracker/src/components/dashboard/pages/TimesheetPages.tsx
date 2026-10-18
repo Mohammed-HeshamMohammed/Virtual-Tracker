@@ -1,3 +1,4 @@
+import { ProjectLabel } from "../../ProjectAvatar";
 import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
 import { CaretLeft, CaretRight, Plus } from "@phosphor-icons/react";
 import { formatDuration, useWorkspace, type Session } from "../../../workspace";
@@ -138,7 +139,7 @@ export function TaskApprovalsPage({ ctx }: { ctx: PageContext }) {
         emptyTitle={tab === "Pending" ? "Nothing waiting" : "No tasks here"}
         emptyHint={tab === "Pending" ? "Finished tasks show up here for review." : "Try another tab."}
         columns={[
-          { header: "Task", cell: (row) => (<div className="db-person-cell"><div><strong>{row.title}</strong><small>{row.projectName}</small></div></div>), csv: (row) => row.title },
+          { header: "Task", cell: (row) => (<div className="db-person-cell"><div><strong>{row.title}</strong><small><ProjectLabel projectId={row.projectId} /></small></div></div>), csv: (row) => row.title },
           { header: "Priority", cell: (row) => row.priority ?? "Medium", csv: (row) => row.priority ?? "Medium" },
           { header: "Status", cell: (row) => <Badge text={row.review} />, csv: (row) => row.review },
           {
@@ -233,7 +234,7 @@ export function ManualRequestsPage({ ctx }: { ctx: PageContext }) {
         emptyHint="Use Request time when you worked without the tracker."
         columns={[
           { header: "Member", cell: (row) => <Person id={row.memberId} detail={row.reason} /> },
-          { header: "Project", cell: (row) => projects.find((project) => project.id === row.projectId)?.name ?? "Archived project", csv: (row) => projects.find((project) => project.id === row.projectId)?.name ?? "" },
+          { header: "Project", cell: (row) => <ProjectLabel projectId={row.projectId} />, csv: (row) => projects.find((project) => project.id === row.projectId)?.name ?? "" },
           { header: "Date", cell: (row) => dateLabel(row.date), csv: (row) => row.date },
           { header: "Time", numeric: true, cell: (row) => formatDuration(row.minutes * 60), csv: (row) => row.minutes },
           { header: "Status", cell: (row) => <Badge text={row.status} />, csv: (row) => row.status },

@@ -7,7 +7,7 @@ import type { LoungeRoom } from "./lounge-model";
 export function CrewSidebar({ room, onMessage }: { room: LoungeRoom; onMessage: (id: string) => void }) {
   const { members, profile, preferences } = useWorkspace();
   const people = members
-    .filter((member) => room.members.includes(member.id) || (member.id === "me" && room.joined))
+    .filter((member) => member.id === "me" || room.members.includes(member.id))
     .map((member) => {
       const self = member.id === "me";
       const status = self ? (preferences.activityVisible ? profile.status : "Offline") : member.status;
@@ -19,6 +19,7 @@ export function CrewSidebar({ room, onMessage }: { room: LoungeRoom; onMessage: 
   ];
   return (
     <aside className="lg-context-pane lg-member-list" aria-label="Members">
+      <h2 className="lg-member-group">Channel members — {people.length}</h2>
       {groups
         .filter((group) => group.people.length)
         .map((group) => (
@@ -35,7 +36,7 @@ export function CrewSidebar({ room, onMessage }: { room: LoungeRoom; onMessage: 
                 onClick={() => onMessage(person.id)}
               >
                 <span className="lg-avatar-status">
-                  <Avatar initials={person.initials} color={person.color} />
+                  <Avatar memberId={person.id} initials={person.initials} color={person.color} />
                   <i className={`lg-status-dot ${person.status.toLowerCase()}`} />
                 </span>
                 <span>
@@ -67,7 +68,7 @@ export function ProfilePanel({
     <aside className="lg-context-pane lg-profile-pane" aria-label={`${person.name}'s profile`}>
       <div className={`lg-profile-banner avatar-${person.color}`} />
       <span className="lg-avatar-status lg-profile-avatar">
-        <Avatar initials={person.initials} color={person.color} size="lg" />
+        <Avatar memberId={person.id} initials={person.initials} color={person.color} size="lg" />
         <i className={`lg-status-dot ${person.status.toLowerCase()}`} />
       </span>
       <div className="lg-profile-body">

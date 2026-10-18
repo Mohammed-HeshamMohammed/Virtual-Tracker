@@ -1,3 +1,4 @@
+import { ProjectAvatar, ProjectLabel } from "../ProjectAvatar";
 import { ArrowsOutSimple, Pause, Play, PushPin, Stop, TextAa } from "@phosphor-icons/react";
 import { formatDuration, useWorkspace } from "../../workspace";
 import { useWorkTimer } from "../../useWorkTimer";
@@ -39,13 +40,13 @@ export function FocusShell() {
           <div className="mode-pickers">
             <label>
               <span>Project</span>
-              <select value={timer.projectId} disabled={timer.active} onChange={(event) => timer.selectProject(event.target.value)}>
+              <div className="mode-project-select"><ProjectAvatar projectId={timer.projectId} size="sm" /><select value={timer.projectId} disabled={timer.active} onChange={(event) => timer.selectProject(event.target.value)}>
                 {projects.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}
                   </option>
                 ))}
-              </select>
+              </select></div>
             </label>
             <label>
               <span>Task</span>
@@ -109,7 +110,7 @@ export function FocusShell() {
                 <li key={task.id}>
                   <span>
                     <strong>{task.title}</strong>
-                    <small>{task.projectName}</small>
+                    <small><ProjectLabel projectId={task.projectId} /></small>
                   </span>
                   <button
                     type="button"

@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { ChatTeardropDots, Compass, Plus, UsersThree } from "@phosphor-icons/react";
 import { useWorkspace } from "../workspace";
 import { WORKPLACE_SERVER, type LoungeData, type LoungeRoute } from "./lounge-model";
-import { initials, ServerIconView } from "./server-icons";
+import { ServerIconView } from "./server-icons";
+import { ProjectAvatar } from "./ProjectAvatar";
 
 /** One icon in the rail: the button, its tooltip, and the white pill that marks it. */
 function RailItem({
@@ -23,6 +24,7 @@ function RailItem({
       <button
         className={`lg-server-button ${className}`}
         aria-label={label}
+        title={label}
         aria-current={selected ? "page" : undefined}
         data-tooltip={label}
         onClick={onClick}
@@ -47,8 +49,8 @@ export function LoungeRail({
 }) {
   const { projects } = useWorkspace();
   const icons = data.serverIcons ?? {};
-  const currentRoom = data.rooms.find((room) => room.id === route.id);
-  const inChannel = route.page === "channel";
+  const currentRoom = [...data.rooms, ...(data.voiceRooms ?? [])].find((room) => room.id === route.id);
+  const inChannel = ["channel", "voice", "voice-chat"].includes(route.page);
   const direct = !inChannel && route.page !== "rooms";
   return (
     <nav className="lg-server-rail" aria-label="Lounge servers">
@@ -74,7 +76,7 @@ export function LoungeRail({
           key={project.id}
           selected={inChannel && currentRoom?.projectId === project.id}
           label={project.name}
-          className={icons[project.id]?.image ? "has-image" : ""}
+          className="has-project-avatar"
           onClick={() =>
             onNavigate({
               page: "channel",
@@ -82,7 +84,7 @@ export function LoungeRail({
             })
           }
         >
-          <ServerIconView icon={icons[project.id]} fallback={initials(project.name)} />
+          <ProjectAvatar projectId={project.id} size="rail" />
         </RailItem>
       ))}
       <RailItem label="Add a Server" className="lg-rail-action" onClick={onCreate}>

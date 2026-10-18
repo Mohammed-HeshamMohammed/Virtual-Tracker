@@ -286,6 +286,30 @@ describe("computeHomeStats - the week (chart, This week card, sidebar ring)", ()
     expect(stats.activityPercent).toBe(75);
   });
 
+  it("shows three manual hours on Saturday even before tracking anything that day", () => {
+    const manualDay = { day: "2026-10-17", label: "Sat", activeSeconds: 0, idleSeconds: 0, manualSeconds: 10800 };
+    const stats = computeHomeStats({
+      ...emptyInput,
+      memberLimits: {
+        ...baseMemberLimits,
+        todayDay: manualDay.day,
+        todayActivity: { activeSeconds: 0, idleSeconds: 0, manualSeconds: 10800 },
+        projectTodayActivity: { activeSeconds: 0, idleSeconds: 0, manualSeconds: 10800 },
+        weekDays: [
+          { day: "2026-10-13", label: "Tue", activeSeconds: 26, idleSeconds: 5 },
+          manualDay,
+        ],
+      },
+    });
+    expect(stats.workedTodayLabel).toBe("3h 0s");
+    expect(stats.manualTodayLabel).toBe("incl. 3h 0s added by hand");
+    expect(stats.weekWorkedLabel).toBe("3h 26s");
+    expect(stats.weekManualSeconds).toBe(10800);
+    expect(stats.weekDays[1]).toEqual(manualDay);
+    expect(stats.activityPercent).toBeNull();
+    expect(stats.weekActivityPercent).toBe(84);
+  });
+
   it("never shows today's idle below what the server has already recorded", () => {
     const stats = computeHomeStats({
       ...emptyInput,

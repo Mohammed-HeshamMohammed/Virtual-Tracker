@@ -186,7 +186,7 @@ export function PeoplePage({
     return (
       <div className="db-tree-branch" key={member.id}>
         <button className="db-tree-person" onClick={() => setDetail(member.id)}>
-          <Avatar name={member.name} color={member.color} />
+          <Avatar memberId={member.id} name={member.name} color={member.color} />
           <div>
             <strong>{member.name}</strong>
             <small>
@@ -286,7 +286,7 @@ export function PeoplePage({
               const seconds = timeFor(member.id);
               return (
                 <button className="db-person-card" key={member.id} onClick={() => setDetail(member.id)}>
-                  <Avatar name={member.name} color={member.color} />
+                  <Avatar memberId={member.id} name={member.name} color={member.color} />
                   <strong>
                     {member.name}
                     {member.id === "me" && <span className="db-you">you</span>}
@@ -330,7 +330,7 @@ export function PeoplePage({
                   <tr key={member.id}>
                     <td>
                       <div className="db-person-cell">
-                        <Avatar name={member.name} color={member.color} />
+                        <Avatar memberId={member.id} name={member.name} color={member.color} />
                         <div>
                           <strong>
                             {member.name}

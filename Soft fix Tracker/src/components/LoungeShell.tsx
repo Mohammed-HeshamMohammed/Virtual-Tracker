@@ -2,6 +2,8 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Hash, UserPlus } from "@phosphor-icons/react";
 import { useWorkspace } from "../workspace";
 import { ChatPanel } from "./ChatPanel";
+import { VoiceRoom } from "./VoiceRoom";
+import { defaultVoiceUi, type VoiceUiState } from "./voice-ui";
 import { ControlDock } from "./ControlDock";
 import { CrewSidebar, ProfilePanel } from "./CrewSidebar";
 import { LoungeHome } from "./LoungeHome";
@@ -25,8 +27,14 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
   // The member list / profile sits beside the chat on wide windows and starts closed on narrow ones.
   const [contextOpen, setContextOpen] = useState(() => window.innerWidth > 1180);
   const [previewRoom, setPreviewRoom] = useState<string>();
+  const [voiceMuted, setVoiceMuted] = useState(true);
+  const [voiceUi, setVoiceUi] = useState<VoiceUiState>(defaultVoiceUi);
+  useEffect(() => {
+    setVoiceUi(previous => previous.panel ? { ...previous, panel: undefined } : previous);
+  }, [route.page]);
   const [modal, setModal] = useState<"invite" | "room" | null>(null);
   const [serverSettings, setServerSettings] = useState(false);
+  const [channelKind, setChannelKind] = useState<"text" | "voice">("text");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<"Workspace" | "Project">("Project");
@@ -35,7 +43,7 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
   const [inviteRole, setInviteRole] = useState("Member");
   const [error, setError] = useState("");
   // Reading a conversation here marks it read, so the chat box's unread count agrees.
-  const openKey = route.page === "dm" || route.page === "channel" ? conversationKey(route) : "";
+  const openKey = route.page === "dm" || route.page === "channel" || route.page === "voice-chat" ? conversationKey(route) : "";
   const openCount = openKey ? data.messages[openKey]?.length ?? 0 : 0;
   useEffect(() => {
     if (appRoute.mode !== "lounge" || !openKey) return;
@@ -77,13 +85,26 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
     });
   }, [projects, members, setData]);
 
+  // Voice rooms belong to a server, independently of its text-channel definitions.
+  useEffect(() => {
+    setData(previous => {
+      const voiceRooms = [...(previous.voiceRooms ?? [])];
+      for (const projectId of [undefined, ...projects.map(project => project.id)]) {
+        const id = `voice-${projectId ?? WORKPLACE_SERVER}-general`;
+        if (!voiceRooms.some(room => room.projectId === projectId))
+          voiceRooms.push({ id, name: "General", description: "A place to talk with your team.", category: projectId ? "Project" : "Workspace", projectId, members: members.filter(member => member.id !== "me").map(member => member.id), joined: true });
+      }
+      return voiceRooms.length === (previous.voiceRooms ?? []).length ? previous : { ...previous, voiceRooms };
+    });
+  }, [projects, members, setData]);
+
   // Links from Work and Dashboard ("Message Sara", "Open the project room") land here.
   useEffect(() => {
     if (appRoute.mode !== "lounge") return;
     const section = appRoute.loungeSection;
-    if ((section === "messages" || section === "dm" || section === "channel") && appRoute.target) {
-      setRoute({ page: section === "channel" ? "channel" : "dm", id: appRoute.target });
-      if (section !== "channel")
+    if ((section === "messages" || section === "dm" || section === "channel" || section === "voice" || section === "voice-chat") && appRoute.target) {
+      setRoute({ page: section === "channel" || section === "voice" || section === "voice-chat" ? section : "dm", id: appRoute.target });
+      if (section === "messages" || section === "dm")
         setData((previous) => ({
           ...previous,
           contacts: previous.contacts.includes(appRoute.target!) ? previous.contacts : [...previous.contacts, appRoute.target!],
@@ -109,6 +130,7 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
     navigate("lounge", next.page === "dm" ? "messages" : next.page, next.id);
   };
   const openModal = (kind: "invite" | "room") => {
+    setChannelKind("text");
     setName("");
     setDescription("");
     setEmail("");
@@ -154,21 +176,11 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
     }));
     notify(`${person?.name ?? "This person"} ${wasBlocked ? "unblocked" : "blocked"}.`);
   };
-  const joinRoom = (id: string) => {
-    setData((previous) => ({ ...previous, rooms: previous.rooms.map((room) => (room.id === id ? { ...room, joined: true } : room)) }));
-    go({ page: "channel", id });
-    notify("Channel added to your Lounge.");
-  };
-  const leaveRoom = (id: string) => {
-    setData((previous) => ({ ...previous, rooms: previous.rooms.map((room) => (room.id === id ? { ...room, joined: false } : room)) }));
-    if (previewRoom === id) setPreviewRoom(undefined);
-    notify("You left the channel. You can join again anytime.");
-  };
   const togglePreview = (id: string) => {
-    const target = data.rooms.find((room) => room.id === id);
+    const target = data.voiceRooms?.find((room) => room.id === id);
     if (!target) return;
-    if (!target.joined) joinRoom(id);
-    setPreviewRoom(previewRoom === id ? undefined : id);
+    setPreviewRoom(id);
+    go({ page: "voice", id });
   };
   const accept = (id: string) => {
     const person = data.requests.find((request) => request.id === id);
@@ -191,21 +203,21 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
       setError("Enter a channel name with at least two letters or numbers.");
       return;
     }
-    if (data.rooms.some((room) => room.name === roomName)) {
+    if ((channelKind === "voice" ? data.voiceRooms ?? [] : data.rooms).some((value) => value.name === roomName && value.projectId === room?.projectId)) {
       setError("A channel with that name already exists. Try a different name.");
       return;
     }
     const id = loungeId();
     setData((previous) => ({
       ...previous,
-      rooms: [
-        ...previous.rooms,
-        { id, name: roomName, description: description.trim() || "A shared space for your team.", category, members: selectedMembers, joined: true },
+      [channelKind === "voice" ? "voiceRooms" : "rooms"]: [
+        ...(channelKind === "voice" ? previous.voiceRooms ?? [] : previous.rooms),
+        { id, name: roomName, description: description.trim() || "A shared space for your team.", category: room?.projectId ? "Project" : category, projectId: room?.projectId, members: selectedMembers, joined: true },
       ],
-      messages: { ...previous.messages, [`channel:${id}`]: [] },
+      messages: { ...previous.messages, [`${channelKind === "voice" ? "voice-chat" : "channel"}:${id}`]: [] },
     }));
     setModal(null);
-    go({ page: "channel", id });
+    go({ page: channelKind === "voice" ? "voice" : "channel", id });
     notify(`#${roomName} is ready for your team.`);
   };
   const invite = (event: FormEvent) => {
@@ -225,12 +237,18 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
     notify("Invitation prepared. You can review it under Pending.");
   };
 
-  const room = data.rooms.find((value) => value.id === route.id);
+  const leaveVoice = () => { setPreviewRoom(undefined); setVoiceMuted(true); setVoiceUi(previous => ({ ...previous, camera:false, screen:false, deafened:false, activity:undefined, panel:undefined, selectedSound:undefined })); };
+  const toggleVoiceMute = () => { if (voiceUi.deafened) { setVoiceUi(previous => ({ ...previous, deafened:false })); setVoiceMuted(false); } else setVoiceMuted(value => !value); };
+  const updateVoiceUi = (change: Partial<VoiceUiState>) => {
+    setVoiceUi(previous => ({ ...previous, ...change }));
+    if ((change.camera || change.screen || change.activity) && previewRoom) go({ page:"voice", id:previewRoom });
+  };
+  const room = (route.page === "voice" || route.page === "voice-chat" ? data.voiceRooms ?? [] : data.rooms).find((value) => value.id === route.id);
   const person = route.page === "dm" ? members.find((member) => member.id === route.id) : undefined;
-  const chatVisible = route.page === "dm" || route.page === "channel";
+  const chatVisible = route.page === "dm" || route.page === "channel" || route.page === "voice-chat";
   const conversationExists = route.page === "dm" ? !!person : !!room;
   const showContext = chatVisible && conversationExists && contextOpen;
-  const previewName = data.rooms.find((value) => value.id === previewRoom)?.name;
+  const previewName = data.voiceRooms?.find((value) => value.id === previewRoom)?.name;
   // The server being looked at: the project the channel belongs to, or the workplace.
   const serverProject = projects.find((project) => project.id === room?.projectId);
   const serverKey = serverProject?.id ?? WORKPLACE_SERVER;
@@ -249,18 +267,24 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
         route={route}
         data={data}
         previewRoom={previewRoom}
+        muted={voiceMuted || voiceUi.deafened}
         onNavigate={go}
         onCreate={() => openModal("room")}
         onInvite={() => openModal("invite")}
         onServerSettings={() => setServerSettings(true)}
         onPreview={togglePreview}
+        onVoiceChat={id => go({ page: "voice-chat", id })}
+        onCreateVoice={() => { openModal("room"); setChannelKind("voice"); }}
       />
-      {chatVisible ? (
+      {route.page === "voice" && room ? (
+        <VoiceRoom room={room} connected={previewRoom === room.id} muted={voiceMuted} voiceUi={voiceUi} onVoiceUi={updateVoiceUi} onLeave={leaveVoice} onToggleMute={toggleVoiceMute} onJoin={() => togglePreview(room.id)} onChat={() => go({ page: "voice-chat", id: room.id })} />
+      ) : chatVisible ? (
         conversationExists ? (
           <ChatPanel
+            onVoiceRoom={() => go({ page: "voice", id: room?.id })}
             route={route}
             data={data}
-            room={route.page === "channel" ? room : undefined}
+            room={route.page === "channel" || route.page === "voice-chat" ? room : undefined}
             contextOpen={contextOpen}
             onContext={() => setContextOpen(!contextOpen)}
             onDraft={(value) =>
@@ -282,8 +306,6 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
             }}
             onBookmark={toggleBookmark}
             onReact={toggleReaction}
-            onJoin={() => room && joinRoom(room.id)}
-            onLeave={() => room && leaveRoom(room.id)}
             onMute={() => {
               if (!room) return;
               setData((previous) => ({
@@ -314,7 +336,6 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
           onNavigate={go}
           onInvite={() => openModal("invite")}
           onCreate={() => openModal("room")}
-          onJoin={joinRoom}
           onAccept={accept}
           onDecline={(id) => {
             setData((previous) => ({ ...previous, requests: previous.requests.filter((request) => request.id !== id) }));
@@ -328,16 +349,24 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
           onBlock={toggleBlock}
         />
       )}
-      {showContext && route.page === "channel" && room && (
+      {showContext && (route.page === "channel" || route.page === "voice-chat") && room && (
         <CrewSidebar room={room} onMessage={(id) => go({ page: "dm", id })} />
       )}
       {showContext && route.page === "dm" && person && (
         <ProfilePanel person={person} blocked={(data.blocked ?? []).includes(person.id)} onBlock={() => toggleBlock(person.id)} />
       )}
-      <ControlDock onOpenSettings={onOpenSettings} roomName={previewName} onLeave={() => setPreviewRoom(undefined)} />
+      <ControlDock
+        onOpenSettings={onOpenSettings} roomName={previewName}
+        muted={voiceMuted || voiceUi.deafened} voiceUi={voiceUi}
+        inVoiceRoom={route.page === "voice"}
+        onVoiceUi={updateVoiceUi}
+        onToggleMute={toggleVoiceMute}
+        onLeave={leaveVoice}
+      />
 
       {serverSettings && (
         <ServerSettings
+          projectId={serverProject?.id}
           name={serverProject?.name ?? "Soft Fix"}
           icon={data.serverIcons?.[serverKey]}
           onChange={setServerIcon}
@@ -345,7 +374,7 @@ export function LoungeShell({ onOpenSettings }: { onOpenSettings: () => void }) 
         />
       )}
       {modal === "room" && (
-        <Modal title="Create Channel" description="in Text Channels" onClose={() => setModal(null)}>
+        <Modal title="Create Channel" description={channelKind === "voice" ? "in Voice Channels" : "in Text Channels"} onClose={() => setModal(null)}>
           <form onSubmit={createRoom}>
             <label>
               Channel name

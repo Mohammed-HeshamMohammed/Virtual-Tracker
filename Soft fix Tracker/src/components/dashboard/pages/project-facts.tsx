@@ -1,24 +1,12 @@
-import type { CSSProperties } from "react";
 import type { Member, Session } from "../../../workspace";
 import type { WorkProject } from "../../../data/work";
 import { projectTypeDef, type ProjectTypeDef } from "../../../data/projectTypes";
 import { Avatar } from "../DashboardParts";
 import { hours } from "./kit";
-import type { ProjectMeta } from "./NewProjectPage";
+import type { ProjectMeta, AvatarCrop } from "../../../data/projectMeta";
+export { ProjectAvatar, cropStyle, type AvatarCrop } from "../../ProjectAvatar";
 import { dayKey, type Client } from "./stores";
 import "../projects.css";
-
-/** Which part of a picture shows in its square: the centre of the frame as fractions of the picture
- *  (0 to 1), how far it is zoomed in (1 = the whole short side), and the picture's width / height. */
-export type AvatarCrop = { cx: number; cy: number; zoom: number; ratio: number };
-
-/** Places a picture inside a square of any size so that the framed part fills it. Everything is a
- *  percentage of the square, so one crop draws the same at every avatar size. */
-export function cropStyle(crop: AvatarCrop): CSSProperties {
-  const width = crop.zoom * Math.max(crop.ratio, 1);
-  const height = crop.zoom * Math.max(1 / crop.ratio, 1);
-  return { position: "absolute", maxWidth: "none", width: `${width * 100}%`, height: `${height * 100}%`, left: `${(0.5 - crop.cx * width) * 100}%`, top: `${(0.5 - crop.cy * height) * 100}%` };
-}
 
 export type ProjectStatus = "Completed" | "Over budget" | "Overdue" | "Not started" | "In progress";
 
@@ -113,22 +101,6 @@ export const refillText = (resets: ProjectFacts["resets"]) => (resets === "Weekl
 /** Hours without a trailing ".0". */
 export const hoursText = (value: number) => `${Math.round(value * 10) / 10}h`;
 
-/** A project's picture: its image (framed by `crop` when it has one), or its initials on its colour. */
-export function ProjectAvatar({ name, color, src, crop, size }: { name: string; color: string; src?: string; crop?: AvatarCrop; size?: "sm" | "lg" }) {
-  const initials = name
-    .trim()
-    .split(/\s+/)
-    .map((word) => word[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  return (
-    <span className={`db-project-icon pj-avatar ${color} ${size ?? ""}`} aria-hidden="true">
-      {src ? <img src={src} alt="" draggable={false} style={crop ? cropStyle(crop) : undefined} /> : initials || "?"}
-    </span>
-  );
-}
-
 const TONE: Record<ProjectStatus, string> = { Completed: "done", "Over budget": "bad", Overdue: "warn", "Not started": "quiet", "In progress": "live" };
 
 export function StatusPill({ status }: { status: ProjectStatus }) {
@@ -159,7 +131,7 @@ export function PeopleStack({ ids, members, open, max = 4 }: { ids: string[]; me
     <span className="pj-people" title={names} aria-label={names}>
       <span className="db-avatar-stack">
         {people.slice(0, max).map((member) => (
-          <Avatar key={member.id} name={member.name} color={member.color} />
+          <Avatar key={member.id} memberId={member.id} name={member.name} color={member.color} />
         ))}
       </span>
       {people.length > max && <small>+{people.length - max}</small>}

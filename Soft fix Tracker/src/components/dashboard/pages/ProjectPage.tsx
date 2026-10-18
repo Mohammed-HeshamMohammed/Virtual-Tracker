@@ -4,7 +4,6 @@ import { formatDuration, usePersistentState, useWorkspace } from "../../../works
 import { EmptyState } from "../../ui";
 import { Avatar } from "../DashboardParts";
 import { Kpis, dateLabel, type PageContext } from "./kit";
-import type { ProjectMeta } from "./NewProjectPage";
 import { ProjectAvatar, StatusPill, hoursText, projectFacts, refillText } from "./project-facts";
 import { useDashboardStores } from "./stores";
 
@@ -16,7 +15,7 @@ const RANGE_TEXT: Record<string, string> = { week: "this week", month: "this mon
 export function ProjectPage({ ctx }: { ctx: PageContext }) {
   const { members, route, setProjects, notify } = useWorkspace();
   const stores = useDashboardStores();
-  const [meta] = usePersistentState<Record<string, ProjectMeta>>("dashboard.project-meta", {});
+  const { projectMeta: meta } = useWorkspace();
   const [taskView, setTaskView] = usePersistentState<string>("dashboard.project-task-view", "list");
   const [task, setTask] = useState("");
   const [dragOver, setDragOver] = useState<string | null>(null);
@@ -72,7 +71,7 @@ export function ProjectPage({ ctx }: { ctx: PageContext }) {
       </button>
       <div className="sf-page-header db-page-heading pj-heading">
         <div className="pj-title">
-          <ProjectAvatar name={project.name} color={project.color} src={facts.avatar} crop={facts.avatarCrop} size="lg" />
+          <ProjectAvatar projectId={project.id} size="lg" />
           <div>
             <div className="db-eyebrow">
               {def.label.toUpperCase()}

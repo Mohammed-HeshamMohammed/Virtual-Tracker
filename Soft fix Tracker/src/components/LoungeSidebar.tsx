@@ -1,3 +1,4 @@
+import { ProjectLabel } from "./ProjectAvatar";
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import {
   BookmarkSimple,
@@ -19,11 +20,14 @@ type Props = {
   route: LoungeRoute;
   data: LoungeData;
   previewRoom?: string;
+  muted: boolean;
   onNavigate: (route: LoungeRoute) => void;
   onCreate: () => void;
+  onCreateVoice: () => void;
   onInvite: () => void;
   onServerSettings: () => void;
   onPreview: (id: string) => void;
+  onVoiceChat: (id: string) => void;
 };
 
 /** The second column: your direct messages, or the channels of the server you're in. */
@@ -31,11 +35,14 @@ export function LoungeSidebar({
   route,
   data,
   previewRoom,
+  muted,
   onNavigate,
   onCreate,
+  onCreateVoice,
   onInvite,
   onServerSettings,
   onPreview,
+  onVoiceChat,
 }: Props) {
   const { members, projects } = useWorkspace();
   const [query, setQuery] = useState("");
@@ -56,8 +63,8 @@ export function LoungeSidebar({
     };
   }, [menuOpen]);
 
-  const inServer = route.page === "channel" || route.page === "rooms";
-  const room = data.rooms.find((value) => value.id === route.id);
+  const inServer = ["channel", "voice", "voice-chat", "rooms"].includes(route.page);
+  const room = [...data.rooms, ...(data.voiceRooms ?? [])].find((value) => value.id === route.id);
   const project = projects.find((value) => value.id === room?.projectId);
   const serverRooms = data.rooms.filter((value) =>
     project ? value.projectId === project.id : !value.projectId,
@@ -90,7 +97,7 @@ export function LoungeSidebar({
       {inServer ? (
         <div className="lg-server-heading" ref={header}>
           <button onClick={() => setMenuOpen(!menuOpen)} aria-expanded={menuOpen}>
-            <strong>{project?.name ?? "Soft Fix"}</strong>
+            <strong>{project ? <ProjectLabel projectId={project.id} /> : "Soft Fix"}</strong>
             {menuOpen ? <X weight="bold" /> : <CaretDown weight="bold" />}
           </button>
           {menuOpen && (
@@ -128,8 +135,12 @@ export function LoungeSidebar({
             </nav>
             <ChannelSidebar
               rooms={serverRooms}
+              voiceRooms={(data.voiceRooms ?? []).filter(value => project ? value.projectId === project.id : !value.projectId)}
+              onCreateVoice={onCreateVoice}
               activeChannel={route.page === "channel" ? route.id : undefined}
               previewRoom={previewRoom}
+              muted={muted}
+              onVoiceChat={onVoiceChat}
               onChannelChange={(id) => onNavigate({ page: "channel", id })}
               onCreate={onCreate}
               onInvite={onInvite}
@@ -192,7 +203,7 @@ export function LoungeSidebar({
                     }}
                   >
                     <span className="lg-avatar-status">
-                      <Avatar initials={person.initials} color={person.color} />
+                      <Avatar memberId={person.id} initials={person.initials} color={person.color} />
                       <i className={`lg-status-dot ${person.status.toLowerCase()}`} />
                     </span>
                     <span>{person.name}</span>

@@ -1,0 +1,105 @@
+- generic [ref=f1e147]:
+  - banner [ref=f1e148]:
+    - strong [ref=f1e150]: Easy mode
+    - group "Text size" [ref=f1e152]:
+      - button "Smaller text" [ref=f1e153] [cursor=pointer]
+      - generic [aria-hidden] [ref=f1e156]: Aa
+      - button "Larger text" [ref=f1e157] [cursor=pointer]
+  - main [ref=f1e160]:
+    - generic [ref=f1e161]:
+      - generic [ref=f1e162]:
+        - heading "Good evening, Aria" [level=1] [ref=f1e163]
+        - paragraph [ref=f1e164]: Saturday, October 17
+      - region "Today" [ref=f1e165]:
+        - generic [ref=f1e166]:
+          - generic [ref=f1e167]: Today
+          - strong [ref=f1e170]:
+            - text: 3h 00m
+            - generic [ref=f1e171]: of 8h
+        - progressbar "Progress toward your daily goal" [ref=f1e172]
+        - paragraph [ref=f1e174]: 38% of your daily goal
+    - region "Timer" [ref=f1e175]:
+      - generic [ref=f1e176]:
+        - generic [ref=f1e177]:
+          - generic [ref=f1e178]: Project
+          - combobox "Project" [ref=f1e181]:
+            - option "Nova Vanguard" [selected]
+            - option "Buffalo Campaign"
+            - option "RWS Campaign"
+            - option "Soft Fix Internal"
+        - generic [ref=f1e182]:
+          - generic [ref=f1e183]: Task
+          - combobox "Task" [ref=f1e184]:
+            - option "Ship the Lounge navigation revision" [selected]
+            - option "Pair on the authentication flow"
+      - timer "Ready when you are, 0h 00m" [ref=f1e185]:
+        - generic [aria-hidden] [ref=f1e186]:
+          - generic [ref=f1e187]: "0"
+          - generic [ref=f1e188]: "0"
+          - generic [ref=f1e189]: ":"
+          - generic [ref=f1e190]: "0"
+          - generic [ref=f1e191]: "0"
+          - generic [ref=f1e192]: ":"
+          - generic [ref=f1e193]: "0"
+          - generic [ref=f1e194]: "0"
+          - generic [ref=f1e195]: ".000"
+      - paragraph [ref=f1e259]: Ready when you are
+      - generic [ref=f1e261]:
+        - button "Start working" [ref=f1e262] [cursor=pointer]
+        - button "Finish and save" [disabled] [ref=f1e265]
+      - textbox "Session note" [ref=f1e268]:
+        - /placeholder: Add a note about this session (optional)
+    - region "Your next tasks" [ref=f1e269]:
+      - heading "Your next tasks" [level=2] [ref=f1e270]
+      - list [ref=f1e271]:
+        - listitem [ref=f1e272]:
+          - button "Mark Ship the Lounge navigation revision as done" [ref=f1e273] [cursor=pointer]
+          - generic [ref=f1e276]:
+            - strong [ref=f1e277]: Ship the Lounge navigation revision
+            - generic [ref=f1e278]: Nova Vanguard
+          - button "Start" [ref=f1e282] [cursor=pointer]
+        - listitem [ref=f1e285]:
+          - button "Mark Pair on the authentication flow as done" [ref=f1e286] [cursor=pointer]
+          - generic [ref=f1e289]:
+            - strong [ref=f1e290]: Pair on the authentication flow
+            - generic [ref=f1e291]: Nova Vanguard
+          - button "Start" [ref=f1e295] [cursor=pointer]
+        - listitem [ref=f1e298]:
+          - button "Mark Draft the client budget report as done" [ref=f1e299] [cursor=pointer]
+          - generic [ref=f1e302]:
+            - strong [ref=f1e303]: Draft the client budget report
+            - generic [ref=f1e305]:
+              - generic [aria-hidden] [ref=f1e306]: BC
+              - generic [ref=f1e307]: Buffalo Campaign
+          - button "Start" [ref=f1e308] [cursor=pointer]
+        - listitem [ref=f1e311]:
+          - button "Mark Follow up on the invoice aging list as done" [ref=f1e312] [cursor=pointer]
+          - generic [ref=f1e315]:
+            - strong [ref=f1e316]: Follow up on the invoice aging list
+            - generic [ref=f1e318]:
+              - generic [aria-hidden] [ref=f1e319]: BC
+              - generic [ref=f1e320]: Buffalo Campaign
+          - button "Start" [ref=f1e321] [cursor=pointer]
+        - listitem [ref=f1e324]:
+          - button "Mark Reconcile weekly limits for the team as done" [ref=f1e325] [cursor=pointer]
+          - generic [ref=f1e328]:
+            - strong [ref=f1e329]: Reconcile weekly limits for the team
+            - generic [ref=f1e331]:
+              - generic [aria-hidden] [ref=f1e332]: RC
+              - generic [ref=f1e333]: RWS Campaign
+          - button "Start" [ref=f1e334] [cursor=pointer]
+    - navigation "Open in the full app" [ref=f1e337]:
+      - button "Messages Chat with your team" [ref=f1e338] [cursor=pointer]:
+        - strong [ref=f1e342]: Messages
+        - generic [ref=f1e343]: Chat with your team
+      - button "My timesheet Review the hours you logged" [ref=f1e344] [cursor=pointer]:
+        - strong [ref=f1e348]: My timesheet
+        - generic [ref=f1e349]: Review the hours you logged
+      - button "All my tasks Plan and tick things off" [ref=f1e350] [cursor=pointer]:
+        - strong [ref=f1e354]: All my tasks
+        - generic [ref=f1e355]: Plan and tick things off
+      - button "Everything else Open the full Soft Fix" [ref=f1e356] [cursor=pointer]:
+        - strong [ref=f1e360]: Everything else
+        - generic [ref=f1e361]: Open the full Soft Fix
+  - contentinfo [ref=f1e362]:
+    - button "Switch to Focus mode" [ref=f1e363] [cursor=pointer]

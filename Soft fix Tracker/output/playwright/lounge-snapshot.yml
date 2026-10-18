@@ -1,0 +1,150 @@
+- generic [ref=e3]:
+  - link "Skip to content" [ref=e4] [cursor=pointer]:
+    - /url: "#workspace-content"
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - img "Soft Fix" [ref=e7]
+      - navigation "Modes" [ref=e10]:
+        - button "Lounge" [active] [pressed] [ref=e11] [cursor=pointer]
+        - button "Work" [ref=e15] [cursor=pointer]
+        - button "Dashboard" [ref=e21] [cursor=pointer]
+    - generic "Search pages, projects and people (Ctrl K)" [ref=e29]:
+      - combobox "Search workspace" [ref=e32]
+      - generic [ref=e33]: Ctrl K
+    - generic [ref=e35]:
+      - button "Change the window" [ref=e37] [cursor=pointer]
+      - button "Notifications, 3 unread" [ref=e41] [cursor=pointer]
+      - button "Quick settings" [ref=e46] [cursor=pointer]
+      - button "Your profile" [ref=e50] [cursor=pointer]:
+        - generic [ref=e51]: AM
+  - generic [ref=e828]:
+    - navigation "Lounge servers" [ref=e829]:
+      - button "Direct Messages" [ref=e831] [cursor=pointer]
+      - button "Soft Fix" [ref=e836] [cursor=pointer]
+      - button "Nova Vanguard" [ref=e840] [cursor=pointer]
+      - button "Buffalo Campaign" [ref=e843] [cursor=pointer]:
+        - generic [aria-hidden] [ref=e844]: BC
+        - text: Buffalo Campaign
+      - button "RWS Campaign" [ref=e846] [cursor=pointer]:
+        - generic [aria-hidden] [ref=e847]: RC
+        - text: RWS Campaign
+      - button "Soft Fix Internal" [ref=e849] [cursor=pointer]:
+        - generic [aria-hidden] [ref=e850]: SF
+        - text: Soft Fix Internal
+      - button "Add a Server" [ref=e852] [cursor=pointer]
+      - button "Explore Channels" [ref=e856] [cursor=pointer]
+    - complementary [ref=e859]:
+      - textbox "Find or start a conversation" [ref=e861]
+      - generic [ref=e862]:
+        - navigation "Lounge navigation" [ref=e863]:
+          - button "Friends" [ref=e864] [cursor=pointer]
+          - button "Message Requests 2" [ref=e868] [cursor=pointer]:
+            - generic [ref=e871]: Message Requests
+            - generic [ref=e872]: "2"
+          - button "Saved Messages" [ref=e873] [cursor=pointer]
+        - generic [ref=e877]:
+          - generic [ref=e878]: Direct Messages
+          - button "Start a new direct message" [ref=e879] [cursor=pointer]
+        - navigation "Direct messages" [ref=e882]:
+          - button "SA Sara Ahmed" [ref=e883] [cursor=pointer]:
+            - generic [ref=e884]: SA
+            - generic [ref=e887]: Sara Ahmed
+          - button "YK Youssef Khaled" [ref=e888] [cursor=pointer]:
+            - generic [ref=e889]: YK
+            - generic [ref=e892]: Youssef Khaled
+          - button "MN Mariam Nabil" [ref=e893] [cursor=pointer]:
+            - generic [ref=e894]: MN
+            - generic [ref=e897]: Mariam Nabil
+          - button "OA Omar Adel" [ref=e898] [cursor=pointer]:
+            - generic [ref=e899]: OA
+            - generic [ref=e902]: Omar Adel
+    - main [ref=e903]:
+      - generic [ref=e904]:
+        - strong [ref=e908]: Friends
+        - navigation "Friends filters" [ref=e910]:
+          - button "Online" [ref=e911] [cursor=pointer]
+          - button "All" [ref=e912] [cursor=pointer]
+          - button "Pending 2" [ref=e913] [cursor=pointer]:
+            - text: Pending
+            - generic [ref=e914]: "2"
+          - button "Blocked" [ref=e915] [cursor=pointer]
+          - button "Add Friend" [ref=e916] [cursor=pointer]
+        - generic [ref=e917]:
+          - button "Invite a teammate" [ref=e918] [cursor=pointer]
+          - button "Open saved messages" [ref=e922] [cursor=pointer]
+      - generic [ref=e925]:
+        - generic [ref=e926]:
+          - textbox "Search friends" [ref=e930]:
+            - /placeholder: Search
+          - generic [ref=e931]: ONLINE — 4
+          - article [ref=e932]:
+            - generic [ref=e933]: SA
+            - button "Sara Ahmed Do Not Disturb" [ref=e936] [cursor=pointer]:
+              - strong [ref=e937]: Sara Ahmed
+              - generic [ref=e938]: Do Not Disturb
+            - button "Message Sara Ahmed" [ref=e939] [cursor=pointer]
+            - button "More options for Sara Ahmed" [ref=e943] [cursor=pointer]
+          - article [ref=e946]:
+            - generic [ref=e947]: YK
+            - button "Youssef Khaled Online" [ref=e950] [cursor=pointer]:
+              - strong [ref=e951]: Youssef Khaled
+              - generic [ref=e952]: Online
+            - button "Message Youssef Khaled" [ref=e953] [cursor=pointer]
+            - button "More options for Youssef Khaled" [ref=e957] [cursor=pointer]
+          - article [ref=e960]:
+            - generic [ref=e961]: MN
+            - button "Mariam Nabil Idle" [ref=e964] [cursor=pointer]:
+              - strong [ref=e965]: Mariam Nabil
+              - generic [ref=e966]: Idle
+            - button "Message Mariam Nabil" [ref=e967] [cursor=pointer]
+            - button "More options for Mariam Nabil" [ref=e971] [cursor=pointer]
+          - article [ref=e974]:
+            - generic [ref=e975]: OA
+            - button "Omar Adel Online" [ref=e978] [cursor=pointer]:
+              - strong [ref=e979]: Omar Adel
+              - generic [ref=e980]: Online
+            - button "Message Omar Adel" [ref=e981] [cursor=pointer]
+            - button "More options for Omar Adel" [ref=e985] [cursor=pointer]
+        - complementary [ref=e988]:
+          - heading "Active Now" [level=2] [ref=e989]
+          - paragraph [ref=e990]: See what’s happening in your workspace.
+          - button "general Workspace channel SA YK MN 4 teammates around" [ref=e991] [cursor=pointer]:
+            - generic [ref=e996]:
+              - strong [ref=e997]: general
+              - generic [ref=e998]: Workspace channel
+            - generic [ref=e999]:
+              - generic [ref=e1000]:
+                - generic [ref=e1001]: SA
+                - generic [ref=e1002]: YK
+                - generic [ref=e1003]: MN
+              - generic [ref=e1004]: 4 teammates around
+          - button "announcements Workspace channel SA YK MN 4 teammates around" [ref=e1005] [cursor=pointer]:
+            - generic [ref=e1010]:
+              - strong [ref=e1011]: announcements
+              - generic [ref=e1012]: Workspace channel
+            - generic [ref=e1013]:
+              - generic [ref=e1014]:
+                - generic [ref=e1015]: SA
+                - generic [ref=e1016]: YK
+                - generic [ref=e1017]: MN
+              - generic [ref=e1018]: 4 teammates around
+          - button "nova-vanguard Project channel SA YK 2 teammates around" [ref=e1019] [cursor=pointer]:
+            - generic [ref=e1024]:
+              - strong [ref=e1025]: nova-vanguard
+              - generic [ref=e1026]: Project channel
+            - generic [ref=e1027]:
+              - generic [ref=e1028]:
+                - generic [ref=e1029]: SA
+                - generic [ref=e1030]: YK
+              - generic [ref=e1031]: 2 teammates around
+    - region "Voice and profile controls" [ref=e1032]:
+      - generic [ref=e1033]:
+        - button "Open profile settings" [ref=e1034] [cursor=pointer]:
+          - generic [ref=e1035]: AM
+          - generic [ref=e1038]:
+            - strong [ref=e1039]: Aria Morgan
+            - generic [ref=e1040]: Available
+        - generic [ref=e1041]:
+          - button "Unmute microphone preview" [pressed] [ref=e1042] [cursor=pointer]
+          - button "Deafen audio preview" [ref=e1045] [cursor=pointer]
+          - button "User settings" [ref=e1048] [cursor=pointer]

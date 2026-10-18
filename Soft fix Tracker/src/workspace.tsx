@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { projects as initialProjects, type WorkProject } from "./data/work";
+import type { ProjectMeta, AvatarCrop } from "./data/projectMeta";
 import { initialLoungeData, type LoungeData } from "./components/lounge-model";
 import { activeOrg, isSampleOrg, storageKeyFor } from "./organizations";
 
@@ -54,6 +55,18 @@ export type Profile = {
   title: string;
   status: string;
   role: Role;
+  username?: string;
+  pronouns?: string;
+  bio?: string;
+  avatar?: string;
+  avatarCredit?: string;
+  avatarCrop?: AvatarCrop;
+  banner?: string;
+  bannerColor?: string;
+  accentColor?: string;
+  decoration?: "none" | "ring" | "double";
+  nameStyle?: "default" | "rounded" | "serif";
+  widgets?: string[];
 };
 export type Preferences = {
   theme: "dark" | "light" | "system";
@@ -300,6 +313,7 @@ function restorePersistentValue<T>(key: string, value: unknown, initial: T): T {
     restored = {
       ...initial,
       ...value,
+      voiceRooms: restoreStoredList(value.voiceRooms, [], normalizeStoredRoom),
       rooms: restoreStoredList(
         value.rooms,
         initial.rooms as unknown[],
@@ -394,6 +408,10 @@ function restorePersistentValue<T>(key: string, value: unknown, initial: T): T {
       ),
     };
     if (key === "profile") {
+      for (const field of ["username", "pronouns", "bio", "avatar", "avatarCredit", "banner", "bannerColor", "accentColor"]) merged[field] = storedText(value[field]);
+      merged.decoration = storedChoice(value.decoration, ["none", "ring", "double"], "none");
+      merged.nameStyle = storedChoice(value.nameStyle, ["default", "rounded", "serif"], "default");
+      merged.widgets = storedStrings(value.widgets, ["focus", "projects"]);
       merged.name = storedText(merged.name).trim() || initial.name;
       merged.role = storedChoice(
         value.role,
@@ -601,6 +619,8 @@ const initialSessions: Session[] = [
 type WorkspaceValue = {
   projects: WorkProject[];
   setProjects: Dispatch<SetStateAction<WorkProject[]>>;
+  projectMeta: Record<string, ProjectMeta>;
+  setProjectMeta: Dispatch<SetStateAction<Record<string, ProjectMeta>>>;
   members: Member[];
   setMembers: Dispatch<SetStateAction<Member[]>>;
   sessions: Session[];
@@ -711,6 +731,27 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const viewMode = viewModes.includes(storedViewMode) ? storedViewMode : "full";
   const [seedLounge] = useState(() => initialLoungeData(members, projects, sample));
   const [lounge, setLounge] = usePersistentState<LoungeData>("lounge", seedLounge);
+  // Save Lounge first so moving its old pictures frees space before metadata is persisted.
+  const [projectMeta, setProjectMeta] = usePersistentState<Record<string, ProjectMeta>>("dashboard.project-meta", {});
+  // Consume the old Lounge-only icons once, preserving existing project pictures as authoritative.
+  useEffect(() => {
+    const legacy = projects.filter((project) => lounge.serverIcons?.[project.id]);
+    if (!legacy.length) return;
+    setProjectMeta((old) => {
+      const next = { ...old };
+      for (const project of legacy) {
+        if (next[project.id]?.avatar || next[project.id]?.avatarGlyph) continue;
+        const icon = lounge.serverIcons![project.id];
+        next[project.id] = { ...(next[project.id] ?? { description: "", budget: 80, due: "" }), avatar: icon.image, avatarGlyph: icon.image ? undefined : icon.glyph };
+      }
+      return next;
+    });
+    setLounge((old) => {
+      const serverIcons = { ...old.serverIcons };
+      for (const project of legacy) delete serverIcons[project.id];
+      return { ...old, serverIcons };
+    });
+  }, [projects, lounge.serverIcons, setProjectMeta, setLounge]);
   const [chat, setChat] = useState<{ open: boolean; personId?: string }>({ open: false });
   const openChat = useCallback((personId?: string) => setChat({ open: true, personId }), []);
   const closeChat = useCallback(() => setChat((old) => ({ ...old, open: false })), []);
@@ -790,6 +831,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       value={{
         projects,
         setProjects,
+        projectMeta,
+        setProjectMeta,
         members,
         setMembers,
         sessions,

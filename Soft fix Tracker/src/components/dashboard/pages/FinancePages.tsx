@@ -1,3 +1,4 @@
+import { ProjectLabel } from "../../ProjectAvatar";
 import { useState, type FormEvent } from "react";
 import { Plus } from "@phosphor-icons/react";
 import { formatDuration, useWorkspace } from "../../../workspace";
@@ -361,7 +362,7 @@ export function ExpensesPage({ ctx }: { ctx: PageContext }) {
         emptyHint="Add one when you cover a cost for work."
         columns={[
           { header: "Member", cell: (row) => <Person id={row.memberId} detail={row.note} />, csv: (row) => members.find((member) => member.id === row.memberId)?.name ?? "" },
-          { header: "Project", cell: (row) => projects.find((project) => project.id === row.projectId)?.name ?? "Archived", csv: (row) => projects.find((project) => project.id === row.projectId)?.name ?? "" },
+          { header: "Project", cell: (row) => <ProjectLabel projectId={row.projectId} />, csv: (row) => projects.find((project) => project.id === row.projectId)?.name ?? "" },
           { header: "Category", cell: (row) => row.category, csv: (row) => row.category },
           { header: "Date", cell: (row) => dateLabel(row.date), csv: (row) => row.date },
           { header: "Amount", numeric: true, cell: (row) => money(row.amount), csv: (row) => row.amount },

@@ -4,7 +4,7 @@ import { ProjectAvatar, cropStyle, type AvatarCrop } from "./project-facts";
 
 /** A project's picture as it is kept: the image, how it is framed (only an animated GIF needs that kept,
  *  a still picture is cut to its frame when it is chosen), and who to credit when it came from a search. */
-export type ProjectPicture = { src: string; crop?: AvatarCrop; credit?: string };
+export type ProjectPicture = { src: string; crop?: AvatarCrop; credit?: string; glyph?: string };
 
 /** An animated GIF is kept whole (cutting it would stop it moving). Pictures live in this device's
  *  local storage, which is a few megabytes for the whole app, so a GIF has a size limit. */
@@ -46,7 +46,7 @@ async function cutStill(blob: Blob, crop: AvatarCrop): Promise<string> {
 /** Choosing a project's picture, in place on the form: upload an image or an animated GIF, or search
  *  pictures by topic, then drag and zoom to choose the part of it that shows. Nothing is kept until
  *  "Use this picture". */
-export function AvatarPicker({ name, color, value, onChange }: { name: string; color: string; value: ProjectPicture | null; onChange: (picture: ProjectPicture | null) => void }) {
+export function AvatarPicker({ name, color, value, onChange, subject = "project" }: { name: string; color: string; value: ProjectPicture | null; onChange: (picture: ProjectPicture | null) => void; subject?: "project" | "profile" }) {
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState("pictures");
@@ -126,7 +126,7 @@ export function AvatarPicker({ name, color, value, onChange }: { name: string; c
         localStorage.setItem("softfix.picture-probe", picture.src);
         localStorage.removeItem("softfix.picture-probe");
       } catch {
-        throw new Error("There is no room left on this device to keep that picture. Try a smaller one, or remove a picture from another project.");
+        throw new Error("There is no room left on this device to keep that picture. Try a smaller one, or remove another saved picture.");
       }
       onChange(picture);
       setDraft(null);
@@ -168,10 +168,10 @@ export function AvatarPicker({ name, color, value, onChange }: { name: string; c
   return (
     <div className="pp">
       <div className="np-avatar-field">
-        <ProjectAvatar name={name} color={color} src={value?.src} crop={value?.crop} size="lg" />
+        <ProjectAvatar name={name} color={color} src={value?.src} crop={value?.crop} glyph={value?.glyph} size="lg" />
         <div>
-          <strong>Project picture</strong>
-          <small>Optional. Upload an image or an animated GIF, or search pictures by topic, then choose the part that shows. Without one, the project shows its initials on its colour.</small>
+          <strong>{subject === "profile" ? "Profile avatar" : "Project picture"}</strong>
+          <small>Upload an image or an animated GIF, or search pictures by topic, then choose the part that shows. Without one, {subject === "profile" ? "your profile" : "the project"} shows its initials.</small>
           <div>
             <label className="sf-button np-upload">
               {value ? "Upload another" : "Upload image"}
@@ -277,7 +277,7 @@ export function AvatarPicker({ name, color, value, onChange }: { name: string; c
               ))}
             </div>
           )}
-          <p className="db-muted pp-quiet">The topic is sent to Openverse, an open library of Creative Commons pictures. The picture you choose is credited on the project's page.</p>
+          <p className="db-muted pp-quiet">The topic is sent to Openverse, an open library of Creative Commons pictures. The picture you choose is credited on the {subject === "profile" ? "profile" : "project's page"}.</p>
         </div>
       )}
 

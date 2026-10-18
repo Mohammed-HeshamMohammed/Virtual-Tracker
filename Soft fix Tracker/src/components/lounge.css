@@ -18,8 +18,8 @@
 .lg-layout .avatar-lg{width:40px;height:40px;font-size:14px}
 .lg-layout .avatar-blue{--tone:#5865f2}.lg-layout .avatar-violet{--tone:#8e6cef}.lg-layout .avatar-cyan{--tone:#1f9fb5}.lg-layout .avatar-green{--tone:#3ba55d}.lg-layout .avatar-gold{--tone:#c7871a}.lg-layout .avatar-orange{--tone:#e0782a}.lg-layout .avatar-slate{--tone:#747f8d}
 .lg-avatar-status{position:relative;display:inline-flex;flex-shrink:0}
-.lg-status-dot{position:absolute;right:-4px;bottom:-4px;box-sizing:content-box;width:8px;height:8px;border:3px solid var(--ring,var(--dc-side));border-radius:50%;background:var(--dc-offline)}
-.lg-status-dot.available{background:var(--dc-green)}.lg-status-dot.focusing{background:var(--dc-red)}.lg-status-dot.away{background:var(--dc-yellow)}
+.lg-status-dot{position:absolute;right:-4px;bottom:-4px;box-sizing:content-box;width:8px;height:8px;border:3px solid var(--ring,var(--dc-side));border-radius:50%;background:var(--dc-offline);background-clip:padding-box}
+.lg-status-dot.available{background-color:var(--dc-green)}.lg-status-dot.focusing{background-color:var(--dc-red)}.lg-status-dot.away{background-color:var(--dc-yellow)}
 .lg-layout .lg-role-owner{color:#f1c40f}.lg-layout .lg-role-admin{color:#e67e22}.lg-layout .lg-role-manager{color:#c27cf2}.lg-layout .lg-role-client{color:#1abc9c}
 .lg-icon-button{display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:32px;height:32px;border-radius:4px;background:transparent;color:var(--dc-icon)}
 .lg-icon-button svg{width:20px;height:20px}

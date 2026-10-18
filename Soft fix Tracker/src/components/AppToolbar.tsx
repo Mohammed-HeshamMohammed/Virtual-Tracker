@@ -211,7 +211,7 @@ export function AppToolbar({
             <Gear />
           </MenuButton>
           <MenuButton label="Your profile" title="Profile and status" align="end" fixed className="toolbar-menu toolbar-profile-menu" entries={profileEntries}>
-            <Avatar
+            <Avatar memberId="me"
               initials={profile.name
                 .split(" ")
                 .map((word) => word[0])

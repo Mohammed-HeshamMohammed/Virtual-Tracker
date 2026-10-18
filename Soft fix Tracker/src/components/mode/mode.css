@@ -165,7 +165,7 @@
   gap: 0.25em;
   min-width: 0;
 }
-.mode-pickers label span {
+.mode-pickers label > span {
   color: var(--db-muted-2);
   font-size: 0.82em;
   font-weight: 600;
@@ -355,8 +355,8 @@
 .mode-tasks li.current strong {
   color: var(--db-accent-ink);
 }
-.mode-next li span,
-.mode-tasks li span {
+.mode-next li > span,
+.mode-tasks li > span {
   display: flex;
   flex-direction: column;
   min-width: 0;
