@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { fetchCommandCenterData, invalidateCommandCenterCache } from "@/features/dashboard/api/command-center-api"
 import { mapCommandCenterPayload } from "@/features/dashboard/utils/command-center-mapper"
 import type { ActivityFeedItem, ProjectData } from "@/features/dashboard/components/command-center/constants"
+import { changedEvent, SCOPE_CHANGED_EVENT } from "@/infrastructure/api/change-events"
 
 type CommandCenterState = {
   projects: ProjectData[]
@@ -82,6 +83,19 @@ export function useCommandCenterData(enabled = true) {
     }
     window.addEventListener("focus", onFocus)
     return () => window.removeEventListener("focus", onFocus)
+  }, [enabled, load])
+
+  useEffect(() => {
+    if (!enabled) return
+    const onAccessChanged = () => {
+      invalidateCommandCenterCache()
+      void load({ force: true, background: true })
+    }
+    const events = [SCOPE_CHANGED_EVENT, changedEvent("projects"), changedEvent("clients")]
+    for (const event of events) window.addEventListener(event, onAccessChanged)
+    return () => {
+      for (const event of events) window.removeEventListener(event, onAccessChanged)
+    }
   }, [enabled, load])
 
   return {

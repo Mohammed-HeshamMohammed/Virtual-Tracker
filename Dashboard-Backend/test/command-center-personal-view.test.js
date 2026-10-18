@@ -16,14 +16,21 @@ const stub = {
   personalMetrics: new Map(),
   dailyCalls: [],
   screenshotMemberIds: null,
+  screenshotProjectIds: null,
+  metricProjectIds: [],
+  allowedProjectIds: [],
 };
 
 const VIEWER = "viewer-1";
 const PROJECT = "11111111-1111-4111-8111-111111111111";
+const OTHER_PROJECT = "22222222-2222-4222-8222-222222222222";
 
 mock.module("../src/lib/postgres/projects-postgres.service.js", {
   namedExports: {
-    getProjectActivityMetricsPg: async () => stub.projectMetrics,
+    getProjectActivityMetricsPg: async ({ projectIds }) => {
+      stub.metricProjectIds.push(projectIds);
+      return new Map([...stub.projectMetrics].filter(([id]) => projectIds === null || projectIds.includes(id)));
+    },
     getDailyActivityTotalsPg: async () => {
       stub.dailyCalls.push("project");
       return new Map([["2026-08-27", { activeSeconds: 36000, idleSeconds: 0 }]]);
@@ -51,8 +58,9 @@ mock.module("../src/modules/activity/activity-scope.js", {
 
 mock.module("../src/lib/postgres/activity-events-postgres.service.js", {
   namedExports: {
-    fetchPgScreenshots: async (memberIds) => {
+    fetchPgScreenshots: async (memberIds, _day, _limit, options) => {
       stub.screenshotMemberIds = memberIds;
+      stub.screenshotProjectIds = options?.projectIds;
       return [];
     },
   },
@@ -63,7 +71,7 @@ mock.module("../src/http/project-access.js", {
     // Employee/Intern are not org project admins; a manager-tier role is.
     isOrgProjectAdminRole: (roleName) =>
       ["owner", "superadmin", "admin", "supermanager"].includes(String(roleName)),
-    getViewerProjectIds: async () => [PROJECT],
+    getViewerProjectIds: async () => stub.allowedProjectIds,
   },
 });
 
@@ -72,7 +80,10 @@ mock.module("../src/modules/dashboard/dashboard-base-loader.js", {
     pseudoDocsFromSerialized: (rows) => rows.map((row) => ({ id: row.id, data: () => row.data })),
     clearDashboardBaseMemoryCache: () => {},
     loadDashboardBase: async () => ({
-      projects: [{ id: PROJECT, data: { name: "Bana Test", status: "active" } }],
+      projects: [
+        { id: PROJECT, data: { name: "Bana Test", status: "active" } },
+        { id: OTHER_PROJECT, data: { name: "Unrelated client project", status: "active" } },
+      ],
       budgets: [],
       projectMembers: [
         { id: "pm1", data: { project_id: PROJECT, member_id: VIEWER } },
@@ -93,6 +104,9 @@ function reset(role) {
   stub.role = role;
   stub.dailyCalls = [];
   stub.screenshotMemberIds = null;
+  stub.screenshotProjectIds = null;
+  stub.metricProjectIds = [];
+  stub.allowedProjectIds = [PROJECT];
   // The project worked 10h with two people on it; the viewer's own share is 30m.
   stub.projectMetrics = new Map([
     [PROJECT, { activeSeconds: 36000, idleSeconds: 4000, memberIds: new Set([VIEWER, "coworker-1"]) }],
@@ -121,6 +135,29 @@ test("a manager still sees the whole project's hours - the existing view is unto
   reset("manager");
   const card = projectCard(await getCommandCenterPayload({}, VIEWER));
   assert.equal(card.stats.timeWorked, "10h 0m");
+});
+
+test("a client gets assigned-project team metrics, with no unrelated project or captures", async () => {
+  reset("client");
+  stub.projectMetrics.set(OTHER_PROJECT, { activeSeconds: 360000, idleSeconds: 0, memberIds: new Set(["outsider"]) });
+  const payload = await getCommandCenterPayload({}, VIEWER);
+  assert.equal(payload.isPersonalView, false);
+  assert.equal(payload.canSeeAllProjects, false);
+  assert.deepEqual(payload.projects.map((p) => p.id), [PROJECT]);
+  assert.equal(projectCard(payload).stats.timeWorked, "10h 0m");
+  assert.equal(projectCard(payload).personalTaskStats, null);
+  assert.ok(stub.metricProjectIds.every((ids) => ids.length === 1 && ids[0] === PROJECT));
+  assert.deepEqual(stub.screenshotProjectIds, [PROJECT]);
+  assert.ok(stub.dailyCalls.every((call) => call === "project"));
+});
+
+test("a client with no assignments receives no projects and an empty metric and capture scope", async () => {
+  reset("client");
+  stub.allowedProjectIds = [];
+  const payload = await getCommandCenterPayload({}, VIEWER);
+  assert.deepEqual(payload.projects, []);
+  assert.ok(stub.metricProjectIds.every((ids) => Array.isArray(ids) && ids.length === 0));
+  assert.deepEqual(stub.screenshotProjectIds, []);
 });
 
 test("Team Lead keeps the whole-project view - they manage a team", async () => {

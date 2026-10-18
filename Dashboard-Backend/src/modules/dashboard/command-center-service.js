@@ -536,7 +536,7 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
     }
   }
 
-  const screenshotRows = await fetchPgScreenshots(activityMemberIds, null, 40);
+  const screenshotRows = await fetchPgScreenshots(activityMemberIds, null, 40, { projectIds: allowedProjectIdList });
   const rowMemberIds = [...new Set(screenshotRows.map((row) => String(row.member_id ?? "")).filter(Boolean))];
   const rowMemberMeta = rowMemberIds.length > 0 ? await buildMemberMetaMap(db, rowMemberIds) : new Map();
   const projectNameById = new Map(projectRows.map((row) => [row.id, row.name]));
