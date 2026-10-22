@@ -279,4 +279,78 @@ mod tests {
 
         let _ = fs::remove_file(&path);
     }
+
+    /// Batches go out oldest first, and the one the server refused is the one kept -
+    /// not whichever happens to be last.
+    #[test]
+    fn flush_sends_in_order_and_keeps_exactly_the_refused_batch() {
+        let path = temp_queue_path("flush-order");
+        let _ = fs::remove_file(&path);
+        let queue = EventQueue::new(path.clone());
+        for id in ["s1", "s2", "s3"] {
+            queue.enqueue(id, &sample_events());
+        }
+
+        let mut seen = Vec::new();
+        queue.flush(|id, _| {
+            seen.push(id.to_string());
+            id != "s2"
+        });
+        assert_eq!(seen, ["s1", "s2", "s3"]);
+
+        let mut retried = Vec::new();
+        queue.flush(|id, _| {
+            retried.push(id.to_string());
+            true
+        });
+        assert_eq!(retried, ["s2"], "only the refused batch survives for the next flush");
+        let _ = fs::remove_file(&path);
+    }
+
+    /// A corrupt line (torn write, disk hiccup) must not cost the batches queued after it.
+    #[test]
+    fn flush_skips_a_corrupt_line_and_still_sends_the_rest() {
+        let path = temp_queue_path("flush-corrupt");
+        let _ = fs::remove_file(&path);
+        let queue = EventQueue::new(path.clone());
+        queue.enqueue("before", &sample_events());
+        {
+            let mut file = OpenOptions::new().append(true).open(&path).unwrap();
+            writeln!(file, "{{not json").unwrap();
+        }
+        queue.enqueue("after", &sample_events());
+
+        let mut seen = Vec::new();
+        queue.flush(|id, _| {
+            seen.push(id.to_string());
+            true
+        });
+        assert_eq!(seen, ["before", "after"]);
+        assert!(!path.exists(), "the corrupt line is not kept around to be re-parsed forever");
+        assert_eq!(queue.queued_count(), 0);
+    }
+
+    #[test]
+    fn a_fully_delivered_backlog_removes_the_file() {
+        let path = temp_queue_path("flush-all");
+        let _ = fs::remove_file(&path);
+        let queue = EventQueue::new(path.clone());
+        queue.enqueue("s1", &sample_events());
+        queue.enqueue("s2", &sample_events());
+
+        queue.flush(|_, _| true);
+        assert!(!path.exists());
+        assert_eq!(queue.queued_count(), 0);
+    }
+
+    #[test]
+    fn flush_with_nothing_queued_never_calls_send() {
+        let path = temp_queue_path("flush-empty");
+        let _ = fs::remove_file(&path);
+        let queue = EventQueue::new(path.clone());
+        queue.enqueue("s1", &[]);
+
+        queue.flush(|_, _| panic!("nothing was queued, so nothing may be sent"));
+        assert!(!path.exists(), "an empty batch is not written to disk");
+    }
 }
