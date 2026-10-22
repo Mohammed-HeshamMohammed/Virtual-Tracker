@@ -6,6 +6,9 @@
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
+// Behaviour for the dropped SQL-text checks lives in day-rule-queries.pglite.test.js and
+// session-calendar-sums.pglite.test.js, which run the queries against real Postgres.
+
 /** @type {Array<{ sql: string, params: any[] }>} */
 const calls = [];
 /** Budgets as stored - what the reset period is read from. Empty unless a test sets it. */
@@ -41,17 +44,6 @@ test("toDayStrOrNull normalizes Date and string, passes through null", () => {
   assert.equal(toDayStrOrNull(undefined), null);
 });
 
-test("getProjectTrackedSecondsPg applies fromDate as a >= bound when given", async () => {
-  calls.length = 0;
-  await getProjectTrackedSecondsPg("p1", { fromDate: "2026-03-01" });
-  const { sql, params } = calls.at(-1);
-  // Cut by the day rule (session-day-sql.js): the session's own calendar, not UTC.
-  assert.match(sql, /project_members pm_tz[\s\S]*\)::date >= \$\d/);
-  assert.doesNotMatch(sql, /started_at::date/);
-  assert.match(sql, /date >=/);
-  assert.ok(params.includes("2026-03-01"));
-});
-
 test("getProjectTrackedSecondsPg has no date bound when fromDate is absent", async () => {
   calls.length = 0;
   await getProjectTrackedSecondsPg("p1", {});
@@ -67,16 +59,7 @@ test("computeProjectSpentForAllPg passes each budget row's start_date through as
   ]);
   const { sql, params } = calls.at(-1);
   assert.match(sql, /\$3::date\[\]/);
-  assert.match(sql, /f\.start_date IS NULL OR \(s\.started_at AT TIME ZONE COALESCE\([\s\S]*?\)::date >= f\.start_date/);
   assert.deepEqual(params[2], ["2026-03-01", null]);
-});
-
-test("getProjectTrackedSecondsPg applies toDate as a <= bound when given (Anchor end_date)", async () => {
-  calls.length = 0;
-  await getProjectTrackedSecondsPg("p1", { toDate: "2026-03-31" });
-  const { sql, params } = calls.at(-1);
-  assert.match(sql, /project_members pm_tz[\s\S]*\)::date <= \$\d/);
-  assert.ok(params.includes("2026-03-31"));
 });
 
 test("computeProjectSpentForAllPg passes each budget row's end_date through as the UNNEST bound", async () => {
@@ -84,7 +67,6 @@ test("computeProjectSpentForAllPg passes each budget row's end_date through as t
   await computeProjectSpentForAllPg({}, [{ id: "p1", type: "Hours based", start_date: "2026-03-01", end_date: "2026-03-31" }]);
   const { sql, params } = calls.at(-1);
   assert.match(sql, /\$4::date\[\]/);
-  assert.match(sql, /f\.end_date IS NULL OR \(s\.started_at AT TIME ZONE COALESCE\([\s\S]*?\)::date <= f\.end_date/);
   assert.deepEqual(params[3], ["2026-03-31"]);
 });
 
