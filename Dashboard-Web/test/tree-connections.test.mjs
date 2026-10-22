@@ -293,7 +293,7 @@ test("export: a standalone SVG with every card, escaped text and the right size"
   assert.ok(svg.includes("Ann &lt;Boss&gt; &amp; Co"))
   assert.equal((svg.match(/<path /g) ?? []).length, 1)
   assert.equal((svg.match(/<circle /g) ?? []).length, 2)
-  assert.equal(escapeXml(`"'<>&`), "&quot;'&lt;&gt;&amp;")
+  assert.equal(escapeXml(`"'<>&`), "&quot;&apos;&lt;&gt;&amp;")
   assert.equal(initialsOf("Mohammed Hesham"), "MH")
   assert.equal(initialsOf("  "), "?")
   assert.match(buildTreeSvg({ model: buildTreeModel({ nodes: [], edges: [] }), positions: new Map(), groups: [], nodeWidth: 1, nodeHeight: 1, orientation: "vertical", linkType: "line", stepPercent: 0, isDark: false, title: "" }), /width="10"/)

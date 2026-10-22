@@ -10,7 +10,14 @@ import type { TreeModel } from "./model.ts"
 import { roleColor } from "./roles.ts"
 
 export function escapeXml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+  // All five XML specials: a name with an apostrophe must not be able to close a single-quoted
+  // attribute, whichever quote style the markup around it uses.
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
 }
 
 export function initialsOf(name: string): string {
