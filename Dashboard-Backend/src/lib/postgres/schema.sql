@@ -269,6 +269,12 @@ CREATE TABLE IF NOT EXISTS invites (
   updated_by        UUID
 );
 
+ALTER TABLE invites ADD COLUMN IF NOT EXISTS tree_parent_member_id UUID;
+ALTER TABLE invites ADD COLUMN IF NOT EXISTS use_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE invites ADD COLUMN IF NOT EXISTS max_uses INTEGER;
+ALTER TABLE invites ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE invites ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now();
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_invites_token ON invites (invite_token) WHERE invite_token <> '';
 
 CREATE INDEX IF NOT EXISTS idx_invites_email ON invites (email);
