@@ -53,7 +53,11 @@ jobs:
     permissions:
       contents: read
     steps:
+      # A retry of an existing tag rebuilds that tag, so that is what gets tested -
+      # not whatever main has moved on to since.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.inputs.existing_tag || github.sha }}
 
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
 
@@ -105,7 +109,12 @@ jobs:
       # zero-pad the displayed id, and a signature's own comment does not
       # contain a key id at all. An earlier version of this check grepped for
       # one anyway and could never have passed, matching key or not.
+      # Runs from Tauri-App-Extension with --no-install: the private key must only
+      # ever meet the CLI version the lockfile pins (installed by `npm ci` above).
+      # From the repo root, which has no package.json, `npx --yes` used to fetch
+      # whatever npm served that day and hand it the key.
       - name: assert the signing key matches the shipped pubkey (F.2)
+        working-directory: Tauri-App-Extension
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -116,14 +125,20 @@ jobs:
             exit 1
           fi
           echo "updater-key-check" > /tmp/keycheck.txt
-          npx --yes @tauri-apps/cli signer sign \
+          npx --no-install tauri signer sign \
             --private-key "${TAURI_SIGNING_PRIVATE_KEY}" \
             --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" \
             /tmp/keycheck.txt
-          node .github/scripts/assert-updater-key.mjs /tmp/keycheck.txt.sig
+          # The script reads tauri.conf.json relative to the repo root.
+          cd .. && node .github/scripts/assert-updater-key.mjs /tmp/keycheck.txt.sig
   bump:
     needs: verify
     runs-on: ubuntu-latest
+    # The approval gate. Everything from here on is irreversible - a pushed tag,
+    # then a latest.json every installed agent picks up within minutes - and every
+    # later job needs this one, so one approval (after verify is green) covers the
+    # whole ship. Reviewers are set on the `release` environment in repo settings.
+    environment: release
     permissions:
       contents: write
     outputs:
@@ -133,8 +148,10 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-          # Need a token that can push the version commit + tag back to main.
-          token: ${{ secrets.GITHUB_TOKEN }}
+          # Pushes the version commit + tag back to main. A deploy key rather than
+          # GITHUB_TOKEN: main's ruleset requires a PR, and this key is the one
+          # actor on its bypass list.
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
 
       - name: Bump agent version
         id: version
