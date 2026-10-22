@@ -1,6 +1,7 @@
 // Client self-setup (client-self-setup.js): a Client with no linked client
 // record fills in their own details - unless an admin already made that
 // record, which is then linked by email instead of asking twice.
+// Linking by email (one match, two matches) is checked on real rows in tracking-rules.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
@@ -65,13 +66,6 @@ test("an admin-made record is linked by email instead of asking again", async ()
   assert.deepEqual(await getClientSelfSetupStatus(client), { required: false, clientId: "c9", autoLinked: true });
   const lookup = calls.find((c) => /WHERE member_id IS NULL/.test(c.sql));
   assert.deepEqual(lookup.params, ["cara@acme.com", "t1"], "matched by the member's email, inside their own tenant only");
-});
-
-test("two possible records: no guessing, the client is asked", async () => {
-  reset({ candidates: ["c1", "c2"] });
-  const status = await getClientSelfSetupStatus(client);
-  assert.equal(status.required, true);
-  assert.ok(!calls.some((c) => /^\s*UPDATE clients/.test(c.sql)), "nothing is linked");
 });
 
 test("losing the link race to an admin falls through to asking", async () => {
