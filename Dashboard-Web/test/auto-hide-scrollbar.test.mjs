@@ -78,11 +78,8 @@ test("detaching removes it and stops listening", () => {
   mock.timers.reset()
 })
 
-test("the shell hands its scrolling pane to the helper", () => {
-  const shell = read("app/dashboard-shell.tsx")
-  assert.match(shell, /useAutoHideScrollbar\(\)/)
-  assert.match(shell, /ref=\{pageScrollRef\}/)
-})
+// That the shell hands its scrolling pane to the helper is checked by rendering the shell in
+// dashboard-shell.test.mjs.
 
 test("the scrollbar CSS has no arrow buttons and starts invisible", () => {
   const css = read("app/globals.css")

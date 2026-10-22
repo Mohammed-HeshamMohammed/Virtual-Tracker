@@ -121,11 +121,8 @@ test("an unknown page has no explanation rather than a wrong one", () => {
   assert.match(pageHelp("settings-compliance"), /monitoring notice/)
 })
 
-test("the shell puts the current page's explanation on the page container", () => {
-  const shell = read("app/dashboard-shell.tsx")
-  assert.match(shell, /data-page=\{activeItem\}/)
-  assert.match(shell, /data-help=\{pageHelp\(activeItem\) \|\| undefined\}/)
-})
+// The shell putting the current page's explanation on its container is checked by rendering the
+// shell in dashboard-shell.test.mjs.
 
 // ── the collector, against a page shaped like the dashboard's ─────────────
 
