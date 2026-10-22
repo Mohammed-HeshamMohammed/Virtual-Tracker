@@ -193,7 +193,8 @@ export function fakeBackend(answer = () => undefined) {
     } catch {
       body = init.body
     }
-    const call = { url: String(url), path: url.pathname, query: Object.fromEntries(url.searchParams), method: (init.method ?? "GET").toUpperCase(), body }
+    const headers = Object.fromEntries([...new Headers(init.headers ?? {})].map(([k, v]) => [k.toLowerCase(), v]))
+    const call = { url: String(url), path: url.pathname, query: Object.fromEntries(url.searchParams), method: (init.method ?? "GET").toUpperCase(), body, headers }
     calls.push(call)
     const out = (await answer(call)) ?? {}
     return new Response(JSON.stringify(out.body ?? { success: true, data: null }), {
