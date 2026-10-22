@@ -1,7 +1,8 @@
 // Switching a capability off used to look exactly like a tracker that had
 // stopped working: the data never arrived and nothing said why. These cover the
 // count of what was discarded, and the report that turns it into "this is off,
-// and this much was thrown away".
+// and this much was thrown away". That repeats add up on the real row is checked in
+// daily-counters.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
@@ -43,12 +44,6 @@ test("one upsert per capability that actually dropped something", async () => {
   await recordPolicyDrops("m1", { screenshots: 3, url_capture: 1 });
   assert.equal(calls.length, 2);
   assert.deepEqual(calls.map((c) => c.params).sort(), [["m1", "screenshots", 3], ["m1", "url_capture", 1]].sort());
-});
-
-test("the upsert accumulates within a day rather than overwriting", async () => {
-  reset();
-  await recordPolicyDrops("m1", { screenshots: 2 });
-  assert.match(calls[0].sql, /dropped = capture_policy_drops\.dropped \+ EXCLUDED\.dropped/);
 });
 
 test("nothing dropped means no database call at all", async () => {

@@ -153,6 +153,22 @@ if (!(await loadPglite())) {
     assert.equal(auth.users.size, [...auth.users.values()].filter((u) => u.email !== "toomany@example.test").length, "no sign-in account was created");
   });
 
+  test("each account's invite list shows only its own invites", async () => {
+    const list = async (viewer) => {
+      const res = await request({ method: "GET", path: "/api/member-invites", viewer }, (req, res, url) => routeCompatibility(req, res, url, firestore, undefined));
+      assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+      return res.body.data;
+    };
+    const mainIds = new Set((await inviteRows("tenant_id = $1", [MAIN_TENANT_ID])).map((r) => r.id));
+    const custIds = new Set((await inviteRows("tenant_id = $1", [CUSTOMER])).map((r) => r.id));
+    assert.ok(mainIds.size > 0 && custIds.size > 0);
+    const forCustomer = await list(as(custAdmin, CUSTOMER));
+    assert.ok(forCustomer.length > 0);
+    assert.ok(forCustomer.every((i) => custIds.has(i.id)), "no main-organization invite reaches the customer account");
+    const forOwner = await list(as(owner));
+    assert.ok(forOwner.every((i) => !custIds.has(i.id)), "and no customer invite reaches the main organization");
+  });
+
   test("a sign-in account migrated in by a customer account's admin joins that account", async () => {
     await pg.rows("UPDATE tenants SET seat_limit = 50 WHERE id = $1", [CUSTOMER]);
     const custOrgAdmin = await member("Admin", { first_name: "Ada", firebase_uid: "uid-cust-admin", tenant_id: CUSTOMER });

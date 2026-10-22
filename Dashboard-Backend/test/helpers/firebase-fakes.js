@@ -4,6 +4,14 @@
 
 export function fakeFirestore() {
   const collections = new Map();
+  // Set `failWrites` to make that many upcoming writes throw, like a transient Firestore error.
+  const control = { failWrites: 0 };
+  const maybeFail = () => {
+    if (control.failWrites > 0) {
+      control.failWrites -= 1;
+      throw Object.assign(new Error("fake Firestore: unavailable"), { code: 14 });
+    }
+  };
   const docs = (name) => {
     if (!collections.has(name)) collections.set(name, new Map());
     return collections.get(name);
@@ -16,9 +24,11 @@ export function fakeFirestore() {
     id,
     get: async () => snap(name, id),
     set: async (data, opts = {}) => {
+      maybeFail();
       docs(name).set(id, opts.merge ? { ...(docs(name).get(id) ?? {}), ...data } : { ...data });
     },
     update: async (data) => {
+      maybeFail();
       if (!docs(name).has(id)) throw Object.assign(new Error(`no document ${name}/${id}`), { code: 5 });
       docs(name).set(id, { ...docs(name).get(id), ...data });
     },
@@ -46,6 +56,7 @@ export function fakeFirestore() {
       ...query(name),
     }),
     getAll: async (...refs) => Promise.all(refs.map((r) => r.get())),
+    control,
     /** Test-side view of a collection. */
     dump: (name) => Object.fromEntries(docs(name)),
   };
@@ -58,6 +69,17 @@ export function fakeAuth() {
   const record = (u) => ({ providerData: [], customClaims: {}, metadata: {}, disabled: false, ...u });
   return {
     users,
+    /** An existing sign-in account with a known uid; its ID token is `token-<uid>`. */
+    seedUser: (uid, fields = {}) => {
+      users.set(uid, { uid, emailVerified: true, ...fields });
+      return `token-${uid}`;
+    },
+    verifyIdToken: async (token) => {
+      const uid = String(token).replace(/^token-/, "");
+      const u = users.get(uid);
+      if (!u) throw Object.assign(new Error("bad token"), { code: "auth/argument-error" });
+      return { uid, email: u.email, email_verified: u.emailVerified !== false, auth_time: Math.floor(Date.now() / 1000) };
+    },
     createUser: async ({ email, password, displayName, emailVerified = false }) => {
       if ([...users.values()].some((u) => u.email === email)) {
         throw Object.assign(new Error("exists"), { code: "auth/email-already-exists" });
