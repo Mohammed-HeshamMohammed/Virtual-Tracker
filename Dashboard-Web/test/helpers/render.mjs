@@ -127,6 +127,17 @@ export function installDom(html = "<!doctype html><html><body><div id='root'></d
     if (value === undefined) continue
     Object.defineProperty(globalThis, name, { value: typeof value === "function" && /^[a-z]/.test(name) ? value.bind(dom.window) : value, configurable: true, writable: true })
   }
+  // jsdom has no layout, so nothing ever resizes: an observer that is never called is accurate.
+  if (!dom.window.ResizeObserver) {
+    dom.window.ResizeObserver = class ResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  }
+  if (!Object.getOwnPropertyDescriptor(globalThis, "ResizeObserver")) previous.set("ResizeObserver", undefined)
+  else previous.set("ResizeObserver", Object.getOwnPropertyDescriptor(globalThis, "ResizeObserver"))
+  Object.defineProperty(globalThis, "ResizeObserver", { value: dom.window.ResizeObserver, configurable: true, writable: true })
   const previousAct = globalThis.IS_REACT_ACT_ENVIRONMENT
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   return {
