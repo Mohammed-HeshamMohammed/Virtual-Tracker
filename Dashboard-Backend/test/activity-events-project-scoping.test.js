@@ -71,13 +71,16 @@ test("sumAppLogSecondsByAppNameForProjectPg resolves a task-less session's proje
 // The caller resolves the week in the member's own timezone; this used to cast
 // `started_at::date`, which is the database session's zone, so the two were
 // measuring different weeks for anyone not on UTC.
-test("sumAppLogSecondsByAppNameForProjectPg buckets days in the member's timezone", async () => {
+test("sumAppLogSecondsByAppNameForProjectPg buckets days by the session's own calendar", async () => {
   nextRows = [];
   await sumAppLogSecondsByAppNameForProjectPg(MEMBER_ID, PROJECT_ID, {
     fromDay: "2024-01-01",
     toDay: "2024-01-07",
   });
-  assert.match(lastCall.sql, /AT TIME ZONE COALESCE\(NULLIF\(m_tz\.timezone/);
+  // The day rule (session-day-sql.js): an app slice sits on its session's day; the member's own
+  // zone only when the session is gone.
+  assert.match(lastCall.sql, /FROM activity_sessions ev_s/);
+  assert.match(lastCall.sql, /FROM members mz WHERE mz\.id = l\.member_id/);
   assert.doesNotMatch(lastCall.sql, /l\.started_at::date/);
 });
 

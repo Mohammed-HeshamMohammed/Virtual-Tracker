@@ -360,6 +360,14 @@ impl ActivityTracker {
         self.session_id.lock().clone()
     }
 
+    /// What the tick loop records when it picks up an open session, for tests outside
+    /// this module that need one without running a tick (which captures the screen).
+    #[cfg(test)]
+    pub(crate) fn adopt_session_for_test(&self, session_id: &str, task_id: &str, active_seconds: u64, idle_seconds: u64) {
+        *self.session_id.lock() = Some(session_id.into());
+        *self.task_progress.lock() = (Some(task_id.into()), active_seconds, idle_seconds);
+    }
+
     /// One delivery attempt for a pending idle-stop, if any.
     fn try_deliver_pending_stop(&self) -> bool {
         let Some(pending) = self.pending_stop.lock().clone() else {

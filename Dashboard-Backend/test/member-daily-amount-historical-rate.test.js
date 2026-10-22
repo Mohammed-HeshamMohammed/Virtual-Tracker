@@ -34,7 +34,7 @@ test("unfiltered query resolves rate via pay_rate_history, falling back to pay_r
   assert.match(lastQuery.sql, /COALESCE\(h\.rate, pr\.rate\)/);
 });
 
-test("project-filtered query resolves rate the same way, aggregated with MIN across the group", async () => {
+test("project-filtered query resolves rate the same way, from the project's own sessions", async () => {
   lastQuery = null;
   nextRows = [];
   await getMemberDailyAmountRowsPg({
@@ -45,8 +45,10 @@ test("project-filtered query resolves rate the same way, aggregated with MIN acr
   });
   assert.ok(lastQuery, "query() was called");
   assert.match(lastQuery.sql, /LEFT JOIN LATERAL[\s\S]*pay_rate_history/i);
-  assert.match(lastQuery.sql, /effective_date <= dt\.day/);
-  assert.match(lastQuery.sql, /MIN\(COALESCE\(h\.rate, pr\.rate\)\)/);
+  // Days come from the project's sessions (session-day-sql.js) - one row per member and day, so
+  // the rate resolves per row; there is no longer a per-task rollup to aggregate with MIN.
+  assert.match(lastQuery.sql, /effective_date <= d\.day/);
+  assert.match(lastQuery.sql, /s\.project_id = ANY\(\$4::uuid\[\]\)/);
 });
 
 test("row mapping still produces the same output shape regardless of where the rate resolved from", async () => {

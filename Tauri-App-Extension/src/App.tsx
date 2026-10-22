@@ -1313,28 +1313,39 @@ function MainApp() {
     setLiveActiveSeconds((s) => (sameSession ? Math.max(s, next) : next));
   }, [session?.activeSeconds, session?.id]);
 
+  // Not while an idle stage is showing: that time is about to be handed back, the same
+  // reason the Today ticker below stops.
+  const idleStageShowing = (session?.idleStage ?? 0) !== 0;
   useEffect(() => {
-    if (!tracking) return;
+    if (!tracking || idleStageShowing) return;
     const timer = window.setInterval(() => setLiveActiveSeconds((s) => s + 1), 1000);
     return () => window.clearInterval(timer);
-  }, [tracking]);
+  }, [tracking, idleStageShowing]);
 
   // Same reasoning as liveActiveSeconds above, keyed on the task instead of
   // the session - switching which task is selected is the one case that
-  // should legitimately jump to a different (possibly lower) number.
+  // should legitimately jump to a different (possibly lower) number. The other
+  // is an idle stop: the server takes the stretch with no input back, and the
+  // floor would otherwise keep showing it until the task was reselected.
   const taskActiveSecondsTaskIdRef = useRef<string | undefined>(undefined);
+  const taskIdleRewindPendingRef = useRef(false);
   useEffect(() => {
     const next = taskTracking?.activeSeconds ?? 0;
     const sameTask = Boolean(selectedTaskId) && selectedTaskId === taskActiveSecondsTaskIdRef.current;
     taskActiveSecondsTaskIdRef.current = selectedTaskId || undefined;
+    if (taskIdleRewindPendingRef.current && !tracking) {
+      taskIdleRewindPendingRef.current = false;
+      setLiveTaskActiveSeconds(next);
+      return;
+    }
     setLiveTaskActiveSeconds((s) => (sameTask ? Math.max(s, next) : next));
-  }, [taskTracking?.activeSeconds, selectedTaskId]);
+  }, [taskTracking?.activeSeconds, selectedTaskId, tracking]);
 
   useEffect(() => {
-    if (!tracking) return;
+    if (!tracking || idleStageShowing) return;
     const timer = window.setInterval(() => setLiveTaskActiveSeconds((s) => s + 1), 1000);
     return () => window.clearInterval(timer);
-  }, [tracking]);
+  }, [tracking, idleStageShowing]);
 
   useEffect(() => {
     if (taskLessSession) setTimerViewMode("day");
@@ -1446,6 +1457,7 @@ function MainApp() {
     const prevStage = prevIdleStageRef.current;
     if (stage === 3 && prevStage < 3) {
       idleRewindFromRef.current = liveWorkedTodaySeconds;
+      taskIdleRewindPendingRef.current = true;
       void notify("Timer stopped", describeIdleStop(session?.idleStop));
     }
     prevIdleStageRef.current = stage;

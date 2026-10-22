@@ -1,3 +1,4 @@
+import { sessionDaySql } from "../../lib/postgres/session-day-sql.js";
 import { query } from "../../lib/postgres/client.js";
 import { isManagementRole } from "../../http/auth-context.js";
 import { getActivityScoringSettings } from "./scoring-settings.js";
@@ -237,8 +238,9 @@ export async function getMyCaptureSummary(memberId, timezone) {
          WHERE a.member_id = $1 AND a.started_at >= b.day_start)::int AS apps,
        (SELECT count(DISTINCT u.domain) FROM activity_url_logs u, bounds b
          WHERE u.member_id = $1 AND u.visited_at >= b.day_start)::int AS domains,
-       (SELECT COALESCE(sum(d.active_seconds), 0) FROM daily_member_active_seconds d
-         WHERE d.member_id = $1 AND d.day = (SELECT (day_start AT TIME ZONE $2)::date FROM bounds))::int AS active_seconds`,
+       (SELECT COALESCE(sum(ss.active_seconds), 0) FROM activity_sessions ss
+         WHERE ss.member_id = $1 AND ss.started_at >= (SELECT day_start FROM bounds) - interval '1 day'
+           AND ${sessionDaySql("ss")} = (SELECT (day_start AT TIME ZONE $2)::date FROM bounds))::int AS active_seconds`,
     [memberId, zone],
   );
   const row = rows[0] ?? {};

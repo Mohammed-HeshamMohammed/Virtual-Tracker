@@ -58,7 +58,8 @@ test("getCustomerActivitySummary aggregates within the tenant and returns a sing
   assert.deepEqual(summary, nextRows[0]);
   assert.match(calls[0].sql, /FROM members WHERE tenant_id = \$1 AND status = 'active'/);
   assert.match(calls[0].sql, /FROM projects WHERE tenant_id = \$1 AND status = 'active'/);
-  assert.match(calls[0].sql, /FROM daily_member_active_seconds\s*\n\s*WHERE tenant_id = \$1/);
+  // From the sessions themselves, not the write-time rollup (session-day-sql.js).
+  assert.match(calls[0].sql, /FROM activity_sessions\s*\n\s*WHERE tenant_id = \$1/);
 });
 
 test("getCustomerActivitySummary returns null rather than undefined when nothing comes back", async () => {

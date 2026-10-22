@@ -35,6 +35,7 @@ export const SESSION_REASON_LABELS = Object.freeze({
   task_limit: "Task limit reached",
   account_restricted: "Account restricted",
   duplicate_close: "Duplicate open session closed",
+  day_rollover: "Resumed on a new day: the paused session was closed and a new one started",
   web_on_agent_session: "Dashboard request ignored: the agent owns this timer",
   unspecified: "Not recorded (older client)",
 });

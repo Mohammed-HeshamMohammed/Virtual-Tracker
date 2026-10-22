@@ -36,6 +36,7 @@ if (!PGlite) {
       created_by uuid, updated_by uuid, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now(),
       UNIQUE (project_id, member_id));
     CREATE TABLE activity_sessions (member_id uuid, project_id uuid, started_at timestamptz, active_seconds int);
+    CREATE TABLE members (id uuid PRIMARY KEY, timezone text);
     CREATE TABLE time_entries (project_id uuid, member_id uuid, duration int, date date, status text, billable boolean);
   `);
 

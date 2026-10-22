@@ -72,6 +72,8 @@ impl ActivityTracker {
             state.task_id = session_task_id.to_string();
             state.active_elapsed = 0;
             state.idle_elapsed = 0;
+            // Measured against the old task's totals; see reset_task_progress.
+            state.idle_watch.active_at_last_input = 0;
             state.active_baseline = tracking
                 .as_ref()
                 .map(|t| t.active_seconds)
@@ -478,7 +480,12 @@ impl ActivityTracker {
         let idle_for = self.activity.idle_seconds();
         let active_total = active_baseline.saturating_add(*active_elapsed);
 
-        // Real input: remember this as the last honest point the clock can be rewound to.
+        // Under the allowance: remember the active total at the moment of the last real input,
+        // the point an idle stop rewinds to. Not `active_total` - every tick of a no-input
+        // stretch lands here too, and taking its total moved the point along with the clock,
+        // so a stop handed back one tick instead of the whole stretch. Never moves backwards:
+        // idle_for can also cover time that was not credited active (a break that ended by
+        // itself), and subtracting that would reach back into real work.
         if idle_for < idle_threshold_sec {
             if watch.stage != 0 {
                 watch.stage = 0;
@@ -486,7 +493,7 @@ impl ActivityTracker {
                 *self.idle_stop.lock() = None;
                 self.emit_status("Task session active");
             }
-            watch.active_at_last_input = active_total;
+            watch.active_at_last_input = watch.active_at_last_input.max(active_total.saturating_sub(idle_for));
             return false;
         }
 

@@ -32,42 +32,10 @@ use tiny_http::Method;
 
 use crate::capture::activity::ActivityMeter;
 use crate::client::api::ApiClient;
-use crate::config::Settings;
-use crate::test_support::{fake_jwt, fake_server};
+use crate::test_support::{fake_jwt, fake_server, test_settings};
 
 // Suggestion #14a: end-to-end tick() coverage, made tractable by the TickState refactor
 // (Suggestion #11) - a test can now hand tick() one struct instead of hand-threading 15
-
-/// A `Settings` pointed at `api_url`, with every filesystem path inside its own fresh
-/// temp directory so parallel tests never share state (the queue file in particular -
-fn test_settings(api_url: String) -> Settings {
-    // Not `{:?}` of an Instant: on Windows that prints "Instant { t: 1.2s }", the ':'
-    // makes the path invalid, and every queue/progress write then failed silently.
-    static NEXT: AtomicUsize = AtomicUsize::new(0);
-    let dir = std::env::temp_dir().join(format!(
-        "vt-tracker-test-{}-{}",
-        std::process::id(),
-        NEXT.fetch_add(1, AtomicOrdering::Relaxed)
-    ));
-    // A recycled pid can land on a dir an earlier run left behind, queue file and all.
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("create the test's temp dir");
-    Settings {
-        api_url,
-        web_url: "http://127.0.0.1:1".into(),
-        auth_url: "http://127.0.0.1:1".into(),
-        auth_port: 0,
-        store_path: dir.join("store.json"),
-        prefs_path: dir.join("prefs.json"),
-        queue_path: dir.join("queue.jsonl"),
-        classification_cache_path: dir.join("classifications.json"),
-        progress_path: dir.join("progress.json"),
-        log_path: dir.join("agent.log"),
-        url_script_path: dir.join("missing-get-browser-url.ps1"),
-        macos_url_script_path: dir.join("missing-get-browser-url.applescript"),
-        app_icon_script_path: dir.join("missing-get-app-icon.ps1"),
-    }
-}
 
 /// A tracker whose `ApiClient` already holds a not-yet-expired id token, so
 /// `authorized()` never needs a real Firebase round-trip, pointed at `api_url`.
@@ -398,6 +366,45 @@ fn idle_escalation_folds_the_reversed_active_chunk_into_idle_instead_of_discardi
     // Rewound to the last real input - 10s, not 0 and not the full 100s.
     assert_eq!(active_seconds, 10);
     assert_eq!(idle_seconds, 92);
+}
+
+/// The test above hands escalation a last-input point. This one lets the real ticks set it,
+/// the way they do in the field: input, then a stretch with none that stays under the
+/// allowance, then the allowance running out. Everything credited active since the input
+/// is the grace window, and the stop has to hand all of it back - not just the last tick's.
+#[cfg(windows)]
+#[test]
+fn an_idle_stop_hands_back_the_whole_stretch_since_the_last_input() {
+    let base_url = fake_server(|request| match request.method() {
+        Method::Post => (200, r#"{"data": {"id": "sess-1", "status": "stopped"}}"#.to_string()),
+        _ => (404, "{}".to_string()),
+    });
+    let tracker = test_tracker(base_url);
+    let threshold = 3;
+    let mut watch = IdleWatch::default();
+    let escalate = |watch: &mut IdleWatch, active_elapsed: u64| {
+        tracker.tick_idle_escalation(watch, "task-1", "project-1", &0, &active_elapsed, &0, &0, false, threshold)
+    };
+
+    // Input just now, at 100s of active time.
+    {
+        let _os_idle = SimulatedOsIdle::seconds(0);
+        assert!(!escalate(&mut watch, 100));
+    }
+    // Two seconds with no input - under the allowance, so still credited active.
+    thread::sleep(Duration::from_millis(2_200));
+    {
+        let _os_idle = SimulatedOsIdle::seconds(2);
+        assert!(!escalate(&mut watch, 102));
+    }
+    // The allowance runs out.
+    thread::sleep(Duration::from_millis(1_300));
+    let _os_idle = SimulatedOsIdle::seconds(9_999);
+    assert!(escalate(&mut watch, 103), "past the allowance, the timer stops");
+
+    let (_, active_seconds, idle_seconds) = tracker.task_progress.lock().clone();
+    assert_eq!(active_seconds, 100, "rewound to the last input, not to the last tick before the stop");
+    assert_eq!(idle_seconds, 3);
 }
 
 /// `disable_idle_time = true` on the project must mean no idle escalation at all - the

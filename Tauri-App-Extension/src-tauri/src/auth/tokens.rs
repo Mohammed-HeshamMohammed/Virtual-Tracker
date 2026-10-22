@@ -9,6 +9,7 @@ use crate::auth::dpapi;
 // MAC-1: one entry, one machine/user profile - matches the previous single-file-per-install
 // model.
 const KEYRING_SERVICE: &str = "com.virtualtracker.agent";
+#[cfg_attr(test, allow(dead_code))]
 const KEYRING_USERNAME: &str = "tokens";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -55,8 +56,18 @@ impl TokenStore {
         Self { path }
     }
 
-    fn entry() -> Option<Entry> {
-        match Entry::new(KEYRING_SERVICE, KEYRING_USERNAME) {
+    fn entry(&self) -> Option<Entry> {
+        // A test gets an entry of its own, named after its store path: the real one is
+        // this machine's actual sign-in, and a test that signs out would otherwise wipe it
+        // (and parallel tests would overwrite each other's).
+        #[cfg(test)]
+        let entry = Entry::new(
+            &format!("{KEYRING_SERVICE}.test"),
+            &self.path.to_string_lossy(),
+        );
+        #[cfg(not(test))]
+        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USERNAME);
+        match entry {
             Ok(entry) => Some(entry),
             Err(err) => {
                 // No usable OS credential store on this platform/session - callers fall
@@ -71,7 +82,7 @@ impl TokenStore {
     }
 
     pub fn load(&self) -> StoredCredentials {
-        if let Some(entry) = Self::entry() {
+        if let Some(entry) = self.entry() {
             match entry.get_secret() {
                 Ok(secret) => match serde_json::from_slice::<StorePayload>(&secret) {
                     Ok(data) => return data.into(),
@@ -119,7 +130,7 @@ impl TokenStore {
         let Ok(json) = serde_json::to_vec(&payload) else {
             return false;
         };
-        let Some(entry) = Self::entry() else {
+        let Some(entry) = self.entry() else {
             log::warn!("No OS credential store available; tokens were not persisted");
             return false;
         };
@@ -131,7 +142,7 @@ impl TokenStore {
     }
 
     pub fn clear(&self) {
-        if let Some(entry) = Self::entry() {
+        if let Some(entry) = self.entry() {
             match entry.delete_credential() {
                 Ok(()) | Err(keyring::Error::NoEntry) => {}
                 Err(err) => log::warn!("Could not clear token store: {err}"),

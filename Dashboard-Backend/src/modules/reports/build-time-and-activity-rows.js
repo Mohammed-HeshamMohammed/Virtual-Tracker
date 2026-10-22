@@ -19,7 +19,10 @@ function attributeSessionToStartDay(session, timeZone) {
   const start = new Date(session.started_at);
   return [
     {
-      day: localDayFor(start, timeZone),
+      // The query already resolved the day by the session's own calendar - its project's zone,
+      // else the member's (session-day-sql.js). `timeZone` (the member's) is only a fallback for
+      // rows built without it.
+      day: session.session_day ?? localDayFor(start, timeZone),
       activeSeconds: session.active_seconds,
       idleSeconds: session.idle_seconds,
       activitySum: session.activity_sum ?? 0,
