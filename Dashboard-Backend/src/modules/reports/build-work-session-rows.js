@@ -25,13 +25,15 @@ import { describeSessionReason } from "../activity/session-reasons.js";
 export function buildWorkSessionRows(sessions, nameMap, tzMap, fromDay, toDay) {
   return sessions
     .map((session) => {
-      const memberTimezone = tzMap.get(session.memberId) ?? "UTC";
+      // The session's own calendar (its project's zone, else the member's) decides both its day
+      // and the clock it is read on - see session-day-sql.js.
+      const memberTimezone = session.sessionZone ?? tzMap.get(session.memberId) ?? "UTC";
       return {
         ...session,
         memberName: nameMap.get(session.memberId)?.name ?? "Unknown",
         memberAvatarUrl: nameMap.get(session.memberId)?.avatarUrl ?? null,
         memberTimezone,
-        localDay: localDayFor(new Date(session.startedAt), memberTimezone),
+        localDay: session.sessionDay ?? localDayFor(new Date(session.startedAt), memberTimezone),
         // "Why did this end?" in words - only for sessions that have ended,
         // and only where something recorded a reason (PLAN D5). Sessions from
         // before reasons existed stay blank rather than claiming "unspecified".

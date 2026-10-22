@@ -23,6 +23,8 @@ if (!PGlite) {
   await db.exec("SET TIME ZONE 'UTC'"); // production's database session zone
   await db.exec(`
     CREATE TABLE members (id uuid PRIMARY KEY, timezone text);
+    CREATE TABLE projects (id uuid PRIMARY KEY, timezone text, budget_enabled boolean NOT NULL DEFAULT true, member_limits_enabled boolean NOT NULL DEFAULT true);
+    CREATE TABLE project_members (project_id uuid, member_id uuid, timezone text);
     CREATE TABLE activity_sessions (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(), member_id uuid, project_id uuid, task_id uuid,
       started_at timestamptz, active_seconds int, idle_seconds int);
@@ -73,13 +75,31 @@ if (!PGlite) {
 
   const day = (from, to, tz) => svc.sumDailyMemberActiveSeconds(M, { fromDay: from, toDay: to, timeZone: tz });
 
-  test("the same sessions fall on different days depending on the calendar they are read in", async () => {
-    // Cairo (UTC+2): A -> Jan 2, B -> Jan 2, C -> Jan 3.
-    assert.equal(await day("2026-01-02", "2026-01-02", "Africa/Cairo"), 3600 + 1800);
-    assert.equal(await day("2026-01-03", "2026-01-03", "Africa/Cairo"), 900);
-    // New York (UTC-5): A -> Jan 1, B -> Jan 2, C -> Jan 2.
-    assert.equal(await day("2026-01-01", "2026-01-01", "America/New_York"), 3600);
-    assert.equal(await day("2026-01-02", "2026-01-02", "America/New_York"), 1800 + 900);
+  // The day rule (session-day-sql.js): a session's day is decided by its own calendar - the member's
+  // override on its project, else the project's zone, else the member's - never by the zone a figure is
+  // read in. P has no zone, so these fall on Cairo's days.
+  test("a session's day is its own calendar's, whatever calendar the figure is read in", async () => {
+    for (const tz of ["Africa/Cairo", "America/New_York", null]) {
+      // Cairo (UTC+2): A -> Jan 2, B -> Jan 2, C -> Jan 3.
+      assert.equal(await day("2026-01-01", "2026-01-01", tz), 0, String(tz));
+      assert.equal(await day("2026-01-02", "2026-01-02", tz), 3600 + 1800, String(tz));
+      assert.equal(await day("2026-01-03", "2026-01-03", tz), 900, String(tz));
+    }
+  });
+
+  test("the project's zone beats the member's, and the member's override on the project beats both", async () => {
+    const ny = "99999999-9999-4999-8999-999999999991";
+    const overridden = "99999999-9999-4999-8999-999999999992";
+    await db.query("INSERT INTO projects (id, timezone) VALUES ($1, 'America/New_York'), ($2, 'America/New_York')", [ny, overridden]);
+    await db.query("INSERT INTO project_members (project_id, member_id, timezone) VALUES ($1, $2, 'Pacific/Kiritimati')", [overridden, M]);
+    // 02:00 UTC Apr 5 is Apr 4 in New York, Apr 5 in Cairo.
+    await session("2026-04-05T02:00:00Z", 500, 0, ny);
+    assert.equal(await day("2026-04-04", "2026-04-04", "Africa/Cairo"), 500);
+    assert.equal(await day("2026-04-05", "2026-04-05", "Africa/Cairo"), 0);
+    // 12:00 UTC Apr 10 is Apr 10 in New York and Cairo, Apr 11 in Kiritimati (UTC+14).
+    await session("2026-04-10T12:00:00Z", 700, 0, overridden);
+    assert.equal(await day("2026-04-10", "2026-04-10", "America/New_York"), 0);
+    assert.equal(await day("2026-04-11", "2026-04-11", "America/New_York"), 700);
   });
 
   test("with no zone given, the member's own zone is used", async () => {
@@ -96,16 +116,16 @@ if (!PGlite) {
     }
   });
 
-  test("active, idle, the project figure and the week list all agree on one calendar", async () => {
-    const tz = "America/New_York";
+  test("active, idle, the project figure and the week list all agree on the same days", async () => {
+    const tz = "America/New_York"; // read in another calendar on purpose: it must change nothing
     const today = await svc.sumMemberActiveIdleSeconds(M, { fromDay: "2026-01-02", toDay: "2026-01-02", timeZone: tz });
-    assert.deepEqual(today, { activeSeconds: 1800 + 900, idleSeconds: 30 + 10 });
+    assert.deepEqual(today, { activeSeconds: 3600 + 1800, idleSeconds: 60 + 30 });
     const forProject = await svc.sumMemberActiveIdleSecondsForProject(M, P, { fromDay: "2026-01-02", toDay: "2026-01-02", timeZone: tz });
     assert.deepEqual(forProject, today);
     const idle = await svc.listMemberIdleSecondsByDay(M, { fromDay: "2025-12-29", toDay: "2026-01-04", timeZone: tz });
-    assert.equal(Number(idle.find((r) => r.day === "2026-01-02").idle_seconds), 40);
+    assert.equal(Number(idle.find((r) => r.day === "2026-01-02").idle_seconds), 90);
     const active = await svc.listDailyMemberActiveSeconds(M, { fromDay: "2025-12-29", toDay: "2026-01-04", timeZone: tz });
-    assert.equal(Number(active.find((r) => r.day === "2026-01-02").active_seconds), 2700);
+    assert.equal(Number(active.find((r) => r.day === "2026-01-02").active_seconds), 5400);
   });
 
   test("manual time per day counts only approved manual entries of that member and week", async () => {
@@ -138,17 +158,14 @@ if (!PGlite) {
     assert.equal(await day("2026-01-02", "2026-01-02", "Africa/Cairo"), 5400);
   });
 
-  test("project limit windows are cut at the project's midnights", async () => {
+  test("project limit windows use each session's own day", async () => {
     await db.query("INSERT INTO time_entries VALUES ($1,$2,120,'2026-01-02','approved',true)", [P, M]);
-    // from Jan 2 in Cairo: A (Jan 2 00:30 Cairo) + B + C + the 120s manual entry
-    const cairo = await proj.getProjectTrackedSecondsPg(P, { memberId: M, fromDate: "2026-01-02", timeZone: "Africa/Cairo" });
-    assert.equal(cairo, 3600 + 1800 + 900 + 120);
-    // from Jan 2 in New York: A is still Jan 1 there, so it drops out
-    const ny = await proj.getProjectTrackedSecondsPg(P, { memberId: M, fromDate: "2026-01-02", timeZone: "America/New_York" });
-    assert.equal(ny, 1800 + 900 + 120);
-    // no zone: unchanged behaviour (UTC date)
-    const utc = await proj.getProjectTrackedSecondsPg(P, { memberId: M, fromDate: "2026-01-02" });
-    assert.equal(utc, 1800 + 900 + 120);
+    // P has no zone, so its sessions fall on Cairo's days: A (00:30 Jan 2) + B + C + the 120s manual
+    // entry, however the window was asked for. (With no zone it used to be the UTC date, dropping A.)
+    for (const timeZone of ["Africa/Cairo", "America/New_York", undefined]) {
+      const total = await proj.getProjectTrackedSecondsPg(P, { memberId: M, fromDate: "2026-01-02", toDate: "2026-01-31", timeZone });
+      assert.equal(total, 3600 + 1800 + 900 + 120, String(timeZone));
+    }
   });
 
   test("a session on the exact midnight boundary counts once", async () => {
@@ -161,19 +178,20 @@ if (!PGlite) {
     assert.equal(d2, 100);
   });
 
-  test("a task's day is cut in the calendar it is read in, from its own sessions", async () => {
+  test("a task's day comes from its own sessions' calendar", async () => {
     const T = "55555555-5555-4555-8555-555555555555";
     const U = "66666666-6666-4666-8666-666666666666";
     const m = "77777777-7777-4777-8777-777777777777";
     await db.query("INSERT INTO members VALUES ($1, 'UTC')", [m]);
     const add = (started, secs, task) =>
       db.query("INSERT INTO activity_sessions (member_id, project_id, task_id, started_at, active_seconds, idle_seconds) VALUES ($1,$2,$3,$4,$5,0)", [m, P, task, started, secs]);
-    await add("2026-02-01T23:00:00Z", 600, T); // Feb 2 in Cairo, Feb 1 in New York
+    await add("2026-02-01T23:00:00Z", 600, T); // the member is on UTC and P has no zone: Feb 1
     await add("2026-02-02T09:00:00Z", 300, T);
     await add("2026-02-02T09:00:00Z", 9999, U); // another task
-    assert.equal(await svc.sumDailyMemberTaskActiveSeconds(m, T, "2026-02-02", "Africa/Cairo"), 900);
-    assert.equal(await svc.sumDailyMemberTaskActiveSeconds(m, T, "2026-02-02", "America/New_York"), 300);
-    assert.equal(await svc.sumDailyMemberTaskActiveSecondsRange(m, T, { fromDay: "2026-02-01", toDay: "2026-02-02", timeZone: "America/New_York" }), 900);
+    for (const tz of ["Africa/Cairo", "America/New_York", null]) {
+      assert.equal(await svc.sumDailyMemberTaskActiveSeconds(m, T, "2026-02-02", tz), 300, String(tz));
+    }
+    assert.equal(await svc.sumDailyMemberTaskActiveSecondsRange(m, T, { fromDay: "2026-02-01", toDay: "2026-02-02" }), 900);
   });
 
   test("turning a project's budget or member limits off hides them from everything that enforces them, and keeps the rows", async () => {

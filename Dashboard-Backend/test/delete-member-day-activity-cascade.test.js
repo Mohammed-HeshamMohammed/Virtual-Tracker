@@ -82,13 +82,12 @@ test("deletes screenshots, app logs, url logs, sessions, and manual entries, all
   }
 });
 
-test("the day is the member's own calendar day, not the database's", async () => {
+test("the day is each session's own calendar day (session-day-sql.js), not the database's", async () => {
   reset();
   await deleteMemberDayActivityWithChildrenPg(MEMBER_ID, DAY, "Africa/Cairo");
   const byTable = Object.fromEntries(stub.queries.map((q) => [tableFor(q.sql), q]));
   for (const table of ["activity_sessions", "activity_screenshots", "activity_app_logs", "activity_url_logs"]) {
-    assert.equal(byTable[table].params[2], "Africa/Cairo", table);
-    assert.match(byTable[table].sql, /AT TIME ZONE \$3\)::date = \$2::date/, table);
+    assert.match(byTable[table].sql, /project_members pm_tz[\s\S]*= \$2::date/, table);
   }
 });
 
@@ -98,8 +97,8 @@ test("what a removed session captured after midnight goes with it", async () => 
   const byTable = Object.fromEntries(stub.queries.map((q) => [tableFor(q.sql), q]));
   assert.equal(tableFor(stub.queries[0].sql), "activity_sessions", "sessions first, so their ids are known");
   for (const table of ["activity_screenshots", "activity_app_logs", "activity_url_logs"]) {
-    assert.deepEqual(byTable[table].params[3], ["s1", "s2", "s3"], table);
-    assert.match(byTable[table].sql, /session_id = ANY\(\$4::text\[\]\)/, table);
+    assert.deepEqual(byTable[table].params[2], ["s1", "s2", "s3"], table);
+    assert.match(byTable[table].sql, /session_id = ANY\(\$3::text\[\]\)/, table);
   }
 });
 

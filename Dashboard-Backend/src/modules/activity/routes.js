@@ -972,6 +972,37 @@ export async function routeActivity(req, res, url, origin) {
           open.status = "idle";
         }
       } else if (action === "resume") {
+        // A session's time belongs to the day it started - right for a shift that runs past
+        // midnight, wrong for a Pause or Break that does: a Pause never ends by itself, so
+        // pausing at 6pm and resuming at 9am put the whole next day on the day before. A
+        // resume on a later day (in the session's own calendar) closes the paused session
+        // as it stands and opens a new one on today, seeded with the running total so
+        // nothing is counted twice (createPgSession).
+        let rolledOverTaskId = null;
+        let rolledOverTotals = null;
+        if (open && open.status !== "active") {
+          const zone = await resolveProjectTimeZone(open.project_id ?? sessionProjectId, member.memberId);
+          if (localDayFor(new Date(open.started_at), zone) !== localDayFor(now, zone)) {
+            await updatePgSession(open.id, {
+              status: "stopped",
+              endedAt: now,
+              updatedAt: now,
+              stopReason: "day_rollover",
+              stoppedBy: member.memberId,
+            });
+            void recordSessionEventPg({
+              sessionId: open.id,
+              action: "stop",
+              reason: "day_rollover",
+              actorId: member.memberId,
+              source: fromWeb ? "web" : "agent",
+              clientVersion,
+            });
+            rolledOverTaskId = open.task_id ?? null;
+            rolledOverTotals = sessionRunningTotals(open);
+            open = null;
+          }
+        }
         if (open) {
           await updatePgSession(open.id, {
             status: "active",
@@ -988,13 +1019,15 @@ export async function routeActivity(req, res, url, origin) {
             open = await createPgSession({
               id,
               memberId: member.memberId,
-              taskId,
+              taskId: taskId ?? rolledOverTaskId,
               projectId: sessionProjectId,
               status: "active",
               startedAt: now,
               endedAt: null,
-              activeSeconds: activeSeconds ?? 0,
-              idleSeconds: idleSeconds ?? 0,
+              // A rolled-over session starts from the closed one's running total, so a client
+              // that sends none cannot have it counted again as this session's own.
+              activeSeconds: activeSeconds ?? rolledOverTotals?.activeSeconds ?? 0,
+              idleSeconds: idleSeconds ?? rolledOverTotals?.idleSeconds ?? 0,
               source: origin ? "web" : "agent",
               updatedAt: now,
             });

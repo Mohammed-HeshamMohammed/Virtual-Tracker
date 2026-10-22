@@ -45,7 +45,9 @@ test("getProjectTrackedSecondsPg applies fromDate as a >= bound when given", asy
   calls.length = 0;
   await getProjectTrackedSecondsPg("p1", { fromDate: "2026-03-01" });
   const { sql, params } = calls.at(-1);
-  assert.match(sql, /started_at::date >=/);
+  // Cut by the day rule (session-day-sql.js): the session's own calendar, not UTC.
+  assert.match(sql, /project_members pm_tz[\s\S]*\)::date >= \$\d/);
+  assert.doesNotMatch(sql, /started_at::date/);
   assert.match(sql, /date >=/);
   assert.ok(params.includes("2026-03-01"));
 });
@@ -65,7 +67,7 @@ test("computeProjectSpentForAllPg passes each budget row's start_date through as
   ]);
   const { sql, params } = calls.at(-1);
   assert.match(sql, /\$3::date\[\]/);
-  assert.match(sql, /f\.start_date IS NULL OR \(s\.started_at AT TIME ZONE f\.zone\)::date >= f\.start_date/);
+  assert.match(sql, /f\.start_date IS NULL OR \(s\.started_at AT TIME ZONE COALESCE\([\s\S]*?\)::date >= f\.start_date/);
   assert.deepEqual(params[2], ["2026-03-01", null]);
 });
 
@@ -73,7 +75,7 @@ test("getProjectTrackedSecondsPg applies toDate as a <= bound when given (Anchor
   calls.length = 0;
   await getProjectTrackedSecondsPg("p1", { toDate: "2026-03-31" });
   const { sql, params } = calls.at(-1);
-  assert.match(sql, /started_at::date <=/);
+  assert.match(sql, /project_members pm_tz[\s\S]*\)::date <= \$\d/);
   assert.ok(params.includes("2026-03-31"));
 });
 
@@ -82,7 +84,7 @@ test("computeProjectSpentForAllPg passes each budget row's end_date through as t
   await computeProjectSpentForAllPg({}, [{ id: "p1", type: "Hours based", start_date: "2026-03-01", end_date: "2026-03-31" }]);
   const { sql, params } = calls.at(-1);
   assert.match(sql, /\$4::date\[\]/);
-  assert.match(sql, /f\.end_date IS NULL OR \(s\.started_at AT TIME ZONE f\.zone\)::date <= f\.end_date/);
+  assert.match(sql, /f\.end_date IS NULL OR \(s\.started_at AT TIME ZONE COALESCE\([\s\S]*?\)::date <= f\.end_date/);
   assert.deepEqual(params[3], ["2026-03-31"]);
 });
 
@@ -122,5 +124,5 @@ test("a time zone with no date bound is not sent as an unused parameter", async 
   calls.length = 0;
   await getProjectTrackedSecondsPg("p1", { timeZone: "Asia/Tokyo", fromDate: "2026-03-01" });
   assert.deepEqual(unreferencedParams(calls.at(-1)), []);
-  assert.ok(calls.at(-1).params.includes("Asia/Tokyo"), "still used when there is a bound");
+  assert.ok(!calls.at(-1).params.includes("Asia/Tokyo"), "each session's own calendar cuts it; the caller's zone is not sent");
 });

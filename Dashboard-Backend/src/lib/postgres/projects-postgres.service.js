@@ -17,6 +17,7 @@ import {
 } from "../currency/member-rate.js";
 import { canonicalizeTimeZone, localDayFor } from "../time/timezone-utils.js";
 import { budgetPeriodWindow } from "../time/budget-period.js";
+import { sessionDaySql } from "./session-day-sql.js";
 
 function uuidOrNull(value) {
   if (value === null || value === undefined) return null;
@@ -775,15 +776,9 @@ export async function getProjectTrackedSecondsPg(projectId, options = {}) {
   let sessionWhere = "project_id = $1";
   let entryWhere = "project_id = $2 AND status != 'rejected'";
 
-  // The day a session counts on is the day it started in `options.timeZone`
-  // (the project's calendar for its limits); without one it is the database
-  // session's, which is UTC - right only for people living there.
-  let sessionDay = "started_at::date";
-  // Only sent when a date bound uses it: Postgres rejects a parameter the query never references.
-  if (options.timeZone && (options.fromDate || options.toDate)) {
-    params.push(options.timeZone);
-    sessionDay = `(started_at AT TIME ZONE $${params.length}::text)::date`;
-  }
+  // The day a session counts on: the day it started in its own calendar (session-day-sql.js).
+  // `options.timeZone` is no longer needed for that; callers still pass it harmlessly.
+  const sessionDay = sessionDaySql("activity_sessions");
 
   if (options.fromDate) {
     params.push(options.fromDate);
@@ -825,14 +820,8 @@ export async function computeProjectSpentCostPg(db, projectId, options = {}) {
   const params = [projectId];
   let sessionDateClause = "";
   let entryDateClause = "";
-  // Same rule as getProjectTrackedSecondsPg: a session counts on the day it started in
-  // `options.timeZone` (the project's calendar), else in the database's (UTC).
-  let sessionDay = "started_at::date";
-  // Only sent when a date bound uses it: Postgres rejects a parameter the query never references.
-  if (options.timeZone && (options.fromDate || options.toDate)) {
-    params.push(options.timeZone);
-    sessionDay = `(started_at AT TIME ZONE $${params.length}::text)::date`;
-  }
+  // Same rule as getProjectTrackedSecondsPg (session-day-sql.js).
+  const sessionDay = sessionDaySql("activity_sessions");
   if (options.fromDate) {
     params.push(options.fromDate);
     sessionDateClause += ` AND ${sessionDay} >= $${params.length}`;
@@ -900,24 +889,27 @@ function projectBudgetZone(raw) {
  * only when the budget says so, money from pay rates or the client's bill rate.
  */
 export async function dailyBudgetSpendPg(db, projectId, budgetRow, zone, fromDay, toDay = null) {
-  const params = [projectId, zone, fromDay];
+  // Sessions are cut by the day rule (session-day-sql.js); `zone` is the budget period's
+  // calendar, which decided `fromDay`/`toDay`.
+  const sessionDay = sessionDaySql("activity_sessions");
+  const params = [projectId, fromDay];
   let sessionTo = "";
   let entryTo = "";
   if (toDay) {
     params.push(toDay);
-    sessionTo = ` AND (started_at AT TIME ZONE $2::text)::date <= $${params.length}`;
+    sessionTo = ` AND ${sessionDay} <= $${params.length}`;
     entryTo = ` AND date <= $${params.length}`;
   }
   const billable = budgetRow.include_non_billable_time === false ? " AND billable = true" : "";
   const rows = await query(
     `SELECT day, member_id, SUM(secs) AS secs FROM (
-       SELECT to_char((started_at AT TIME ZONE $2::text)::date, 'YYYY-MM-DD') AS day, member_id, active_seconds AS secs
+       SELECT to_char(${sessionDay}, 'YYYY-MM-DD') AS day, member_id, active_seconds AS secs
          FROM activity_sessions
-        WHERE project_id = $1 AND (started_at AT TIME ZONE $2::text)::date >= $3::date${sessionTo}
+        WHERE project_id = $1 AND ${sessionDay} >= $2::date${sessionTo}
        UNION ALL
        SELECT to_char(date, 'YYYY-MM-DD') AS day, member_id, duration AS secs
          FROM time_entries
-        WHERE project_id = $1 AND status != 'rejected' AND date >= $3::date${entryTo}${billable}
+        WHERE project_id = $1 AND status != 'rejected' AND date >= $2::date${entryTo}${billable}
      ) tracked
      GROUP BY day, member_id`,
     params,
@@ -1035,8 +1027,8 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
          SELECT s.project_id, s.active_seconds AS secs
          FROM activity_sessions s
          JOIN proj_flags f ON f.project_id = s.project_id
-         WHERE (f.start_date IS NULL OR (s.started_at AT TIME ZONE f.zone)::date >= f.start_date)
-           AND (f.end_date IS NULL OR (s.started_at AT TIME ZONE f.zone)::date <= f.end_date)
+         WHERE (f.start_date IS NULL OR ${sessionDaySql("s")} >= f.start_date)
+           AND (f.end_date IS NULL OR ${sessionDaySql("s")} <= f.end_date)
          UNION ALL
          SELECT te.project_id, te.duration AS secs
          FROM time_entries te
@@ -1071,8 +1063,8 @@ export async function computeProjectSpentForAllPg(db, budgetRows) {
          SELECT s.project_id, s.member_id, s.active_seconds AS secs
          FROM activity_sessions s
          JOIN proj_flags f ON f.project_id = s.project_id
-         WHERE (f.start_date IS NULL OR (s.started_at AT TIME ZONE f.zone)::date >= f.start_date)
-           AND (f.end_date IS NULL OR (s.started_at AT TIME ZONE f.zone)::date <= f.end_date)
+         WHERE (f.start_date IS NULL OR ${sessionDaySql("s")} >= f.start_date)
+           AND (f.end_date IS NULL OR ${sessionDaySql("s")} <= f.end_date)
          UNION ALL
          SELECT te.project_id, te.member_id, te.duration AS secs
          FROM time_entries te
@@ -1219,7 +1211,7 @@ export async function getProjectActivityMetricsPg({ projectIds = null, fromDay, 
               s.idle_seconds   AS idle_seconds,
               shots.activity_sum,
               shots.activity_count,
-              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
+              ${sessionDaySql("s")} AS day
        FROM activity_sessions s
        LEFT JOIN members m ON m.id = s.member_id
        -- Activity is the screenshots' levels, the same figure every activity page
@@ -1272,7 +1264,7 @@ export async function getDailyActivityTotalsPg({ projectIds = null, fromDay, toD
        SELECT s.project_id,
               s.active_seconds AS active_seconds,
               s.idle_seconds   AS idle_seconds,
-              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
+              ${sessionDaySql("s")} AS day
        FROM activity_sessions s
        LEFT JOIN members m ON m.id = s.member_id
        UNION ALL
@@ -1330,7 +1322,7 @@ export async function getMemberActivitySecondsPg({ projectIds = null, fromDay, t
     `WITH worked AS (
        SELECT s.project_id, s.member_id,
               s.active_seconds AS active_seconds,
-              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
+              ${sessionDaySql("s")} AS day
        FROM activity_sessions s
        LEFT JOIN members m ON m.id = s.member_id
        UNION ALL
@@ -1362,7 +1354,7 @@ export async function getMemberDailyActivityTotalsPg({ projectIds = null, member
        SELECT s.project_id, s.member_id,
               s.active_seconds AS active_seconds,
               s.idle_seconds   AS idle_seconds,
-              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
+              ${sessionDaySql("s")} AS day
        FROM activity_sessions s
        LEFT JOIN members m ON m.id = s.member_id
        UNION ALL
@@ -1400,7 +1392,7 @@ export async function getMemberProjectActivityMetricsPg({ projectIds = null, mem
               s.idle_seconds   AS idle_seconds,
               shots.activity_sum,
               shots.activity_count,
-              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day
+              ${sessionDaySql("s")} AS day
        FROM activity_sessions s
        LEFT JOIN members m ON m.id = s.member_id
        -- Activity is the screenshots' levels, the same figure every activity page

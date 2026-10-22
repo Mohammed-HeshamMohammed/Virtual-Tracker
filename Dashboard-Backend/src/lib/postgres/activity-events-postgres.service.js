@@ -2,10 +2,10 @@ import { withTransaction, queryRaw } from "./client.js";
 import { parseProgressUuid } from "./task-member-progress.service.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { normalizeAppName } from "../../modules/activity/app-name.js";
-import { getMemberTimezone } from "../../modules/reports/member-timezones.js";
 import { localDayFor } from "../time/timezone-utils.js";
 import { resolveProjectTimeZone } from "../time/resolve-time-zone.js";
 import { recordSecurityEvent } from "../../core/metrics.js";
+import { eventDaySql, sessionDaySql } from "./session-day-sql.js";
 
 const APP_LOG_MERGE_GRACE_MS = 120_000;
 
@@ -229,8 +229,9 @@ export async function insertActivityUrlLog(row) {
   }
 }
 
+/** The day a screenshot/app/URL row belongs to - its session's (see session-day-sql.js). */
 function localDay(tsColumn) {
-  return `(${tsColumn} AT TIME ZONE COALESCE(NULLIF(m_tz.timezone, ''), 'UTC'))::date`;
+  return eventDaySql(tsColumn.split(".")[0], tsColumn);
 }
 
 export async function fetchPgScreenshots(memberIds, dayFilter, limit, options = {}) {
@@ -661,31 +662,33 @@ export async function deleteActivitySessionWithChildrenPg(sessionId) {
  * so its screenshots and logs are removed by session as well as by day - the
  * day match alone left them behind with no session to belong to.
  */
-export async function deleteMemberDayActivityWithChildrenPg(memberId, day, timeZone = "UTC") {
+export async function deleteMemberDayActivityWithChildrenPg(memberId, day, _timeZone = "UTC") {
   return withTransaction(async (client) => {
+    // The day each session belongs to by its project's calendar (session-day-sql.js) - the
+    // same rule the report used to draw this day.
     const sessions = await client.query(
-      `DELETE FROM activity_sessions
-       WHERE member_id = $1 AND (started_at AT TIME ZONE $3)::date = $2::date
-       RETURNING id`,
-      [memberId, day, timeZone],
+      `DELETE FROM activity_sessions s
+       WHERE s.member_id = $1 AND ${sessionDaySql("s")} = $2::date
+       RETURNING s.id`,
+      [memberId, day],
     );
-    const childParams = [memberId, day, timeZone, (sessions.rows ?? []).map((row) => String(row.id))];
+    const childParams = [memberId, day, (sessions.rows ?? []).map((row) => String(row.id))];
     const screenshots = await client.query(
-      `DELETE FROM activity_screenshots
-       WHERE member_id = $1
-         AND ((captured_at AT TIME ZONE $3)::date = $2::date OR session_id = ANY($4::text[]))`,
+      `DELETE FROM activity_screenshots sc
+       WHERE sc.member_id = $1
+         AND (${eventDaySql("sc", "sc.captured_at")} = $2::date OR sc.session_id = ANY($3::text[]))`,
       childParams,
     );
     const appLogs = await client.query(
-      `DELETE FROM activity_app_logs
-       WHERE member_id = $1
-         AND ((started_at AT TIME ZONE $3)::date = $2::date OR session_id = ANY($4::text[]))`,
+      `DELETE FROM activity_app_logs l
+       WHERE l.member_id = $1
+         AND (${eventDaySql("l", "l.started_at")} = $2::date OR l.session_id = ANY($3::text[]))`,
       childParams,
     );
     const urlLogs = await client.query(
-      `DELETE FROM activity_url_logs
-       WHERE member_id = $1
-         AND ((visited_at AT TIME ZONE $3)::date = $2::date OR session_id = ANY($4::text[]))`,
+      `DELETE FROM activity_url_logs u
+       WHERE u.member_id = $1
+         AND (${eventDaySql("u", "u.visited_at")} = $2::date OR u.session_id = ANY($3::text[]))`,
       childParams,
     );
     const entries = await client.query(`DELETE FROM time_entries WHERE member_id = $1 AND date = $2::date`, [
@@ -947,11 +950,16 @@ export async function recordSessionEventPg({
  *    began. Crossing midnight does not hand the member a fresh daily
  *    allowance, and a shift that finishes inside a weekend still books its
  *    hours to the working day it started on - the rest day records nothing.
- * 2. **The member's own calendar.** The day is resolved through the member's
- *    IANA zone rather than being left to Postgres' `::date` cast (which would
- *    use the database session's timezone - effectively UTC, and unrelated to
- *    where the member actually is). Passing an explicit `YYYY-MM-DD` string
- *    means the stored bucket no longer depends on server configuration at all.
+ * 2. **The session's own calendar** - the project's zone, else the member's
+ *    (resolveProjectTimeZone; the same rule as session-day-sql.js), for both
+ *    tables. Passing an explicit `YYYY-MM-DD` string means the stored bucket
+ *    does not depend on server configuration.
+ *
+ * Nothing a person sees reads these tables any more: every figure is summed
+ * from the sessions when it is read, because a bucket is keyed when it is
+ * written and a zone changed mid-session split one session across two days.
+ * They are kept for the counter-reconciliation sweep, which checks them
+ * against the sessions.
  */
 async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, attributedTo, projectId = null) {
   const delta = Math.trunc(Number(deltaSeconds) || 0);
@@ -959,16 +967,8 @@ async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, att
   const startedAt = attributedTo ? new Date(attributedTo) : new Date();
   const anchor = Number.isNaN(startedAt.getTime()) ? new Date() : startedAt;
 
-  // Two calendars here (see lib/time/resolve-time-zone.js):
-  //   - the member's own for this rollup, which the reports, counter
-  //     reconciliation and capture settings all read as "that person's day";
-  //   - the project's for the task-scoped rollup.
-  // No *limit* reads either table any more: they are summed from the sessions
-  // in whichever calendar applies when they are read (see
-  // sumDailyMemberActiveSeconds), so nothing here depends on that choice.
-  const memberZone = await getMemberTimezone(memberId);
-  const dayStr = localDayFor(anchor, memberZone);
-  const taskDay = taskId ? localDayFor(anchor, await resolveProjectTimeZone(projectId, memberId)) : dayStr;
+  const dayStr = localDayFor(anchor, await resolveProjectTimeZone(projectId, memberId));
+  const taskDay = dayStr;
 
   await pgQuery(
     `INSERT INTO daily_member_active_seconds (member_id, day, active_seconds)
@@ -1003,27 +1003,28 @@ async function recordDailyActiveSecondsDelta(memberId, taskId, deltaSeconds, att
  * are simply cut at that calendar's midnights. A session counts on the day it
  * started - the rule the rollup always used, so figures do not move.
  *
- * `timeZone` is the calendar to cut in (an IANA id the caller already
- * resolved); without one the member's own zone is used.
+ * Each session is cut in its own project's calendar (session-day-sql.js), not one zone
+ * for all of them: a member on projects in two zones has each session's day decided by
+ * the project it belongs to. A caller's `timeZone` only ever chose which dates
+ * `fromDay`/`toDay` are; it no longer re-cuts sessions, and is accepted and ignored here.
  */
-const SESSION_ZONE_SQL = (param) => `COALESCE(NULLIF(${param}::text, ''), NULLIF(m.timezone, ''), 'UTC')`;
-const SESSION_DAY_SQL = (param) => `(s.started_at AT TIME ZONE ${SESSION_ZONE_SQL(param)})::date`;
+const SESSION_DAY_SQL = sessionDaySql("s");
 // Lets the (member_id, started_at) index narrow the rows before the exact per-zone date test;
 // a day in any zone is within a day either side of the same UTC date.
 const SESSION_RANGE_SQL = (from, to) =>
   `s.started_at >= ($${from}::date - 1) AND s.started_at < ($${to}::date + 2)`;
 
-async function sumTaskSessionSecondsInZone(memberId, taskId, fromDay, toDay, timeZone) {
+async function sumTaskSessionSecondsInZone(memberId, taskId, fromDay, toDay) {
   const result = await pgQuery(
     `SELECT COALESCE(SUM(s.active_seconds), 0) AS total
      FROM activity_sessions s
      LEFT JOIN members m ON m.id = s.member_id
      WHERE s.member_id = $1
-       AND s.task_id = $5
+       AND s.task_id = $4
        AND ${SESSION_RANGE_SQL(2, 3)}
-       AND ${SESSION_DAY_SQL("$4")} >= $2::date
-       AND ${SESSION_DAY_SQL("$4")} <= $3::date`,
-    [memberId, fromDay, toDay, timeZone, taskId],
+       AND ${SESSION_DAY_SQL} >= $2::date
+       AND ${SESSION_DAY_SQL} <= $3::date`,
+    [memberId, fromDay, toDay, taskId],
   );
   return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
 }
@@ -1038,9 +1039,9 @@ export async function sumDailyMemberActiveSeconds(memberId, { fromDay, toDay, ti
      LEFT JOIN members m ON m.id = s.member_id
      WHERE s.member_id = $1
        AND ${SESSION_RANGE_SQL(2, 3)}
-       AND ${SESSION_DAY_SQL("$4")} >= $2::date
-       AND ${SESSION_DAY_SQL("$4")} <= $3::date`,
-    [id, fromDay, toDay, timeZone],
+       AND ${SESSION_DAY_SQL} >= $2::date
+       AND ${SESSION_DAY_SQL} <= $3::date`,
+    [id, fromDay, toDay],
   );
   return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
 }
@@ -1055,9 +1056,9 @@ export async function sumMemberActiveIdleSeconds(memberId, { fromDay, toDay, tim
      LEFT JOIN members m ON m.id = s.member_id
      WHERE s.member_id = $1
        AND ${SESSION_RANGE_SQL(2, 3)}
-       AND ${SESSION_DAY_SQL("$4")} >= $2::date
-       AND ${SESSION_DAY_SQL("$4")} <= $3::date`,
-    [id, fromDay, toDay, timeZone],
+       AND ${SESSION_DAY_SQL} >= $2::date
+       AND ${SESSION_DAY_SQL} <= $3::date`,
+    [id, fromDay, toDay],
   );
   const row = result?.rows?.[0] ?? {};
   return {
@@ -1073,16 +1074,16 @@ export async function listDailyMemberActiveSeconds(memberId, { fromDay, toDay, t
   // to_char, not the DATE itself - node-pg turns a DATE into a local-midnight
   // Date object, which shifts the day for any server not running at UTC.
   const result = await pgQuery(
-    `SELECT to_char(${SESSION_DAY_SQL("$4")}, 'YYYY-MM-DD') AS day,
+    `SELECT to_char(${SESSION_DAY_SQL}, 'YYYY-MM-DD') AS day,
             COALESCE(SUM(s.active_seconds), 0) AS active_seconds
      FROM activity_sessions s
      LEFT JOIN members m ON m.id = s.member_id
      WHERE s.member_id = $1
        AND ${SESSION_RANGE_SQL(2, 3)}
-       AND ${SESSION_DAY_SQL("$4")} >= $2::date
-       AND ${SESSION_DAY_SQL("$4")} <= $3::date
+       AND ${SESSION_DAY_SQL} >= $2::date
+       AND ${SESSION_DAY_SQL} <= $3::date
      GROUP BY 1`,
-    [id, fromDay, toDay, timeZone],
+    [id, fromDay, toDay],
   );
   return result?.rows ?? [];
 }
@@ -1139,16 +1140,16 @@ export async function listMemberIdleSecondsByDay(memberId, { fromDay, toDay, tim
   const id = parseProgressUuid(memberId);
   if (!id) return [];
   const result = await pgQuery(
-    `SELECT to_char(${SESSION_DAY_SQL("$4")}, 'YYYY-MM-DD') AS day,
+    `SELECT to_char(${SESSION_DAY_SQL}, 'YYYY-MM-DD') AS day,
             COALESCE(SUM(s.idle_seconds), 0) AS idle_seconds
      FROM activity_sessions s
      LEFT JOIN members m ON m.id = s.member_id
      WHERE s.member_id = $1
        AND ${SESSION_RANGE_SQL(2, 3)}
-       AND ${SESSION_DAY_SQL("$4")} >= $2::date
-       AND ${SESSION_DAY_SQL("$4")} <= $3::date
+       AND ${SESSION_DAY_SQL} >= $2::date
+       AND ${SESSION_DAY_SQL} <= $3::date
      GROUP BY 1`,
-    [id, fromDay, toDay, timeZone],
+    [id, fromDay, toDay],
   );
   return result?.rows ?? [];
 }
@@ -1163,11 +1164,11 @@ export async function sumMemberActiveIdleSecondsForProject(memberId, projectId, 
      FROM activity_sessions s
      LEFT JOIN members m ON m.id = s.member_id
      WHERE s.member_id = $1
-       AND s.project_id = $5
+       AND s.project_id = $4
        AND ${SESSION_RANGE_SQL(2, 3)}
-       AND ${SESSION_DAY_SQL("$4")} >= $2::date
-       AND ${SESSION_DAY_SQL("$4")} <= $3::date`,
-    [id, fromDay, toDay, timeZone, pId],
+       AND ${SESSION_DAY_SQL} >= $2::date
+       AND ${SESSION_DAY_SQL} <= $3::date`,
+    [id, fromDay, toDay, pId],
   );
   const row = result?.rows?.[0] ?? {};
   return {
@@ -1177,34 +1178,22 @@ export async function sumMemberActiveIdleSecondsForProject(memberId, projectId, 
 }
 
 /**
- * With `timeZone` the day is cut from the task's sessions in that calendar (same rule as
- * sumDailyMemberActiveSeconds), so a zone that changed mid-day cannot leave the figure keyed to
- * the old one. Without it, the stored per-task rollup is read as before.
+ * Cut from the task's sessions (same rule as sumDailyMemberActiveSeconds). The stored per-task
+ * rollup is no longer read: it was keyed at write time, so a zone change mid-session split one
+ * session across two of its days.
  */
-export async function sumDailyMemberTaskActiveSeconds(memberId, taskId, day, timeZone = null) {
+export async function sumDailyMemberTaskActiveSeconds(memberId, taskId, day, _timeZone = null) {
   const id = parseProgressUuid(memberId);
   const tId = taskId ? parseProgressUuid(taskId) : null;
   if (!id || !tId) return 0;
-  if (timeZone) return sumTaskSessionSecondsInZone(id, tId, day, day, timeZone);
-  const result = await pgQuery(
-    `SELECT COALESCE(active_seconds, 0) AS total FROM daily_member_task_active_seconds
-     WHERE member_id = $1 AND task_id = $2 AND day = $3::date`,
-    [id, tId, day],
-  );
-  return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
+  return sumTaskSessionSecondsInZone(id, tId, day, day);
 }
 
-export async function sumDailyMemberTaskActiveSecondsRange(memberId, taskId, { fromDay, toDay, timeZone = null }) {
+export async function sumDailyMemberTaskActiveSecondsRange(memberId, taskId, { fromDay, toDay }) {
   const id = parseProgressUuid(memberId);
   const tId = taskId ? parseProgressUuid(taskId) : null;
   if (!id || !tId) return 0;
-  if (timeZone) return sumTaskSessionSecondsInZone(id, tId, fromDay, toDay, timeZone);
-  const result = await pgQuery(
-    `SELECT COALESCE(SUM(active_seconds), 0) AS total FROM daily_member_task_active_seconds
-     WHERE member_id = $1 AND task_id = $2 AND day >= $3::date AND day <= $4::date`,
-    [id, tId, fromDay, toDay],
-  );
-  return Math.max(0, Math.floor(Number(result?.rows?.[0]?.total ?? 0)));
+  return sumTaskSessionSecondsInZone(id, tId, fromDay, toDay);
 }
 
 export async function fetchPgSessionsForDashboard(limit = 500) {
