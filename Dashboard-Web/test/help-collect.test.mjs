@@ -2,17 +2,12 @@
 // explanations, and the collector run against a real DOM (jsdom).
 import test from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 import { JSDOM } from "jsdom"
 import { describeControl } from "../shared/ui/help/describe-control.ts"
 import { PAGE_HELP, pageHelp } from "../shared/ui/help/page-help.ts"
 import { collectTourSteps, MAX_STEPS } from "../shared/ui/help/help-collect.ts"
 import { isShowable } from "../shared/ui/help/help-tour.ts"
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url))
-const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
 
 // ── describeControl ────────────────────────────────────────────────────────
 
