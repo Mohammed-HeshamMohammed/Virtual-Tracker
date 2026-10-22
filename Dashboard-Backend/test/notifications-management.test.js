@@ -2,7 +2,8 @@
 // ones, clear several and clear everything. These pin that every one of those
 // stays inside the member's own notifications, that clearing everything takes
 // an explicit request, and that bad ids are turned away before Postgres sees
-// them (a non-UUID used to reach it as a cast error - a 500).
+// them (a non-UUID used to reach it as a cast error - a 500). What each action leaves in the
+// table is checked on real rows in inbox-and-requests.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { Readable } from "node:stream";
@@ -68,25 +69,6 @@ test("clearing everything takes an explicit all: true - an empty request clears 
     assert.equal(status, 400, `refused: ${JSON.stringify(body)}`);
   }
   assert.equal(calls.length, 0);
-
-  state.rows = [{ id: ID1 }, { id: ID2 }];
-  const { status, body } = await call("POST", "/api/notifications/clear", { all: true });
-  assert.equal(status, 200);
-  assert.equal(body.cleared, 2);
-  assert.equal(calls[0].sql, "DELETE FROM notifications WHERE recipient_id = $1 RETURNING id");
-  assert.deepEqual(calls[0].params, [MEMBER]);
-});
-
-test("clear read removes only the read ones", async () => {
-  await call("POST", "/api/notifications/clear", { readOnly: true });
-  assert.match(calls[0].sql, /WHERE recipient_id = \$1 AND read = true/);
-  assert.deepEqual(calls[0].params, [MEMBER]);
-});
-
-test("clearing by id keeps only real ids, once each, inside the member's own", async () => {
-  await call("POST", "/api/notifications/clear", { ids: [ID1, "not-an-id", ID1.toUpperCase(), 7] });
-  assert.match(calls[0].sql, /WHERE recipient_id = \$1 AND id = ANY\(\$2::uuid\[\]\)/);
-  assert.deepEqual(calls[0].params, [MEMBER, [ID1]]);
 });
 
 test("a request with no usable ids is refused before it reaches the database", async () => {
@@ -98,15 +80,6 @@ test("a request with no usable ids is refused before it reaches the database", a
     assert.equal(read.status, 400);
   }
   assert.equal(calls.length, 0);
-});
-
-test("marking several read touches only unread ones of the member's", async () => {
-  state.rows = [{ id: ID1 }];
-  const { status, body } = await call("POST", "/api/notifications/read", { ids: [ID1, ID2] });
-  assert.equal(status, 200);
-  assert.equal(body.updated, 1);
-  assert.match(calls[0].sql, /UPDATE notifications SET read = true WHERE recipient_id = \$1 AND id = ANY\(\$2::uuid\[\]\) AND read = false/);
-  assert.deepEqual(calls[0].params, [MEMBER, [ID1, ID2]]);
 });
 
 test("a malformed id is a 404, not a database error", async () => {
