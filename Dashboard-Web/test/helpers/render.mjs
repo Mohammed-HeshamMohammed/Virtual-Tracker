@@ -12,7 +12,8 @@ import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import ts from "typescript"
 import React, { act } from "react"
-import { createRoot } from "react-dom/client"
+// react-dom is loaded on first mount, after installDom(): it decides at load time which browser
+// events exist, and loaded before there is a document it falls back to legacy ones.
 import { JSDOM } from "jsdom"
 
 export const ROOT = fileURLToPath(new URL("../..", import.meta.url))
@@ -143,6 +144,7 @@ export function installDom(html = "<!doctype html><html><body><div id='root'></d
 
 /** Renders an element into a fresh container in the current document. */
 export async function mount(element) {
+  const { createRoot } = await import("react-dom/client")
   const container = document.createElement("div")
   document.body.appendChild(container)
   const root = createRoot(container)
@@ -170,3 +172,53 @@ export const press = (key, target = document) =>
   settle(() => target.dispatchEvent(new window.KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })))
 
 export { React, act }
+
+/** Signed in, as far as the app's API client can tell, without Firebase. */
+export const signedInStubs = {
+  "@/infrastructure/firebase/config": { getFirebaseAuth: () => ({ currentUser: { uid: "test-user", getIdToken: async () => "test-token" } }) },
+}
+
+/**
+ * Replaces fetch with a backend stand-in, so the app's real API client runs and the test sees the
+ * requests it actually makes. `answer(call)` returns { status?, body? } for each request; the
+ * default is a successful empty envelope. Returns the list of calls: { url, path, method, body }.
+ */
+export function fakeBackend(answer = () => undefined) {
+  const calls = []
+  globalThis.fetch = async (input, init = {}) => {
+    const url = new URL(String(input instanceof Request ? input.url : input))
+    let body
+    try {
+      body = typeof init.body === "string" ? JSON.parse(init.body) : init.body
+    } catch {
+      body = init.body
+    }
+    const call = { url: String(url), path: url.pathname, query: Object.fromEntries(url.searchParams), method: (init.method ?? "GET").toUpperCase(), body }
+    calls.push(call)
+    const out = (await answer(call)) ?? {}
+    return new Response(JSON.stringify(out.body ?? { success: true, data: null }), {
+      status: out.status ?? 200,
+      headers: { "content-type": "application/json" },
+    })
+  }
+  return calls
+}
+
+/** Types into a React-controlled input or textarea: sets the value the way the browser does, then fires input. */
+export const type = (el, value) =>
+  settle(() => {
+    const proto = el.tagName === "TEXTAREA" ? window.HTMLTextAreaElement.prototype : el.tagName === "SELECT" ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype
+    Object.getOwnPropertyDescriptor(proto, "value").set.call(el, value)
+    el.dispatchEvent(new window.Event(el.tagName === "SELECT" ? "change" : "input", { bubbles: true }))
+  })
+
+/** Lets React and pending promises run until `check()` is truthy (or fails after `ms`). */
+export async function waitFor(check, ms = 2000) {
+  const end = Date.now() + ms
+  for (;;) {
+    const value = await check()
+    if (value) return value
+    if (Date.now() > end) throw new Error("waitFor: condition never held")
+    await settle(() => new Promise((r) => setTimeout(r, 5)))
+  }
+}
