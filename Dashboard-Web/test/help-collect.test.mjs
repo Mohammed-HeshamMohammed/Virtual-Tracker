@@ -7,8 +7,7 @@ import { describeControl } from "../shared/ui/help/describe-control.ts"
 import { PAGE_HELP, pageHelp } from "../shared/ui/help/page-help.ts"
 import { collectTourSteps, MAX_STEPS } from "../shared/ui/help/help-collect.ts"
 import { isShowable } from "../shared/ui/help/help-tour.ts"
-
-
+import { NAV_SECTIONS } from "../shared/ui/layout/config/nav-sections.ts"
 // ── describeControl ────────────────────────────────────────────────────────
 
 test("a button is explained from its own verb", () => {
@@ -104,8 +103,10 @@ test("tabs are listed", () => {
 // ── the page explanations ──────────────────────────────────────────────────
 
 test("every page in the navigation has an explanation", () => {
-  const nav = read("shared/ui/layout/config/nav-sections.ts")
-  const ids = [...nav.matchAll(/\{ label: "[^"]+",\s+id: "([a-z-]+)"/g)].map((m) => m[1])
+  const ids = NAV_SECTIONS.flatMap((section) => [
+    ...(section.pages ?? []).map((page) => page.id),
+    ...(section.subsections ?? []).flatMap((sub) => sub.items.map((item) => item.id)),
+  ])
   assert.ok(ids.length >= 50, `expected the whole navigation, found ${ids.length} pages`)
   const missing = ids.filter((id) => !PAGE_HELP[id] || PAGE_HELP[id].length < 20)
   assert.deepEqual(missing, [])
