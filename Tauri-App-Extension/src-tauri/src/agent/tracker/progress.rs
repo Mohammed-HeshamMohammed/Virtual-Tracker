@@ -111,6 +111,9 @@ impl ActivityTracker {
         // bootstrap default so a stale disabled-project's setting can never bleed into
         *idle_time_disabled = false;
         *idle_threshold_sec = IDLE_THRESHOLD_SEC;
+        // The last-input point only moves forward, so one left over from a session with a
+        // larger total would block every rewind in the next.
+        state.idle_watch.active_at_last_input = 0;
         // A resumed session must not credit the gap since tracking stopped - without this,
         // signing back in after a long break would credit that entire gap (clamped to
         *last_tick_at = AwakeInstant::now();

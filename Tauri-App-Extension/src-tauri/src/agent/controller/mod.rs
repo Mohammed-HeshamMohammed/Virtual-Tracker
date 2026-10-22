@@ -44,6 +44,8 @@ pub struct AgentController {
 mod api;
 mod auth;
 mod session;
+#[cfg(test)]
+mod use_cases;
 
 impl AgentController {
     pub fn new(settings: Settings) -> Result<Arc<Self>, String> {
