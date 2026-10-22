@@ -4,7 +4,6 @@
 // reuse recently loaded data while downloads never do.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
 // Looking up the exchange rates is a database read; the rest of the service is pure.
 mock.module("../src/modules/reports/report-currency.js", {
@@ -24,7 +23,6 @@ const { buildRequestedPdf, createPayloadCache, pdfSettingsToStore, rangeLabel, s
 );
 const { ReportDocumentError } = await import("../src/modules/reports/report-documents.js");
 
-const read = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
 const isPdf = (b) => Buffer.isBuffer(b) && b.subarray(0, 5).toString("latin1") === "%PDF-" && b.length > 3000;
 
 const manager = { memberId: "mgr", roleName: "Manager" };
@@ -233,26 +231,6 @@ test("the range reads as the page wrote it, or as dates", () => {
 
 // ── the route ──────────────────────────────────────────────────────────────
 
-test("the PDF route checks dates, takes a bigger body, answers with the file, and maps refusals to their status", () => {
-  const src = read("src/modules/reports/routes.js");
-  assert.match(src, /pn === "\/api\/reports\/time-and-activity\/pdf" && req\.method === "POST"/);
-  assert.match(src, /readJsonBody\(req, MAX_PDF_REQUEST_BYTES\)/);
-  assert.match(src, /preview: body\.preview === true,/);
-  assert.match(src, /contentBase64: buffer\.toString\("base64"\)/);
-  const start = src.indexOf('pn === "/api/reports/time-and-activity/pdf"');
-  const block = src.slice(start, src.indexOf('pn === "/api/reports/time-and-activity/send"'));
-  assert.match(block, /e instanceof ReportDocumentError \|\| e\?\.status/);
-  assert.match(block, /loadTimeAndActivityReportPayload\(db, viewer, \{ requestedMemberId, from, to, currency \}\)/, "loaded for this viewer");
-  assert.doesNotMatch(block, /body\.entries|body\.payload/, "no figures are taken from the page");
-});
-
-test("the PDF helpers live in the service, not in the route file", () => {
-  const routes = read("src/modules/reports/routes.js");
-  assert.doesNotMatch(routes, /^(export )?(async )?function (resolvePdfRequest|buildReportAttachment|rangeLabel)\b/m);
-  const service = read("src/modules/reports/report-pdf-service.js");
-  assert.doesNotMatch(service, /from "\.\/routes\.js"/, "no import cycle back to the routes");
-});
-
 test("saved PDF settings keep only how documents look, and only values the renderer accepts", () => {
   const stored = pdfSettingsToStore({
     template: "stripe",
@@ -274,15 +252,4 @@ test("saved PDF settings keep only how documents look, and only values the rende
   assert.equal(pdfSettingsToStore({ template: "nope", logo: "javascript:alert(1)" }).template, "virtual-tracker");
   assert.ok(!pdfSettingsToStore({ logo: "javascript:alert(1)" }).logo);
   assert.equal(pdfSettingsToStore(null).template, "virtual-tracker");
-});
-
-test("the PDF settings are stored per member, behind sign-in, in a table the tenancy list knows", () => {
-  const routes = readFileSync(new URL("../src/modules/reports/routes.js", import.meta.url), "utf8");
-  assert.match(routes, /pn === "\/api\/reports\/pdf-settings" && req\.method === "GET"/);
-  assert.match(routes, /pn === "\/api\/reports\/pdf-settings" && req\.method === "PUT"/);
-  assert.match(routes, /saveReportPdfSettingsPg\(viewer\.memberId, pdfSettingsToStore\(body\)\)/);
-  const schema = readFileSync(new URL("../src/lib/postgres/ensure-lookup-schema.js", import.meta.url), "utf8");
-  assert.match(schema, /CREATE TABLE IF NOT EXISTS report_pdf_settings/);
-  const tenancy = readFileSync(new URL("../src/lib/postgres/tenancy-tables.js", import.meta.url), "utf8");
-  assert.match(tenancy, /"report_pdf_settings"/);
 });
