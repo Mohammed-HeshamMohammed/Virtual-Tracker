@@ -4,6 +4,9 @@
 // live agent whose syncs stopped landing for five minutes had its session
 // closed underneath it. The timer stopped on its own: no idle, no warning,
 // 100% activity and a stopped clock.
+//
+// What a touch changes (updated_at only, open sessions only) is checked on real rows in
+// session-rows.pglite.test.js; this file keeps the input guard.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
@@ -29,23 +32,6 @@ const SESSION_ID = "11111111-2222-4333-8444-555555555555";
 const { touchPgSessionActivity } = await import(
   "../src/lib/postgres/activity-events-postgres.service.js"
 );
-
-test("touching a session moves only its updated_at", async () => {
-  await touchPgSessionActivity(SESSION_ID);
-  const sql = calls.sql.at(-1) ?? "";
-  assert.match(sql, /UPDATE activity_sessions SET updated_at = now\(\)/);
-  // Nothing else may move: this runs on every poll and must never be able to
-  // rewrite a session's recorded seconds or status.
-  assert.doesNotMatch(sql, /active_seconds|idle_seconds|status\s*=/);
-  assert.deepEqual(calls.params.at(-1), [SESSION_ID]);
-});
-
-// A session that was legitimately stopped must stay stopped - a poll arriving
-// late must not resurrect it.
-test("only an open session can be touched", async () => {
-  await touchPgSessionActivity(SESSION_ID);
-  assert.match(calls.sql.at(-1) ?? "", /status IN \('active', 'idle'\)/);
-});
 
 test("a malformed session id never reaches the database", async () => {
   const before = calls.sql.length;

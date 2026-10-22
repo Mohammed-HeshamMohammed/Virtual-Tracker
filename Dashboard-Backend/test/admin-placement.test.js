@@ -1,5 +1,6 @@
 // Wherever a Super Admin or Admin is placed in the hierarchy, they go under the Owner - not under
 // whoever added them. recordMemberRelationship is the one place every placement passes through.
+// Promotions and the tree-load repair are run against real rows in member-tree.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { normalizeRoleKey } from "../src/http/role-key.js";
@@ -74,13 +75,4 @@ test("an Admin added by the Owner stays where it was put", async () => {
 test("everyone else is still placed under whoever added them", async () => {
   assert.equal((await placed("mgr", "emp")).parent, "mgr");
   assert.equal((await placed("saA", "mgr")).parent, "saA");
-});
-
-test("a role change to Super Admin or Admin re-parents under the Owner (and the tree load repairs old cases)", async () => {
-  const { readFileSync } = await import("node:fs");
-  const read = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8").replaceAll("\r\n", "\n");
-  const sync = read("src/modules/hierarchy/hierarchy-sync.js");
-  assert.match(sync, /if \(isAdminTierRole\(nextRoleName\)\)/);
-  assert.match(sync, /normalizeRoleKey\(parentRole\) !== "owner"/);
-  assert.match(read("src/modules/member-relationships/routes.js"), /\["admins under the Owner", \(\) => maybeAnchorAdminsOnTreeLoad\(db, authz\.memberId\)\]/);
 });
