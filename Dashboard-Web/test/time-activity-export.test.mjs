@@ -1,6 +1,8 @@
 // The Time & Activity exports: one table model behind both the CSV and the PDF,
 // so they carry the same columns, the same grouping and the people under each
 // group, and never a money column for a viewer who may not see money.
+// That the report view exports through this model (CSV, Excel, PDF) is checked by rendering the
+// view in time-activity-report-view.test.mjs.
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
@@ -129,15 +131,20 @@ test("title and filename follow the grouping", () => {
   assert.equal(timeActivityFilename("Sep 1 – Sep 30, 2026", "date_per_week"), "time-and-activity_sep-1-sep-30-2026_by-date-per-week")
 })
 
-test("the view exports through the shared model, not a second hand-built table", () => {
-  const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
-  assert.match(view, /buildTimeActivityExportTable/)
-  assert.match(view, /onClick=\{downloadCsv\}/)
-  assert.match(view, /filterLines: exportFilterLines\(\)/)
-  assert.doesNotMatch(view, /title: "Time & Activity Report"/)
-})
-
-test("the pdf kit aligns headers with their columns", () => {
-  const kit = read("shared/pdf-core/kit.ts")
-  assert.match(kit, /section === "head"[\s\S]*?halign = align/)
+test("the pdf kit aligns each header with its column, in every template", async () => {
+  const { createLoader } = await import("./helpers/render.mjs")
+  const loader = createLoader()
+  const { renderPdf } = loader.load("shared/pdf-core/kit.ts")
+  const { DEFAULT_PDF_OPTIONS } = loader.load("shared/pdf-core/options.ts")
+  const spec = {
+    title: "T", orgLabel: "Org", filename: "f",
+    table: { columns: [{ key: "a", header: "Name" }, { key: "b", header: "Hours", align: "right" }], rows: [{ a: "Ann", b: "1:00" }] },
+  }
+  for (const template of ["virtual-tracker", "stripe"]) {
+    const table = renderPdf(spec, { ...DEFAULT_PDF_OPTIONS, template }).lastAutoTable
+    const head = Object.values(table.head[0].cells).map((c) => c.styles.halign)
+    const body = Object.values(table.body[0].cells).map((c) => c.styles.halign)
+    assert.deepEqual(head, ["left", "right"], template)
+    assert.deepEqual(head, body, `${template}: headers sit over their columns`)
+  }
 })

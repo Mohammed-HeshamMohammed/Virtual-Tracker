@@ -3,6 +3,8 @@
 // the emailed and scheduled copies - so the tests cover the options, the formats,
 // right-to-left Arabic, every template and language drawn for real, and that the
 // server's copy is exactly what the web source generates.
+// What the Export dialog sends and saves is checked on the rendered report in
+// time-activity-report-view.test.mjs; the saved PDF look in pdf-options.test.mjs.
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync, existsSync } from "node:fs"
@@ -403,26 +405,3 @@ test("the Export dialog shows and saves what the server built; email uses the sa
   assert.match(form, /moneyHidden \? \["report"\] : billingAvailable \? \["report", "client", "payslip"\] : \["report", "payslip"\]/)
 })
 
-test("the browser sends choices, not figures: only the team report sends anything of the page's", () => {
-  const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
-  assert.match(view, /team: isTeamReport \? teamReportInput\(o\) : undefined,/)
-  assert.doesNotMatch(view, /buildClientStatementSpec|buildPaySlipSpec|buildTeamReportSpec|\brenderPdf\b|entriesInCurrency/, "pricing is not worked out in the browser")
-  assert.doesNotMatch(view, /fetchTimeAndActivityReport/, "no reloading the whole report in another currency to price a document")
-  const api = read("features/reports/api/time-and-activity-api.ts")
-  assert.match(api, /apiPath\("\/api\/reports\/time-and-activity\/pdf"\)/)
-  assert.match(api, /method: "POST"/)
-})
-
-test("the PDF look is saved on the server per member, with this browser's copy as the fast start", () => {
-  const api = read("features/reports/api/pdf-settings-api.ts")
-  assert.match(api, /apiPath\("\/api\/reports\/pdf-settings"\)/)
-  assert.match(api, /method: "PUT"/)
-  const hook = read("features/reports/hooks/use-pdf-options.ts")
-  assert.match(hook, /fetchPdfSettings\(\)/)
-  assert.match(hook, /savePdfSettings\(/)
-  // Only how documents look is saved - never whose pay slip or which projects.
-  assert.match(hook, /appearanceOf\(resolved\)/)
-  // Settings made before the server held any are uploaded once, and an edit made while loading is not overwritten.
-  assert.match(hook, /else if \(local && !touched\.current\)/)
-  assert.match(hook, /if \(touched\.current\) return/)
-})

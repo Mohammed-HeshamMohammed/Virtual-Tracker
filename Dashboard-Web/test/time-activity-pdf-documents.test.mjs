@@ -2,6 +2,8 @@
 // a client statement (hours at each project's client rate) and a pay slip
 // (one member's hours at their pay rate). Both are plain descriptions of a
 // PDF, so what they will say is checked here without drawing anything.
+// The date range picker, avatars and the empty-delete notice are checked on the rendered report in
+// time-activity-report-view.test.mjs.
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
@@ -192,19 +194,6 @@ test("Members and Projects take several picks, and a project filter counts only 
   assert.match(hook, /buildDayMemberRows\(\s*entries\.filter\(\(e\) => projectFilter\.includes\(e\.projectName\)\)/)
   // A view saved when the filter held one name still loads.
   assert.match(hook, /typeof saved === "string" && saved && saved !== allValue \? \[saved\] : \[\]/)
-})
-
-test("the date range closes on a click outside it, but not on the button that opened it", () => {
-  const picker = read("features/reports/components/time-activity-report/date-range-picker.tsx")
-  assert.match(picker, /if \(root\.contains\(target\) \|\| root\.parentElement\?\.contains\(target\)\) return\n\s+dismissRef\.current\(\)/)
-  assert.match(picker, /document\.addEventListener\("pointerdown", onPointerDown, true\)/)
-})
-
-test("avatars come from the report's member list, and a delete that removed nothing says so", () => {
-  const api = read("features/reports/api/time-and-activity-api.ts")
-  assert.match(api, /avatarUrl: photos\.get\(member\.memberId\) \?\? member\.avatarUrl/)
-  const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
-  assert.match(view, /if \(deleted\.sessions \+ deleted\.entries === 0\)/)
 })
 
 // ── invoice-style terms on the statement ───────────────────────────────────

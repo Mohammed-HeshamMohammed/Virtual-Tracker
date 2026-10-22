@@ -120,6 +120,8 @@ export function installDom(html = "<!doctype html><html><body><div id='root'></d
     "window", "document", "navigator", "HTMLElement", "HTMLInputElement", "Element", "Node", "Event",
     "KeyboardEvent", "MouseEvent", "FocusEvent", "CustomEvent", "MutationObserver", "getComputedStyle",
     "requestAnimationFrame", "cancelAnimationFrame", "DOMRect", "localStorage", "sessionStorage",
+    "NodeFilter", "HTMLTextAreaElement", "HTMLSelectElement", "HTMLAnchorElement", "HTMLButtonElement", "SVGElement",
+    "DocumentFragment", "Text", "getSelection", "PointerEvent", "InputEvent", "DOMParser", "matchMedia",
   ]
   const previous = new Map(names.map((n) => [n, Object.getOwnPropertyDescriptor(globalThis, n)]))
   for (const name of names) {
@@ -233,4 +235,44 @@ export async function waitFor(check, ms = 2000) {
     if (Date.now() > end) throw new Error("waitFor: condition never held")
     await settle(() => new Promise((r) => setTimeout(r, 5)))
   }
+}
+
+/**
+ * Catches files the page hands to the browser to save (a Blob URL on a clicked <a download>), so a
+ * test can read what the user would get. Returns the list: { filename, type, text(), bytes() }.
+ */
+export function captureDownloads() {
+  const files = []
+  const blobs = new Map()
+  let n = 0
+  URL.createObjectURL = (blob) => {
+    const url = `blob:test/${++n}`
+    blobs.set(url, blob)
+    return url
+  }
+  URL.revokeObjectURL = () => {}
+  window.HTMLAnchorElement.prototype.click = function () {
+    const blob = blobs.get(this.href)
+    if (!blob) return
+    files.push({
+      filename: this.download,
+      type: blob.type,
+      text: () => blob.text(),
+      bytes: async () => new Uint8Array(await blob.arrayBuffer()),
+    })
+  }
+  return files
+}
+
+/** The Radix select as a native <select>, so a test can pick an option with type(select, value). */
+export const selectStub = {
+  Select: ({ value, onValueChange, disabled, children }) =>
+    React.createElement("select", { value, disabled, onChange: (e) => onValueChange(e.target.value) }, children),
+  SelectTrigger: () => null,
+  SelectValue: () => null,
+  SelectContent: ({ children }) => React.createElement(React.Fragment, null, children),
+  SelectItem: ({ value, children }) => React.createElement("option", { value }, children),
+  SelectGroup: ({ children }) => React.createElement(React.Fragment, null, children),
+  SelectLabel: () => null,
+  SelectSeparator: () => null,
 }

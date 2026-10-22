@@ -1,6 +1,8 @@
 // The Time & Activity workbook: a Summary and one sheet per group, bordered cells and a
 // coloured header, rows that need a second look shaded and named - checked by building a real
 // workbook, writing it out and reading it back, not by trusting the calls that made it.
+// The CSV and Excel downloads from the rendered report view are checked in
+// time-activity-report-view.test.mjs.
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
@@ -378,9 +380,3 @@ test("a day with nobody on it still gets its sheet", async () => {
   assert.equal(sheet.getRow(5).getCell(1).value, "Total")
 })
 
-test("the existing exports are untouched by the flags", () => {
-  const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
-  assert.match(view, /onClick=\{downloadCsv\}/)
-  assert.match(view, /onClick=\{downloadXlsx\}/)
-  assert.match(view, /exportError/)
-})
