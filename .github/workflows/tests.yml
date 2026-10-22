@@ -20,12 +20,10 @@ on:
       - "Tauri-App-Extension/src-tauri/**"
       - ".github/workflows/tests.yml"
       - ".github/scripts/check-win7-imports*.mjs"
+  # No paths filter on PRs: these jobs are required checks on main's ruleset, and a
+  # required check that never starts leaves the PR stuck at "Expected" forever.
+  # The repo is public, so the runs (macOS included) cost nothing.
   pull_request:
-    paths:
-      - "Dashboard-Backend/**"
-      - "Tauri-App-Extension/src-tauri/**"
-      - ".github/workflows/tests.yml"
-      - ".github/scripts/check-win7-imports*.mjs"
   workflow_dispatch:
 
 concurrency:
@@ -67,8 +65,8 @@ jobs:
   # a cfg(target_os) block that references a moved module, a renamed type,
   # or an API that only exists on the other platform.
   #
-  # macOS runners bill at 10x, so this checks rather than builds, and only
-  # when src-tauri actually changed.
+  # Checks rather than builds: a full `tauri build` per platform is slow, and
+  # a compile error is what this exists to catch.
   agent-cross-platform:
     strategy:
       fail-fast: false
@@ -97,6 +95,14 @@ jobs:
       - name: cargo check
         working-directory: Tauri-App-Extension/src-tauri
         run: cargo check --all-targets --locked
+
+      # Used to run only in release.yml's verify job, i.e. when someone cut a
+      # release - a regression could sit on main until release day. Linux only:
+      # the cheapest runner, and the one verify already runs this suite on.
+      - name: cargo test
+        if: matrix.platform == 'ubuntu-latest'
+        working-directory: Tauri-App-Extension/src-tauri
+        run: cargo test --locked
 
       # The build for Windows 7, 8 and 8.1 is the same code with one switch; on Windows this
       # also compiles its own notification path (notify.rs). The real Windows 7 build, on the

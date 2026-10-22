@@ -41,12 +41,17 @@ use crate::test_support::{fake_jwt, fake_server};
 /// A `Settings` pointed at `api_url`, with every filesystem path inside its own fresh
 /// temp directory so parallel tests never share state (the queue file in particular -
 fn test_settings(api_url: String) -> Settings {
+    // Not `{:?}` of an Instant: on Windows that prints "Instant { t: 1.2s }", the ':'
+    // makes the path invalid, and every queue/progress write then failed silently.
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::temp_dir().join(format!(
-        "vt-tracker-test-{}-{:?}",
+        "vt-tracker-test-{}-{}",
         std::process::id(),
-        std::time::Instant::now()
+        NEXT.fetch_add(1, AtomicOrdering::Relaxed)
     ));
-    let _ = std::fs::create_dir_all(&dir);
+    // A recycled pid can land on a dir an earlier run left behind, queue file and all.
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("create the test's temp dir");
     Settings {
         api_url,
         web_url: "http://127.0.0.1:1".into(),
@@ -1024,4 +1029,107 @@ fn resuming_clears_both_kinds_of_stop() {
     tracker.resume().expect("resumes");
     assert!(!tracker.is_paused());
     assert!(!tracker.is_on_break());
+}
+
+// upload.rs: what reaches the server, what waits in the offline queue, and what is
+// never recorded at all.
+
+/// Answers every event upload with `status` and counts how many arrived.
+fn events_server(status: u16) -> (String, std::sync::Arc<AtomicUsize>) {
+    let posts = std::sync::Arc::new(AtomicUsize::new(0));
+    let seen = posts.clone();
+    let url = fake_server(move |request| {
+        if request.method() == &Method::Post && request.url().starts_with("/api/activity/events") {
+            seen.fetch_add(1, AtomicOrdering::SeqCst);
+        }
+        (status, r#"{"data": {"inserted": 1}}"#.to_string())
+    });
+    (url, posts)
+}
+
+/// An ordinary, identified, non-browser app window. The hwnd only has to be non-zero
+/// (zero means "unidentified" on Windows) and unlikely to match a real UIA URL change.
+fn notepad() -> crate::capture::window::ForegroundWindow {
+    crate::capture::window::ForegroundWindow {
+        app_name: "Notepad".into(),
+        title: "notes.txt".into(),
+        process_name: "notepad.exe".into(),
+        exe_path: String::new(),
+        hwnd: 0x7e57_0001,
+        is_browser: false,
+        browser_hint: String::new(),
+    }
+}
+
+/// Drains the offline queue, returning how many batches were waiting in it.
+fn queued_batches(tracker: &ActivityTracker) -> usize {
+    let mut batches = 0;
+    tracker.queue.flush(|_, _| {
+        batches += 1;
+        true
+    });
+    batches
+}
+
+#[test]
+fn an_app_slice_the_server_accepts_is_not_also_queued() {
+    let (url, posts) = events_server(200);
+    let tracker = test_tracker(url);
+    tracker.upload_app_slice("sess-1", &notepad());
+    assert_eq!(posts.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(queued_batches(&tracker), 0);
+}
+
+#[test]
+fn an_app_slice_the_server_refuses_waits_in_the_offline_queue() {
+    let (url, posts) = events_server(500);
+    let tracker = test_tracker(url);
+    tracker.upload_app_slice("sess-1", &notepad());
+    assert_eq!(posts.load(AtomicOrdering::SeqCst), 1);
+    assert_eq!(queued_batches(&tracker), 1, "a failed upload is retried later, not lost");
+}
+
+#[test]
+fn nothing_is_sent_or_queued_during_a_break() {
+    let (url, posts) = events_server(200);
+    let tracker = test_tracker(url);
+    tracker.events.gate.set_break(crate::capture::capture_gate::now_plus_minutes_ms(10));
+
+    tracker.upload_app_slice("sess-1", &notepad());
+    tracker.upload_screenshot("sess-1", &notepad());
+    assert_eq!(posts.load(AtomicOrdering::SeqCst), 0);
+    assert_eq!(queued_batches(&tracker), 0, "queued would mean sent later - still captured");
+}
+
+#[test]
+fn nothing_is_sent_or_queued_for_an_excluded_app() {
+    let (url, posts) = events_server(200);
+    let tracker = test_tracker(url);
+    tracker.events.apply_capture_exclusions(vec!["notepad".into()]);
+
+    tracker.upload_app_slice("sess-1", &notepad());
+    tracker.upload_screenshot("sess-1", &notepad());
+    assert_eq!(posts.load(AtomicOrdering::SeqCst), 0);
+    assert_eq!(queued_batches(&tracker), 0);
+}
+
+#[test]
+fn an_unidentified_window_or_shell_surface_is_not_logged_as_an_app() {
+    let (url, posts) = events_server(200);
+    let tracker = test_tracker(url);
+
+    let unknown = crate::capture::window::ForegroundWindow {
+        app_name: crate::capture::window::UNIDENTIFIED.into(),
+        process_name: crate::capture::window::UNIDENTIFIED.into(),
+        ..notepad()
+    };
+    let start_menu = crate::capture::window::ForegroundWindow {
+        app_name: "Search".into(),
+        process_name: "SearchHost.exe".into(),
+        ..notepad()
+    };
+    tracker.upload_app_slice("sess-1", &unknown);
+    tracker.upload_app_slice("sess-1", &start_menu);
+    assert_eq!(posts.load(AtomicOrdering::SeqCst), 0);
+    assert_eq!(queued_batches(&tracker), 0);
 }

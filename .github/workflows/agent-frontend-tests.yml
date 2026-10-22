@@ -1,0 +1,46 @@
+name: agent frontend tests
+
+# The agent's vitest suite used to run only in release.yml's verify job, i.e.
+# when someone cut a release - a regression could sit on main until release
+# day. Its own workflow (not a job in tests.yml) so a frontend-only push to
+# main doesn't also rerun tests.yml's cargo matrix.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Tauri-App-Extension/src/**"
+      - "Tauri-App-Extension/package*.json"
+      - "Tauri-App-Extension/vitest.config.ts"
+      - ".github/workflows/agent-frontend-tests.yml"
+  # No paths filter on PRs: `vitest` is a required check on main's ruleset, and a
+  # required check that never starts leaves the PR stuck at "Expected" forever.
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: agent-frontend-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  vitest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: Tauri-App-Extension/package-lock.json
+
+      - name: install
+        working-directory: Tauri-App-Extension
+        run: npm ci
+
+      - name: test
+        working-directory: Tauri-App-Extension
+        run: npm test
