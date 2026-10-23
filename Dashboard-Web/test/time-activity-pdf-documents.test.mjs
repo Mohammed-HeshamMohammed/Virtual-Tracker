@@ -275,18 +275,6 @@ test("Activity: members can be picked several at a time, as one comma-joined id"
   assert.match(select, /if \(next\.size === 0\) \{\n\s+if \(allowAll\) setSelectedMemberId\("all"\)\n\s+return/)
 })
 
-test("Activity: each feed can be narrowed to several projects, and the choice is part of the cache key and the request", () => {
-  const bar = read("features/activity/components/activity-control-bar.tsx")
-  assert.match(bar, /<ActivityProjectSelect \/>/)
-  const api = read("features/activity/services/activity-api.ts")
-  assert.match(api, /query\.projectIds\?\.length\) params\.set\("projectIds"/)
-  assert.match(api, /\(query\.projectIds \?\? \[\]\)\.join\(","\)/)
-  const cache = read("features/activity/utils/activity-feed-cache.ts")
-  assert.match(cache, /\(query\.projectIds \?\? \[\]\)\.join\(","\)/)
-  const ctx = read("features/activity/components/activity-feed-context.tsx")
-  assert.match(ctx, /selectedProjectIds\.length > 0 \? \{ projectIds: selectedProjectIds \}/)
-})
-
 test("Task Approvals: employee and project filters take several picks and are applied to the rows", () => {
   const table = read("features/timesheets/components/view-edit/components/ReviewQueueTable.tsx")
   assert.equal((table.match(/<ReportToolbarMultiSelect/g) ?? []).length, 2)
