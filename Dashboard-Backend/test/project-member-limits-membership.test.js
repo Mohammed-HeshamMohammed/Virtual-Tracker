@@ -3,6 +3,7 @@
 // limit only means something for someone assigned to the project, so the one
 // function every limit is saved through now refuses anyone else - and taking
 // someone off a project takes their limit with them.
+// Who counts as tracking on a project is checked on real rows in tracking-rules.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
@@ -70,12 +71,6 @@ test("someone not assigned to the project is refused, and nothing is saved", asy
 });
 
 // Viewers can't track, so a limit on them would mean nothing.
-test("the membership check leaves viewers out", async () => {
-  await isProjectTrackerPg(PROJECT, USER);
-  const check = calls.find((c) => /FROM project_members/.test(c.sql));
-  assert.match(check.sql, /COALESCE\(LOWER\(project_role\), ''\) <> 'viewer'/);
-  assert.deepEqual(check.params, [PROJECT, USER]);
-});
 
 test("no project or no member is never a member", async () => {
   assert.equal(await isProjectTrackerPg("", USER), false);

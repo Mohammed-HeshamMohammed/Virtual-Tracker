@@ -56,9 +56,6 @@ mock.module("../src/http/sanitize-error.js", {
 const { updatePgSession } = await import(
   "../src/lib/postgres/activity-events-postgres.service.js"
 );
-const { upsertTrackingRowPg } = await import(
-  "../src/lib/postgres/task-member-progress.service.js"
-);
 
 function reset() {
   responses = [];
@@ -200,44 +197,5 @@ test("CQ-2: a missing started_at falls back to today instead of crashing", async
   assert.ok(rollupCall, "must still record the delta even without a started_at");
 });
 
-// --- upsertTrackingRowPg (task_member_progress) ---------------------------
-
-test("routine sync emits a GREATEST clamp for active_seconds", async () => {
-  reset();
-  responses.push({ rows: [{ id: "row-1" }] });
-
-  await upsertTrackingRowPg({ task_id: "t1", member_id: "m1", active_seconds: 500, idle_seconds: 0 });
-
-  const insertCall = calls[0];
-  assert.match(insertCall.sql, /GREATEST\(task_member_progress\.active_seconds, EXCLUDED\.active_seconds\)/);
-});
-
-test("stop (allowDecrease) writes active_seconds unclamped", async () => {
-  reset();
-  responses.push({ rows: [{ id: "row-1" }] });
-
-  await upsertTrackingRowPg(
-    { task_id: "t1", member_id: "m1", active_seconds: 470, idle_seconds: 0 },
-    { allowDecrease: true },
-  );
-
-  const insertCall = calls[0];
-  assert.doesNotMatch(
-    insertCall.sql,
-    /GREATEST\(task_member_progress\.active_seconds/,
-    "stop must be able to write a lower active_seconds directly",
-  );
-});
-
-test("idle_seconds always clamps up, even on stop", async () => {
-  reset();
-  responses.push({ rows: [{ id: "row-1" }] });
-
-  await upsertTrackingRowPg(
-    { task_id: "t1", member_id: "m1", active_seconds: 470, idle_seconds: 10 },
-    { allowDecrease: true },
-  );
-
-  const insertCall = calls[0];
-  assert.match(insertCall.sql, /GREATEST\(task_member_progress\.idle_seconds, EXCLUDED\.idle_seconds\)/);
-});
+// upsertTrackingRowPg (task_member_progress) is run against real rows in
+// tracked-seconds-clamp.pglite.test.js.

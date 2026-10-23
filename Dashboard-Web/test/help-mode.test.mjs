@@ -1,17 +1,15 @@
-// The guided tour: the geometry, the order it visits things in, and the structural facts that
-// keep it working. Source-level for the wiring, matching the rest of this folder: the app has
-// no component test setup, and these are rules about specific lines rather than rendered
-// behaviour.
+// The guided tour: the geometry, the order it visits things in, and - rendered in jsdom - what the
+// sidebar, the top bar, form fields and the tour itself do. The dashboard shell's part (one tour
+// for the whole dashboard) is in dashboard-shell.test.mjs, and the project form's in
+// project-modal.test.mjs. That the tour never steps onto its own controls or the help button is
+// checked against a real DOM in help-collect.test.mjs.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { after } from "node:test"
 import { placeCallout } from "../shared/ui/help/help-geometry.ts"
 import { orderForTour, rankOf, TOUR_REGIONS } from "../shared/ui/help/help-tour.ts"
+import { installDom, createLoader, framerMotionStub, mount, click, press, settle, React, Nothing } from "./helpers/render.mjs"
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url))
-const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
 
 const VIEW = { width: 400, height: 300 }
 const CALLOUT = { width: 100, height: 30 }
@@ -72,52 +70,135 @@ test("regions are the sidebar, the top bar and the page, in that order", () => {
   assert.equal(rankOf({ closest: () => null }), 3)
 })
 
-test("every sidebar section explains itself", () => {
-  const nav = read("shared/ui/layout/config/nav-sections.ts")
-  const ids = [...nav.matchAll(/^    id: "([a-z-]+)",\n    label:/gm)].map((m) => m[1])
-  assert.ok(ids.length >= 8, "expected the eight sections")
-  for (const id of ids) {
-    assert.match(nav, new RegExp(`    id: "${id}",\\n    label: "[^"]+",\\n    help: "[^"]{20,}",`), `section ${id} has no help text`)
+// ── rendered ───────────────────────────────────────────────────────────────
+
+const env = installDom()
+after(() => env.restore())
+// jsdom has no layout: give every element a size so the tour treats it as on screen.
+window.Element.prototype.getBoundingClientRect = function () {
+  return { left: 10, top: 10, right: 110, bottom: 30, width: 100, height: 20, x: 10, y: 10 }
+}
+
+const base = createLoader({ stubs: { "framer-motion": framerMotionStub } })
+const nav = base.load("shared/ui/layout/config/nav-sections.ts")
+const roleAccess = createLoader({ stubs: { "@/shared/ui/layout": nav } }).load("features/auth/permissions/member-role-access.ts")
+const loader = createLoader({
+  stubs: {
+    "framer-motion": framerMotionStub,
+    "@/shared/providers/app": { useTheme: () => ({ isDark: false }), useAuth: () => ({ memberRole: "Owner" }) },
+    "@/app": { prefetchChunkForPage: () => {} },
+    "@/features/auth": { visibleNavSections: roleAccess.visibleNavSections },
+    "shared/ui/layout/components/sidebar/sidebar-user-card": { SidebarUserCard: Nothing },
+    "shared/ui/layout/components/topbar/global-search-bar": { GlobalSearchBar: Nothing },
+    "shared/ui/layout/components/topbar/notifications-bell": { NotificationsBell: Nothing },
+    "shared/ui/layout/components/topbar/breadcrumbs": { Breadcrumbs: Nothing },
+    "shared/ui/layout/components/topbar/timer-button": { TimerButton: Nothing },
+  },
+})
+const { Sidebar } = loader.load("shared/ui/layout/components/sidebar/sidebar.tsx")
+const { Topbar } = loader.load("shared/ui/layout/components/topbar/topbar.tsx")
+const { HelpLayer, setHelpMode, isHelpMode } = loader.load("shared/ui/help/index.ts")
+const { FormField } = loader.load("shared/ui/forms/form-field.tsx")
+
+test("every sidebar section carries an explanation of its own", () => {
+  assert.ok(nav.NAV_SECTIONS.length >= 8, "expected the eight sections")
+  for (const section of nav.NAV_SECTIONS) {
+    assert.equal(typeof section.help, "string", section.id)
+    assert.ok(section.help.length >= 20, `section ${section.id} has no real help text`)
   }
 })
 
-test("the sidebar hands each section's explanation to its button, collapsed or not", () => {
-  const sidebar = read("shared/ui/layout/components/sidebar/sidebar.tsx")
-  assert.equal(sidebar.split("data-help={section.help}").length - 1, 2)
+test("the sidebar hands each section's explanation to its button, collapsed or not", async () => {
+  const sections = roleAccess.visibleNavSections("Owner").filter((s) => s.id !== "favorites")
+  for (const isCollapsed of [false, true]) {
+    const view = await mount(
+      React.createElement(Sidebar, { isCollapsed, onToggleCollapse: () => {}, activeItem: "command-center", onNavigate: () => {} }),
+    )
+    const helps = [...view.container.querySelectorAll("nav button[data-help]")].map((b) => b.getAttribute("data-help"))
+    assert.deepEqual(helps, sections.map((s) => s.help), `collapsed: ${isCollapsed}`)
+    await view.unmount()
+  }
 })
 
-test("the tour is mounted once for the whole dashboard and the topbar button starts and ends it", () => {
-  assert.match(read("app/dashboard-shell.tsx"), /<HelpLayer \/>/)
-  const topbar = read("shared/ui/layout/components/topbar/topbar.tsx")
-  assert.match(topbar, /data-help-toggle/)
-  assert.match(topbar, /onClick=\{\(\) => setHelpMode\(!helping\)\}/)
+test("the top bar's help button starts the tour and ends it", async () => {
+  const view = await mount(React.createElement(Topbar, { activeItem: "command-center", onNavigate: () => {} }))
+  const button = view.container.querySelector("[data-help-toggle]")
+  assert.equal(isHelpMode(), false)
+  await click(button)
+  assert.equal(isHelpMode(), true)
+  assert.equal(button.getAttribute("aria-pressed"), "true")
+  await click(button)
+  assert.equal(isHelpMode(), false)
+  await view.unmount()
 })
 
-test("while it runs only its own controls and the help button can be clicked", () => {
-  const layer = read("shared/ui/help/help-layer.tsx")
-  assert.match(layer, /OWN_UI = "\.help-tour, \[data-help-toggle\]"/)
-  assert.match(layer, /document\.addEventListener\("click", block, true\)/)
-  assert.match(layer, /event\.preventDefault\(\)/)
+/** A page shaped like the dashboard: a sidebar, a top bar with the help button, and the page. */
+async function tourPage() {
+  const clicks = []
+  const h = React.createElement
+  const view = await mount(
+    h(React.Fragment, null,
+      h("aside", null, h("button", { "data-help": "Sidebar section one: what it holds." }, "One")),
+      h("header", null, h("button", { "data-help-toggle": true, "data-help": "Help: a guided tour.", onClick: () => clicks.push("help") }, "?")),
+      h("main", null,
+        h("button", { "data-help": "Save: saves the page.", onClick: () => clicks.push("page") }, "Save"),
+        h("button", { "data-help": "Export: saves it as a file." }, "Export")),
+      h(HelpLayer),
+    ),
+  )
+  const tour = () => view.container.querySelector(".help-tour")
+  const text = () => tour()?.querySelector(".help-tour-text")?.textContent ?? null
+  const count = () => tour()?.querySelector(".help-tour-count")?.textContent ?? null
+  return { view, clicks, tour, text, count }
+}
+
+test("the arrow keys move through the tour and Escape ends it", async () => {
+  const page = await tourPage()
+  await settle(() => setHelpMode(true))
+  assert.equal(page.text(), "Sidebar section one: what it holds.", "it starts in the sidebar")
+  assert.equal(page.count(), "1 of 3")
+  await press("ArrowRight")
+  assert.equal(page.count(), "2 of 3")
+  await press("ArrowLeft")
+  assert.equal(page.count(), "1 of 3")
+  await press("Escape")
+  assert.equal(page.tour(), null)
+  assert.equal(isHelpMode(), false)
+  await page.view.unmount()
 })
 
-test("Escape and Skip end the tour, and the arrow keys move through it", () => {
-  const layer = read("shared/ui/help/help-layer.tsx")
-  assert.match(layer, /event\.key === "Escape"\) finish\(\)/)
-  assert.match(layer, /event\.key === "ArrowRight"\) step\(1\)/)
-  assert.match(layer, /event\.key === "ArrowLeft"\) step\(-1\)/)
-  assert.match(layer, /className="help-tour-skip" onClick=\{finish\}/)
+test("Skip ends the tour, and Next on the last step finishes it", async () => {
+  const page = await tourPage()
+  await settle(() => setHelpMode(true))
+  await click(page.tour().querySelector(".help-tour-skip"))
+  assert.equal(isHelpMode(), false)
+  await settle(() => setHelpMode(true))
+  for (let i = 0; i < 3; i++) await click(page.tour().querySelector(".help-tour-next"))
+  assert.equal(isHelpMode(), false)
+  await page.view.unmount()
 })
 
-test("the tour keeps the topbar button and its own controls out of its steps", () => {
-  assert.match(read("shared/ui/help/help-collect.ts"), /el\.closest\(OWN_UI\)/)
+test("while it runs only its own controls and the help button can be clicked", async () => {
+  const page = await tourPage()
+  await settle(() => setHelpMode(true))
+  await click(page.view.container.querySelector("main button"))
+  assert.deepEqual(page.clicks, [], "the page's own button did nothing")
+  await click(page.view.container.querySelector("[data-help-toggle]"))
+  assert.deepEqual(page.clicks, ["help"], "the help button still works")
+  await settle(() => setHelpMode(false))
+  await click(page.view.container.querySelector("main button"))
+  assert.deepEqual(page.clicks, ["help", "page"], "and the page works again once it ends")
+  await page.view.unmount()
 })
 
-test("every form field with a hint explains itself with it", () => {
-  assert.match(read("shared/ui/forms/form-field.tsx"), /data-help=\{help \?\? hint\}/)
-})
-
-test("the project form's break setting explains itself, like idle time", () => {
-  const modal = read("features/projects/components/modals/project-modal.tsx")
-  assert.match(modal, /help="Disable break limit:/)
-  assert.match(modal, /help="Disable idle time:/)
+test("a form field explains itself with its hint, or with its own help when it has one", async () => {
+  const field = async (props) => {
+    const view = await mount(React.createElement(FormField, { label: "Name", ...props }, React.createElement("input")))
+    const help = view.container.firstElementChild.getAttribute("data-help")
+    await view.unmount()
+    return help
+  }
+  assert.equal(await field({ hint: "As it appears on invoices." }), "As it appears on invoices.")
+  assert.equal(await field({ hint: "Short.", help: "Name: what the client is called." }), "Name: what the client is called.")
+  assert.equal(await field({}), null)
 })

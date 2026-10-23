@@ -2,6 +2,10 @@
 // it existed, tenant.service.js's assertSeatAvailable was defined but called
 // from nowhere, so a customer account's seat limit was displayed and never
 // enforced.
+//
+// The rules here run against a scripted connection. What is counted, the lock being held while
+// the insert runs, the tenant-scoped identity and the admin write of the limit are run against
+// real Postgres with row-level security in tenancy.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
@@ -42,7 +46,7 @@ mock.module("../src/lib/postgres/audit-actor.js", {
   namedExports: { currentTenantId: () => requestTenant },
 });
 
-const { withSeatsAvailable, setTenantSeatLimit, usedSeatsSql, SeatLimitError } = await import(
+const { withSeatsAvailable, setTenantSeatLimit, SeatLimitError } = await import(
   "../src/modules/customer-accounts/seat-usage.service.js"
 );
 
@@ -63,35 +67,11 @@ test("an unlimited tenant is never counted - the default setup pays nothing", as
   assert.ok(!calls.some((c) => /AS used/.test(c.sql)), "no count query for an unlimited tenant");
 });
 
-test("a request that fits is inserted inside the same locked transaction", async () => {
-  reset({ limit: 5, inUse: 2 });
-  let insertedWith = null;
-  await withSeatsAvailable("tenant-a", 3, { insert: async (c) => { insertedWith = c; } });
-  assert.equal(insertedWith, client, "insert must get the transaction's own client");
-  assert.match(calls[0].sql, /pg_advisory_xact_lock\(hashtextextended\('seats:'/, "the seat lock is taken before counting");
-  assert.deepEqual(calls[0].params, ["tenant-a"]);
-});
-
-test("the guard runs on vt_app without touching the control-plane tenants table", async () => {
-  reset({ limit: 5, inUse: 1 });
-  await withSeatsAvailable("tenant-a", 1, { insert: async () => {} });
-  assert.ok(!calls.some((c) => /FROM tenants/.test(c.sql)), "vt_app has no grant on tenants");
-  assert.ok(calls.some((c) => /tenant_seat_limit\(\$1\)/.test(c.sql)), "the limit comes from the SECURITY DEFINER function");
-  assert.equal(adminTransactions, 0, "the insert must stay on the tenant-scoped connection");
-});
-
 test("an unknown tenant (NULL limit) skips the check, like a missing row did", async () => {
   reset({ limit: null, inUse: 999 });
   let inserted = false;
   await withSeatsAvailable("tenant-x", 1, { insert: async () => { inserted = true; } });
   assert.equal(inserted, true);
-});
-
-test("setTenantSeatLimit writes on the admin identity under the same seat lock", async () => {
-  reset({ limit: 10, inUse: 3 });
-  await setTenantSeatLimit("main", 8);
-  assert.equal(adminTransactions, 1);
-  assert.match(calls[0].sql, /pg_advisory_xact_lock\(hashtextextended\('seats:'/);
 });
 
 test("a request that does not fit is refused whole, before anything is inserted", async () => {
@@ -126,13 +106,6 @@ test("a signed-in request in its own tenant keeps its context (and audit actor)"
   reset({ tenant: "tenant-a" });
   await withSeatsAvailable("tenant-a", 1);
   assert.deepEqual(tenantSwitches, []);
-});
-
-test("used seats count members, pending invites AND pre-provisioned accounts", () => {
-  const sql = usedSeatsSql("$1");
-  assert.match(sql, /FROM members m WHERE m\.tenant_id = \$1 AND m\.status = 'active'/);
-  assert.match(sql, /FROM invites i WHERE i\.tenant_id = \$1 AND i\.status = 'pending_signup'/);
-  assert.match(sql, /FROM pending_auth_members p WHERE p\.tenant_id = \$1/);
 });
 
 test("the seat limit cannot be set below what is in use", async () => {

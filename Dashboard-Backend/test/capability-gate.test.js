@@ -3,6 +3,7 @@
 // callers - so an organization could record "URL capture: off" and have URLs
 // captured anyway. These cover the gate that now enforces it, and the one-shot
 // backfill that stops enforcement turning capture off on deploy.
+// Which capabilities the backfill turns on is checked on real rows in tracking-rules.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
@@ -93,19 +94,6 @@ test("only capabilities that actually stop collection report as enforced", async
   for (const c of ["activity_metering", "dns_logging"]) {
     assert.equal(isEnforcedCapability(c), false, c);
   }
-});
-
-test("the backfill enables only the capabilities with data behind them", async () => {
-  reset();
-  existsRow = { screenshots: true, app_tracking: true, url_capture: false, integrity_signals: false };
-  const result = await backfillCapabilitiesInUse();
-  assert.deepEqual(result.enabled, ["screenshots", "app_tracking"]);
-
-  const update = executed.find((q) => q.sql.includes("UPDATE monitoring_capabilities"));
-  assert.ok(update, "the ones in use are enabled");
-  assert.deepEqual(update.params[0], ["screenshots", "app_tracking"]);
-  // Never re-enables one an Owner has since turned off.
-  assert.match(update.sql, /AND enabled = false/);
 });
 
 test("the backfill runs once and never re-enables afterwards", async () => {

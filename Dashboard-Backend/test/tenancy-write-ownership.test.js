@@ -58,15 +58,9 @@ test("no tenant column is still created with the old literal default", () => {
   }
 });
 
-test("an explicit tenant_id still wins over the default", () => {
-  // Not a property of the SQL above - a column DEFAULT only applies when the
-  // column is omitted - but the retrofitted paths depend on it, so this
-  // pins the fact that they keep naming their tenant explicitly.
-  const invites = read("src/modules/members/routes/member-invites.routes.js");
-  assert.match(invites, /tenant_id: viewer\?\.tenantId \|\| MAIN_TENANT_ID/);
-  assert.match(read("src/lib/postgres/clients-postgres.service.js"), /data\.tenantId \?\? currentTenantId\(\)/);
-});
-
+// Kept as a meta-guard: it sweeps every invite list query in these files, including ones added
+// later, which no single behavioural test can. The compat list is also run for real in
+// invite-flow.pglite.test.js, and where new rows land in tenancy.pglite.test.js.
 test("every invite LIST query is scoped to one tenant", () => {
   // By-id / by-token / by-email lookups are excluded: they are addressed by
   // a specific identifier and gated by their own route checks. It is the

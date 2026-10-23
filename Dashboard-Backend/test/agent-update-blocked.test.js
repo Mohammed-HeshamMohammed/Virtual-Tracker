@@ -6,6 +6,9 @@
 // The distinction that matters here is false vs null: "checked, and it can
 // install" against "too old to have been asked". Collapsing them would mark
 // every pre-1.0.28 agent as fine for a reason nobody had checked.
+//
+// What a check-in leaves on the row over time, and who the list shows, run on real rows in
+// agent-versions.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
@@ -54,13 +57,6 @@ test("a junk value is treated as no answer, not as a truthy one", async () => {
   assert.equal(captured.params[4], null, "only a real string counts as a path");
 });
 
-test("an absent install dir never overwrites a known one", async () => {
-  // COALESCE, so an older agent checking in after a newer one does not erase
-  // the directory the newer one reported.
-  await reportAgentOpen("m1", "1.0.27", "windows", undefined, undefined);
-  assert.match(captured.sql, /agent_install_dir = COALESCE\(\$5, agent_install_dir\)/);
-});
-
 test("an over-long install path is truncated rather than rejected", async () => {
   // The path comes from a machine the server does not control; storing it is
   // a convenience, so it is bounded rather than allowed to fail the check-in.
@@ -90,29 +86,6 @@ test("the list query selects and exposes the blocked state", async () => {
   assert.equal(listed[0].agentInstallDir, "C:\\PF\\VT");
   assert.equal(listed[1].updateBlocked, false);
   assert.equal(listed[2].updateBlocked, null, "an unreported agent stays unknown");
-});
-
-test("an Owner is left out of the list except the Owner who is looking", async () => {
-  mock.restoreAll();
-  const calls = [];
-  mock.module("../src/lib/postgres/client.js", {
-    namedExports: { query: async (sql, params) => { calls.push({ sql, params }); return []; } },
-  });
-  const fresh = await import(`../src/modules/agent-versions/service.js?t=${Date.now()}owner`);
-
-  await fresh.listAgentVersionMembers("1.0.28");
-  assert.match(calls[0].sql, /!= 'owner'\s*\n/, "owners stay out for everyone else");
-  assert.equal(calls[0].sql.includes("OR m.id"), false);
-  assert.deepEqual(calls[0].params, []);
-
-  await fresh.listAgentVersionMembers("1.0.28", null, { includeMemberId: "viewer-id" });
-  assert.match(calls[1].sql, /!= 'owner' OR m\.id = \$1::uuid/);
-  assert.deepEqual(calls[1].params, ["viewer-id"]);
-
-  await fresh.listAgentVersionMembers("1.0.28", ["a", "b"], { includeMemberId: "viewer-id" });
-  assert.match(calls[2].sql, /m\.id = \$2::uuid/, "the viewer's param follows the visible-ids array");
-  assert.match(calls[2].sql, /m\.id = ANY\(\$1::uuid\[\]\)/);
-  assert.deepEqual(calls[2].params, [["a", "b"], "viewer-id"]);
 });
 
 test("listAgentVersionMembers is exported", () => {

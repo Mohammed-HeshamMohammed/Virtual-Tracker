@@ -3,6 +3,8 @@
 // the emailed and scheduled copies - so the tests cover the options, the formats,
 // right-to-left Arabic, every template and language drawn for real, and that the
 // server's copy is exactly what the web source generates.
+// What the Export dialog sends and saves is checked on the rendered report in
+// time-activity-report-view.test.mjs; the saved PDF look in pdf-options.test.mjs.
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync, existsSync } from "node:fs"
@@ -40,7 +42,6 @@ import {
 import { generate, TARGET_DIR } from "../scripts/sync-pdf-core.mjs"
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url))
-const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
 const opts = (over = {}) => normalizePdfOptions(over)
 
 const entry = (over = {}) => ({
@@ -358,6 +359,8 @@ test("entries from the server are made safe before they are priced", () => {
 })
 
 // ── one source, two copies ─────────────────────────────────────────────────
+// Kept as meta-guards: the server runs a generated copy of this core, and only comparing the files
+// can say the copy has not drifted from the source (or kept TypeScript the server cannot run).
 
 test("the server's copy of the core is exactly what the web source generates", () => {
   const generated = generate()
@@ -379,50 +382,64 @@ test("the server's copy is plain JavaScript: no types, no .ts imports", () => {
 
 // ── wiring ─────────────────────────────────────────────────────────────────
 
-test("every report PDF is drawn by the shared core, and Arabic is told its text is already in drawing order", () => {
-  const wrapper = read("features/reports/utils/pdf/report-pdf-kit.ts")
-  assert.match(wrapper, /renderPdf\(spec, options\)\.save\(/)
-  const kit = read("shared/pdf-core/kit.ts")
-  assert.match(kit, /isInputVisual: true, isOutputVisual: true, isInputRtl: false, isOutputRtl: false/)
-  assert.match(kit, /function drawChartFrame\(/)
-  assert.equal((kit.match(/drawChartFrame\(c, chart, y,/g) ?? []).length, 2, "bars and lines share the frame")
+/**
+ * Runs `fn` with every jsPDF document the app creates observed: the options each text call ends up
+ * with, and what `save` would write (instead of jsPDF's Node build writing it to disk).
+ */
+async function watchingJsPdf(fn) {
+  const { createRequire } = await import("node:module")
+  const jspdf = createRequire(import.meta.url)("jspdf")
+  const Original = jspdf.jsPDF
+  const textOptions = []
+  const saved = []
+  jspdf.jsPDF = function WatchedJsPdf(...args) {
+    const doc = new Original(...args)
+    const text = doc.text
+    doc.text = (str, x, y, options, ...rest) => {
+      textOptions.push(options ?? {})
+      return text.call(doc, str, x, y, options, ...rest)
+    }
+    doc.save = (filename) => saved.push({ filename, bytes: new Uint8Array(doc.output("arraybuffer")) })
+    return doc
+  }
+  Object.assign(jspdf.jsPDF, Original)
+  try {
+    await fn()
+  } finally {
+    jspdf.jsPDF = Original
+  }
+  return { textOptions, saved }
+}
+
+test("a report page's PDF download is the shared core's document, saved as a real PDF file", async () => {
+  const { createLoader } = await import("./helpers/render.mjs")
+  const loader = createLoader()
+  const { downloadReportPdf } = loader.load("features/reports/utils/pdf/report-pdf-kit.ts")
+  const { saved } = await watchingJsPdf(() =>
+    downloadReportPdf({ title: "Team", orgLabel: "Org", filename: "team-report", table: { columns: [{ key: "a", header: "Name" }], rows: [{ a: "Ann" }] } }),
+  )
+  assert.equal(saved.length, 1)
+  assert.match(saved[0].filename, /^team-report-\d{4}-\d{2}-\d{2}\.pdf$/)
+  assert.equal(String.fromCharCode(...saved[0].bytes.slice(0, 5)), "%PDF-")
 })
 
-test("the Export dialog shows and saves what the server built; email uses the same options", () => {
-  const dialog = read("features/reports/components/time-activity-report/pdf-export-dialog.tsx")
-  assert.match(dialog, /await renderRef\.current\(options, \{ preview: true \}\)/)
-  assert.match(dialog, /await render\(options, \{ preview: false \}\)/)
-  assert.doesNotMatch(dialog, /renderPdf|pdf-core\/kit/, "the dialog draws nothing itself")
-  const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
-  assert.match(view, /<DropdownMenuItem onClick=\{openPdfDialog\}>To PDF…<\/DropdownMenuItem>/)
-  assert.equal((view.match(/pdfOptions: emailPdfOptions/g) ?? []).length, 2, "send and schedule")
-  assert.equal((view.match(/pdfSettings=\{<PdfSettingsForm/g) ?? []).length, 2)
-  const form = read("features/reports/components/time-activity-report/pdf-settings-form.tsx")
-  // A viewer who may not see money gets the team report only; the client
-  // statement needs the right to see what clients are charged.
-  assert.match(form, /moneyHidden \? \["report"\] : billingAvailable \? \["report", "client", "payslip"\] : \["report", "payslip"\]/)
+test("Arabic text reaches jsPDF already in drawing order, so it is never reordered a second time", async () => {
+  const { createLoader } = await import("./helpers/render.mjs")
+  const loader = createLoader()
+  const { renderPdf } = loader.load("shared/pdf-core/kit.ts")
+  const { DEFAULT_PDF_OPTIONS } = loader.load("shared/pdf-core/options.ts")
+  const { textOptions } = await watchingJsPdf(() =>
+    renderPdf(
+      { title: "تقرير", orgLabel: "المؤسسة", filename: "f", table: { columns: [{ key: "a", header: "الاسم" }], rows: [{ a: "علي" }] } },
+      { ...DEFAULT_PDF_OPTIONS, language: "ar" },
+    ),
+  )
+  assert.ok(textOptions.length > 0)
+  for (const options of textOptions) {
+    assert.deepEqual(
+      [options.isInputVisual, options.isOutputVisual, options.isInputRtl, options.isOutputRtl],
+      [true, true, false, false],
+    )
+  }
 })
 
-test("the browser sends choices, not figures: only the team report sends anything of the page's", () => {
-  const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
-  assert.match(view, /team: isTeamReport \? teamReportInput\(o\) : undefined,/)
-  assert.doesNotMatch(view, /buildClientStatementSpec|buildPaySlipSpec|buildTeamReportSpec|\brenderPdf\b|entriesInCurrency/, "pricing is not worked out in the browser")
-  assert.doesNotMatch(view, /fetchTimeAndActivityReport/, "no reloading the whole report in another currency to price a document")
-  const api = read("features/reports/api/time-and-activity-api.ts")
-  assert.match(api, /apiPath\("\/api\/reports\/time-and-activity\/pdf"\)/)
-  assert.match(api, /method: "POST"/)
-})
-
-test("the PDF look is saved on the server per member, with this browser's copy as the fast start", () => {
-  const api = read("features/reports/api/pdf-settings-api.ts")
-  assert.match(api, /apiPath\("\/api\/reports\/pdf-settings"\)/)
-  assert.match(api, /method: "PUT"/)
-  const hook = read("features/reports/hooks/use-pdf-options.ts")
-  assert.match(hook, /fetchPdfSettings\(\)/)
-  assert.match(hook, /savePdfSettings\(/)
-  // Only how documents look is saved - never whose pay slip or which projects.
-  assert.match(hook, /appearanceOf\(resolved\)/)
-  // Settings made before the server held any are uploaded once, and an edit made while loading is not overwritten.
-  assert.match(hook, /else if \(local && !touched\.current\)/)
-  assert.match(hook, /if \(touched\.current\) return/)
-})
