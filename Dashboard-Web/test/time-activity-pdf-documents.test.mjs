@@ -184,18 +184,6 @@ test("both documents plot hours by date against a labelled hours axis", () => {
 
 // ── wiring ─────────────────────────────────────────────────────────────────
 
-test("Members and Projects take several picks, and a project filter counts only that project's hours", () => {
-  const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
-  assert.equal((view.match(/<ReportToolbarMultiSelect/g) ?? []).length, 2)
-  const rows = read("features/reports/utils/time-and-activity/row-aggregate.ts")
-  assert.match(rows, /memberFilter\.length > 0 && !memberFilter\.includes\(r\.name\)/)
-  assert.match(rows, /projectFilter\.length > 0 && !r\.projectNames\.some\(\(name\) => projectFilter\.includes\(name\)\)/)
-  const hook = read("features/reports/hooks/use-time-and-activity-report.ts")
-  assert.match(hook, /buildDayMemberRows\(\s*entries\.filter\(\(e\) => projectFilter\.includes\(e\.projectName\)\)/)
-  // A view saved when the filter held one name still loads.
-  assert.match(hook, /typeof saved === "string" && saved && saved !== allValue \? \[saved\] : \[\]/)
-})
-
 // ── invoice-style terms on the statement ───────────────────────────────────
 
 test("client statement: tax on the client's own rate, a due date from its net terms, and its note", () => {

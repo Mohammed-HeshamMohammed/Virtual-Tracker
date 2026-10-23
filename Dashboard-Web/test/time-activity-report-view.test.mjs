@@ -42,13 +42,14 @@ const report = {
     {
       date: today,
       members: [
-        { memberId: "ann", name: "Ann Lee", avatarUrl: "https://stale.example/ann.png", activeSeconds: 3600, idleSeconds: 600, activitySum: 70, activityCount: 1, spentAmount: 20, currency: "USD", projectNames: ["Website"] },
+        { memberId: "ann", name: "Ann Lee", avatarUrl: "https://stale.example/ann.png", activeSeconds: 5400, idleSeconds: 600, activitySum: 70, activityCount: 1, spentAmount: 30, currency: "USD", projectNames: ["Website", "Shop"] },
         { memberId: "bob", name: "Bob Ray", avatarUrl: null, activeSeconds: 7200, idleSeconds: 0, activitySum: 50, activityCount: 1, spentAmount: 40, currency: "USD", projectNames: ["Shop"] },
       ],
     },
   ],
   entries: [
     { date: today, memberId: "ann", memberName: "Ann Lee", projectId: "p-1", projectName: "Website", clientName: "", teamName: "", activeSeconds: 3600, idleSeconds: 600, activitySum: 70, activityCount: 1, spentAmount: 20, currency: "USD" },
+    { date: today, memberId: "ann", memberName: "Ann Lee", projectId: "p-2", projectName: "Shop", clientName: "", teamName: "", activeSeconds: 1800, idleSeconds: 0, activitySum: 0, activityCount: 0, spentAmount: 10, currency: "USD" },
     { date: today, memberId: "bob", memberName: "Bob Ray", projectId: "p-2", projectName: "Shop", clientName: "", teamName: "", activeSeconds: 7200, idleSeconds: 0, activitySum: 50, activityCount: 1, spentAmount: 40, currency: "USD" },
   ],
   members: [{ id: "ann", name: "Ann Lee", avatarUrl: "https://cdn.example/ann-profile.png" }, { id: "bob", name: "Bob Ray", avatarUrl: null }],
@@ -180,5 +181,70 @@ test("deleting a day that turns out to hold nothing says so instead of silently 
   await waitFor(() => calls.filter((c) => c.method === "DELETE").length === 2)
   await settle(() => new Promise((r) => setTimeout(r, 20)))
   assert.equal(/Nothing was found to delete/.test(view.container.textContent), false, "a real delete clears the notice")
+  await view.unmount()
+})
+
+const pickIn = async (root, label, names) => {
+  const trigger = [...root.querySelectorAll('button[aria-haspopup="listbox"]')].find((b) => b.textContent.includes(`All ${label}`))
+  await click(trigger)
+  for (const name of names) {
+    await click([...root.querySelectorAll("button")].find((b) => !b.hasAttribute("aria-haspopup") && b.textContent.trim().endsWith(name)))
+  }
+  await click(trigger)
+}
+async function csvLines(view) {
+  downloads.length = 0
+  await click(button(view.container, "To CSV"))
+  await waitFor(() => downloads.length === 1)
+  return (await downloads[0].text()).trim().split(/\r?\n/).slice(1)
+}
+
+test("a project filter counts only that project's hours, and the member filter takes several people", async () => {
+  window.localStorage.clear()
+  let view = await openReport()
+  const before = await csvLines(view)
+  assert.ok(before.some((l) => l.includes("Ann Lee") && l.includes("01:30:00")), "unfiltered, Ann's whole day")
+  await pickIn(view.container, "projects", ["Website"])
+  const website = await csvLines(view)
+  const ann = website.find((l) => l.includes("Ann Lee"))
+  assert.ok(ann && ann.includes("01:00:00") && !ann.includes("01:30:00"), `only Ann's Website hour: ${ann}`)
+  assert.equal(website.some((l) => l.includes("Bob Ray")), false, "Bob did no Website work")
+  await view.unmount()
+
+  window.localStorage.clear()
+  view = await openReport()
+  await pickIn(view.container, "members", ["Bob Ray", "Ann Lee"])
+  const both = await csvLines(view)
+  assert.ok(both.some((l) => l.includes("Ann Lee")) && both.some((l) => l.includes("Bob Ray")))
+  await view.unmount()
+})
+
+test("a view saved when the member filter held one name still loads that filter", async () => {
+  window.localStorage.setItem("reports:time-and-activity:view", JSON.stringify({ groupBy: "date_per_day", memberFilter: "Bob Ray" }))
+  const view = await openReport()
+  const lines = await csvLines(view)
+  assert.ok(lines.some((l) => l.includes("Bob Ray")))
+  assert.equal(lines.some((l) => l.includes("Ann Lee")), false)
+  await view.unmount()
+  window.localStorage.clear()
+})
+
+test("emailing the report uses the same PDF choices as the Export dialog", async () => {
+  calls.length = 0
+  const view = await openReport()
+  await click(view.container.querySelector('[aria-label="Send"]'))
+  const dialog = () => [...document.body.querySelectorAll('[role="dialog"]')].find((d) => d.textContent.includes("Send report"))
+  await waitFor(() => dialog())
+  await type(documentSelect(dialog()), "payslip")
+  await type(dialog().querySelector('input[autocomplete="email"]'), "boss@example.test")
+  await click([...dialog().querySelectorAll("button")].find((b) => b.textContent.trim() === "Send"))
+  await waitFor(() => calls.some((c) => c.path === "/api/reports/time-and-activity/send"))
+  const sent = calls.find((c) => c.path === "/api/reports/time-and-activity/send").body
+  assert.deepEqual(sent.emails, ["boss@example.test"])
+  assert.equal(sent.pdfOptions.document, "payslip")
+  // The Export dialog opens on that same choice.
+  await click(button(view.container, "To PDF"))
+  await waitFor(() => pdfRequests().length >= 1)
+  assert.equal(pdfRequests().at(-1).body.pdfOptions.document, "payslip")
   await view.unmount()
 })
