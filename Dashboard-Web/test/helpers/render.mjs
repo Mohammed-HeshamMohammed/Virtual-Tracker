@@ -144,13 +144,13 @@ export function installDom(html = "<!doctype html><html><body><div id='root'></d
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   return {
     dom,
+    // Closes the document (which stops its timers). The globals stay pointing at it: each test file
+    // runs in its own process, and a callback still in flight after the last test (a fetch settling
+    // after an unmount) must find a window rather than throw.
     restore() {
       dom.window.close()
-      for (const [name, descriptor] of previous) {
-        if (descriptor) Object.defineProperty(globalThis, name, descriptor)
-        else delete globalThis[name]
-      }
       globalThis.IS_REACT_ACT_ENVIRONMENT = previousAct
+      void previous
     },
   }
 }
