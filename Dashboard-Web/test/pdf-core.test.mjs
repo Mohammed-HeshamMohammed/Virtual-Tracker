@@ -42,7 +42,6 @@ import {
 import { generate, TARGET_DIR } from "../scripts/sync-pdf-core.mjs"
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url))
-const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
 const opts = (over = {}) => normalizePdfOptions(over)
 
 const entry = (over = {}) => ({

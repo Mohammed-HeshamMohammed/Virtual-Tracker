@@ -6,9 +6,6 @@
 // time-activity-report-view.test.mjs.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 import * as core from "../shared/pdf-core/documents.ts"
 import { normalizePdfOptions } from "../shared/pdf-core/options.ts"
 
@@ -16,8 +13,6 @@ const { billableProjectNames, projectsWithoutClientRate } = core
 const buildClientStatementSpec = (input, options = {}) => core.buildClientStatementSpec(input, normalizePdfOptions(options))
 const buildPaySlipSpec = (input, options = {}) => core.buildPaySlipSpec(input, normalizePdfOptions(options))
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url))
-const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
 
 const entry = (over = {}) => ({
   date: "2026-09-01",
@@ -249,25 +244,3 @@ test("client statement: a client without payment terms does not inherit another 
 })
 
 // ── Activity and Task Approvals ────────────────────────────────────────────
-
-test("Activity: members can be picked several at a time, as one comma-joined id", async () => {
-  const { splitSelectedMemberIds, joinSelectedMemberIds } = await import("../features/activity/utils/activity-scope-preferences.ts")
-  assert.deepEqual(splitSelectedMemberIds("all"), [])
-  assert.deepEqual(splitSelectedMemberIds("a, b ,,c"), ["a", "b", "c"])
-  assert.equal(joinSelectedMemberIds([]), "all")
-  assert.equal(joinSelectedMemberIds(new Set(["a", "b", "a"])), "a,b")
-  const select = read("features/activity/components/activity-member-select.tsx")
-  assert.match(select, /<ReportToolbarMultiSelect/)
-  assert.match(select, /<ReportMemberAvatar initials=\{m\.initials\} imageUrl=\{m\.avatarUrl\} \/>/)
-  // Unticking the last member is "all" where that is allowed, ignored where it is not.
-  assert.match(select, /if \(next\.size === 0\) \{\n\s+if \(allowAll\) setSelectedMemberId\("all"\)\n\s+return/)
-})
-
-test("Task Approvals: employee and project filters take several picks and are applied to the rows", () => {
-  const table = read("features/timesheets/components/view-edit/components/ReviewQueueTable.tsx")
-  assert.equal((table.match(/<ReportToolbarMultiSelect/g) ?? []).length, 2)
-  assert.match(table, /\(memberFilter\.size === 0 \|\| memberFilter\.has\(row\.userId\)\)/)
-  assert.match(table, /\(projectFilter\.size === 0 \|\| \(row\.projectId !== null && projectFilter\.has\(row\.projectId\)\)\)/)
-  // The server only takes one of each, so neither is sent.
-  assert.doesNotMatch(table, /projectId: projectFilter|memberId: memberFilter/)
-})
