@@ -626,202 +626,206 @@ export async function routeMemberInvites(req, res, url, origin) {
       sendJson(res, origin, 400, { success: false, error: "Email must match the invited address." });
       return true;
     }
-    const preCheck = await assertEmailCanUseMemberInviteOrPreprovision(db, auth, email, { ignoreInviteId: inv.id });
-    if (!preCheck.ok) {
-      await recordInviteRegisterFailure(req, email);
-      sendJson(res, origin, 400, { success: false, error: preCheck.message, reason: preCheck.reason });
-      return true;
-    }
     const inviteTenantId = typeof row.tenant_id === "string" && row.tenant_id ? row.tenant_id : MAIN_TENANT_ID;
-    // Before the sign-in account is created, so a refusal leaves nothing
-    // behind. This invite's own pending row already holds the seat being
-    // taken, so it is excluded - an ordinary email invite always fits; this
-    // bites for a reused share link, or a tenant whose limit was lowered.
-    // A soft check: the real, atomic, lock-held check runs again right
-    // before the member row is actually inserted below (§0.1 blocker 8) -
-    // this one exists only to fail fast, before Firebase creates an auth
-    // user that would otherwise need to be cleaned up on a late rejection.
-    try {
-      await withSeatsAvailable(inviteTenantId, 1, { excludeInviteIds: [inv.id] });
-    } catch (seatErr) {
-      if (seatErr instanceof SeatLimitError) {
-        sendJson(res, origin, seatErr.status, {
-          success: false,
-          error: "This organization has no open seats right now. Ask whoever invited you to free one.",
-          code: seatErr.code,
-        });
+    // The token lookup is tenant-scoped only while reading the invite. Keep every
+    // registration read and write in that verified tenant, including role, pay and project rows.
+    return withTenant(inviteTenantId, async () => {
+      const preCheck = await assertEmailCanUseMemberInviteOrPreprovision(db, auth, email, { ignoreInviteId: inv.id });
+      if (!preCheck.ok) {
+        await recordInviteRegisterFailure(req, email);
+        sendJson(res, origin, 400, { success: false, error: preCheck.message, reason: preCheck.reason });
         return true;
       }
-      throw seatErr;
-    }
-    try {
-      const displayName = `${firstName} ${lastName}`.trim();
-      const userRecord = await auth.createUser({
-        email,
-        password,
-        emailVerified: inviteKind === "email",
-        displayName,
-      });
-      const uid = userRecord.uid;
-      const memberId = crypto.randomUUID();
-      const inviteRoleId = typeof row.role_id === "string" && row.role_id ? row.role_id : "";
-      const resolvedRoleName = inviteRoleId ? await resolveRoleNameById(db, inviteRoleId) : "";
-      const roleName = resolvedRoleName || "Viewer";
-      const payRate = typeof row.pay_rate === "number" && !Number.isNaN(row.pay_rate) ? row.pay_rate : 0;
-      const inviteProjects = await getInviteProjectIds(db, inv.id);
-      const memberPayload = {
-        id: memberId,
-        first_name: firstName,
-        last_name: lastName,
-        work_email: email,
-        personal_email: "",
-        employee_id: "",
-        ip_address: "",
-        phone_number: phone,
-        phone_verified: false,
-        status: "active",
-        date_added: new Date(),
-        created_by: "self-invite",
-        registration_invite_kind: inviteKind,
-        created_by_uid: typeof row.created_by_uid === "string" ? row.created_by_uid : "",
-        updated_by: "",
-        updated_at: new Date(),
-        firebase_uid: uid,
-      };
-      // §Phase 4: the accepted invite's tenant becomes the new member's
-      // tenant - this route is a PUBLIC_API_ROUTES entry (runs before any
-      // tenant is known from an authenticated session), so it has to be
-      // told explicitly rather than inheriting one from context the way
-      // every other member-creation path does. Only set the key when the
-      // invite actually carries one (main-org invites do too, once
-      // ensure-tenancy-schema.js has backfilled `invites`) - `createMemberPg`
-      // inserts whatever key is present, and an explicit NULL would
-      // override the column's own DEFAULT rather than falling through to it.
-      if (typeof row.tenant_id === "string" && row.tenant_id) {
-        memberPayload.tenant_id = row.tenant_id;
-      }
-      // §0.1 blocker 8: the authoritative check - locks the tenant row and
-      // inserts the member on the same transaction, so a concurrent
-      // registration for the last seat cannot also pass the check above
-      // before either write lands. The Firebase user above cannot be
-      // created inside this lock (external network call), which is why the
-      // soft check ran first to make hitting this rejection rare, not why
-      // it is skipped here.
-      await withSeatsAvailable(inviteTenantId, 1, {
-        excludeInviteIds: [inv.id],
-        insert: (client) => createMemberPg(memberPayload, client),
-      });
-      // §0.1 blocker 9: the only path that accepts an Enterprise invite,
-      // so it is the only place root_user_id is ever set. tenants is a
-      // control-plane table (queryAsAdmin, not query/withTenant - vt_app
-      // has zero grants on it, see tenancy-tables.js's CONTROL_PLANE_TABLES).
-      // IS NULL makes a second Enterprise invite into the same tenant a
-      // no-op rather than overwriting the real root - verified against real
-      // Postgres to affect 0 rows on that second acceptance.
-      if (isEnterpriseRole(roleName) && inviteTenantId !== MAIN_TENANT_ID) {
-        try {
-          await queryAsAdmin(
-            `UPDATE tenants SET root_user_id = $2, updated_at = now() WHERE id = $1 AND root_user_id IS NULL`,
-            [inviteTenantId, memberId],
-          );
-        } catch (rootErr) {
-          logSafeError("[invite/register] Failed to link tenant root_user_id:", rootErr);
+      // Before the sign-in account is created, so a refusal leaves nothing
+      // behind. This invite's own pending row already holds the seat being
+      // taken, so it is excluded - an ordinary email invite always fits; this
+      // bites for a reused share link, or a tenant whose limit was lowered.
+      // A soft check: the real, atomic, lock-held check runs again right
+      // before the member row is actually inserted below (§0.1 blocker 8) -
+      // this one exists only to fail fast, before Firebase creates an auth
+      // user that would otherwise need to be cleaned up on a late rejection.
+      try {
+        await withSeatsAvailable(inviteTenantId, 1, { excludeInviteIds: [inv.id] });
+      } catch (seatErr) {
+        if (seatErr instanceof SeatLimitError) {
+          sendJson(res, origin, seatErr.status, {
+            success: false,
+            error: "This organization has no open seats right now. Ask whoever invited you to free one.",
+            code: seatErr.code,
+          });
+          return true;
         }
+        throw seatErr;
       }
-      const creatorRoleName = await resolveInviteCreatorRoleName(db, row);
-      await syncMemberPrimaryRole(
-        db,
-        memberId,
-        roleName,
-        typeof row.created_by_uid === "string" ? row.created_by_uid : "",
-        creatorRoleName,
-      );
-      const { upsertMemberPayRate } = await import("../services/member-profile.service.js");
-      await upsertMemberPayRate(db, memberId, payRate, typeof row.created_by_uid === "string" ? row.created_by_uid : "");
-      if (inviteProjects.length > 0) {
-        await syncProjectMembersForMember(
+      try {
+        const displayName = `${firstName} ${lastName}`.trim();
+        const userRecord = await auth.createUser({
+          email,
+          password,
+          emailVerified: inviteKind === "email",
+          displayName,
+        });
+        const uid = userRecord.uid;
+        const memberId = crypto.randomUUID();
+        const inviteRoleId = typeof row.role_id === "string" && row.role_id ? row.role_id : "";
+        const resolvedRoleName = inviteRoleId ? await resolveRoleNameById(db, inviteRoleId) : "";
+        const roleName = resolvedRoleName || "Viewer";
+        const payRate = typeof row.pay_rate === "number" && !Number.isNaN(row.pay_rate) ? row.pay_rate : 0;
+        const inviteProjects = await getInviteProjectIds(db, inv.id);
+        const memberPayload = {
+          id: memberId,
+          first_name: firstName,
+          last_name: lastName,
+          work_email: email,
+          personal_email: "",
+          employee_id: "",
+          ip_address: "",
+          phone_number: phone,
+          phone_verified: false,
+          status: "active",
+          date_added: new Date(),
+          created_by: "self-invite",
+          registration_invite_kind: inviteKind,
+          created_by_uid: typeof row.created_by_uid === "string" ? row.created_by_uid : "",
+          updated_by: "",
+          updated_at: new Date(),
+          firebase_uid: uid,
+        };
+        // §Phase 4: the accepted invite's tenant becomes the new member's
+        // tenant - this route is a PUBLIC_API_ROUTES entry (runs before any
+        // tenant is known from an authenticated session), so it has to be
+        // told explicitly rather than inheriting one from context the way
+        // every other member-creation path does. Only set the key when the
+        // invite actually carries one (main-org invites do too, once
+        // ensure-tenancy-schema.js has backfilled `invites`) - `createMemberPg`
+        // inserts whatever key is present, and an explicit NULL would
+        // override the column's own DEFAULT rather than falling through to it.
+        if (typeof row.tenant_id === "string" && row.tenant_id) {
+          memberPayload.tenant_id = row.tenant_id;
+        }
+        // §0.1 blocker 8: the authoritative check - locks the tenant row and
+        // inserts the member on the same transaction, so a concurrent
+        // registration for the last seat cannot also pass the check above
+        // before either write lands. The Firebase user above cannot be
+        // created inside this lock (external network call), which is why the
+        // soft check ran first to make hitting this rejection rare, not why
+        // it is skipped here.
+        await withSeatsAvailable(inviteTenantId, 1, {
+          excludeInviteIds: [inv.id],
+          insert: (client) => createMemberPg(memberPayload, client),
+        });
+        // §0.1 blocker 9: the only path that accepts an Enterprise invite,
+        // so it is the only place root_user_id is ever set. tenants is a
+        // control-plane table (queryAsAdmin, not query/withTenant - vt_app
+        // has zero grants on it, see tenancy-tables.js's CONTROL_PLANE_TABLES).
+        // IS NULL makes a second Enterprise invite into the same tenant a
+        // no-op rather than overwriting the real root - verified against real
+        // Postgres to affect 0 rows on that second acceptance.
+        if (isEnterpriseRole(roleName) && inviteTenantId !== MAIN_TENANT_ID) {
+          try {
+            await queryAsAdmin(
+              `UPDATE tenants SET root_user_id = $2, updated_at = now() WHERE id = $1 AND root_user_id IS NULL`,
+              [inviteTenantId, memberId],
+            );
+          } catch (rootErr) {
+            logSafeError("[invite/register] Failed to link tenant root_user_id:", rootErr);
+          }
+        }
+        const creatorRoleName = await resolveInviteCreatorRoleName(db, row);
+        await syncMemberPrimaryRole(
           db,
           memberId,
-          inviteProjects,
+          roleName,
           typeof row.created_by_uid === "string" ? row.created_by_uid : "",
+          creatorRoleName,
         );
-      }
+        const { upsertMemberPayRate } = await import("../services/member-profile.service.js");
+        await upsertMemberPayRate(db, memberId, payRate, typeof row.created_by_uid === "string" ? row.created_by_uid : "");
+        if (inviteProjects.length > 0) {
+          await syncProjectMembersForMember(
+            db,
+            memberId,
+            inviteProjects,
+            typeof row.created_by_uid === "string" ? row.created_by_uid : "",
+          );
+        }
 
-      const inviterUid = typeof row.created_by_uid === "string" ? row.created_by_uid : "";
-      if (inviterUid && !isExcludedFromHierarchy(roleName)) {
-        try {
-          const inviterMember = await getMemberByFirebaseUidPg(inviterUid);
-          if (inviterMember) {
-            const inviterMemberId = String(inviterMember.id);
-            const parentMemberId = await resolveInviteTreeParent(row, inviterMemberId);
-            await recordMemberRelationship(db, {
-              parentMemberId,
-              childMemberId: memberId,
-              relationshipType: "invite",
-              createdBy: inviterMemberId,
-              projects: inviteProjects,
-            });
+        const inviterUid = typeof row.created_by_uid === "string" ? row.created_by_uid : "";
+        if (inviterUid && !isExcludedFromHierarchy(roleName)) {
+          try {
+            const inviterMember = await getMemberByFirebaseUidPg(inviterUid);
+            if (inviterMember) {
+              const inviterMemberId = String(inviterMember.id);
+              const parentMemberId = await resolveInviteTreeParent(row, inviterMemberId);
+              await recordMemberRelationship(db, {
+                parentMemberId,
+                childMemberId: memberId,
+                relationshipType: "invite",
+                createdBy: inviterMemberId,
+                projects: inviteProjects,
+              });
+            }
+          } catch (relErr) {
+            logSafeError("[invite/register] Failed to record relationship:", relErr);
           }
-        } catch (relErr) {
-          logSafeError("[invite/register] Failed to record relationship:", relErr);
         }
-      }
 
-      await inv.ref.update({
-        status: "completed",
-        accepted_at: new Date(),
-        firebase_uid: uid,
-        use_count: FieldValue.increment(1),
-        updated_at: new Date(),
-      });
-      await db.collection(USER_PROFILES_COLLECTION).doc(uid).set(
-        {
-          uid,
-          firstName,
-          lastName,
-          phone,
-          phoneVerified: false,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      );
-      await upsertProfileFromUserRecord(db, await auth.getUser(uid));
-      if (inviteKind === "email") {
-        try {
-          const { maybeSendRegistrationWelcomeEmail } = await import("../../auth/registration-welcome-email.js");
-          void maybeSendRegistrationWelcomeEmail(db, auth, { uid });
-        } catch (welcomeErr) {
-          logSafeWarn("[invite/register] welcome email failed:", welcomeErr);
-        }
-      }
-      await recordInviteRegisterSuccess(req, email);
-      sendJson(res, origin, 201, {
-        success: true,
-        uid,
-        message: "Account created. You can sign in now.",
-      });
-    } catch (e) {
-      if (e instanceof SeatLimitError) {
-        await recordInviteRegisterFailure(req, email);
-        sendJson(res, origin, e.status, {
-          success: false,
-          error: "This organization has no open seats right now. Ask whoever invited you to free one.",
-          code: e.code,
+        await inv.ref.update({
+          status: "completed",
+          accepted_at: new Date(),
+          firebase_uid: uid,
+          use_count: FieldValue.increment(1),
+          updated_at: new Date(),
         });
-        return true;
-      }
-      const code = typeof e === "object" && e !== null && "code" in e ? String(/** @type {{ code?: string }} */ (e).code) : "";
-      if (code === "auth/email-already-exists") {
+        await db.collection(USER_PROFILES_COLLECTION).doc(uid).set(
+          {
+            uid,
+            firstName,
+            lastName,
+            phone,
+            phoneVerified: false,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        await upsertProfileFromUserRecord(db, await auth.getUser(uid));
+        if (inviteKind === "email") {
+          try {
+            const { maybeSendRegistrationWelcomeEmail } = await import("../../auth/registration-welcome-email.js");
+            void maybeSendRegistrationWelcomeEmail(db, auth, { uid });
+          } catch (welcomeErr) {
+            logSafeWarn("[invite/register] welcome email failed:", welcomeErr);
+          }
+        }
+        await recordInviteRegisterSuccess(req, email);
+        sendJson(res, origin, 201, {
+          success: true,
+          uid,
+          message: "Account created. You can sign in now.",
+        });
+      } catch (e) {
+        if (e instanceof SeatLimitError) {
+          await recordInviteRegisterFailure(req, email);
+          sendJson(res, origin, e.status, {
+            success: false,
+            error: "This organization has no open seats right now. Ask whoever invited you to free one.",
+            code: e.code,
+          });
+          return true;
+        }
+        const code = typeof e === "object" && e !== null && "code" in e ? String(/** @type {{ code?: string }} */ (e).code) : "";
+        if (code === "auth/email-already-exists") {
+          await recordInviteRegisterFailure(req, email);
+          sendJson(res, origin, 409, { success: false, error: "An account already exists for this email. Sign in instead." });
+          return true;
+        }
         await recordInviteRegisterFailure(req, email);
-        sendJson(res, origin, 409, { success: false, error: "An account already exists for this email. Sign in instead." });
-        return true;
+        const msg = e instanceof Error ? e.message : "Registration failed";
+        logSafeError("[public/invites/register]", e);
+        sendJson(res, origin, 500, { success: false, error: msg });
       }
-      await recordInviteRegisterFailure(req, email);
-      const msg = e instanceof Error ? e.message : "Registration failed";
-      logSafeError("[public/invites/register]", e);
-      sendJson(res, origin, 500, { success: false, error: msg });
-    }
-    return true;
+      return true;
+    });
   }
 
   if (pn === "/api/invites/open-link" && req.method === "POST") {
