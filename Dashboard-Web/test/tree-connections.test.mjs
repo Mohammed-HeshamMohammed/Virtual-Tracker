@@ -301,31 +301,8 @@ test("export: a standalone SVG with every card, escaped text and the right size"
 
 // ---- wiring ------------------------------------------------------------------------------------
 
-import { readFileSync } from "node:fs"
-import { existsSync } from "node:fs"
-import { fileURLToPath } from "node:url"
-import { join } from "node:path"
-const ROOT = fileURLToPath(new URL("..", import.meta.url))
-const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
-
-test("wiring: the page uses the new view, only Owner/Super Admin can reassign, and the old view is gone", () => {
-  const page = read("features/members/pages/member-tree-page.tsx")
-  assert.match(page, /from "@\/features\/members\/tree-connections\/connections-view"/)
-  assert.match(page, /const canReassign = viewScope === "organization" && \(isOwner \|\| isSuperAdmin\)/)
-  assert.match(page, /onReassign=\{canReassign \? handleReassign : undefined\}/)
-  assert.match(page, /onAddHere=\{canManageMembers \? setAddUnder : undefined\}/)
-  assert.equal(existsSync(join(ROOT, "features/members/pages/member-tree-connections-view.tsx")), false)
-  assert.match(read("features/members/services/member-tree.ts"), /\/api\/member-relationships\/move/)
-})
-
-test("wiring: the view keeps its promises - Shift moves a team, drops are checked, nothing is saved until confirmed", () => {
-  const view = read("features/members/tree-connections/connections-view.tsx")
-  assert.match(view, /event\.shiftKey \? \[id, \.\.\.descendantsOf/)
-  assert.match(view, /canReassign\(modelRef\.current, member, target\)/)
-  assert.match(view, /useReassignFlow\(/)
-  assert.match(read("features/members/tree-connections/use-reassign.ts"), /await onReassign\(memberIds\[0\], newParentId\)/)
-  assert.match(view, /overflow-clip/)
-})
+// The chart, list and page are rendered and driven in tree-connections-ui.test.mjs (drags,
+// confirmation, group moves, permissions, the move requests).
 
 // ---- avatar style and the list ------------------------------------------------------------------
 
@@ -379,29 +356,6 @@ test("list: a role filter and a search combine, and nothing matching gives no ro
   assert.equal(isFiltering({ query: "", role: "Admin" }), true)
 })
 
-test("wiring: one slim bar - refresh and the view switch left, the counts in the middle - and the chart carries the layout controls", () => {
-  const page = read("features/members/pages/member-tree-page.tsx")
-  assert.equal(/<h2[^>]*>\s*Members tree/.test(page), false, "the title card is gone")
-  assert.equal(page.includes("TreeChartControls"), false, "the three dropdowns no longer live in the page header")
-  assert.ok(page.indexOf("<TableRefreshButton") < page.indexOf("<TreeViewModeToggle"), "refresh comes before the List / Connections switch")
-  assert.ok(page.indexOf("<TreeViewModeToggle") < page.indexOf("level{treeDepth === 1"), "the counts sit after the controls on the left")
-  assert.match(page, /lg:grid-cols-\[1fr_auto_1fr\]/, "the counts are centred between the two sides")
-  assert.match(page, /onSettingsChange=\{updateChartSettings\}/)
-  assert.match(page, /<MemberTreeListView/)
-  assert.match(page, /onShowInChart=\{showInChart\}/)
-  const view = read("features/members/tree-connections/connections-view.tsx")
-  assert.match(view, /<TreeChartControls settings=\{settings\} onChange=\{props\.onSettingsChange\}/)
-  assert.match(view, /changeCardStyle\("avatar"\)/)
-})
-
-test("wiring: the list offers search, role filter, fold controls and the same guarded reassign flow", () => {
-  const list = read("features/members/tree-connections/list-view.tsx")
-  assert.match(list, /flattenForList\(/)
-  assert.match(list, /useReassignFlow\(/)
-  assert.match(list, /Show in the chart/)
-  assert.match(list, /reassignAllowed && !isSelfOwner/)
-})
-
 // ---- moving a packed team's frame ----------------------------------------------------------------
 
 import { applyOffsets, frameKey, presentOffsetKeys } from "../features/members/tree-connections/offsets.ts"
@@ -437,13 +391,6 @@ test("frame: offsets for managers who left are dropped, frames of present manage
   assert.equal(keep.has(frameKey("gone")), false)
   const stored = pruneOffsets(parseOffsets(serializeOffsets(new Map([[frameKey("boss"), { x: 5, y: 5 }], [frameKey("gone"), { x: 5, y: 5 }]]))), keep)
   assert.deepEqual([...stored.keys()], [frameKey("boss")])
-})
-
-test("wiring: the frame has a drag handle; in Reassign mode it carries the whole group onto a manager", () => {
-  const view = read("features/members/tree-connections/connections-view.tsx")
-  assert.match(view, /onPointerDown=\{\(event\) => beginFrameDrag\(event, g\)\}/)
-  assert.match(view, /if \(modeRef\.current === "reassign" && canReassignRef\.current\) \{/)
-  assert.match(view, /Drag to move this whole group/)
 })
 
 // ---- tiers inside a team, and moving a group ------------------------------------------------------
@@ -514,15 +461,4 @@ test("tiers: each frame moves on its own, with its own members, and links join e
 
 test("tiers: roles fall on the ladder administrators > managers > team > others", () => {
   assert.deepEqual(["Super Admin", "Admin", "Super Manager", "Manager", "Team Lead", "Employee", "Intern", "Client", "Viewer"].map(roleTier), [0, 0, 1, 1, 2, 2, 2, 3, 3])
-})
-
-test("group move: the flow takes many members, skips the ones the rules refuse, and the page calls the bulk endpoint", () => {
-  const flow = read("features/members/tree-connections/use-reassign.ts")
-  assert.match(flow, /request = useCallback\(\s*\(members: string \| string\[\]/)
-  assert.match(flow, /await onReassignMany\(memberIds, newParentId\)/)
-  assert.match(read("features/members/services/member-tree.ts"), /member_ids: memberIds/)
-  assert.match(read("features/members/pages/member-tree-page.tsx"), /onReassignMany=\{canReassign \? handleReassignMany : undefined\}/)
-  const view = read("features/members/tree-connections/connections-view.tsx")
-  assert.match(view, /beginDrag\(event, frame\.memberIds\[0\], true, \(\) => \{\}, frame\.memberIds\)/)
-  assert.match(view, /tierOf: \(id: string\) => roleTier/)
 })
