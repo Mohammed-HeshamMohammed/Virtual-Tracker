@@ -82,6 +82,7 @@ import { notify } from "./utils/notify";
 import { SettingsPanel } from "./components/views/SettingsPanel";
 import { EasyView } from "./components/views/EasyView";
 import { setEasyReadActive } from "./utils/easyRead";
+import { nextTaskClockSeconds } from "./utils/taskClock";
 import { ProfilePanel } from "./components/views/ProfilePanel";
 import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
 import { MonitoringNoticePanel } from "./components/views/MonitoringNoticePanel";
@@ -1333,12 +1334,9 @@ function MainApp() {
     const next = taskTracking?.activeSeconds ?? 0;
     const sameTask = Boolean(selectedTaskId) && selectedTaskId === taskActiveSecondsTaskIdRef.current;
     taskActiveSecondsTaskIdRef.current = selectedTaskId || undefined;
-    if (taskIdleRewindPendingRef.current && !tracking) {
-      taskIdleRewindPendingRef.current = false;
-      setLiveTaskActiveSeconds(next);
-      return;
-    }
-    setLiveTaskActiveSeconds((s) => (sameTask ? Math.max(s, next) : next));
+    const idleRewind = taskIdleRewindPendingRef.current && !tracking;
+    if (idleRewind) taskIdleRewindPendingRef.current = false;
+    setLiveTaskActiveSeconds((s) => nextTaskClockSeconds(s, next, { sameTask, idleRewind }));
   }, [taskTracking?.activeSeconds, selectedTaskId, tracking]);
 
   useEffect(() => {

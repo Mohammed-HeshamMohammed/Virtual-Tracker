@@ -122,6 +122,43 @@ if (!PGlite) {
     assert.equal(fromSessions.get(m) ?? 0, 900, "sessions read for the same day must agree, or it reports drift that is not there");
   });
 
+  test("a pause that crosses midnight: the old day keeps its hours, the new day gets only today's", async () => {
+    const { closeIfPausedAcrossDays } = await import(url("modules/activity/day-rollover.js"));
+    const m = await member("Africa/Cairo");
+    __clearMemberTimezoneCache();
+    const rowOf = async (id) => (await db.query("SELECT * FROM activity_sessions WHERE id = $1", [id])).rows[0];
+    const dayOf = (d) => svc.sumDailyMemberActiveSeconds(m, { fromDay: d, toDay: d });
+
+    // Monday 09:00 Cairo: an hour of work, then Pause at the end of the day.
+    const mon = await begin(m, "2026-10-12T06:00:00Z");
+    await sync(mon.id, 3600);
+    await svc.updatePgSession(mon.id, { status: "idle", updatedAt: new Date() });
+
+    // Same-day resume and a running session are left alone.
+    assert.equal(await closeIfPausedAcrossDays(await rowOf(mon.id), { memberId: m, now: new Date("2026-10-12T15:00:00Z"), source: "agent" }), null);
+    assert.equal(await closeIfPausedAcrossDays({ ...(await rowOf(mon.id)), status: "active" }, { memberId: m, now: new Date("2026-10-13T07:00:00Z"), source: "agent" }), null);
+
+    // Tuesday 10:00 Cairo: Resume.
+    const tue = new Date("2026-10-13T07:00:00Z");
+    const rolled = await closeIfPausedAcrossDays(await rowOf(mon.id), { memberId: m, now: tue, source: "agent" });
+    assert.deepEqual(rolled, { taskId: null, totals: { activeSeconds: 3600, idleSeconds: 0 } });
+    const closed = await rowOf(mon.id);
+    assert.equal(closed.status, "stopped");
+    assert.equal(closed.stop_reason, "day_rollover");
+
+    // What the route then does: open today's session seeded with the running total, and the
+    // agent keeps syncing its running total - half an hour more.
+    const next = await svc.createPgSession({
+      id: sid(), memberId: m, taskId: rolled.taskId, projectId: P, status: "active",
+      startedAt: tue, endedAt: null, activeSeconds: rolled.totals.activeSeconds, idleSeconds: rolled.totals.idleSeconds,
+      source: "agent", updatedAt: tue,
+    });
+    await sync(next.id, 3600 + 1800);
+
+    assert.equal(await dayOf("2026-10-12"), 3600, "Monday keeps Monday's hour");
+    assert.equal(await dayOf("2026-10-13"), 1800, "Tuesday gets only Tuesday's half hour");
+  });
+
   test("an app slice sits on its session's day, by the project's calendar; without a session, its own time in the member's", async () => {
     const { eventDaySql } = await import(url("lib/postgres/session-day-sql.js"));
     await db.exec(`CREATE TABLE IF NOT EXISTS activity_app_logs (member_id uuid, session_id varchar(128), started_at timestamptz)`);

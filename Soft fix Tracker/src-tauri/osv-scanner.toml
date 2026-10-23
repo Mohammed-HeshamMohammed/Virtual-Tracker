@@ -1,0 +1,130 @@
+# Soft fix Tracker is a design prototype of the agent on the same Tauri 2.11 stack; it is not
+# built by any workflow and ships to nobody. It carries the agent's own list unchanged -
+# see Tauri-App-Extension/src-tauri/osv-scanner.toml for the reasoning behind each entry.
+
+# osv-scanner ignore list.
+#
+# Every entry below is transitive through Tauri's own dependency tree - gtk/glib
+# and atk (the Linux webkit2gtk stack), xcb via xcap, urlpattern via tauri-utils,
+# zbus via tauri-plugin-notification. None is declared directly in Cargo.toml,
+# `cargo update` locks 0 packages for any of them, and the fixes live in major
+# versions nothing in the tauri stack has moved to yet.
+#
+# The agent ships Windows and macOS; the GTK/X11 path is not built there.
+#
+# Re-check when tauri/wry move off webkit2gtk 4.1 - most of this list should
+# disappear in one go. Do not add anything here that is a direct dependency.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0411"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0412"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0413"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0414"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0415"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0416"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0417"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0418"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0419"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0420"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0075"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0080"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0081"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0098"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0100"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0194"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0195"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0221"
+reason = "Transitive via the Tauri Linux GTK/X11 stack; no patched version reachable, and not built on the shipped Windows/macOS targets."
+
+# zip 4.x via tauri-plugin-updater 2.11 (held on the Tauri 2.11 line for the Windows 7
+# build). Fixed only in zip 9.0.0, which no 2.11.x updater uses. The vulnerable
+# ZipArchive/ZipStreamReader::extract path is not reached: the Windows updater installs
+# the NSIS .exe (updaterJsonPreferNsis), the macOS one unpacks .tar.gz, and every update
+# payload is verified against the minisign key compiled into the app before it is
+# extracted - a malicious archive would need our signing key. Re-check on any updater bump.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0367"
+reason = "zip 4.x via tauri-plugin-updater 2.11; fixed only in 9.0. Extract path unreached (NSIS .exe on Windows, .tar.gz on macOS) and payloads are signature-verified first."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0368"
+reason = "zip 4.x via tauri-plugin-updater 2.11; fixed only in 9.0. Extract path unreached (NSIS .exe on Windows, .tar.gz on macOS) and payloads are signature-verified first."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0369"
+reason = "zip 4.x via tauri-plugin-updater 2.11; fixed only in 9.0. Extract path unreached (NSIS .exe on Windows, .tar.gz on macOS) and payloads are signature-verified first."
+
+# zbus's own crates, marked unmaintained (no vulnerability). Transitive via
+# tauri-plugin-notification's Linux D-Bus backend; not built on Windows/macOS.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0370"
+reason = "Unmaintained notice, no vulnerability. zvariant via the Linux D-Bus notification backend; not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0371"
+reason = "Unmaintained notice, no vulnerability. zbus_names via the Linux D-Bus notification backend; not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0372"
+reason = "Unmaintained notice, no vulnerability. zvariant_derive via the Linux D-Bus notification backend; not built on the shipped Windows/macOS targets."

@@ -8,6 +8,9 @@
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
+// Behaviour for the dropped SQL-text checks lives in day-rule-queries.pglite.test.js and
+// session-calendar-sums.pglite.test.js, which run the queries against real Postgres.
+
 /** @type {{ sql: string, params: unknown[] } | null} */
 let lastQuery = null;
 /** @type {unknown[]} */
@@ -23,33 +26,6 @@ mock.module("../src/lib/postgres/client.js", {
 });
 
 const { getMemberDailyAmountRowsPg } = await import("../src/lib/postgres/misc-reports-postgres.service.js");
-
-test("unfiltered query resolves rate via pay_rate_history, falling back to pay_rates", async () => {
-  lastQuery = null;
-  nextRows = [];
-  await getMemberDailyAmountRowsPg({ memberIds: ["m1"], fromDay: "2026-08-01", toDay: "2026-08-31" });
-  assert.ok(lastQuery, "query() was called");
-  assert.match(lastQuery.sql, /LEFT JOIN LATERAL[\s\S]*pay_rate_history/i);
-  assert.match(lastQuery.sql, /effective_date <= d\.day/);
-  assert.match(lastQuery.sql, /COALESCE\(h\.rate, pr\.rate\)/);
-});
-
-test("project-filtered query resolves rate the same way, from the project's own sessions", async () => {
-  lastQuery = null;
-  nextRows = [];
-  await getMemberDailyAmountRowsPg({
-    memberIds: ["m1"],
-    fromDay: "2026-08-01",
-    toDay: "2026-08-31",
-    projectIds: ["p1"],
-  });
-  assert.ok(lastQuery, "query() was called");
-  assert.match(lastQuery.sql, /LEFT JOIN LATERAL[\s\S]*pay_rate_history/i);
-  // Days come from the project's sessions (session-day-sql.js) - one row per member and day, so
-  // the rate resolves per row; there is no longer a per-task rollup to aggregate with MIN.
-  assert.match(lastQuery.sql, /effective_date <= d\.day/);
-  assert.match(lastQuery.sql, /s\.project_id = ANY\(\$4::uuid\[\]\)/);
-});
 
 test("row mapping still produces the same output shape regardless of where the rate resolved from", async () => {
   nextRows = [

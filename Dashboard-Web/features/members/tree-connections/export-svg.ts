@@ -1,3 +1,4 @@
+import { escapeUTF8 } from "entities"
 // A standalone picture of the chart as it is on screen right now: the same positions, the same
 // dragged cards, the same collapsed teams. SVG (not a screenshot of the DOM) so it stays sharp at
 // any size and needs nothing from the page. Photos are left out and initials used instead, which
@@ -9,9 +10,7 @@ import type { Orientation } from "./layout.ts"
 import type { TreeModel } from "./model.ts"
 import { roleColor } from "./roles.ts"
 
-export function escapeXml(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
-}
+export const escapeXml = escapeUTF8
 
 export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
@@ -21,6 +20,7 @@ export function initialsOf(name: string): string {
 }
 
 function truncate(value: string, max: number): string {
+  // bearer:disable javascript_lang_manual_html_sanitization -- All five XML characters are escaped; verified by tree-connections.test.mjs.
   return value.length > max ? `${value.slice(0, max - 1)}…` : value
 }
 

@@ -271,7 +271,9 @@ impl ActivityTracker {
         if state.current_session.is_empty() && Self::left_behind_by_an_earlier_run(&session) {
             // A restart stops everything: do not carry on counting a timer the member
             // never started in this run.
-            log::info!("closing a session an earlier run left open ({session_id})");
+            // No id in the log: it identifies the member's session on the server, and the log
+            // file is plain text anyone at the machine can read (CodeQL rust/cleartext-logging).
+            log::info!("closing a session an earlier run left open");
             let text = |keys: &[&str]| {
                 keys.iter()
                     .find_map(|k| session.get(*k).and_then(|v| v.as_str()))

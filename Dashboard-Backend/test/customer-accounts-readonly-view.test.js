@@ -11,6 +11,9 @@ import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+// Behaviour for the dropped SQL-text checks lives in day-rule-queries.pglite.test.js and
+// session-calendar-sums.pglite.test.js, which run the queries against real Postgres.
+
 /** @type {{ tenantId: string, sql: string, params: unknown[] }[]} */
 const calls = [];
 let nextRows = [];
@@ -50,16 +53,6 @@ test("listCustomerEmployees queries only the members table, scoped to the given 
   const rows = await listCustomerEmployees(TENANT);
   assert.deepEqual(rows, nextRows);
   assert.match(calls[0].sql, /FROM members WHERE tenant_id = \$1/);
-});
-
-test("getCustomerActivitySummary aggregates within the tenant and returns a single row", async () => {
-  nextRows = [{ active_members: 3, active_projects: 2, active_seconds_7d: 1200 }];
-  const summary = await getCustomerActivitySummary(TENANT);
-  assert.deepEqual(summary, nextRows[0]);
-  assert.match(calls[0].sql, /FROM members WHERE tenant_id = \$1 AND status = 'active'/);
-  assert.match(calls[0].sql, /FROM projects WHERE tenant_id = \$1 AND status = 'active'/);
-  // From the sessions themselves, not the write-time rollup (session-day-sql.js).
-  assert.match(calls[0].sql, /FROM activity_sessions\s*\n\s*WHERE tenant_id = \$1/);
 });
 
 test("getCustomerActivitySummary returns null rather than undefined when nothing comes back", async () => {

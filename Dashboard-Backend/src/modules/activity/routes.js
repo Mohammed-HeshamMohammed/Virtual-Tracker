@@ -86,6 +86,7 @@ import {
 import { localDayFor, weekdayIndexForLocalDay } from "../../lib/time/timezone-utils.js";
 import { getMemberTimezone } from "../reports/member-timezones.js";
 import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
+import { closeIfPausedAcrossDays } from "./day-rollover.js";
 import { adoptReportedTimezone } from "./adopt-reported-timezone.js";
 import { clientMayTrackProject, getViewerProjectIds, isProjectMemberForTimer } from "../../http/project-access.js";
 import { isAdminLevelRole, isClientRole } from "../../http/role-hierarchy.js";
@@ -972,37 +973,17 @@ export async function routeActivity(req, res, url, origin) {
           open.status = "idle";
         }
       } else if (action === "resume") {
-        // A session's time belongs to the day it started - right for a shift that runs past
-        // midnight, wrong for a Pause or Break that does: a Pause never ends by itself, so
-        // pausing at 6pm and resuming at 9am put the whole next day on the day before. A
-        // resume on a later day (in the session's own calendar) closes the paused session
-        // as it stands and opens a new one on today, seeded with the running total so
-        // nothing is counted twice (createPgSession).
-        let rolledOverTaskId = null;
-        let rolledOverTotals = null;
-        if (open && open.status !== "active") {
-          const zone = await resolveProjectTimeZone(open.project_id ?? sessionProjectId, member.memberId);
-          if (localDayFor(new Date(open.started_at), zone) !== localDayFor(now, zone)) {
-            await updatePgSession(open.id, {
-              status: "stopped",
-              endedAt: now,
-              updatedAt: now,
-              stopReason: "day_rollover",
-              stoppedBy: member.memberId,
-            });
-            void recordSessionEventPg({
-              sessionId: open.id,
-              action: "stop",
-              reason: "day_rollover",
-              actorId: member.memberId,
-              source: fromWeb ? "web" : "agent",
-              clientVersion,
-            });
-            rolledOverTaskId = open.task_id ?? null;
-            rolledOverTotals = sessionRunningTotals(open);
-            open = null;
-          }
-        }
+        // A paused session resumed on a later day is closed and replaced (day-rollover.js).
+        const rolledOver = await closeIfPausedAcrossDays(open, {
+          memberId: member.memberId,
+          now,
+          projectId: sessionProjectId,
+          source: fromWeb ? "web" : "agent",
+          clientVersion,
+        });
+        if (rolledOver) open = null;
+        const rolledOverTaskId = rolledOver?.taskId ?? null;
+        const rolledOverTotals = rolledOver?.totals ?? null;
         if (open) {
           await updatePgSession(open.id, {
             status: "active",
