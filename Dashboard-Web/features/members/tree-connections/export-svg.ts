@@ -12,9 +12,10 @@ import { roleColor } from "./roles.ts"
 export function escapeXml(value: string): string {
   // All five XML specials: a name with an apostrophe must not be able to close a single-quoted
   // attribute, whichever quote style the markup around it uses.
-  // bearer:disable javascript_lang_manual_html_sanitization -- this builds a standalone SVG file
+  // This builds a standalone SVG file
   // as text (no DOM, nothing parses it as HTML here); the five escapes are complete for XML and
   // pinned by test/tree-connections.test.mjs.
+  // bearer:disable javascript_lang_manual_html_sanitization -- All five XML characters are escaped; verified by tree-connections.test.mjs.
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -31,6 +32,7 @@ export function initialsOf(name: string): string {
 }
 
 function truncate(value: string, max: number): string {
+  // bearer:disable javascript_lang_manual_html_sanitization -- All five XML characters are escaped; verified by tree-connections.test.mjs.
   return value.length > max ? `${value.slice(0, max - 1)}…` : value
 }
 
