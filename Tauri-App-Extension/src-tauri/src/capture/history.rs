@@ -25,6 +25,8 @@ const CHROME_EPOCH_OFFSET_SECS: i64 = 11_644_473_600;
 struct Snapshot {
     copy: PathBuf,
     taken: Instant,
+    // Own the private directory so a refresh removes the old database and sidecars.
+    _directory: tempfile::TempDir,
 }
 
 static SNAPSHOTS: Mutex<Option<HashMap<PathBuf, Snapshot>>> = Mutex::new(None);
@@ -80,14 +82,10 @@ fn snapshot_of(source: &Path) -> Option<PathBuf> {
         }
     }
 
-    // One stable filename per source, so snapshots overwrite rather than accumulating a
-    // copy of every profile's history in temp.
-    let mut hash: u64 = 1469598103934665603;
-    for byte in source.to_string_lossy().as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(1099511628211);
-    }
-    let copy = std::env::temp_dir().join(format!("vt-history-{hash:016x}.db"));
+    // The agent may be elevated. Never follow a pre-planted file/link at a stable temp
+    // name. An atomically created, random directory owns the database and its sidecars.
+    let directory = tempfile::Builder::new().prefix("vt-history-").tempdir().ok()?;
+    let copy = directory.path().join("history.db");
 
     std::fs::copy(source, &copy).ok()?;
     // A write-ahead log holds the newest visits; without it the copy can be minutes stale,
@@ -104,6 +102,7 @@ fn snapshot_of(source: &Path) -> Option<PathBuf> {
         Snapshot {
             copy: copy.clone(),
             taken: Instant::now(),
+            _directory: directory,
         },
     );
     Some(copy)
@@ -282,5 +281,26 @@ mod tests {
 
         let _ = std::fs::remove_file(&first);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn snapshot_refresh_retires_the_old_directory_and_sidecars() {
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = source_dir.path().join("History");
+        std::fs::write(&source, b"original history").unwrap();
+        std::fs::write(source_dir.path().join("History-wal"), b"recent visits").unwrap();
+        let first = snapshot_of(&source).unwrap();
+        let old_dir = first.parent().unwrap().to_path_buf();
+        assert_eq!(std::fs::read(&first).unwrap(), b"original history");
+        assert_eq!(std::fs::read(old_dir.join("history.db-wal")).unwrap(), b"recent visits");
+
+        // A missing snapshot must be rebuilt in a new directory, never reusing an old pathname.
+        std::fs::remove_file(&first).unwrap();
+        std::fs::write(&source, b"updated history").unwrap();
+        let next = snapshot_of(&source).unwrap();
+        assert_ne!(first.parent(), next.parent());
+        assert_eq!(std::fs::read(&next).unwrap(), b"updated history");
+        assert!(!old_dir.exists(), "old history and WAL data must not linger in temp");
+        assert_eq!(std::fs::read(&source).unwrap(), b"updated history");
     }
 }

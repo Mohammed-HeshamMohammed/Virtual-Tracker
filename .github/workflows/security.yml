@@ -118,7 +118,7 @@ jobs:
             --metrics off \
             --sarif --output semgrep.sarif
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         # `always()` so a semgrep crash still uploads whatever it wrote rather
         # than silently reporting nothing.
         if: always()
@@ -149,7 +149,7 @@ jobs:
             Dashboard-Web Landing-Web Tauri-App-Extension
             --config .njsscan --sarif --output njsscan.sarif || true
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always()
         with:
           sarif_file: njsscan.sarif
@@ -186,7 +186,7 @@ jobs:
           severity: critical,high,medium
           skip-path: '**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**,**/scripts/**,**/test/**,**/tests/**,**/*.test.*,**/*_tests.rs,**/*.example'
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always()
         with:
           sarif_file: bearer.sarif
@@ -212,7 +212,7 @@ jobs:
           # action's default, so **/.git/** has to be repeated here.
           ignore-globs: '**/.git/**,**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**,**/scripts/**,**/test/**,**/tests/**,**/*.test.*,**/*_tests.rs,**/*.example'
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always()
         with:
           sarif_file: devskim-results.sarif
@@ -274,7 +274,7 @@ jobs:
     # that reads every lockfile shape here in one pass (seven
     # package-lock.json plus the Cargo.lock under src-tauri) instead of
     # needing a job per ecosystem.
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
     permissions:
       security-events: write
       contents: read
@@ -347,7 +347,7 @@ jobs:
           limit-severities-for-sarif: true
           cache: true
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always()
         with:
           sarif_file: trivy.sarif
@@ -376,7 +376,7 @@ jobs:
           # scorecard grades down.
           persist-credentials: false
 
-      - uses: ossf/scorecard-action@2d1146689b8cda280b9bc96326124645441f03bc # v2.4.4
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
         with:
           results_file: scorecard.sarif
           results_format: sarif
@@ -384,7 +384,7 @@ jobs:
           # Set false to keep results repo-local.
           publish_results: true
 
-      - uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
+      - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: always()
         with:
           sarif_file: scorecard.sarif
