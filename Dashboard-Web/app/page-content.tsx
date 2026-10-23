@@ -42,10 +42,10 @@ function renderPageBody(activeItem: string, onNavigate: NavigateHandler, pagePar
   )
 }
 
-function PageContentInner({ activeItem, onNavigate }: PageContentProps) {
+function PageContentInner({ activeItem, onNavigate, pageParams }: PageContentProps) {
   return (
     <PageTransitionShell activeItem={activeItem} transitionKey={resolvePageTransitionKey(activeItem)}>
-      {renderPageBody(activeItem, onNavigate)}
+      {renderPageBody(activeItem, onNavigate, pageParams)}
     </PageTransitionShell>
   )
 }

@@ -1,15 +1,12 @@
 // A Client login sees time only on its own projects and never sees money.
-// The rules live at the choke points every consumer shares, so they are
-// pinned there: stripReportMoney removes every monetary field from the
-// payload itself (not just on screen), and the payload loader / screenshot
-// routes apply the client project scope before anything is fetched.
+// stripReportMoney removes every monetary field from the payload itself (not
+// just on screen). The project scope the report loader, the activity feed and
+// the single-screenshot fetch apply is run end to end against Postgres in
+// activity-feed-scope.pglite.test.js.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { stripReportMoney } from "../src/modules/reports/strip-report-money.js";
 import { isClientRole } from "../src/http/role-hierarchy.js";
-
-const read = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
 
 const payload = {
   currency: { displayCurrency: "EGP" },
@@ -49,36 +46,6 @@ test("isClientRole matches only the Client role", () => {
   for (const r of ["Owner", "Admin", "Manager", "Employee", "Viewer", "", undefined]) assert.equal(isClientRole(r), false, String(r));
 });
 
-test("the payload loader scopes clients to their projects and strips money before returning", () => {
-  const src = read("src/modules/reports/routes.js");
-  const start = src.indexOf("export async function loadTimeAndActivityReportPayloadForMemberIds(");
-  const body = src.slice(start, src.indexOf("\n}", start));
-  const scopeAt = body.indexOf("clientProjectScope(");
-  const loadAt = body.indexOf("loadTimeAndActivityReportPayloadUnscoped(");
-  const stripAt = body.indexOf("stripReportMoney(payload)");
-  assert.ok(scopeAt > 0 && loadAt > scopeAt && stripAt > loadAt, "scope -> load -> strip, in that order");
-});
-
-test("a client with no projects matches no project instead of everything", () => {
-  const src = read("src/modules/reports/routes.js");
-  assert.match(src, /permitted\.length > 0 \? permitted : \[NO_PROJECT_ID\]/);
-});
-
-test("the activity feed gives clients screenshots only, filtered to their projects", () => {
-  const src = read("src/modules/activity/routes.js");
-  assert.match(src, /feedClientProjectIds && feedType !== "screenshots"/);
-  // A client's own projects are the starting filter and the ceiling: a requested
-  // project list can only narrow them, never reach past them.
-  assert.match(src, /let feedProjectIds = feedClientProjectIds;/);
-  assert.match(src, /const reachableProjectIds = feedClientProjectIds \?\? /);
-  assert.match(src, /feedProjectIds \? \{ projectIds: feedProjectIds \} : \{\}/);
-});
-
-test("a single screenshot can't be fetched by id outside the client's projects", () => {
-  const src = read("src/modules/activity/routes.js");
-  assert.match(src, /isClientRole\(scope\.roleName\)[\s\S]{0,300}isScreenshotInProjectsPg\(resolvedId, own \?\? \[\]\)/);
-});
-
 test("a client login is never handed pay rates or what clients are charged", () => {
   const out = stripReportMoney({
     billingIncluded: true,
@@ -87,9 +54,4 @@ test("a client login is never handed pay rates or what clients are charged", () 
   });
   assert.equal("billingIncluded" in out, false);
   assert.deepEqual(out.entries[0], { date: "2026-09-28", memberId: "m1", activeSeconds: 3600 });
-});
-
-test("only management is told what a client is charged", () => {
-  const src = read("src/modules/reports/routes.js");
-  assert.match(src, /const includeBilling = Boolean\(viewer && isManagementRole\(viewer\.roleName\)\)/);
 });

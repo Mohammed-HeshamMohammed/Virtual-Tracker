@@ -2,18 +2,12 @@
 // explanations, and the collector run against a real DOM (jsdom).
 import test from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 import { JSDOM } from "jsdom"
 import { describeControl } from "../shared/ui/help/describe-control.ts"
 import { PAGE_HELP, pageHelp } from "../shared/ui/help/page-help.ts"
 import { collectTourSteps, MAX_STEPS } from "../shared/ui/help/help-collect.ts"
 import { isShowable } from "../shared/ui/help/help-tour.ts"
-
-const ROOT = fileURLToPath(new URL("..", import.meta.url))
-const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
-
+import { NAV_SECTIONS } from "../shared/ui/layout/config/nav-sections.ts"
 // ── describeControl ────────────────────────────────────────────────────────
 
 test("a button is explained from its own verb", () => {
@@ -109,8 +103,10 @@ test("tabs are listed", () => {
 // ── the page explanations ──────────────────────────────────────────────────
 
 test("every page in the navigation has an explanation", () => {
-  const nav = read("shared/ui/layout/config/nav-sections.ts")
-  const ids = [...nav.matchAll(/\{ label: "[^"]+",\s+id: "([a-z-]+)"/g)].map((m) => m[1])
+  const ids = NAV_SECTIONS.flatMap((section) => [
+    ...(section.pages ?? []).map((page) => page.id),
+    ...(section.subsections ?? []).flatMap((sub) => sub.items.map((item) => item.id)),
+  ])
   assert.ok(ids.length >= 50, `expected the whole navigation, found ${ids.length} pages`)
   const missing = ids.filter((id) => !PAGE_HELP[id] || PAGE_HELP[id].length < 20)
   assert.deepEqual(missing, [])
@@ -121,11 +117,8 @@ test("an unknown page has no explanation rather than a wrong one", () => {
   assert.match(pageHelp("settings-compliance"), /monitoring notice/)
 })
 
-test("the shell puts the current page's explanation on the page container", () => {
-  const shell = read("app/dashboard-shell.tsx")
-  assert.match(shell, /data-page=\{activeItem\}/)
-  assert.match(shell, /data-help=\{pageHelp\(activeItem\) \|\| undefined\}/)
-})
+// The shell putting the current page's explanation on its container is checked by rendering the
+// shell in dashboard-shell.test.mjs.
 
 // ── the collector, against a page shaped like the dashboard's ─────────────
 

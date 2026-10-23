@@ -1,3 +1,5 @@
+// That repeats add up on the real row, and message the member once, is checked in
+// daily-counters.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
@@ -54,14 +56,6 @@ test("a repeat on the same day adds to the row without a second message", async 
   const row = await recordNotice({ memberId: "m1", kind: "work_dropped" });
   assert.ok(row);
   assert.equal(notifications.length, 0);
-});
-
-test("the upsert accumulates rather than overwrites", async () => {
-  reset(true);
-  await recordNotice({ memberId: "m1", kind: "work_dropped", secondsAffected: 60 });
-  const insert = queries.find((q) => q.sql.includes("INSERT INTO record_notices"));
-  assert.match(insert.sql, /seconds_affected = record_notices\.seconds_affected \+ EXCLUDED\.seconds_affected/);
-  assert.match(insert.sql, /occurrences = record_notices\.occurrences \+ 1/);
 });
 
 test("an unknown kind is refused rather than written", async () => {

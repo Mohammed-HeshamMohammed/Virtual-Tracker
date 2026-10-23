@@ -1,9 +1,10 @@
 // The emailed and scheduled PDFs: which document a request may have, and that
 // the server's copy of the shared PDF core builds real documents - the team
 // report, a client statement and a pay slip, in either template and language.
+// The routes that send, schedule and download them are run against real Postgres in
+// report-routes.pglite.test.js.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import {
   assertCanBuildDocument,
   buildReportDocument,
@@ -15,8 +16,8 @@ import { buildTimeAndActivityPdf } from "../src/modules/reports/build-report-fil
 import { buildReportPdfBuffer } from "../src/modules/reports/report-pdf-kit.js";
 import { canViewCompensation } from "../src/http/field-policy.js";
 import { isManagementRole } from "../src/http/auth-context.js";
+import { stripReportMoney } from "../src/modules/reports/strip-report-money.js";
 
-const read = (rel) => readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
 const isPdf = (buffer) => Buffer.isBuffer(buffer) && buffer.subarray(0, 5).toString("latin1") === "%PDF-" && buffer.length > 5000;
 
 const entry = (over = {}) => ({
@@ -181,24 +182,13 @@ test("the older entry points still return a PDF buffer", async () => {
 
 // ── the routes ─────────────────────────────────────────────────────────────
 
-test("send and schedule check the document against the viewer, and a schedule keeps the options it was saved with", () => {
-  const service = read("src/modules/reports/report-pdf-service.js");
-  assert.match(service, /assertCanBuildDocument\(options, viewer, \{/);
-  assert.match(service, /isManagement: \(v\) => isManagementRole\(v\.roleName\),\n\s+canViewCompensation,/);
-  const src = read("src/modules/reports/routes.js");
-  assert.match(src, /if \(options\?\.document === "payslip"\) requestedMemberId = options\.memberId;/);
-  assert.match(src, /if \(pdfOptions\?\.document === "payslip"\) requestedMemberId = pdfOptions\.memberId;/);
-  assert.match(src, /pdfOptions,\n\s+\}\);\n\n\s+sendJson\(res, origin, 200, \{ success: true, data: \{ id \} \}\);/);
-  assert.match(src, /e instanceof ReportDocumentError \|\| e\?\.status/);
-  const store = read("src/lib/postgres/report-schedules-postgres.service.js");
-  assert.match(store, /\$12::jsonb/);
-  const schema = read("src/lib/postgres/ensure-lookup-schema.js");
-  assert.match(schema, /ALTER TABLE report_schedules ADD COLUMN IF NOT EXISTS pdf_options JSONB/);
-});
-
-test("the money-stripping list covers what the new documents add, so a client login never gets them", () => {
-  const src = read("src/modules/reports/strip-report-money.js");
-  for (const field of ["payRate", "billRate", "billAmount", "billTaxRate", "billNetTermsDays", "billNotes"]) {
-    assert.ok(src.includes(`"${field}"`), field);
-  }
+test("a client login never gets the amounts the new documents add", () => {
+  const money = { payRate: 17.25, billRate: 41.5, billAmount: 41.5, billTaxRate: 14, billNetTermsDays: 30, billNotes: "Net 30" };
+  const out = stripReportMoney({
+    billingIncluded: true,
+    days: [{ date: "2026-09-28", members: [{ memberId: "m1", activeSeconds: 3600, ...money }] }],
+    entries: [{ date: "2026-09-28", memberId: "m1", activeSeconds: 3600, ...money }],
+  });
+  assert.deepEqual(out.entries[0], { date: "2026-09-28", memberId: "m1", activeSeconds: 3600 });
+  assert.deepEqual(out.days[0].members[0], { memberId: "m1", activeSeconds: 3600 });
 });

@@ -3,7 +3,7 @@
 //
 // The rules worth pinning are the boundaries - whose screenshot you may
 // object to, and that approving does not quietly destroy the record of who
-// approved it.
+// approved it. Those are checked on real rows in inbox-and-requests.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
@@ -48,56 +48,11 @@ test("a member can ask about their own screenshot", async () => {
   assert.equal(insert.params[1], "m1");
 });
 
-test("objecting to someone else's screenshot is refused, and not confirmed to exist", async () => {
-  reset();
-  screenshotRow = { id: "shot-1", member_id: "someone-else" };
-  await assert.rejects(
-    requestRemoval("m1", "shot-1", "nope"),
-    (e) => e instanceof RemovalRequestError && e.status === 404,
-    "404, not 403 - a screenshot they cannot see is not confirmed to them",
-  );
-  assert.ok(!queries.some((q) => /INSERT INTO/.test(q.sql)), "nothing is recorded");
-});
-
-test("a screenshot in another tenant cannot be reached", async () => {
-  reset();
-  const lookup = async () => {
-    await requestRemoval("m1", "shot-1", "x").catch(() => {});
-    return queries.find((q) => /FROM activity_screenshots/.test(q.sql));
-  };
-  const q = await lookup();
-  assert.match(q.sql, /tenant_id = \$2/);
-  assert.equal(q.params[1], "tenant-a");
-});
-
 test("asking twice is the same ask, not an error", async () => {
   reset();
   insertReturns = []; // the partial unique index rejected the duplicate
   const result = await requestRemoval("m1", "shot-1", "again");
   assert.deepEqual(result, { created: false, alreadyPending: true });
-});
-
-test("approving deletes the screenshot, and records the decision first", async () => {
-  reset();
-  const result = await resolveRequest("req-1", "manager-1", { approve: true });
-  assert.deepEqual(result, { status: "approved" });
-
-  const updateAt = queries.findIndex((q) => /UPDATE screenshot_removal_requests/.test(q.sql));
-  const deleteAt = queries.findIndex((q) => /DELETE FROM activity_screenshots/.test(q.sql));
-  assert.ok(updateAt >= 0 && deleteAt >= 0);
-  assert.ok(updateAt < deleteAt, "the decision is written before the image goes");
-  // The FK is ON DELETE SET NULL precisely so this row outlives the image.
-  assert.equal(queries[updateAt].params[2], "manager-1", "who approved it is recorded");
-});
-
-test("declining keeps the screenshot", async () => {
-  reset();
-  const result = await resolveRequest("req-1", "manager-1", { approve: false, note: "Work related." });
-  assert.deepEqual(result, { status: "declined" });
-  assert.ok(
-    !queries.some((q) => /DELETE FROM activity_screenshots/.test(q.sql)),
-    "a declined request must never delete anything",
-  );
 });
 
 test("a request cannot be reviewed twice", async () => {

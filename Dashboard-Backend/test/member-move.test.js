@@ -1,4 +1,5 @@
 // Moving a member under a different manager: the rules (pure) and the service that applies them.
+// The route itself (lists, the cap, unknown fields) is run in member-tree.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { normalizeRoleKey } from "../src/http/role-key.js";
@@ -192,11 +193,4 @@ test("service: members already under that manager are counted as unchanged, not 
   const out = await moveMembersToParent(null, { memberIds: ["empA"], newParentId: "mgrA", actorMemberId: "owner" });
   assert.deepEqual([out.moved, out.unchanged, out.skipped.length], [0, 1, 0]);
   assert.deepEqual(calls, []);
-});
-
-test("the route accepts a list of members and caps its size", async () => {
-  const { readFileSync } = await import("node:fs");
-  const route = readFileSync(new URL("../src/modules/member-relationships/routes.js", import.meta.url), "utf8");
-  assert.match(route, /rejectUnknownFields\(body, \["member_id", "member_ids", "new_parent_id"\]\)/);
-  assert.match(route, /ids\.length > MAX_BULK_MOVE/);
 });

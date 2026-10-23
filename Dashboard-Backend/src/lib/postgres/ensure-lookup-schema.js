@@ -327,6 +327,15 @@ END $$`,
   // member here"): on acceptance the new member is placed under this member
   // instead of under whoever sent the invite. NULL keeps the old behaviour.
   "ALTER TABLE invites ADD COLUMN IF NOT EXISTS tree_parent_member_id UUID",
+  // Written when an invite is accepted (use_count, updated_at) and when one is
+  // resent or extended (expires_at, updated_at), and read by the share-link
+  // rules (max_uses). The table was created without them, so on a database
+  // built from this file accepting an invite created the member and then
+  // failed, leaving the invite pending.
+  "ALTER TABLE invites ADD COLUMN IF NOT EXISTS use_count INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE invites ADD COLUMN IF NOT EXISTS max_uses INTEGER",
+  "ALTER TABLE invites ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ",
+  "ALTER TABLE invites ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()",
   `CREATE TABLE IF NOT EXISTS pending_auth_members (
   firebase_uid      VARCHAR(128) PRIMARY KEY,
   email             VARCHAR(255) NOT NULL DEFAULT '',

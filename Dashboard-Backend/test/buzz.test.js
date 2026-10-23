@@ -1,5 +1,6 @@
 // Buzz: the Owner pokes someone's desktop tracker. The boundaries that matter are who it can
 // reach (own organization, active, tracker open), how often, and that it is never queued.
+// Who it can reach is checked on real rows in inbox-and-requests.pglite.test.js.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
@@ -68,20 +69,6 @@ test("a buzz reaches the tracker with the owner's name and a default message", a
     from: "Olive Owner",
     at: 1_000,
   });
-});
-
-test("it only reaches active members of the sender's own organization", async () => {
-  reset();
-  await sendBuzz("owner-1", { memberId: MEMBER }, 1_000);
-  const lookup = queries.find((q) => /SELECT id FROM members/.test(q.sql));
-  assert.match(lookup.sql, /tenant_id = \$2/);
-  assert.match(lookup.sql, /status = 'active'/);
-  assert.equal(lookup.params[1], "tenant-a");
-
-  reset();
-  members = [];
-  await assert.rejects(() => sendBuzz("owner-1", { memberId: MEMBER }), { status: 404 });
-  assert.equal(pushed.length, 0);
 });
 
 test("the owner can buzz themselves, to see what it looks like", async () => {

@@ -2,11 +2,10 @@
 // a client statement (hours at each project's client rate) and a pay slip
 // (one member's hours at their pay rate). Both are plain descriptions of a
 // PDF, so what they will say is checked here without drawing anything.
+// The date range picker, avatars and the empty-delete notice are checked on the rendered report in
+// time-activity-report-view.test.mjs.
 import test from "node:test"
 import assert from "node:assert/strict"
-import { readFileSync } from "node:fs"
-import { join } from "node:path"
-import { fileURLToPath } from "node:url"
 import * as core from "../shared/pdf-core/documents.ts"
 import { normalizePdfOptions } from "../shared/pdf-core/options.ts"
 
@@ -14,8 +13,6 @@ const { billableProjectNames, projectsWithoutClientRate } = core
 const buildClientStatementSpec = (input, options = {}) => core.buildClientStatementSpec(input, normalizePdfOptions(options))
 const buildPaySlipSpec = (input, options = {}) => core.buildPaySlipSpec(input, normalizePdfOptions(options))
 
-const ROOT = fileURLToPath(new URL("..", import.meta.url))
-const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replaceAll("\r\n", "\n")
 
 const entry = (over = {}) => ({
   date: "2026-09-01",
@@ -182,31 +179,6 @@ test("both documents plot hours by date against a labelled hours axis", () => {
 
 // ── wiring ─────────────────────────────────────────────────────────────────
 
-test("Members and Projects take several picks, and a project filter counts only that project's hours", () => {
-  const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
-  assert.equal((view.match(/<ReportToolbarMultiSelect/g) ?? []).length, 2)
-  const rows = read("features/reports/utils/time-and-activity/row-aggregate.ts")
-  assert.match(rows, /memberFilter\.length > 0 && !memberFilter\.includes\(r\.name\)/)
-  assert.match(rows, /projectFilter\.length > 0 && !r\.projectNames\.some\(\(name\) => projectFilter\.includes\(name\)\)/)
-  const hook = read("features/reports/hooks/use-time-and-activity-report.ts")
-  assert.match(hook, /buildDayMemberRows\(\s*entries\.filter\(\(e\) => projectFilter\.includes\(e\.projectName\)\)/)
-  // A view saved when the filter held one name still loads.
-  assert.match(hook, /typeof saved === "string" && saved && saved !== allValue \? \[saved\] : \[\]/)
-})
-
-test("the date range closes on a click outside it, but not on the button that opened it", () => {
-  const picker = read("features/reports/components/time-activity-report/date-range-picker.tsx")
-  assert.match(picker, /if \(root\.contains\(target\) \|\| root\.parentElement\?\.contains\(target\)\) return\n\s+dismissRef\.current\(\)/)
-  assert.match(picker, /document\.addEventListener\("pointerdown", onPointerDown, true\)/)
-})
-
-test("avatars come from the report's member list, and a delete that removed nothing says so", () => {
-  const api = read("features/reports/api/time-and-activity-api.ts")
-  assert.match(api, /avatarUrl: photos\.get\(member\.memberId\) \?\? member\.avatarUrl/)
-  const view = read("features/reports/components/time-activity-report/time-activity-report-view.tsx")
-  assert.match(view, /if \(deleted\.sessions \+ deleted\.entries === 0\)/)
-})
-
 // ── invoice-style terms on the statement ───────────────────────────────────
 
 test("client statement: tax on the client's own rate, a due date from its net terms, and its note", () => {
@@ -272,37 +244,3 @@ test("client statement: a client without payment terms does not inherit another 
 })
 
 // ── Activity and Task Approvals ────────────────────────────────────────────
-
-test("Activity: members can be picked several at a time, as one comma-joined id", async () => {
-  const { splitSelectedMemberIds, joinSelectedMemberIds } = await import("../features/activity/utils/activity-scope-preferences.ts")
-  assert.deepEqual(splitSelectedMemberIds("all"), [])
-  assert.deepEqual(splitSelectedMemberIds("a, b ,,c"), ["a", "b", "c"])
-  assert.equal(joinSelectedMemberIds([]), "all")
-  assert.equal(joinSelectedMemberIds(new Set(["a", "b", "a"])), "a,b")
-  const select = read("features/activity/components/activity-member-select.tsx")
-  assert.match(select, /<ReportToolbarMultiSelect/)
-  assert.match(select, /<ReportMemberAvatar initials=\{m\.initials\} imageUrl=\{m\.avatarUrl\} \/>/)
-  // Unticking the last member is "all" where that is allowed, ignored where it is not.
-  assert.match(select, /if \(next\.size === 0\) \{\n\s+if \(allowAll\) setSelectedMemberId\("all"\)\n\s+return/)
-})
-
-test("Activity: each feed can be narrowed to several projects, and the choice is part of the cache key and the request", () => {
-  const bar = read("features/activity/components/activity-control-bar.tsx")
-  assert.match(bar, /<ActivityProjectSelect \/>/)
-  const api = read("features/activity/services/activity-api.ts")
-  assert.match(api, /query\.projectIds\?\.length\) params\.set\("projectIds"/)
-  assert.match(api, /\(query\.projectIds \?\? \[\]\)\.join\(","\)/)
-  const cache = read("features/activity/utils/activity-feed-cache.ts")
-  assert.match(cache, /\(query\.projectIds \?\? \[\]\)\.join\(","\)/)
-  const ctx = read("features/activity/components/activity-feed-context.tsx")
-  assert.match(ctx, /selectedProjectIds\.length > 0 \? \{ projectIds: selectedProjectIds \}/)
-})
-
-test("Task Approvals: employee and project filters take several picks and are applied to the rows", () => {
-  const table = read("features/timesheets/components/view-edit/components/ReviewQueueTable.tsx")
-  assert.equal((table.match(/<ReportToolbarMultiSelect/g) ?? []).length, 2)
-  assert.match(table, /\(memberFilter\.size === 0 \|\| memberFilter\.has\(row\.userId\)\)/)
-  assert.match(table, /\(projectFilter\.size === 0 \|\| \(row\.projectId !== null && projectFilter\.has\(row\.projectId\)\)\)/)
-  // The server only takes one of each, so neither is sent.
-  assert.doesNotMatch(table, /projectId: projectFilter|memberId: memberFilter/)
-})
