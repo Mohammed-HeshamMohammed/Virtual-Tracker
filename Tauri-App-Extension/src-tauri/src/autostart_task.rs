@@ -111,16 +111,6 @@ fn xml_escape(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-/// Nanosecond component for the staging filename, so two runs - or a
-/// recycled pid - cannot collide on a path that create_new then refuses.
-#[cfg(windows)]
-fn now_nanos() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0)
-}
-
 #[cfg(windows)]
 fn current_user_id() -> Result<String, String> {
     // USERDOMAIN\USERNAME rather than USERNAME alone: a logon trigger with a
@@ -162,23 +152,21 @@ pub fn enable() -> Result<(), String> {
         bytes.extend_from_slice(&unit.to_le_bytes());
     }
 
-    // create_new rather than write: this process is elevated, and the path is
-    // predictable, so an existing file at it could be a symlink pointing
-    // somewhere an unelevated caller could not write to themselves. Refusing
-    // to open anything that already exists closes that without needing to
-    // reason about who can write to the temp directory.
-    let dir = std::env::temp_dir();
-    let path = dir.join(format!("vt-autostart-{}-{:x}.xml", std::process::id(), now_nanos()));
+    // Atomically create a random file, keep it open through schtasks, then remove it
+    // on every return path. Never reuse a predictable name in an elevated process.
+    let mut file = tempfile::Builder::new()
+        .prefix("vt-autostart-")
+        .suffix(".xml")
+        .tempfile()
+        .map_err(|e| format!("cannot stage the task definition: {e}"))?;
     {
         use std::io::Write;
-        let mut file = std::fs::File::create_new(&path)
-            .map_err(|e| format!("cannot stage the task definition: {e}"))?;
         file.write_all(&bytes).map_err(|e| format!("cannot stage the task definition: {e}"))?;
+        file.flush().map_err(|e| format!("cannot stage the task definition: {e}"))?;
     }
 
     let result =
-        run_schtasks(&["/Create", "/TN", &task_name(&user), "/XML", &path.to_string_lossy(), "/F"]);
-    let _ = std::fs::remove_file(&path);
+        run_schtasks(&["/Create", "/TN", &task_name(&user), "/XML", &file.path().to_string_lossy(), "/F"]);
     remember(result.is_ok());
     result
 }
