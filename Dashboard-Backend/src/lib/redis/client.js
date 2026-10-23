@@ -20,6 +20,18 @@ export function getRedisClient() {
   return client;
 }
 
+/**
+ * The shared client only when it is connected right now, else null. For callers with an
+ * in-memory fallback (the rate limiters): while Redis is down or still connecting, ioredis
+ * queues commands and retries them, which would add that wait to every request - better to
+ * fall back at once. The first call creates the client, so Redis is used from the first
+ * request after it connects.
+ */
+export function getReadyRedisClient() {
+  const redis = getRedisClient();
+  return redis?.status === "ready" ? redis : null;
+}
+
 export function getRedisSubscriberClient() {
   const url = getEnv().redis.url;
   if (!url) return null;

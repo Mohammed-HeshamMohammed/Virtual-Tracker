@@ -1,3 +1,5 @@
+import { logSafeWarn } from "./sanitize-error.js";
+import { getReadyRedisClient } from "../lib/redis/client.js";
 
 const WINDOW_MS = 15 * 60_000;
 const LOCKOUT_MS = 30 * 60_000;
@@ -17,52 +19,105 @@ function clientIp(req) {
   return req.socket?.remoteAddress || "unknown";
 }
 
+// One normalisation for every read, write and clear. Clearing used the raw key while
+// counting used the lowercased one, so a success never cleared an email typed with
+// capitals or spaces - its failures kept counting toward a lockout.
+function keysFor(req, email) {
+  const normalized = String(email ?? "").trim().toLowerCase();
+  return [normalized ? `email:${normalized}` : null, `ip:${clientIp(req).toLowerCase()}`].filter(Boolean);
+}
+
 function getBucket(key) {
-  const normalized = key.trim().toLowerCase();
-  if (!normalized) return { failures: [], lockedUntil: 0 };
-  let bucket = buckets.get(normalized);
+  let bucket = buckets.get(key);
   if (!bucket) {
     bucket = { failures: [], lockedUntil: 0 };
-    buckets.set(normalized, bucket);
+    buckets.set(key, bucket);
   }
   return bucket;
 }
 
-export function checkInviteRegisterAllowed(req, email) {
-  const now = Date.now();
-  const keys = [`email:${email}`, `ip:${clientIp(req)}`];
-  for (const key of keys) {
-    const bucket = getBucket(key);
-    bucket.failures = pruneOld(bucket.failures, now);
-    if (bucket.lockedUntil > now) {
-      const retryAfterSeconds = Math.ceil((bucket.lockedUntil - now) / 1000);
-      return {
-        allowed: false,
-        retryAfterSeconds,
-        message: "Too many failed registration attempts. Please try again later.",
-      };
+const LOCKED = (retryAfterSeconds) => ({
+  allowed: false,
+  retryAfterSeconds,
+  message: "Too many failed registration attempts. Please try again later.",
+});
+
+// Redis, when it is connected, so every backend instance enforces one lockout and a
+// deploy does not lift it. The failure count runs in a fixed 15-minute window from the
+// first failure (the in-memory fallback slides); a lockout is a key that expires.
+const failKey = (key) => `invite-abuse:fail:${key}`;
+const lockKey = (key) => `invite-abuse:lock:${key}`;
+
+async function withRedis(fn, fallback) {
+  const redis = getReadyRedisClient();
+  if (redis) {
+    try {
+      return await fn(redis);
+    } catch (err) {
+      logSafeWarn("[invite-abuse-guard] Redis failed; using memory for this request", err);
     }
   }
-  return { allowed: true };
+  return fallback();
 }
 
-export function recordInviteRegisterFailure(req, email) {
-  const now = Date.now();
-  const keys = [`email:${email}`, `ip:${clientIp(req)}`];
-  for (const key of keys) {
-    const bucket = getBucket(key);
-    bucket.failures = pruneOld(bucket.failures, now);
-    bucket.failures.push(now);
-    if (bucket.failures.length >= MAX_FAILURES) {
-      bucket.lockedUntil = now + LOCKOUT_MS;
-      bucket.failures = [];
-    }
-  }
+export async function checkInviteRegisterAllowed(req, email) {
+  const keys = keysFor(req, email);
+  return withRedis(
+    async (redis) => {
+      for (const key of keys) {
+        const ttlMs = await redis.pttl(lockKey(key));
+        if (ttlMs > 0) return LOCKED(Math.ceil(ttlMs / 1000));
+      }
+      return { allowed: true };
+    },
+    () => {
+      const now = Date.now();
+      for (const key of keys) {
+        const bucket = getBucket(key);
+        bucket.failures = pruneOld(bucket.failures, now);
+        if (bucket.lockedUntil > now) return LOCKED(Math.ceil((bucket.lockedUntil - now) / 1000));
+      }
+      return { allowed: true };
+    },
+  );
 }
 
-export function recordInviteRegisterSuccess(req, email) {
-  const keys = [`email:${email}`, `ip:${clientIp(req)}`];
-  for (const key of keys) {
-    buckets.delete(key);
-  }
+export async function recordInviteRegisterFailure(req, email) {
+  const keys = keysFor(req, email);
+  await withRedis(
+    async (redis) => {
+      for (const key of keys) {
+        const results = await redis.multi().set(failKey(key), 0, "PX", WINDOW_MS, "NX").incr(failKey(key)).exec();
+        const failed = results.find(([err]) => err);
+        if (failed) throw failed[0];
+        if (Number(results[1][1]) >= MAX_FAILURES) {
+          await redis.multi().set(lockKey(key), 1, "PX", LOCKOUT_MS).del(failKey(key)).exec();
+        }
+      }
+    },
+    () => {
+      const now = Date.now();
+      for (const key of keys) {
+        const bucket = getBucket(key);
+        bucket.failures = pruneOld(bucket.failures, now);
+        bucket.failures.push(now);
+        if (bucket.failures.length >= MAX_FAILURES) {
+          bucket.lockedUntil = now + LOCKOUT_MS;
+          bucket.failures = [];
+        }
+      }
+    },
+  );
+}
+
+export async function recordInviteRegisterSuccess(req, email) {
+  const keys = keysFor(req, email);
+  await withRedis(
+    async (redis) => {
+      await redis.del(...keys.flatMap((key) => [failKey(key), lockKey(key)]));
+    },
+    () => {
+      for (const key of keys) buckets.delete(key);
+    },
+  );
 }

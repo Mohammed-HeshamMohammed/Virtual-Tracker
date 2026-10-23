@@ -586,7 +586,7 @@ export async function routeMemberInvites(req, res, url, origin) {
       sendJson(res, origin, 400, { success: false, error: "Name is too long." });
       return true;
     }
-    const abuseCheck = checkInviteRegisterAllowed(req, email);
+    const abuseCheck = await checkInviteRegisterAllowed(req, email);
     if (!abuseCheck.allowed) {
       sendJson(res, origin, 429, {
         success: false,
@@ -600,7 +600,7 @@ export async function routeMemberInvites(req, res, url, origin) {
       requireConfirm: true,
     });
     if (!passwordValidation.valid) {
-      recordInviteRegisterFailure(req, email);
+      await recordInviteRegisterFailure(req, email);
       sendJson(res, origin, 400, { success: false, error: passwordValidation.error ?? "Invalid password." });
       return true;
     }
@@ -628,7 +628,7 @@ export async function routeMemberInvites(req, res, url, origin) {
     }
     const preCheck = await assertEmailCanUseMemberInviteOrPreprovision(db, auth, email, { ignoreInviteId: inv.id });
     if (!preCheck.ok) {
-      recordInviteRegisterFailure(req, email);
+      await recordInviteRegisterFailure(req, email);
       sendJson(res, origin, 400, { success: false, error: preCheck.message, reason: preCheck.reason });
       return true;
     }
@@ -794,7 +794,7 @@ export async function routeMemberInvites(req, res, url, origin) {
           logSafeWarn("[invite/register] welcome email failed:", welcomeErr);
         }
       }
-      recordInviteRegisterSuccess(req, email);
+      await recordInviteRegisterSuccess(req, email);
       sendJson(res, origin, 201, {
         success: true,
         uid,
@@ -802,7 +802,7 @@ export async function routeMemberInvites(req, res, url, origin) {
       });
     } catch (e) {
       if (e instanceof SeatLimitError) {
-        recordInviteRegisterFailure(req, email);
+        await recordInviteRegisterFailure(req, email);
         sendJson(res, origin, e.status, {
           success: false,
           error: "This organization has no open seats right now. Ask whoever invited you to free one.",
@@ -812,11 +812,11 @@ export async function routeMemberInvites(req, res, url, origin) {
       }
       const code = typeof e === "object" && e !== null && "code" in e ? String(/** @type {{ code?: string }} */ (e).code) : "";
       if (code === "auth/email-already-exists") {
-        recordInviteRegisterFailure(req, email);
+        await recordInviteRegisterFailure(req, email);
         sendJson(res, origin, 409, { success: false, error: "An account already exists for this email. Sign in instead." });
         return true;
       }
-      recordInviteRegisterFailure(req, email);
+      await recordInviteRegisterFailure(req, email);
       const msg = e instanceof Error ? e.message : "Registration failed";
       logSafeError("[public/invites/register]", e);
       sendJson(res, origin, 500, { success: false, error: msg });

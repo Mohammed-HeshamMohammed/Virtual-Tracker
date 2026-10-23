@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { readBearerToken } from "./auth-token.js";
+import { logSafeWarn } from "./sanitize-error.js";
+import { getReadyRedisClient } from "../lib/redis/client.js";
 
 const buckets = new Map();
 
@@ -98,6 +100,24 @@ function checkMemoryLimit(key, limit) {
   return null;
 }
 
+/**
+ * The same fixed window, counted in Redis so every backend instance shares one count
+ * and a deploy does not hand everyone a fresh budget. SET NX starts the window with its
+ * expiry, INCR keeps that expiry, PTTL says when it resets.
+ */
+async function checkRedisLimit(redis, key, limit) {
+  const k = `rl:${key}`;
+  const results = await redis.multi().set(k, 0, "PX", WINDOW_MS, "NX").incr(k).pttl(k).exec();
+  const failed = results.find(([err]) => err);
+  if (failed) throw failed[0];
+  const count = Number(results[1][1]);
+  const ttlMs = Number(results[2][1]);
+  if (count > limit) {
+    return { status: 429, retryAfterSec: Math.max(1, Math.ceil(ttlMs / 1000)) };
+  }
+  return null;
+}
+
 export async function checkRateLimit(req, url) {
   if (isLocalClient(req)) {
     return null;
@@ -106,5 +126,15 @@ export async function checkRateLimit(req, url) {
   const bucket = limitBucket(url);
   const limit = limitForBucket(url);
   const key = `${clientKey(req)}:${bucket}`;
+  // Redis when it is connected (shared across instances, survives restarts); this
+  // process's memory otherwise, so a Redis outage never blocks or slows a request.
+  const redis = getReadyRedisClient();
+  if (redis) {
+    try {
+      return await checkRedisLimit(redis, key, limit);
+    } catch (err) {
+      logSafeWarn("[rate-limit] Redis count failed; counting in memory for this request", err);
+    }
+  }
   return checkMemoryLimit(key, limit);
 }
