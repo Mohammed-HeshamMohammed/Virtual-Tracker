@@ -18,6 +18,7 @@ if (!(await loadPglite())) {
     mocks: {
       "lib/notify/phone-validation-client.js": { validatePhoneViaNotify: async (phone) => phone.trim() },
       "lib/auth/auth-backend-client.js": { validatePasswordViaAuthBackend: async () => ({ valid: true, error: null }) },
+      "modules/auth/registration-welcome-email.js": { maybeSendRegistrationWelcomeEmail: async () => ({ sent: false }) },
     },
   });
   after(() => pg.close());
@@ -57,13 +58,17 @@ if (!(await loadPglite())) {
 
   test(
     "registering through it completes under enforced tenancy",
-    { todo: "fails today: after the invite lookup the request has no tenant, so writing the pay rate breaks RLS (pay_rates)" },
     async () => {
       const res = await publicCall("POST", `/api/public/invites/${token}/register`, {
         email: "new@example.test", password: "Str0ng!Passw0rd#2026", confirmPassword: "Str0ng!Passw0rd#2026",
         firstName: "New", lastName: "Person", phone: "+201000000001",
       });
       assert.equal(res.statusCode, 201, JSON.stringify(res.body));
+      const member = (await pg.rows("SELECT id, tenant_id FROM members WHERE work_email = $1", ["new@example.test"]))[0];
+      assert.equal(member.tenant_id, CUSTOMER);
+      const pay = await pg.rows("SELECT tenant_id FROM pay_rates WHERE member_id = $1", [member.id]);
+      assert.deepEqual(pay.map(row => row.tenant_id), [CUSTOMER]);
+      assert.deepEqual(await query("SELECT id FROM members WHERE id = $1", [member.id]), [], "registration must not leak tenant context into the next request");
     },
   );
 }
