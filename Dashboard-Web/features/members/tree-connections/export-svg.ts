@@ -1,3 +1,4 @@
+import { escapeUTF8 } from "entities"
 // A standalone picture of the chart as it is on screen right now: the same positions, the same
 // dragged cards, the same collapsed teams. SVG (not a screenshot of the DOM) so it stays sharp at
 // any size and needs nothing from the page. Photos are left out and initials used instead, which
@@ -9,20 +10,7 @@ import type { Orientation } from "./layout.ts"
 import type { TreeModel } from "./model.ts"
 import { roleColor } from "./roles.ts"
 
-export function escapeXml(value: string): string {
-  // All five XML specials: a name with an apostrophe must not be able to close a single-quoted
-  // attribute, whichever quote style the markup around it uses.
-  // This builds a standalone SVG file
-  // as text (no DOM, nothing parses it as HTML here); the five escapes are complete for XML and
-  // pinned by test/tree-connections.test.mjs.
-  // bearer:disable javascript_lang_manual_html_sanitization -- All five XML characters are escaped; verified by tree-connections.test.mjs.
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&apos;")
-}
+export const escapeXml = escapeUTF8
 
 export function initialsOf(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean)
