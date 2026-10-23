@@ -12,6 +12,9 @@ import { roleColor } from "./roles.ts"
 export function escapeXml(value: string): string {
   // All five XML specials: a name with an apostrophe must not be able to close a single-quoted
   // attribute, whichever quote style the markup around it uses.
+  // bearer:disable javascript_lang_manual_html_sanitization -- this builds a standalone SVG file
+  // as text (no DOM, nothing parses it as HTML here); the five escapes are complete for XML and
+  // pinned by test/tree-connections.test.mjs.
   return value
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
