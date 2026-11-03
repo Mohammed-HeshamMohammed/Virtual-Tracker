@@ -159,6 +159,37 @@ if (!PGlite) {
     assert.equal(await dayOf("2026-10-13"), 1800, "Tuesday gets only Tuesday's half hour");
   });
 
+  // PLAN-agent-time-loss-and-event-queue.md D1-D5: an ACTIVE session is never ended or split by
+  // the day changing. Project in New York, member's own zone Cairo: the two calendars cross
+  // midnight at different moments, and the hours still all belong to the day the session began.
+  test("an active session running through the project's midnight keeps running and keeps its start day", async () => {
+    const ny = "dddddddd-0000-4000-8000-000000000002";
+    await db.query("INSERT INTO projects VALUES ($1, 'America/New_York')", [ny]);
+    const m = await member("Africa/Cairo");
+    __clearMemberTimezoneCache();
+    // 23:30 on Oct 12 in New York (EDT) is 03:30 UTC and 06:30 in Cairo on Oct 13.
+    const s = await svc.createPgSession({
+      id: sid(), memberId: m, taskId: null, projectId: ny, status: "active",
+      startedAt: new Date("2026-10-13T03:30:00Z"), endedAt: null, activeSeconds: 0, idleSeconds: 0,
+      source: "agent", updatedAt: new Date("2026-10-13T03:30:00Z"),
+    });
+    await sync(s.id, 1800); // 00:00 New York
+    await sync(s.id, 5400); // 00:30 New York: an hour of it is past the project's midnight
+
+    const row = (await db.query("SELECT status, ended_at, stop_reason, active_seconds FROM activity_sessions WHERE id = $1", [s.id])).rows[0];
+    assert.equal(row.status, "active", "the day changing does not stop a running timer");
+    assert.equal(row.ended_at, null);
+    assert.equal(row.stop_reason, null);
+    assert.equal(row.active_seconds, 5400, "and the later sync is not dropped");
+
+    const days = await svc.listDailyMemberActiveSeconds(m, { fromDay: "2026-10-11", toDay: "2026-10-15" });
+    assert.deepEqual(
+      days.map((d) => [d.day, Number(d.active_seconds)]),
+      [["2026-10-12", 5400]],
+      "all of it on the project's Oct 12, none on Oct 13",
+    );
+  });
+
   test("an app slice sits on its session's day, by the project's calendar; without a session, its own time in the member's", async () => {
     const { eventDaySql } = await import(url("lib/postgres/session-day-sql.js"));
     await db.exec(`CREATE TABLE IF NOT EXISTS activity_app_logs (member_id uuid, session_id varchar(128), started_at timestamptz)`);

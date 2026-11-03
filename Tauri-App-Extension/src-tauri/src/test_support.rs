@@ -51,6 +51,7 @@ pub fn test_settings(api_url: String) -> crate::config::Settings {
         queue_path: dir.join("queue.jsonl"),
         classification_cache_path: dir.join("classifications.json"),
         progress_path: dir.join("progress.json"),
+        pending_stop_path: dir.join("pending-stop.json"),
         log_path: dir.join("agent.log"),
         url_script_path: dir.join("missing-get-browser-url.ps1"),
         macos_url_script_path: dir.join("missing-get-browser-url.applescript"),

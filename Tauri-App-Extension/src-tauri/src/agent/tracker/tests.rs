@@ -139,6 +139,55 @@ fn a_running_session_left_open_by_a_shutdown_is_closed_not_carried_on() {
     );
 }
 
+// PLAN-agent-time-loss-and-event-queue.md T3: the totals are mirrored to disk every tick, so
+// after a power cut the mirror can hold up to a sync interval more than the server's last
+// figure. Closing the stale session with the server's number throws that time away.
+#[test]
+fn a_stale_session_is_closed_with_the_larger_of_the_server_and_the_disk_mirror() {
+    let stale = r#"{"data": {"id": "sess-1", "status": "active", "taskId": "task-1", "projectId": "proj-1", "activeSeconds": 500, "idleSeconds": 5, "secondsSinceUpdate": 4000}}"#;
+    let (url, bodies) = body_recording_server(stale);
+    let tracker = test_tracker(url);
+    tracker.progress.save(&super::PersistedProgress {
+        session_id: "sess-1".into(),
+        task_id: Some("task-1".into()),
+        active_seconds: 518,
+        idle_seconds: 5,
+    });
+    let mut state = TickState::new();
+
+    tracker.tick(&mut state);
+
+    let bodies = bodies.lock();
+    assert!(
+        bodies.iter().any(|b| b.contains(r#""action":"stop""#) && b.contains(r#""activeSeconds":518"#)),
+        "the 18 s only the disk knew about are kept: {bodies:?}"
+    );
+}
+
+// ...but a mirror left by some other session must never leak into this one.
+#[test]
+fn a_disk_mirror_from_another_session_is_not_used_to_close_a_stale_one() {
+    let stale = r#"{"data": {"id": "sess-1", "status": "active", "taskId": "task-1", "projectId": "proj-1", "activeSeconds": 500, "idleSeconds": 5, "secondsSinceUpdate": 4000}}"#;
+    let (url, bodies) = body_recording_server(stale);
+    let tracker = test_tracker(url);
+    tracker.progress.save(&super::PersistedProgress {
+        session_id: "an-older-session".into(),
+        task_id: Some("task-1".into()),
+        active_seconds: 9000,
+        idle_seconds: 0,
+    });
+    let mut state = TickState::new();
+
+    tracker.tick(&mut state);
+
+    let bodies = bodies.lock();
+    assert!(
+        bodies.iter().any(|b| b.contains(r#""action":"stop""#) && b.contains(r#""activeSeconds":500"#)),
+        "{bodies:?}"
+    );
+    assert!(!bodies.iter().any(|b| b.contains("9000")), "{bodies:?}");
+}
+
 #[test]
 fn a_session_a_live_agent_just_touched_is_adopted_as_before() {
     let fresh = r#"{"data": {"id": "sess-1", "status": "active", "taskId": "task-1", "projectId": "proj-1", "activeSeconds": 0, "idleSeconds": 0, "secondsSinceUpdate": 12}}"#;
@@ -464,10 +513,13 @@ fn flush_pending_stop_reports_false_while_stuck_and_true_once_delivered() {
     });
     let tracker = test_tracker(base_url);
     *tracker.pending_stop.lock() = Some(PendingStop {
+        session_id: "sess-1".into(),
         task_id: "task-1".into(),
         project_id: String::new(),
         active_seconds: 120,
         idle_seconds: 30,
+        reason: "idle_escalation".into(),
+        from_disk: false,
     });
 
     assert!(!tracker.flush_pending_stop(), "first attempt fails (500) - must report false");
@@ -1139,4 +1191,118 @@ fn an_unidentified_window_or_shell_surface_is_not_logged_as_an_app() {
     tracker.upload_app_slice("sess-1", &start_menu);
     assert_eq!(posts.load(AtomicOrdering::SeqCst), 0);
     assert_eq!(queued_batches(&tracker), 0);
+}
+
+// --- Write-ahead stops (PLAN-agent-time-loss-and-event-queue.md T1) -------------------------
+
+fn test_tracker_in(settings: crate::config::Settings) -> ActivityTracker {
+    let mut api = ApiClient::new(settings.api_url.clone(), "http://127.0.0.1:1".into())
+        .expect("HTTP client builds in a test environment");
+    api.set_tokens(&fake_jwt(3600), "refresh-token");
+    ActivityTracker::new(std::sync::Arc::new(Mutex::new(api)), &settings, ActivityMeter::new(), None)
+}
+
+fn a_stop_left_on_disk(settings: &crate::config::Settings) {
+    crate::agent::progress_store::StopStore::new(settings.pending_stop_path.clone()).save(
+        &crate::agent::progress_store::PersistedStop {
+            session_id: "sess-1".into(),
+            task_id: "task-1".into(),
+            project_id: "proj-1".into(),
+            active_seconds: 700,
+            idle_seconds: 20,
+            reason: "system_shutdown".into(),
+        },
+    );
+}
+
+fn open_session_server(open_id: &'static str) -> (String, std::sync::Arc<Mutex<Vec<String>>>) {
+    let posts = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+    let seen = std::sync::Arc::clone(&posts);
+    let url = fake_server(move |request| {
+        let path = request.url().split('?').next().unwrap_or("").to_string();
+        match (request.method().clone(), path.as_str()) {
+            (Method::Get, "/api/activity/session") => (
+                200,
+                format!(r#"{{"data": {{"id": "{open_id}", "status": "active", "taskId": "task-1", "secondsSinceUpdate": 5}}}}"#),
+            ),
+            (Method::Post, "/api/activity/session") => {
+                let mut body = String::new();
+                let _ = std::io::Read::read_to_string(request.as_reader(), &mut body);
+                seen.lock().push(body);
+                (200, r#"{"data": {"id": "sess-1", "status": "stopped"}}"#.to_string())
+            }
+            _ => (404, "{}".to_string()),
+        }
+    });
+    (url, posts)
+}
+
+#[test]
+fn a_stop_that_cannot_be_delivered_stays_on_disk_and_is_gone_once_it_is() {
+    let attempts = std::sync::Arc::new(AtomicUsize::new(0));
+    let attempts_in_server = attempts.clone();
+    let url = fake_server(move |_| {
+        if attempts_in_server.fetch_add(1, AtomicOrdering::SeqCst) == 0 {
+            (500, "{}".to_string())
+        } else {
+            (200, r#"{"data": {"id": "sess-1", "status": "stopped"}}"#.to_string())
+        }
+    });
+    let settings = test_settings(url);
+    let on_disk = crate::agent::progress_store::StopStore::new(settings.pending_stop_path.clone());
+    let tracker = test_tracker_in(settings);
+    *tracker.session_id.lock() = Some("sess-1".to_string());
+    tracker.set_task_progress("task-1", 640, 12);
+
+    assert!(!tracker.close_session("system_shutdown"), "the server refused it");
+    let saved = on_disk.load().expect("written before it was sent, kept because it was not delivered");
+    assert_eq!((saved.active_seconds, saved.idle_seconds), (640, 12));
+    assert_eq!(saved.reason, "system_shutdown");
+    assert_eq!(saved.session_id, "sess-1");
+
+    assert!(tracker.close_session("system_shutdown"), "the second attempt gets through");
+    assert!(on_disk.load().is_none(), "nothing left to deliver");
+}
+
+#[test]
+fn a_stop_an_earlier_run_left_behind_is_delivered_when_its_session_is_still_open() {
+    let (url, posts) = open_session_server("sess-1");
+    let settings = test_settings(url);
+    a_stop_left_on_disk(&settings);
+    let on_disk = crate::agent::progress_store::StopStore::new(settings.pending_stop_path.clone());
+    let tracker = test_tracker_in(settings);
+
+    assert!(tracker.flush_pending_stop());
+
+    let posts = posts.lock();
+    assert_eq!(posts.len(), 1, "{posts:?}");
+    assert!(posts[0].contains(r#""action":"stop""#) && posts[0].contains("system_shutdown"), "{posts:?}");
+    assert!(posts[0].contains(r#""activeSeconds":700"#), "its own totals, not the server's: {posts:?}");
+    assert!(on_disk.load().is_none());
+}
+
+#[test]
+fn a_stop_left_behind_never_ends_a_newer_session() {
+    let (url, posts) = open_session_server("sess-2");
+    let settings = test_settings(url);
+    a_stop_left_on_disk(&settings);
+    let on_disk = crate::agent::progress_store::StopStore::new(settings.pending_stop_path.clone());
+    let tracker = test_tracker_in(settings);
+
+    assert!(tracker.flush_pending_stop(), "nothing to wait for: the old session is already over");
+
+    assert!(posts.lock().is_empty(), "the member's new session is left running: {:?}", posts.lock());
+    assert!(on_disk.load().is_none(), "and the stale stop is forgotten");
+}
+
+#[test]
+fn a_stop_left_behind_waits_when_the_server_cannot_be_asked() {
+    let settings = test_settings(fake_server(|_| (500, "{}".to_string())));
+    a_stop_left_on_disk(&settings);
+    let on_disk = crate::agent::progress_store::StopStore::new(settings.pending_stop_path.clone());
+    let tracker = test_tracker_in(settings);
+
+    assert!(!tracker.flush_pending_stop());
+
+    assert!(on_disk.load().is_some(), "kept for the next try");
 }

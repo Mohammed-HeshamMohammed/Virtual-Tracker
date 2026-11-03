@@ -18,6 +18,11 @@ struct QueuedBatch {
 /// Disk-backed FIFO for events that failed to upload while offline.
 pub struct EventQueue {
     path: PathBuf,
+    /// The one batch being sent right now, written before the request and removed after it.
+    /// A crash or power cut mid-upload leaves it behind, and the next start queues it.
+    inflight_path: PathBuf,
+    /// Only one batch can be in flight; the file is a single slot.
+    inflight_lock: parking_lot::Mutex<()>,
     /// Number of batches (lines) currently on disk, tracked in memory so `enqueue()`
     /// doesn't have to re-read the entire backlog file on every single call just to decide
     queued_count: AtomicUsize,
@@ -30,7 +35,54 @@ pub struct EventQueue {
 impl EventQueue {
     pub fn new(path: PathBuf) -> Self {
         let queued_count = AtomicUsize::new(count_lines(&path));
-        Self { path, queued_count, dropped_count: AtomicUsize::new(0) }
+        let inflight_path = path.with_extension("inflight");
+        let queue = Self {
+            path,
+            inflight_path,
+            inflight_lock: parking_lot::Mutex::new(()),
+            queued_count,
+            dropped_count: AtomicUsize::new(0),
+        };
+        queue.recover_inflight();
+        queue
+    }
+
+    /// A batch an earlier run was sending when it died. It may have reached the server
+    /// (then it is sent twice) or not (then it would be lost); twice is the better mistake.
+    fn recover_inflight(&self) {
+        let Ok(text) = fs::read_to_string(&self.inflight_path) else {
+            return;
+        };
+        if let Ok(batch) = serde_json::from_str::<QueuedBatch>(text.trim()) {
+            self.enqueue(&batch.session_id, &batch.events);
+            log::info!("Recovered a batch an earlier run was sending when it stopped");
+        }
+        let _ = fs::remove_file(&self.inflight_path);
+    }
+
+    /// Sends a batch with `send`, having saved it to disk first: a failed send is queued for
+    /// retry, a successful one leaves nothing behind, and a crash in between is recovered
+    /// by the next start. Returns whether `send` succeeded.
+    pub fn send_or_queue(
+        &self,
+        session_id: &str,
+        events: &[ActivityEvent],
+        send: impl FnOnce() -> bool,
+    ) -> bool {
+        if events.is_empty() {
+            return true;
+        }
+        let _slot = self.inflight_lock.lock();
+        let batch = QueuedBatch { session_id: session_id.to_string(), events: events.to_vec() };
+        if let Ok(line) = serde_json::to_string(&batch) {
+            let _ = fs::write(&self.inflight_path, line);
+        }
+        let sent = send();
+        if !sent {
+            self.enqueue(session_id, events);
+        }
+        let _ = fs::remove_file(&self.inflight_path);
+        sent
     }
 
     /// Buffer a batch that failed to upload, for retry once the connection returns.
@@ -72,13 +124,17 @@ impl EventQueue {
 
         let mut remaining = Vec::new();
         let mut flushed = 0u32;
+        let mut failed = false;
         for line in lines {
             let Ok(batch) = serde_json::from_str::<QueuedBatch>(&line) else {
                 continue;
             };
-            if send(&batch.session_id, &batch.events) {
+            // After one failure the rest would only wait out the same timeout while the
+            // caller holds the API lock; keep them for the next flush.
+            if !failed && send(&batch.session_id, &batch.events) {
                 flushed += 1;
             } else {
+                failed = true;
                 remaining.push(line);
             }
         }
@@ -187,12 +243,12 @@ mod tests {
         assert_eq!(queue.queued_count(), 3);
         assert_eq!(count_lines(&path), 3);
 
-        // One batch fails to send and stays queued, two succeed and are dropped from the
-        // backlog.
+        // The last batch fails to send and stays queued, the two before it succeed and are
+        // dropped from the backlog.
         let mut calls = 0u32;
         queue.flush(|_, _| {
             calls += 1;
-            calls != 1
+            calls != 3
         });
         assert_eq!(queue.queued_count(), 1);
         assert_eq!(count_lines(&path), 1);
@@ -229,6 +285,30 @@ mod tests {
         let dropped = queue.take_dropped();
         assert!(dropped > 0, "trimming past the cap must count what it discarded");
         assert_eq!(queue.take_dropped(), 0, "a second read must not report the same drops again");
+        let _ = fs::remove_file(&path);
+    }
+
+    // PLAN-agent-time-loss-and-event-queue.md Q4: with the network down the first send
+    // fails, and flushing on through the other batches only holds the API lock for
+    // N x the request timeout. One failure is enough to know the rest will fail too.
+    #[test]
+    fn a_failed_send_stops_the_flush_and_keeps_every_batch() {
+        let path = temp_queue_path("flush-stops");
+        let _ = fs::remove_file(&path);
+        let queue = EventQueue::new(path.clone());
+        for i in 0..5 {
+            queue.enqueue(&format!("session-{i}"), &sample_events());
+        }
+
+        let mut attempts = 0u32;
+        queue.flush(|_, _| {
+            attempts += 1;
+            false
+        });
+
+        assert_eq!(attempts, 1, "stopped at the first failure");
+        assert_eq!(queue.queued_count(), 5, "nothing was delivered, so nothing is dropped");
+        assert_eq!(count_lines(&path), 5);
         let _ = fs::remove_file(&path);
     }
 
@@ -280,10 +360,11 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
-    /// Batches go out oldest first, and the one the server refused is the one kept -
-    /// not whichever happens to be last.
+    /// Batches go out oldest first. The one the server refused is kept, and so is everything
+    /// behind it, untried: one refusal is enough to know the rest would wait out the same
+    /// timeout.
     #[test]
-    fn flush_sends_in_order_and_keeps_exactly_the_refused_batch() {
+    fn flush_sends_in_order_and_keeps_the_refused_batch_and_those_behind_it() {
         let path = temp_queue_path("flush-order");
         let _ = fs::remove_file(&path);
         let queue = EventQueue::new(path.clone());
@@ -296,14 +377,14 @@ mod tests {
             seen.push(id.to_string());
             id != "s2"
         });
-        assert_eq!(seen, ["s1", "s2", "s3"]);
+        assert_eq!(seen, ["s1", "s2"], "s3 was not tried after s2 failed");
 
         let mut retried = Vec::new();
         queue.flush(|id, _| {
             retried.push(id.to_string());
             true
         });
-        assert_eq!(retried, ["s2"], "only the refused batch survives for the next flush");
+        assert_eq!(retried, ["s2", "s3"], "the refused batch and the untried one survive, in order");
         let _ = fs::remove_file(&path);
     }
 
@@ -352,5 +433,74 @@ mod tests {
 
         queue.flush(|_, _| panic!("nothing was queued, so nothing may be sent"));
         assert!(!path.exists(), "an empty batch is not written to disk");
+    }
+
+    // --- Write-ahead events (PLAN-agent-time-loss-and-event-queue.md section 9) -------------
+
+    #[test]
+    fn a_batch_is_on_disk_while_it_is_being_sent_and_gone_after_a_success() {
+        let path = temp_queue_path("inflight-ok");
+        let _ = fs::remove_file(&path);
+        let queue = EventQueue::new(path.clone());
+        let inflight = path.with_extension("inflight");
+
+        let sent = queue.send_or_queue("session-a", &sample_events(), || {
+            assert!(inflight.exists(), "saved before the request goes out");
+            true
+        });
+
+        assert!(sent);
+        assert!(!inflight.exists());
+        assert_eq!(queue.queued_count(), 0, "a delivered batch is not also queued");
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_batch_that_fails_to_send_is_queued_exactly_once() {
+        let path = temp_queue_path("inflight-fail");
+        let _ = fs::remove_file(&path);
+        let queue = EventQueue::new(path.clone());
+
+        let sent = queue.send_or_queue("session-a", &sample_events(), || false);
+
+        assert!(!sent);
+        assert!(!path.with_extension("inflight").exists());
+        assert_eq!(queue.queued_count(), 1);
+        assert_eq!(count_lines(&path), 1);
+        let _ = fs::remove_file(&path);
+    }
+
+    // The app or the PC dies after the batch was saved and before the answer came back.
+    #[test]
+    fn a_batch_that_was_being_sent_when_the_app_died_is_queued_by_the_next_start() {
+        let path = temp_queue_path("inflight-crash");
+        let _ = fs::remove_file(&path);
+        let batch = QueuedBatch { session_id: "session-x".into(), events: sample_events() };
+        fs::write(path.with_extension("inflight"), serde_json::to_string(&batch).unwrap()).unwrap();
+
+        let queue = EventQueue::new(path.clone());
+
+        assert_eq!(queue.queued_count(), 1);
+        let mut resent = Vec::new();
+        queue.flush(|id, _| {
+            resent.push(id.to_string());
+            true
+        });
+        assert_eq!(resent, ["session-x"]);
+        assert!(!path.with_extension("inflight").exists());
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_damaged_leftover_is_discarded_not_fatal() {
+        let path = temp_queue_path("inflight-bad");
+        let _ = fs::remove_file(&path);
+        fs::write(path.with_extension("inflight"), b"{ not json").unwrap();
+
+        let queue = EventQueue::new(path.clone());
+
+        assert_eq!(queue.queued_count(), 0);
+        assert!(!path.with_extension("inflight").exists());
+        let _ = fs::remove_file(&path);
     }
 }

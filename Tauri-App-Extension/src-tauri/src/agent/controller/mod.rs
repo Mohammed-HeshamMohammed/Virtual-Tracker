@@ -159,17 +159,12 @@ impl AgentController {
     fn flush_and_stop_tracker(&self, reason: &str) {
         if let Some(tracker) = self.current_tracker() {
             if tracker.current_session_id().is_some() {
-                let (task_id, active_seconds, idle_seconds) = tracker.current_task_progress();
-                let _ = self.api.lock().post_session_action(
-                    "stop",
-                    task_id.as_deref(),
-                    None,
-                    active_seconds,
-                    idle_seconds,
-                    None,
-                    Some(Self::stop_reason_for(reason)),
-                );
-                log::info!("Closed tracking session on {reason} ({active_seconds}s active)");
+                let (_, active_seconds, _) = tracker.current_task_progress();
+                if tracker.close_session(Self::stop_reason_for(reason)) {
+                    log::info!("Closed tracking session on {reason} ({active_seconds}s active)");
+                } else {
+                    log::warn!("Could not reach the server on {reason}; the stop is saved and will be sent at the next start");
+                }
             }
             tracker.stop();
         }

@@ -283,12 +283,18 @@ impl ActivityTracker {
             let number = |key: &str| session.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
             let task_id = text(&["taskId", "task_id"]);
             let project_id = text(&["projectId", "project_id"]);
+            // The disk mirror is written every tick, the server only every sync, so after a
+            // power cut it can hold more. Only this session's own mirror counts.
+            let mirror = self
+                .progress
+                .load()
+                .filter(|p| p.session_id == session_id && p.task_id == task_id);
             let _ = self.api.lock().post_session_action(
                 "stop",
                 task_id.as_deref(),
                 project_id.as_deref(),
-                number("activeSeconds"),
-                number("idleSeconds"),
+                number("activeSeconds").max(mirror.as_ref().map_or(0, |p| p.active_seconds)),
+                number("idleSeconds").max(mirror.as_ref().map_or(0, |p| p.idle_seconds)),
                 None,
                 Some("stale_session_closed"),
             );
@@ -516,6 +522,15 @@ impl ActivityTracker {
         );
 
         self.set_task_progress(task_id, rewound, idle_total);
+        let stop = PersistedStop {
+            session_id: self.session_id.lock().clone().unwrap_or_default(),
+            task_id: task_id.to_string(),
+            project_id: project_id.to_string(),
+            active_seconds: rewound,
+            idle_seconds: idle_total,
+            reason: "idle_escalation".to_string(),
+        };
+        self.stops.save(&stop);
         let delivered = self
             .api
             .lock()
@@ -529,14 +544,19 @@ impl ActivityTracker {
                 Some("idle_escalation"),
             )
             .is_ok();
-        if !delivered {
+        if delivered {
+            self.stops.clear();
+        } else {
             // The network problem that often accompanies an idle stretch must not mean the
             // stop is silently lost.
             *self.pending_stop.lock() = Some(PendingStop {
-                task_id: task_id.to_string(),
-                project_id: project_id.to_string(),
+                session_id: stop.session_id,
+                task_id: stop.task_id,
+                project_id: stop.project_id,
                 active_seconds: rewound,
                 idle_seconds: idle_total,
+                reason: stop.reason,
+                from_disk: false,
             });
             log::warn!("Idle-stop POST failed - will retry until delivered, tracking stays halted meanwhile");
         }

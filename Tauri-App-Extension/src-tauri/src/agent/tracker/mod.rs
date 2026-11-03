@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 
-use crate::agent::progress_store::{PersistedProgress, ProgressStore};
+use crate::agent::progress_store::{PersistedProgress, PersistedStop, ProgressStore, StopStore};
 use crate::capture::activity::ActivityMeter;
 use crate::capture::events::EventBuilder;
 use crate::capture::window::get_foreground_window;
@@ -43,6 +43,8 @@ pub struct ActivityTracker {
     /// Crash-safe mirror of `task_progress`, written on every credited tick so an unclean
     /// exit doesn't lose whatever RAM alone was holding.
     progress: ProgressStore,
+    /// Write-ahead copy of `pending_stop`; see `PersistedStop`.
+    stops: StopStore,
     on_status: Option<StatusCallback>,
     stop: Arc<AtomicBool>,
     /// Set by `pause()`/cleared by `resume()` or `note_stop_requested()`.
@@ -78,10 +80,15 @@ pub struct ActivityTracker {
 /// the moment idle escalation decided to stop the timer.
 #[derive(Clone)]
 struct PendingStop {
+    session_id: String,
     task_id: String,
     project_id: String,
     active_seconds: u64,
     idle_seconds: u64,
+    reason: String,
+    /// Left by an earlier run: before it is sent, the server must still show that same
+    /// session open, or the stop could end a newer one the member has since started.
+    from_disk: bool,
 }
 
 /// Cumulative active seconds at the last moment there was real input, plus the escalation
@@ -194,6 +201,7 @@ impl ActivityTracker {
             activity,
             queue: EventQueue::new(settings.queue_path.clone()),
             progress: ProgressStore::new(settings.progress_path.clone()),
+            stops: StopStore::new(settings.pending_stop_path.clone()),
             on_status,
             stop: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
@@ -204,7 +212,17 @@ impl ActivityTracker {
             last_project_id: Arc::new(Mutex::new(String::new())),
             idle_stage: Arc::new(Mutex::new(0)),
             idle_stop: Arc::new(Mutex::new(None)),
-            pending_stop: Arc::new(Mutex::new(None)),
+            pending_stop: Arc::new(Mutex::new(
+                StopStore::new(settings.pending_stop_path.clone()).load().map(|s| PendingStop {
+                    session_id: s.session_id,
+                    task_id: s.task_id,
+                    project_id: s.project_id,
+                    active_seconds: s.active_seconds,
+                    idle_seconds: s.idle_seconds,
+                    reason: s.reason,
+                    from_disk: true,
+                }),
+            )),
             last_synthetic_warning_at: Mutex::new(None),
             idle_threshold_sec: AtomicU64::new(IDLE_THRESHOLD_SEC),
             breaks: Default::default(),
@@ -368,11 +386,30 @@ impl ActivityTracker {
         *self.task_progress.lock() = (Some(task_id.into()), active_seconds, idle_seconds);
     }
 
-    /// One delivery attempt for a pending idle-stop, if any.
+    /// One delivery attempt for a pending stop, if any.
     fn try_deliver_pending_stop(&self) -> bool {
         let Some(pending) = self.pending_stop.lock().clone() else {
             return true;
         };
+        if pending.from_disk {
+            // Left by an earlier run. Only send it if the server still has that very
+            // session open: if it was already closed (the server's own sweep, or the
+            // agent's stale-session close) there is nothing to do, and if the member has
+            // started another since, stopping it would end the wrong one.
+            match self.api.lock().fetch_session() {
+                Ok(Some(open)) if open.get("id").and_then(|v| v.as_str()) == Some(pending.session_id.as_str()) => {}
+                Ok(_) => {
+                    log::info!("Dropping a stop an earlier run left behind: its session is no longer open");
+                    self.stops.clear();
+                    *self.pending_stop.lock() = None;
+                    return true;
+                }
+                Err(_) => {
+                    log::warn!("Could not check the session behind an earlier run's stop - will retry");
+                    return false;
+                }
+            }
+        }
         let delivered = self
             .api
             .lock()
@@ -383,14 +420,53 @@ impl ActivityTracker {
                 pending.active_seconds,
                 pending.idle_seconds,
                 None,
-                Some("idle_escalation"),
+                Some(pending.reason.as_str()),
             )
             .is_ok();
         if delivered {
+            self.stops.clear();
             *self.pending_stop.lock() = None;
-            log::info!("Pending idle-stop delivered");
+            log::info!("Pending stop delivered");
         } else {
-            log::warn!("Idle-stop still undelivered, retrying next tick");
+            log::warn!("Stop still undelivered, retrying next tick");
+        }
+        delivered
+    }
+
+    /// Ends the session on the server with the real totals, writing the stop to disk first
+    /// and removing it only once the server has it. The caller is a shutdown or sleep
+    /// handler with a few seconds to spare, so a busy API client is not waited for: the
+    /// stop stays on disk and is delivered at the next start. Returns whether it was delivered.
+    pub fn close_session(&self, reason: &str) -> bool {
+        let Some(session_id) = self.current_session_id() else {
+            return true;
+        };
+        let (task_id, active_seconds, idle_seconds) = self.current_task_progress();
+        let stop = PersistedStop {
+            session_id,
+            task_id: task_id.unwrap_or_default(),
+            project_id: self.last_project_id.lock().clone(),
+            active_seconds,
+            idle_seconds,
+            reason: reason.to_string(),
+        };
+        self.stops.save(&stop);
+        let delivered = match self.api.try_lock_for(Duration::from_secs(3)) {
+            Some(mut api) => api
+                .post_session_action(
+                    "stop",
+                    Some(stop.task_id.as_str()).filter(|id| !id.is_empty()),
+                    Some(stop.project_id.as_str()).filter(|id| !id.is_empty()),
+                    stop.active_seconds,
+                    stop.idle_seconds,
+                    None,
+                    Some(reason),
+                )
+                .is_ok(),
+            None => false,
+        };
+        if delivered {
+            self.stops.clear();
         }
         delivered
     }

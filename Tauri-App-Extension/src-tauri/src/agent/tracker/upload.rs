@@ -17,10 +17,11 @@ impl ActivityTracker {
         let Some(event) = self.events.screenshot(window) else {
             return;
         };
-        if self.api.lock().post_events(session_id, std::slice::from_ref(&event)) {
+        let sent = self.queue.send_or_queue(session_id, std::slice::from_ref(&event), || {
+            self.api.lock().post_events(session_id, std::slice::from_ref(&event))
+        });
+        if sent {
             log::info!("Activity uploaded");
-        } else {
-            self.queue.enqueue(session_id, &[event]);
         }
     }
 
@@ -48,21 +49,20 @@ impl ActivityTracker {
         }
 
         let app_event = self.events.app_slice(window);
-        let app_ok = self.api.lock().post_events(session_id, std::slice::from_ref(&app_event));
-        if !app_ok {
-            self.queue.enqueue(session_id, &[app_event]);
-        }
+        let app_ok = self.queue.send_or_queue(session_id, std::slice::from_ref(&app_event), || {
+            self.api.lock().post_events(session_id, std::slice::from_ref(&app_event))
+        });
 
         // Was true unconditionally whenever no URL was captured at all (not a browser, or
         // the capture script came back empty) — every non-browser app log line was claiming
         let mut url_sent = 0usize;
         let url_events = self.events.url_slices(window);
         if !url_events.is_empty() {
-            let url_ok = self.api.lock().post_events(session_id, &url_events);
+            let url_ok = self.queue.send_or_queue(session_id, &url_events, || {
+                self.api.lock().post_events(session_id, &url_events)
+            });
             if url_ok {
                 url_sent = url_events.len();
-            } else {
-                self.queue.enqueue(session_id, &url_events);
             }
         }
 

@@ -53,11 +53,10 @@ impl ApiClient {
                     );
                     return false;
                 }
+                // An answer, not an outage: the server dropped these on purpose (an excluded
+                // app, a policy, an oversize image). Re-queueing would retry them for ever.
                 if data.get("inserted").and_then(|v| v.as_i64()) == Some(0) {
-                    log::warn!(
-                        "Server accepted events but inserted 0 rows for the active session"
-                    );
-                    return false;
+                    log::warn!("Server accepted the events but stored none of them - not retrying");
                 }
             }
         }
@@ -78,5 +77,62 @@ impl ApiClient {
             .send()
             .map(|r| r.status().is_success())
             .unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{fake_jwt, fake_server};
+    use crate::types::ActivitySignal;
+
+    fn one_event() -> Vec<ActivityEvent> {
+        vec![ActivityEvent::App {
+            app_name: "Notepad".into(),
+            page_title: "notes".into(),
+            duration_seconds: 15,
+            app_icon: None,
+            signal: ActivitySignal::default(),
+        }]
+    }
+
+    fn signed_in_client(server: String) -> ApiClient {
+        let mut api = ApiClient::new(server, "http://127.0.0.1:1".into()).expect("client builds");
+        api.set_tokens(&fake_jwt(3600), "refresh-token");
+        api
+    }
+
+    #[test]
+    fn events_the_server_stored_are_delivered() {
+        let url = fake_server(|_| (200, r#"{"data": {"inserted": 1}}"#.to_string()));
+        assert!(signed_in_client(url).post_events("sess-1", &one_event()));
+    }
+
+    // PLAN-agent-time-loss-and-event-queue.md Q2: the server answers 200 with inserted 0
+    // when it dropped the events on purpose (an excluded app, a policy, an oversize image).
+    // That is an answer, not an outage: re-queueing the batch retries it every 30 s until
+    // the 2000-batch cap pushes it out.
+    #[test]
+    fn events_the_server_dropped_on_purpose_are_not_retried_forever() {
+        let url = fake_server(|_| (200, r#"{"data": {"inserted": 0}}"#.to_string()));
+        assert!(
+            signed_in_client(url).post_events("sess-1", &one_event()),
+            "a 200 that says nothing was stored is final, so the batch must not be re-queued"
+        );
+    }
+
+    // The one 200 that really is "try again later": an admin switched agent ingest off.
+    #[test]
+    fn events_refused_because_ingest_is_switched_off_stay_queued() {
+        let url = fake_server(|_| {
+            (200, r#"{"data": {"inserted": 0, "skipped": "desktop_agent_ingest_disabled"}}"#.to_string())
+        });
+        assert!(!signed_in_client(url).post_events("sess-1", &one_event()));
+    }
+
+    #[test]
+    fn a_server_error_keeps_the_events_queued() {
+        let url = fake_server(|_| (500, r#"{"error": "boom"}"#.to_string()));
+        assert!(!signed_in_client(url).post_events("sess-1", &one_event()));
     }
 }

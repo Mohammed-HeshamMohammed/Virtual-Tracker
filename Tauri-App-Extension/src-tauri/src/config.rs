@@ -17,6 +17,7 @@ pub struct Settings {
     pub queue_path: PathBuf,
     pub classification_cache_path: PathBuf,
     pub progress_path: PathBuf,
+    pub pending_stop_path: PathBuf,
     pub log_path: PathBuf,
     pub url_script_path: PathBuf,
     pub macos_url_script_path: PathBuf,
@@ -37,6 +38,7 @@ impl Settings {
         let queue_path = data_dir.join("pending-events.jsonl");
         let classification_cache_path = data_dir.join("classifications.json");
         let progress_path = data_dir.join("tracker-progress.json");
+        let pending_stop_path = data_dir.join("pending-stop.json");
         let log_path = data_dir.join("agent.log");
 
         let default_api = PROD_API_URL;
@@ -71,6 +73,7 @@ impl Settings {
             queue_path,
             classification_cache_path,
             progress_path,
+            pending_stop_path,
             log_path,
             url_script_path,
             macos_url_script_path,
