@@ -42,6 +42,47 @@ impl ProgressStore {
     }
 }
 
+/// A "stop" the server has not confirmed yet, written to disk BEFORE it is sent and removed
+/// only once the server accepts it. If the app or the PC dies in between, the next start
+/// still knows the session was ended, and why.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PersistedStop {
+    pub session_id: String,
+    pub task_id: String,
+    pub project_id: String,
+    pub active_seconds: u64,
+    pub idle_seconds: u64,
+    pub reason: String,
+}
+
+pub struct StopStore {
+    path: PathBuf,
+}
+
+impl StopStore {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
+
+    pub fn save(&self, stop: &PersistedStop) {
+        let Ok(json) = serde_json::to_vec(stop) else {
+            return;
+        };
+        let tmp_path = self.path.with_extension("tmp");
+        if fs::write(&tmp_path, json).is_ok() {
+            let _ = fs::rename(&tmp_path, &self.path);
+        }
+    }
+
+    pub fn load(&self) -> Option<PersistedStop> {
+        serde_json::from_slice(&fs::read(&self.path).ok()?).ok()
+    }
+
+    pub fn clear(&self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

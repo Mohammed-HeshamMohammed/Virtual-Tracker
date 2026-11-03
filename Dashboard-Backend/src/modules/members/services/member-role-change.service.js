@@ -4,6 +4,7 @@ import { applyRoleChangeHierarchyEffects } from "../../hierarchy/hierarchy-sync.
 import { syncMemberPrimaryRole } from "./relation-sync.js";
 import { logSafeWarn } from "../../../http/sanitize-error.js";
 import { publishChange } from "../../realtime/change-bus.js";
+import { getEnv } from "../../../config/env.js";
 
 export function getProfilePatchSections(body) {
   const sections = [];
@@ -78,7 +79,7 @@ export async function timeRoleChangeStep(step, fn) {
   try {
     return await fn();
   } finally {
-    if (process.env.NODE_ENV !== "production") {
+    if (!getEnv().isProduction) {
       logSafeWarn(`[member-role-change] ${step}: ${Math.round(performance.now() - start)}ms`);
     }
   }
