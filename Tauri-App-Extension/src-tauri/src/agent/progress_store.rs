@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Crash-safe mirror of `ActivityTracker`'s in-memory `task_progress`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -86,9 +86,9 @@ impl StopStore {
 /// True when the last run ended with a timer still open: the progress mirror is cleared when a
 /// session closes cleanly, and the pending-stop file when the server confirms a stop, so a
 /// leftover means the app or the PC went away mid-session. Read before anything starts a tracker.
-pub fn last_run_ended_with_running_timer(progress_path: &PathBuf, stop_path: &PathBuf) -> bool {
-    ProgressStore::new(progress_path.clone()).load().is_some()
-        || StopStore::new(stop_path.clone()).load().is_some()
+pub fn last_run_ended_with_running_timer(progress_path: &Path, stop_path: &Path) -> bool {
+    ProgressStore::new(progress_path.to_path_buf()).load().is_some()
+        || StopStore::new(stop_path.to_path_buf()).load().is_some()
 }
 
 #[cfg(test)]

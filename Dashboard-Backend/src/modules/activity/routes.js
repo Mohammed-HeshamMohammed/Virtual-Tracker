@@ -145,6 +145,7 @@ import { effectiveIdleTimeSeconds } from "../projects/idle-time-limit.service.js
 import { guardIdleRewind } from "./idle-rewind-guard.js";
 import { recordSecurityEvent } from "../../core/metrics.js";
 import { breakSettingsOf } from "../projects/break-time.js";
+import { batchCaptureTime } from "./capture-time.js";
 import { resolveTenantGrantCached } from "../customer-accounts/tenant-grant-cache.js";
 
 async function getMemberTodayWorkStatus(db, memberId, timeZone = null) {
@@ -1161,7 +1162,8 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
 
-      const now = new Date();
+      const serverNow = new Date();
+      const now = batchCaptureTime(body.capturedAtMs, serverNow);
       let count = 0;
       const screenshotWrites = [];
 

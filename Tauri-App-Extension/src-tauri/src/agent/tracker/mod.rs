@@ -508,7 +508,7 @@ impl ActivityTracker {
         }
         *next_flush_at = Instant::now() + Duration::from_secs(QUEUE_FLUSH_INTERVAL_SEC);
         self.queue
-            .flush(|session_id, events| self.api.lock().post_events(session_id, events));
+            .flush(|session_id, events, at| self.api.lock().post_events_at(session_id, events, at));
 
         // Reported after the flush so the connection is as good as it will get.
         // take_dropped clears the count, and a failed report puts it back rather
