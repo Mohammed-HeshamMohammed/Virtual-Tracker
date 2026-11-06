@@ -191,11 +191,22 @@ export async function isSessionAbandoned(session) {
   return Number.isFinite(updatedAt) && Date.now() - updatedAt > SESSION_STALE_MS;
 }
 
+/**
+ * When an abandoned session really ended: its last update, not the moment the sweep noticed
+ * (up to ~5.5 minutes later). Falls back to `now` when there is no usable last update.
+ */
+export function abandonedSessionEndedAt(session, now = new Date()) {
+  if (session?.updated_at == null) return now;
+  const last = new Date(session.updated_at);
+  const ms = last.getTime();
+  return Number.isFinite(ms) && ms <= now.getTime() ? last : now;
+}
+
 export async function closeAbandonedSession(session) {
   const now = new Date();
   await updatePgSession(session.id, {
     status: "stopped",
-    endedAt: now,
+    endedAt: abandonedSessionEndedAt(session, now),
     updatedAt: now,
     stopReason: "abandoned_reap",
     event: { action: "stop", reason: "abandoned_reap", source: "server" },
