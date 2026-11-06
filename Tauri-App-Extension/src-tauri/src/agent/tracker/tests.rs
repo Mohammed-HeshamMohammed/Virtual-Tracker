@@ -1123,7 +1123,7 @@ fn notepad() -> crate::capture::window::ForegroundWindow {
 /// Drains the offline queue, returning how many batches were waiting in it.
 fn queued_batches(tracker: &ActivityTracker) -> usize {
     let mut batches = 0;
-    tracker.queue.flush(|_, _| {
+    tracker.queue.flush(|_, _, _| {
         batches += 1;
         true
     });

@@ -8,6 +8,17 @@ use crate::types::ActivityEvent;
 
 impl ApiClient {
     pub fn post_events(&mut self, session_id: &str, events: &[ActivityEvent]) -> bool {
+        self.post_events_at(session_id, events, None)
+    }
+
+    /// `captured_at_ms` is when a queued batch was captured; the server uses it instead of
+    /// its own clock so an outage does not move events to the moment of the retry.
+    pub fn post_events_at(
+        &mut self,
+        session_id: &str,
+        events: &[ActivityEvent],
+        captured_at_ms: Option<i64>,
+    ) -> bool {
         if self.id_token.is_none() || events.is_empty() {
             return false;
         }
@@ -19,6 +30,7 @@ impl ApiClient {
             "sessionId": session_id,
             "events": events,
             "source": EVENT_SOURCE,
+            "capturedAtMs": captured_at_ms,
         });
         let res = match self
             .client

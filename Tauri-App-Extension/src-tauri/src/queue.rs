@@ -9,10 +9,25 @@ use crate::types::ActivityEvent;
 /// grow this file without bound.
 const MAX_QUEUED_BATCHES: usize = 2000;
 
+/// Screenshots are base64 JPEGs, so 2000 batches can be gigabytes. Past this size on disk the
+/// oldest batches are dropped too (counted, like the batch cap).
+const MAX_QUEUE_BYTES: u64 = 200 * 1024 * 1024;
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct QueuedBatch {
     session_id: String,
     events: Vec<ActivityEvent>,
+    /// When the events were captured (Unix ms), so a batch that waits out an outage is
+    /// recorded at capture time, not at flush time. Absent in batches queued by older builds.
+    #[serde(default)]
+    captured_at_ms: Option<i64>,
 }
 
 /// Disk-backed FIFO for events that failed to upload while offline.
@@ -54,7 +69,7 @@ impl EventQueue {
             return;
         };
         if let Ok(batch) = serde_json::from_str::<QueuedBatch>(text.trim()) {
-            self.enqueue(&batch.session_id, &batch.events);
+            self.enqueue_batch(&batch);
             log::info!("Recovered a batch an earlier run was sending when it stopped");
         }
         let _ = fs::remove_file(&self.inflight_path);
@@ -73,34 +88,46 @@ impl EventQueue {
             return true;
         }
         let _slot = self.inflight_lock.lock();
-        let batch = QueuedBatch { session_id: session_id.to_string(), events: events.to_vec() };
+        let batch = QueuedBatch {
+            session_id: session_id.to_string(),
+            events: events.to_vec(),
+            captured_at_ms: Some(now_ms()),
+        };
         if let Ok(line) = serde_json::to_string(&batch) {
             let _ = fs::write(&self.inflight_path, line);
         }
         let sent = send();
         if !sent {
-            self.enqueue(session_id, events);
+            self.enqueue_batch(&batch);
         }
         let _ = fs::remove_file(&self.inflight_path);
         sent
     }
 
     /// Buffer a batch that failed to upload, for retry once the connection returns.
+    #[cfg(test)]
     pub fn enqueue(&self, session_id: &str, events: &[ActivityEvent]) {
         if events.is_empty() {
             return;
         }
-        let batch = QueuedBatch {
+        self.enqueue_batch(&QueuedBatch {
             session_id: session_id.to_string(),
             events: events.to_vec(),
-        };
-        let Ok(line) = serde_json::to_string(&batch) else {
+            captured_at_ms: Some(now_ms()),
+        });
+    }
+
+    fn enqueue_batch(&self, batch: &QueuedBatch) {
+        let Ok(line) = serde_json::to_string(batch) else {
             return;
         };
         // Only pay for the full-file read+rewrite when the tracked count says trimming
         // might actually be needed - the common case (queue well under the cap) never
         if self.queued_count.load(Ordering::Relaxed) >= MAX_QUEUED_BATCHES {
             self.trim_if_needed();
+        }
+        if fs::metadata(&self.path).map(|m| m.len()).unwrap_or(0) + line.len() as u64 > MAX_QUEUE_BYTES {
+            self.trim_to_size(MAX_QUEUE_BYTES.saturating_sub(line.len() as u64));
         }
         if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&self.path) {
             if writeln!(file, "{line}").is_ok() {
@@ -110,7 +137,7 @@ impl EventQueue {
     }
 
     /// Try to resend every queued batch via `send`.
-    pub fn flush(&self, mut send: impl FnMut(&str, &[ActivityEvent]) -> bool) {
+    pub fn flush(&self, mut send: impl FnMut(&str, &[ActivityEvent], Option<i64>) -> bool) {
         let Ok(file) = File::open(&self.path) else {
             return;
         };
@@ -131,7 +158,7 @@ impl EventQueue {
             };
             // After one failure the rest would only wait out the same timeout while the
             // caller holds the API lock; keep them for the next flush.
-            if !failed && send(&batch.session_id, &batch.events) {
+            if !failed && send(&batch.session_id, &batch.events, batch.captured_at_ms) {
                 flushed += 1;
             } else {
                 failed = true;
@@ -162,6 +189,27 @@ impl EventQueue {
         self.dropped_count.fetch_add(drop_count, Ordering::Relaxed);
         let kept: Vec<String> = lines.into_iter().skip(drop_count).collect();
         self.rewrite(&kept);
+    }
+
+    /// Drops the oldest batches until the file fits in `limit` bytes.
+    fn trim_to_size(&self, limit: u64) {
+        let Ok(file) = File::open(&self.path) else {
+            return;
+        };
+        #[allow(clippy::lines_filter_map_ok)]
+        let lines: Vec<String> = BufReader::new(file).lines().filter_map(Result::ok).collect();
+        let mut total: u64 = lines.iter().map(|l| l.len() as u64 + 1).sum();
+        let mut drop_count = 0;
+        while total > limit && drop_count < lines.len() {
+            total -= lines[drop_count].len() as u64 + 1;
+            drop_count += 1;
+        }
+        if drop_count == 0 {
+            return;
+        }
+        log::warn!("Offline queue over {} MB, dropping {drop_count} oldest batch(es)", MAX_QUEUE_BYTES / 1024 / 1024);
+        self.dropped_count.fetch_add(drop_count, Ordering::Relaxed);
+        self.rewrite(&lines[drop_count..]);
     }
 
     /// Reads and clears the count, so a caller that reports it upstream cannot
@@ -246,7 +294,7 @@ mod tests {
         // The last batch fails to send and stays queued, the two before it succeed and are
         // dropped from the backlog.
         let mut calls = 0u32;
-        queue.flush(|_, _| {
+        queue.flush(|_, _, _| {
             calls += 1;
             calls != 3
         });
@@ -275,6 +323,7 @@ mod tests {
                 serde_json::to_string(&QueuedBatch {
                     session_id: format!("session-{i}"),
                     events: sample_events(),
+                    captured_at_ms: None,
                 })
                 .unwrap()
             })
@@ -301,7 +350,7 @@ mod tests {
         }
 
         let mut attempts = 0u32;
-        queue.flush(|_, _| {
+        queue.flush(|_, _, _| {
             attempts += 1;
             false
         });
@@ -337,6 +386,7 @@ mod tests {
                 serde_json::to_string(&QueuedBatch {
                     session_id: format!("session-{i}"),
                     events: sample_events(),
+                    captured_at_ms: None,
                 })
                 .unwrap()
             })
@@ -373,14 +423,14 @@ mod tests {
         }
 
         let mut seen = Vec::new();
-        queue.flush(|id, _| {
+        queue.flush(|id, _, _| {
             seen.push(id.to_string());
             id != "s2"
         });
         assert_eq!(seen, ["s1", "s2"], "s3 was not tried after s2 failed");
 
         let mut retried = Vec::new();
-        queue.flush(|id, _| {
+        queue.flush(|id, _, _| {
             retried.push(id.to_string());
             true
         });
@@ -402,7 +452,7 @@ mod tests {
         queue.enqueue("after", &sample_events());
 
         let mut seen = Vec::new();
-        queue.flush(|id, _| {
+        queue.flush(|id, _, _| {
             seen.push(id.to_string());
             true
         });
@@ -419,7 +469,7 @@ mod tests {
         queue.enqueue("s1", &sample_events());
         queue.enqueue("s2", &sample_events());
 
-        queue.flush(|_, _| true);
+        queue.flush(|_, _, _| true);
         assert!(!path.exists());
         assert_eq!(queue.queued_count(), 0);
     }
@@ -431,7 +481,7 @@ mod tests {
         let queue = EventQueue::new(path.clone());
         queue.enqueue("s1", &[]);
 
-        queue.flush(|_, _| panic!("nothing was queued, so nothing may be sent"));
+        queue.flush(|_, _, _| panic!("nothing was queued, so nothing may be sent"));
         assert!(!path.exists(), "an empty batch is not written to disk");
     }
 
@@ -475,14 +525,14 @@ mod tests {
     fn a_batch_that_was_being_sent_when_the_app_died_is_queued_by_the_next_start() {
         let path = temp_queue_path("inflight-crash");
         let _ = fs::remove_file(&path);
-        let batch = QueuedBatch { session_id: "session-x".into(), events: sample_events() };
+        let batch = QueuedBatch { session_id: "session-x".into(), events: sample_events(), captured_at_ms: None };
         fs::write(path.with_extension("inflight"), serde_json::to_string(&batch).unwrap()).unwrap();
 
         let queue = EventQueue::new(path.clone());
 
         assert_eq!(queue.queued_count(), 1);
         let mut resent = Vec::new();
-        queue.flush(|id, _| {
+        queue.flush(|id, _, _| {
             resent.push(id.to_string());
             true
         });
@@ -501,6 +551,46 @@ mod tests {
 
         assert_eq!(queue.queued_count(), 0);
         assert!(!path.with_extension("inflight").exists());
+        let _ = fs::remove_file(&path);
+    }
+    // PLAN Q3: a batch that waits out an outage keeps the time it was captured.
+    #[test]
+    fn a_queued_batch_keeps_its_capture_time_through_flush() {
+        let path = temp_queue_path("stamp");
+        let _ = fs::remove_file(&path);
+        let queue = EventQueue::new(path.clone());
+        let before = now_ms();
+        queue.enqueue("s", &sample_events());
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let mut stamp = None;
+        queue.flush(|_, _, at| {
+            stamp = at;
+            true
+        });
+        let at = stamp.expect("a stamp travels with the batch");
+        assert!(at >= before && at < now_ms(), "stamped when queued, not when flushed");
+        let _ = fs::remove_file(&path);
+    }
+
+    // PLAN Q5: the queue is bounded by size, oldest first, and the drops are counted.
+    #[test]
+    fn the_queue_drops_oldest_batches_when_over_its_size_limit() {
+        let path = temp_queue_path("bytes");
+        let _ = fs::remove_file(&path);
+        let queue = EventQueue::new(path.clone());
+        for id in ["a", "b", "c", "d"] {
+            queue.enqueue(id, &sample_events());
+        }
+        let one = fs::metadata(&path).unwrap().len() / 4;
+        queue.trim_to_size(one * 2 + 1);
+        assert_eq!(queue.queued_count(), 2);
+        assert_eq!(queue.take_dropped(), 2);
+        let mut kept = Vec::new();
+        queue.flush(|id, _, _| {
+            kept.push(id.to_string());
+            true
+        });
+        assert_eq!(kept, ["c", "d"], "the newest batches survive");
         let _ = fs::remove_file(&path);
     }
 }
