@@ -6,6 +6,10 @@ use super::*;
 /// A break that could not be ended (offline) is retried this often, not on every tick.
 const BREAK_END_RETRY_SEC: u64 = 15;
 
+/// Shown (and notified) when the session closed without this app asking for it.
+pub(super) const SESSION_ENDED_ELSEWHERE: &str =
+    "Timer stopped — it was ended elsewhere (another device, the dashboard or a limit)";
+
 /// A session this process has never seen, last touched longer ago than this, was left
 /// behind by a run that did not get to stop it (shutdown, power cut, crash). The agent
 /// syncs every SESSION_SYNC_INTERVAL_SEC, so a session an agent just stepped away from
@@ -239,7 +243,13 @@ impl ActivityTracker {
                 return;
             }
             if state.was_active {
-                self.emit_status("Signed in — waiting for timer");
+                // This app did not ask for the stop (a requested one is cleared above), so say
+                // so; the old line looked like a normal sign-in state and left no clue.
+                self.emit_status(if stop_was_requested {
+                    "Signed in — waiting for timer"
+                } else {
+                    SESSION_ENDED_ELSEWHERE
+                });
             }
             self.end_session(state);
             return;
@@ -255,7 +265,11 @@ impl ActivityTracker {
                 return;
             }
             if state.was_active {
-                self.emit_status("Signed in — waiting for timer");
+                self.emit_status(if self.expect_stop.swap(false, Ordering::SeqCst) {
+                    "Signed in — waiting for timer"
+                } else {
+                    SESSION_ENDED_ELSEWHERE
+                });
             }
             self.end_session(state);
             return;
