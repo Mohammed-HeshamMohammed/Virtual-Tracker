@@ -83,9 +83,47 @@ impl StopStore {
     }
 }
 
+/// True when the last run ended with a timer still open: the progress mirror is cleared when a
+/// session closes cleanly, and the pending-stop file when the server confirms a stop, so a
+/// leftover means the app or the PC went away mid-session. Read before anything starts a tracker.
+pub fn last_run_ended_with_running_timer(progress_path: &PathBuf, stop_path: &PathBuf) -> bool {
+    ProgressStore::new(progress_path.clone()).load().is_some()
+        || StopStore::new(stop_path.clone()).load().is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn leftover_progress_or_stop_means_the_timer_was_running() {
+        let progress = std::env::temp_dir().join(format!("vt-r1-progress-{}.json", std::process::id()));
+        let stop = std::env::temp_dir().join(format!("vt-r1-stop-{}.json", std::process::id()));
+        let _ = fs::remove_file(&progress);
+        let _ = fs::remove_file(&stop);
+        assert!(!last_run_ended_with_running_timer(&progress, &stop), "clean exit: nothing left");
+
+        ProgressStore::new(progress.clone()).save(&PersistedProgress {
+            session_id: "s".into(),
+            task_id: None,
+            active_seconds: 5,
+            idle_seconds: 0,
+        });
+        assert!(last_run_ended_with_running_timer(&progress, &stop));
+        ProgressStore::new(progress.clone()).clear();
+
+        StopStore::new(stop.clone()).save(&PersistedStop {
+            session_id: "s".into(),
+            task_id: "t".into(),
+            project_id: "p".into(),
+            active_seconds: 5,
+            idle_seconds: 0,
+            reason: "shutdown".into(),
+        });
+        assert!(last_run_ended_with_running_timer(&progress, &stop));
+        StopStore::new(stop.clone()).clear();
+        assert!(!last_run_ended_with_running_timer(&progress, &stop));
+    }
 
     fn temp_progress_path(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!(

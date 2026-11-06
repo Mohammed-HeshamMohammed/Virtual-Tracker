@@ -339,6 +339,11 @@ pub fn run() {
     let start_hidden = prefs.start_hidden;
     let launch_at_login = prefs.launch_at_login;
     let has_launched_before = prefs.has_launched_before;
+    // Decided: after a restart the timer stays stopped, but the member is told (plan R1).
+    let restart_notice = agent::progress_store::last_run_ended_with_running_timer(
+        &settings.progress_path,
+        &settings.pending_stop_path,
+    );
     let controller = match AgentController::new(settings) {
         Ok(controller) => controller,
         Err(err) => {
@@ -501,6 +506,16 @@ pub fn run() {
             app.deep_link().on_open_url(move |_event| {
                 show_main_window(&deep_link_handle);
             });
+
+            if restart_notice {
+                buzz::show(
+                    app.handle(),
+                    buzz::Buzz::notice(
+                        "Your timer stopped",
+                        "The app or computer restarted while your timer was running. Open the app and press start to keep tracking.",
+                    ),
+                );
+            }
 
             let handle = app.handle().clone();
             let status_controller = Arc::clone(&controller);

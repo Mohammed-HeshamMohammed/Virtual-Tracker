@@ -251,7 +251,7 @@ Fixed, tests un-ignored and passing (lib: 346 passed): **Q2** (`inserted: 0` is 
 **Q4** (flush stops at the first failure and keeps that batch and those behind it, in order),
 **T3** (a stale session is closed with the larger of the server's and its own disk mirror's totals).
 Two older queue tests that encoded "keep trying after a failure" were updated to the new rule.
-Still open: T1, T2, R1, U1-U6, D2/D3, Q3, Q5, T4, Phase 0.
+Done later: R1 (launch notice when the last run left a timer open; no clock time shown, no one-click Start yet). Still open: T1, T2, U1-U6, D2/D3, Q3, Q5, T4, Phase 0.
 
 ## 9. What the app saves locally today (and does not)
 
