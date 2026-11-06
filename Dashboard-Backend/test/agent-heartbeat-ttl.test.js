@@ -81,6 +81,7 @@ const {
   HEARTBEAT_TTL_SEC,
   __resetHeartbeatRedisSupportForTests,
   closeAbandonedSession,
+  abandonedSessionEndedAt,
   getAgentPresence,
   heartbeatGapMs,
   isReportableHeartbeatGap,
@@ -240,4 +241,19 @@ test("closing an abandoned session tells the member it happened", async () => {
   assert.equal(notices[0].memberId, "m1");
   assert.equal(notices[0].kind, "session_reaped");
   assert.equal(notices[0].secondsAffected, 1800);
+});
+
+// PLAN T4: the end of a reaped session is its last update, not the sweep time.
+test("a reaped session ends at its last update, not when the sweep noticed", () => {
+  const now = new Date("2026-11-06T12:00:00Z");
+  const last = "2026-11-06T11:54:30Z";
+  assert.equal(abandonedSessionEndedAt({ updated_at: last }, now).toISOString(), "2026-11-06T11:54:30.000Z");
+  assert.equal(abandonedSessionEndedAt({ updated_at: new Date(last) }, now).toISOString(), "2026-11-06T11:54:30.000Z");
+});
+
+test("a missing, invalid or future last update falls back to now", () => {
+  const now = new Date("2026-11-06T12:00:00Z");
+  for (const bad of [null, undefined, "nope", "2026-11-06T13:00:00Z"]) {
+    assert.equal(abandonedSessionEndedAt({ updated_at: bad }, now), now);
+  }
 });

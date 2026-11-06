@@ -161,18 +161,47 @@ function reset(patch = {}) {
   }, patch);
 }
 
-test("a sync above the member's daily cap returns capped: true", async () => {
-  // This exact assertion is the one the plan calls out as failing today.
-  reset({ daily: 8 }); // 8h daily cap, nothing worked yet in the stub context
+// The agent syncs the task's ALL-TIME figure for the member, and the day's allowance is what is
+// left of today. Those are different numbers; each test below says which one it is moving.
+test("a day with nothing left stops the timer", async () => {
+  reset({ daily: 8, workedToday: 8 * HOUR });
+  const result = await enforceTimerAllowanceOnSync({}, "member-1", { id: "task-1" }, 8 * HOUR, "sync");
+  assert.equal(result.capped, true);
+  assert.equal(result.activeSeconds, 8 * HOUR, "the figure is not rewritten down - the time was worked");
+});
+
+// PLAN D2 - the stop after midnight. Yesterday the member worked a full day on this task, so the
+// all-time figure is already past one day's cap. Today's bucket is empty (it is a new day), so the
+// timer must run; comparing the all-time figure with the daily cap stopped it on the first sync.
+test("D2: a new day starts clean even when the task's all-time total is past one day's cap", async () => {
+  reset({ daily: 8, workedToday: 0 });
+  const result = await enforceTimerAllowanceOnSync({}, "member-1", { id: "task-1" }, 20 * HOUR, "sync");
+  assert.equal(result.capped, false);
+  assert.equal(result.activeSeconds, 20 * HOUR);
+});
+
+test("D2: the same holds for the task's own daily hours", async () => {
+  reset({ workedTodayOnTask: 0 });
   const result = await enforceTimerAllowanceOnSync(
     {},
     "member-1",
-    { id: "task-1" },
-    9 * HOUR, // syncing in 9h against an 8h cap
+    { id: "task-1", duration_hours_per_day: 8, duration_days: 5 }, // 40h estimate, 8h a day
+    20 * HOUR,
+    "sync",
+  );
+  assert.equal(result.capped, false);
+});
+
+test("D2: the task's daily hours still stop the timer once today's are used", async () => {
+  reset({ workedTodayOnTask: 8 * HOUR });
+  const result = await enforceTimerAllowanceOnSync(
+    {},
+    "member-1",
+    { id: "task-1", duration_hours_per_day: 8, duration_days: 5 },
+    28 * HOUR,
     "sync",
   );
   assert.equal(result.capped, true);
-  assert.equal(result.activeSeconds, 8 * HOUR);
 });
 
 test("a sync under the cap is not capped and passes through unchanged", async () => {
@@ -182,20 +211,24 @@ test("a sync under the cap is not capped and passes through unchanged", async ()
   assert.equal(result.activeSeconds, 3 * HOUR);
 });
 
-test("a sync exactly at the cap is not capped (boundary is inclusive of the limit)", async () => {
-  reset({ daily: 8 });
+test("a sync with an hour of the day left is not capped", async () => {
+  reset({ daily: 8, workedToday: 7 * HOUR });
   const result = await enforceTimerAllowanceOnSync({}, "member-1", { id: "task-1" }, 8 * HOUR, "sync");
   assert.equal(result.capped, false);
   assert.equal(result.activeSeconds, 8 * HOUR);
 });
 
-test("the ceiling accounts for time already worked today outside this sync value", async () => {
-  // 8h daily cap, 6h already worked today (per the stub's workedTodaySeconds) -
-  // only 2h of ceiling remains, independent of what this sync reports.
+test("part of a day used leaves the timer running", async () => {
   reset({ daily: 8, workedToday: 6 * HOUR });
   const result = await enforceTimerAllowanceOnSync({}, "member-1", { id: "task-1" }, 5 * HOUR, "sync");
+  assert.equal(result.capped, false);
+  assert.equal(result.activeSeconds, 5 * HOUR);
+});
+
+test("a week with nothing left stops the timer", async () => {
+  reset({ weekly: 40, workedWeek: 40 * HOUR });
+  const result = await enforceTimerAllowanceOnSync({}, "member-1", { id: "task-1" }, 3 * HOUR, "sync");
   assert.equal(result.capped, true);
-  assert.equal(result.activeSeconds, 2 * HOUR);
 });
 
 test("no configured limits means no cap, sync passes through at any value", async () => {
@@ -265,22 +298,22 @@ test("an unshared task ignores other assignees' time entirely (isolation, no reg
   assert.equal(result.activeSeconds, 3.5 * HOUR);
 });
 
-test("a per-person project Hours budget caps a sync independent of the value being checked", async () => {
-  // 3h per-person allotment, this member already spent 2h elsewhere on the
-  // project (per the mocked getProjectTrackedSecondsPg) - 1h of ceiling left.
+test("a per-person project Hours budget with time left does not stop the timer", async () => {
   reset({
     projectBudget: { type: "Hours based", scope: "per_person", cost: 3, include_non_billable_time: true },
     memberProjectSpentSeconds: 2 * HOUR,
   });
-  const result = await enforceTimerAllowanceOnSync(
-    {},
-    "member-1",
-    { id: "task-1", project_id: "proj-1" },
-    2 * HOUR,
-    "sync",
-  );
+  const result = await enforceTimerAllowanceOnSync({}, "member-1", { id: "task-1", project_id: "proj-1" }, 10 * HOUR, "sync");
+  assert.equal(result.capped, false);
+});
+
+test("a per-person project Hours budget that is used up stops the timer", async () => {
+  reset({
+    projectBudget: { type: "Hours based", scope: "per_person", cost: 3, include_non_billable_time: true },
+    memberProjectSpentSeconds: 3 * HOUR,
+  });
+  const result = await enforceTimerAllowanceOnSync({}, "member-1", { id: "task-1", project_id: "proj-1" }, 2 * HOUR, "sync");
   assert.equal(result.capped, true);
-  assert.equal(result.activeSeconds, 1 * HOUR);
 });
 
 test("a shared (per_project) project budget does not affect per-member enforcement", async () => {

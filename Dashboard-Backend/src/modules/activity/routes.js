@@ -114,6 +114,7 @@ import {
   fetchPgUrlLogs,
   fetchPgScreenshotActivityLevels,
   findOpenPgSession,
+  hasRecentReapForMember,
   getPgSessionById,
   insertActivityAppLog,
   insertActivityScreenshot,
@@ -144,6 +145,8 @@ import { effectiveIdleTimeSeconds } from "../projects/idle-time-limit.service.js
 import { guardIdleRewind } from "./idle-rewind-guard.js";
 import { recordSecurityEvent } from "../../core/metrics.js";
 import { breakSettingsOf } from "../projects/break-time.js";
+import { batchCaptureTime } from "./capture-time.js";
+import { dayOffGateApplies } from "./recovery-gate.js";
 import { resolveTenantGrantCached } from "../customer-accounts/tenant-grant-cache.js";
 
 async function getMemberTodayWorkStatus(db, memberId, timeZone = null) {
@@ -800,7 +803,12 @@ export async function routeActivity(req, res, url, origin) {
         if (
           action === "start" &&
           timeSettings?.disable_tracking_specific_days === true &&
-          !(await memberUsesShiftsForLimits(db, member.memberId))
+          !(await memberUsesShiftsForLimits(db, member.memberId)) &&
+          dayOffGateApplies({
+            action,
+            reason: sessionReason,
+            hasRecentReap: sessionReason === "recovered_after_reap" ? await hasRecentReapForMember(member.memberId) : false,
+          })
         ) {
           // The project's calendar when the session is for a project that has one, else
           // the member's own (resolveProjectTimeZone falls back to it).
@@ -1147,7 +1155,8 @@ export async function routeActivity(req, res, url, origin) {
         return true;
       }
 
-      const now = new Date();
+      const serverNow = new Date();
+      const now = batchCaptureTime(body.capturedAtMs, serverNow);
       let count = 0;
       const screenshotWrites = [];
 
