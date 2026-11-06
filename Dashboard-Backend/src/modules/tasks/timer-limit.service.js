@@ -124,6 +124,7 @@ export async function computeMemberTimerAllowance(db, memberId, options = {}) {
 
   return buildAllowanceResult({
     allowedRemainingSeconds: remainders.length > 0 ? Math.min(...remainders) : null,
+    periodRemainingSeconds: remainders.length > 0 ? Math.min(...remainders) : null,
     currentCumulativeActiveSeconds,
     taskDailyCapSeconds: 0,
     memberDailyLimitSeconds: ctx.memberDailyLimitSeconds,
@@ -296,8 +297,11 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
       shiftRemainders.push(memberLimitRemainder);
     }
     const totalRemain = shiftRemainders.length > 0 ? Math.min(...shiftRemainders) : null;
+    const shiftPeriodRemainders = [projectBudgetRemainder, memberLimitRemainder].filter((v) => v != null);
     return buildAllowanceResult({
       allowedRemainingSeconds: totalRemain,
+      taskTotalCeilingSeconds: taskTotalCeiling(totalTaskSeconds, othersActiveSeconds),
+      periodRemainingSeconds: shiftPeriodRemainders.length > 0 ? Math.min(...shiftPeriodRemainders) : null,
       currentCumulativeActiveSeconds,
       taskDailyCapSeconds,
       memberDailyLimitSeconds: 0,
@@ -315,32 +319,36 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
   const effectiveDailyCapSeconds =
     effectiveDailyCapHours > 0 ? Math.floor(effectiveDailyCapHours * 3600) : 0;
 
-  const remainders = [];
+  // What is left of a day, a week or a budget period - already net of the time worked in it,
+  // this session's own included. Kept apart from the task's total estimate, which is a ceiling
+  // on the task's all-time figure: the two cannot be compared with the same number.
+  const periodRemainders = [];
 
   if (effectiveDailyCapSeconds > 0) {
-    remainders.push(Math.max(0, effectiveDailyCapSeconds - workedTodayOnTaskSeconds));
+    periodRemainders.push(Math.max(0, effectiveDailyCapSeconds - workedTodayOnTaskSeconds));
   } else if (taskDailyCapSeconds > 0) {
-    remainders.push(Math.max(0, taskDailyCapSeconds - workedTodayOnTaskSeconds));
+    periodRemainders.push(Math.max(0, taskDailyCapSeconds - workedTodayOnTaskSeconds));
   }
 
   if (memberDailyLimitSeconds > 0) {
-    remainders.push(Math.max(0, memberDailyLimitSeconds - workedTodaySeconds));
+    periodRemainders.push(Math.max(0, memberDailyLimitSeconds - workedTodaySeconds));
   }
 
   if (memberWeeklyLimitSeconds > 0) {
-    remainders.push(Math.max(0, memberWeeklyLimitSeconds - workedWeekSeconds));
-  }
-
-  if (totalTaskSeconds != null && totalTaskSeconds > 0) {
-    remainders.push(Math.max(0, totalTaskSeconds - totalTaskConsumedSeconds));
+    periodRemainders.push(Math.max(0, memberWeeklyLimitSeconds - workedWeekSeconds));
   }
 
   if (projectBudgetRemainder != null) {
-    remainders.push(projectBudgetRemainder);
+    periodRemainders.push(projectBudgetRemainder);
   }
 
   if (memberLimitRemainder != null) {
-    remainders.push(memberLimitRemainder);
+    periodRemainders.push(memberLimitRemainder);
+  }
+
+  const remainders = [...periodRemainders];
+  if (totalTaskSeconds != null && totalTaskSeconds > 0) {
+    remainders.push(Math.max(0, totalTaskSeconds - totalTaskConsumedSeconds));
   }
 
   const allowedRemainingSeconds =
@@ -348,6 +356,8 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
 
   return buildAllowanceResult({
     allowedRemainingSeconds,
+    taskTotalCeilingSeconds: taskTotalCeiling(totalTaskSeconds, othersActiveSeconds),
+    periodRemainingSeconds: periodRemainders.length > 0 ? Math.min(...periodRemainders) : null,
     currentCumulativeActiveSeconds,
     taskDailyCapSeconds: effectiveDailyCapSeconds || taskDailyCapSeconds,
     memberDailyLimitSeconds,
@@ -358,9 +368,17 @@ export async function computeTimerAllowance(db, memberId, task, options = {}) {
   });
 }
 
+/** The task's estimate as a ceiling on this member's own all-time figure, or null when it has none. */
+function taskTotalCeiling(totalTaskSeconds, othersActiveSeconds) {
+  if (totalTaskSeconds == null || !(totalTaskSeconds > 0)) return null;
+  return Math.max(0, totalTaskSeconds - othersActiveSeconds);
+}
+
 function buildAllowanceResult(input) {
   const {
     allowedRemainingSeconds,
+    taskTotalCeilingSeconds = null,
+    periodRemainingSeconds = null,
     currentCumulativeActiveSeconds,
     taskDailyCapSeconds,
     memberDailyLimitSeconds,
@@ -378,6 +396,8 @@ function buildAllowanceResult(input) {
 
   return {
     allowedRemainingSeconds,
+    taskTotalCeilingSeconds,
+    periodRemainingSeconds,
     maxCumulativeActiveSeconds,
     limitReached,
     message: limitReached ? TIMER_LIMIT_REACHED_MESSAGE : "",
@@ -390,6 +410,14 @@ function buildAllowanceResult(input) {
   };
 }
 
+/**
+ * Applies the allowance to a sync. `activeSeconds` is the task's ALL-TIME figure for this
+ * member (the agent baselines on the tracking row), so it can only be held to a limit on the
+ * same footing: the task's own total estimate. A day, week or budget limit is a question of
+ * what is left in that period - answered by the allowance itself - and comparing the all-time
+ * figure with it (as this once did) stopped the timer the first sync of any day after the
+ * member had worked more than one day's cap on the task: the "stops after midnight" bug.
+ */
 export async function enforceTimerAllowanceOnSync(db, memberId, task, activeSeconds, action) {
   const allowance = await computeTimerAllowance(db, memberId, task, {
     currentCumulativeActiveSeconds: activeSeconds,
@@ -401,15 +429,15 @@ export async function enforceTimerAllowanceOnSync(db, memberId, task, activeSeco
     throw err;
   }
 
-  const ceilingAllowance = await computeTimerAllowance(db, memberId, task, {
-    currentCumulativeActiveSeconds: 0,
-  });
-  const ceiling = ceilingAllowance.maxCumulativeActiveSeconds;
-
   let cappedActive = activeSeconds;
   let capped = false;
+  const ceiling = allowance.taskTotalCeilingSeconds;
   if (ceiling != null && activeSeconds > ceiling) {
     cappedActive = ceiling;
+    capped = true;
+  }
+  // Nothing left of today, this week or the budget: stop, without rewriting the figure down.
+  if (allowance.periodRemainingSeconds != null && allowance.periodRemainingSeconds <= 0) {
     capped = true;
   }
 

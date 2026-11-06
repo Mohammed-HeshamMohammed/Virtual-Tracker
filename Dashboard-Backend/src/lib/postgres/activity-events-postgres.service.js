@@ -611,6 +611,22 @@ async function findReapedSessionForRecoveryPg({ memberId, taskId, projectId }) {
     : null;
 }
 
+/**
+ * Whether the server closed one of this member's sessions as abandoned in the last
+ * RECOVERY_WINDOW_MS - the evidence behind an agent's "I'm back" start (recovered_after_reap).
+ */
+export async function hasRecentReapForMember(memberId) {
+  const id = parseProgressUuid(memberId);
+  if (!id) return false;
+  const result = await pgQuery(
+    `SELECT 1 FROM activity_sessions
+     WHERE member_id = $1 AND stop_reason = 'abandoned_reap' AND ended_at >= $2
+     LIMIT 1`,
+    [id, new Date(Date.now() - RECOVERY_WINDOW_MS)],
+  );
+  return (result?.rows?.length ?? 0) > 0;
+}
+
 export async function findOpenPgSession(memberId) {
   const id = parseProgressUuid(memberId);
   if (!id) return null;
