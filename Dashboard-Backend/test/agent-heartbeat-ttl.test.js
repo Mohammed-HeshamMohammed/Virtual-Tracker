@@ -82,6 +82,8 @@ const {
   __resetHeartbeatRedisSupportForTests,
   closeAbandonedSession,
   abandonedSessionEndedAt,
+  isSessionAbandoned,
+  SUSPEND_STALE_MS,
   getAgentPresence,
   heartbeatGapMs,
   isReportableHeartbeatGap,
@@ -256,4 +258,26 @@ test("a missing, invalid or future last update falls back to now", () => {
   for (const bad of [null, undefined, "nope", "2026-11-06T13:00:00Z"]) {
     assert.equal(abandonedSessionEndedAt({ updated_at: bad }, now), now);
   }
+});
+
+// PLAN U3: a session paused because the computer went to sleep is kept longer than the usual 5 minutes.
+const minutesAgo = (m) => new Date(Date.now() - m * 60_000);
+const agentSession = (extra) => ({ source: "agent", status: "active", updated_at: minutesAgo(10), ...extra });
+
+test("an ordinary silent agent session is abandoned after 5 minutes", async () => {
+  assert.equal(await isSessionAbandoned(agentSession({})), true);
+  assert.equal(await isSessionAbandoned(agentSession({ updated_at: minutesAgo(4) })), false);
+});
+
+test("a session paused for the computer's sleep survives a 10-minute sleep, not a very long one", async () => {
+  const asleep = { status: "idle", pause_reason: "system_suspend" };
+  assert.equal(await isSessionAbandoned(agentSession({ ...asleep, updated_at: minutesAgo(10) })), false);
+  assert.equal(await isSessionAbandoned(agentSession({ ...asleep, updated_at: new Date(Date.now() - SUSPEND_STALE_MS - 60_000) })), true);
+});
+
+test("a pause the member made gets no extra time", async () => {
+  assert.equal(
+    await isSessionAbandoned(agentSession({ status: "idle", pause_reason: "member_pause", updated_at: minutesAgo(10) })),
+    true,
+  );
 });

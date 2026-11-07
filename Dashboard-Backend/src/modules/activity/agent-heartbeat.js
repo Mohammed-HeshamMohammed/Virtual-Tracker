@@ -25,6 +25,19 @@ export const HEARTBEAT_TTL_SEC = 60;
 
 const SESSION_STALE_MS = 5 * 60_000;
 
+/**
+ * A session the agent paused because the computer went to sleep (pause_reason system_suspend)
+ * cannot sync while it sleeps. The agent resumes it on waking within 15 minutes, so the server
+ * waits a little longer than that before treating it as abandoned.
+ */
+export const SUSPEND_STALE_MS = 20 * 60_000;
+
+export function staleAfterMs(session) {
+  const asleep =
+    String(session?.status || "").toLowerCase() === "idle" && session?.pause_reason === "system_suspend";
+  return asleep ? SUSPEND_STALE_MS : SESSION_STALE_MS;
+}
+
 function key(memberId) {
   return `agent:heartbeat:${memberId}`;
 }
@@ -188,7 +201,7 @@ export async function isSessionAbandoned(session) {
   if (session.source !== "agent" || (status !== "active" && status !== "idle")) return false;
   if (session.updated_at == null) return false;
   const updatedAt = new Date(session.updated_at).getTime();
-  return Number.isFinite(updatedAt) && Date.now() - updatedAt > SESSION_STALE_MS;
+  return Number.isFinite(updatedAt) && Date.now() - updatedAt > staleAfterMs(session);
 }
 
 /**
