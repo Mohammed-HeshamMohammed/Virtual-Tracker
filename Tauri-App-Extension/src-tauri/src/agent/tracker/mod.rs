@@ -49,6 +49,8 @@ pub struct ActivityTracker {
     stop: Arc<AtomicBool>,
     /// Set by `pause()`/cleared by `resume()` or `note_stop_requested()`.
     paused: Arc<AtomicBool>,
+    /// Set when the computer's sleep paused the timer (not the member), so waking resumes only that.
+    suspend_paused: Arc<AtomicBool>,
     /// The stop is a Break (away from everything: nothing is captured and the project's
     /// break time ends it) rather than a Pause (still at the desk: apps and URLs keep
     /// being recorded, screenshots stop, only the member ends it). Only meaningful while
@@ -205,6 +207,7 @@ impl ActivityTracker {
             on_status,
             stop: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
+            suspend_paused: Arc::new(AtomicBool::new(false)),
             on_break: Arc::new(AtomicBool::new(false)),
             expect_stop: Arc::new(AtomicBool::new(false)),
             session_id: Arc::new(Mutex::new(None)),
@@ -317,6 +320,7 @@ impl ActivityTracker {
     pub fn note_stop_requested(&self) {
         self.expect_stop.store(true, Ordering::SeqCst);
         self.paused.store(false, Ordering::SeqCst);
+        self.suspend_paused.store(false, Ordering::SeqCst);
         self.on_break.store(false, Ordering::SeqCst);
         self.breaks.end();
     }
@@ -353,7 +357,35 @@ impl ActivityTracker {
         Ok(())
     }
 
+    /// The computer is going to sleep: keep the session and pause it, instead of ending it, so a
+    /// short lid close costs nothing. `Ok(true)` when this paused it; `Ok(false)` when there is
+    /// nothing running or the member had already paused (the caller then closes as before).
+    pub fn pause_for_suspend(&self) -> Result<bool, String> {
+        if self.session_id.lock().is_none() || self.is_paused() {
+            return Ok(false);
+        }
+        self.pause_with("system_suspend", false)?;
+        self.suspend_paused.store(true, Ordering::SeqCst);
+        Ok(true)
+    }
+
+    /// The computer woke up: undo only the pause the sleep made.
+    pub fn resume_after_suspend(&self) -> Result<(), String> {
+        if !self.suspend_paused.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        if self.is_paused() {
+            self.resume_with("system_resume")?;
+        }
+        self.suspend_paused.store(false, Ordering::SeqCst);
+        Ok(())
+    }
+
     pub fn resume(&self) -> Result<(), String> {
+        self.resume_with("member_resume")
+    }
+
+    fn resume_with(&self, reason: &str) -> Result<(), String> {
         let (task_id, active_seconds, idle_seconds) = self.task_progress.lock().clone();
         let task_id = task_id.filter(|id| !id.is_empty());
         // Same reasoning as pause() above.
@@ -365,7 +397,7 @@ impl ActivityTracker {
             active_seconds,
             idle_seconds,
             None,
-            Some("member_resume"),
+            Some(reason),
         )?;
         self.paused.store(false, Ordering::SeqCst);
         self.on_break.store(false, Ordering::SeqCst);

@@ -7,7 +7,7 @@
 
 use std::sync::{Arc, OnceLock};
 
-/// Called on the watcher's own thread with `"suspend"` or `"shutdown"`. It has only a few
+/// Called on the watcher's own thread with `"suspend"`, `"resume"` or `"shutdown"`. It has only a few
 /// seconds before Windows moves on, so it should do one quick thing.
 pub type PowerCallback = Arc<dyn Fn(&'static str) + Send + Sync>;
 
@@ -30,9 +30,13 @@ pub fn reason_for(message: u32, wparam: usize) -> Option<&'static str> {
     const WM_POWERBROADCAST: u32 = 0x0218;
     const WM_ENDSESSION: u32 = 0x0016;
     const PBT_APMSUSPEND: usize = 0x0004;
+    const PBT_APMRESUMESUSPEND: usize = 0x0007;
+    const PBT_APMRESUMEAUTOMATIC: usize = 0x0012;
     match message {
         // Sleep or hibernate is about to happen.
         WM_POWERBROADCAST if wparam == PBT_APMSUSPEND => Some("suspend"),
+        // The computer is awake again (Windows sends one or both of these).
+        WM_POWERBROADCAST if wparam == PBT_APMRESUMESUSPEND || wparam == PBT_APMRESUMEAUTOMATIC => Some("resume"),
         // wparam is whether the session really is ending; a cancelled shutdown sends false.
         WM_ENDSESSION if wparam != 0 => Some("shutdown"),
         _ => None,
@@ -106,15 +110,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sleep_and_a_real_shutdown_stop_the_session() {
+    fn sleep_and_a_real_shutdown_are_heard() {
         assert_eq!(reason_for(0x0218, 0x0004), Some("suspend"));
         assert_eq!(reason_for(0x0016, 1), Some("shutdown"));
     }
 
     #[test]
-    fn a_cancelled_shutdown_and_a_resume_do_not() {
+    fn waking_is_heard_as_a_resume_and_a_cancelled_shutdown_is_not_heard() {
         assert_eq!(reason_for(0x0016, 0), None);
-        assert_eq!(reason_for(0x0218, 0x0012), None, "resume-automatic is not a stop");
+        assert_eq!(reason_for(0x0218, 0x0012), Some("resume"));
+        assert_eq!(reason_for(0x0218, 0x0007), Some("resume"));
         assert_eq!(reason_for(0x0001, 0x0004), None);
     }
 }

@@ -290,3 +290,16 @@ success (write-ahead), so a crash or a dead network at any moment loses nothing.
   failed send queued once; crash leftover recovered; damaged leftover discarded.
 - **Still open:** the restart notice (R1) and the "last stop" record (Phase 0 item 3), T4, Q3, Q5,
   U1-U4/U6, D2/D3. Not verified on a real shutdown or power cut; only the logic is tested.
+
+## 10. U3 - sleep and lid close (done)
+
+Sleep used to end the session (`system_suspend` stop), so even a short lid close left the timer stopped.
+Now: on sleep the agent pauses the session (`idle`, reason `system_suspend`) and keeps its totals; on
+waking (`PBT_APMRESUMESUSPEND` / `PBT_APMRESUMEAUTOMATIC`) it resumes the same session (`system_resume`),
+retrying for a minute while the network comes back. A sleep longer than 15 minutes, a shutdown, a pause the
+member made, or a pause the server cannot be told about still closes the session as before, and a long
+sleep says so ("Timer stopped - the computer was asleep too long", also a desktop notice). The server
+keeps a sleep-paused session for 20 minutes instead of 5 before reaping it, so the resume finds it open.
+Time asleep is not counted (the awake clock). Not verified on a real laptop: only the logic is tested.
+The 15-minute grace is my choice, not a measured one.
+
