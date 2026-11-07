@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use parking_lot::Mutex;
 
@@ -39,7 +39,14 @@ pub struct AgentController {
     activity: Arc<ActivityMeter>,
     /// Consecutive failed connection checks.
     connection_failures: Arc<AtomicU32>,
+    /// When the computer went to sleep with the timer paused for it (wall clock: a monotonic
+    /// clock may not count the time asleep).
+    suspended_at: Mutex<Option<SystemTime>>,
 }
+
+/// A sleep up to this long is a pause; a longer one ends the session on waking. The server keeps a
+/// sleep-paused session open slightly longer (agent-heartbeat.js SUSPEND_STALE_MS).
+pub const SUSPEND_GRACE: Duration = Duration::from_secs(15 * 60);
 
 mod api;
 mod auth;
@@ -85,6 +92,7 @@ impl AgentController {
             live_sync_listeners,
             activity,
             connection_failures: Arc::new(AtomicU32::new(0)),
+            suspended_at: Mutex::new(None),
         }))
     }
 
@@ -124,6 +132,56 @@ impl AgentController {
                 }
             }),
         );
+    }
+
+    /// Routes what the power watcher heard. Sleep pauses the timer and waking brings it back (when
+    /// it was a short sleep); shutdown closes the session.
+    pub fn on_power(self: &Arc<Self>, reason: &'static str) {
+        match reason {
+            "suspend" => self.suspend_for_power(),
+            "resume" => self.resume_from_power(),
+            other => self.stop_for_power(other),
+        }
+    }
+
+    fn suspend_for_power(&self) {
+        let Some(tracker) = self.current_tracker() else {
+            return;
+        };
+        match tracker.pause_for_suspend() {
+            Ok(true) => *self.suspended_at.lock() = Some(SystemTime::now()),
+            // Nothing running, or the member had paused it: end it as sleep always did.
+            Ok(false) => self.stop_for_power("suspend"),
+            Err(error) => {
+                // The server cannot be told right now; close with the saved copy instead of leaving it open.
+                log::warn!("could not pause for sleep ({error}); closing the session instead");
+                self.stop_for_power("suspend");
+            }
+        }
+    }
+
+    fn resume_from_power(self: &Arc<Self>) {
+        let Some(slept_from) = self.suspended_at.lock().take() else {
+            return;
+        };
+        let slept = SystemTime::now().duration_since(slept_from).unwrap_or_default();
+        let controller = Arc::clone(self);
+        let _ = thread::Builder::new().name("vt-resume-from-sleep".into()).spawn(move || {
+            if slept <= SUSPEND_GRACE {
+                // The network is often not back for the first seconds after waking.
+                for _ in 0..12 {
+                    let Some(tracker) = controller.current_tracker() else {
+                        return;
+                    };
+                    if tracker.resume_after_suspend().is_ok() {
+                        return;
+                    }
+                    thread::sleep(Duration::from_secs(5));
+                }
+            }
+            controller.stop_for_power("suspend");
+            controller.on_status_changed("Timer stopped — the computer was asleep too long".to_string());
+        });
     }
 
     /// The computer is going to sleep or shutting down: close the session now, with its

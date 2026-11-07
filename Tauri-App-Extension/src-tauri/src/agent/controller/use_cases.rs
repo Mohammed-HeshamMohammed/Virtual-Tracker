@@ -279,6 +279,87 @@ fn the_computer_sleeping_closes_the_session_and_clears_a_pause() {
     assert!(!controller.is_session_paused(), "waking must not show a stale pause");
 }
 
+// PLAN U3: a short sleep (a lid closed for a moment) pauses the timer and waking resumes it; only a
+// long sleep, a shutdown or a pause the member made still ends the session.
+#[test]
+fn a_short_sleep_pauses_the_timer_and_waking_resumes_the_same_session() {
+    let (url, seen) = backend(Notice::Acknowledged);
+    let controller = mid_session(url);
+
+    controller.on_power("suspend");
+    {
+        let posts = session_posts(&seen);
+        assert_eq!(posts.last().unwrap()["action"], "idle", "paused, not stopped");
+        assert_eq!(posts.last().unwrap()["reason"], "system_suspend");
+        assert_eq!(posts.last().unwrap()["activeSeconds"], 400, "totals kept");
+    }
+    assert!(controller.is_session_paused());
+
+    controller.on_power("resume");
+    let tracker = controller.current_tracker().unwrap();
+    for _ in 0..100 {
+        if !tracker.is_paused() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let posts = session_posts(&seen);
+    assert_eq!(posts.last().unwrap()["action"], "resume");
+    assert_eq!(posts.last().unwrap()["reason"], "system_resume");
+    assert!(!tracker.is_paused());
+    assert!(tracker.current_session_id().is_some(), "the same session is still open");
+    assert!(!posts.iter().any(|p| p["action"] == "stop"), "nothing ended it");
+}
+
+#[test]
+fn a_member_pause_is_not_resumed_by_waking_it_is_ended_by_sleeping_as_before() {
+    let (url, seen) = backend(Notice::Acknowledged);
+    let controller = mid_session(url);
+    assert!(controller.pause_session().success);
+
+    controller.on_power("suspend");
+
+    let stop = session_posts(&seen).pop().unwrap();
+    assert_eq!(stop["action"], "stop");
+    assert_eq!(stop["reason"], "system_suspend");
+    controller.on_power("resume");
+    assert!(controller.suspended_at.lock().is_none());
+}
+
+#[test]
+fn a_shutdown_still_closes_the_session() {
+    let (url, seen) = backend(Notice::Acknowledged);
+    let controller = mid_session(url);
+
+    controller.on_power("shutdown");
+
+    let stop = session_posts(&seen).pop().unwrap();
+    assert_eq!(stop["action"], "stop");
+    assert_eq!(stop["reason"], "system_shutdown");
+}
+
+#[test]
+fn a_sleep_longer_than_the_grace_ends_the_session_on_waking() {
+    let (url, seen) = backend(Notice::Acknowledged);
+    let controller = mid_session(url);
+    controller.on_power("suspend");
+    // Pretend the computer has been asleep for longer than the grace.
+    *controller.suspended_at.lock() =
+        Some(std::time::SystemTime::now() - super::SUSPEND_GRACE - std::time::Duration::from_secs(60));
+
+    controller.on_power("resume");
+    for _ in 0..100 {
+        if session_posts(&seen).iter().any(|p| p["action"] == "stop") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    let stop = session_posts(&seen).into_iter().find(|p| p["action"] == "stop").expect("the session was closed");
+    assert_eq!(stop["reason"], "system_suspend");
+    assert!(controller.status().starts_with("Timer stopped"), "{}", controller.status());
+}
+
 // --- Signing in ---------------------------------------------------------------------
 
 #[test]

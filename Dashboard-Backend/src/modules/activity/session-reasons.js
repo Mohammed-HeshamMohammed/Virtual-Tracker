@@ -17,6 +17,7 @@ export const SESSION_REASON_LABELS = Object.freeze({
   member_pause: "Paused by the member (at their desk)",
   member_break: "Break taken by the member (away)",
   system_suspend: "Computer went to sleep",
+  system_resume: "Computer woke up",
   system_shutdown: "Computer shut down or restarted",
   stale_session_closed: "Closed on start: the agent had been gone",
   member_stop: "Stopped by the member",

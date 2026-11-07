@@ -358,7 +358,7 @@ pub fn run() {
     // Sleep and shutdown do not ask this process to exit, so they are heard separately and
     // close the session before the computer goes away.
     let power_controller = Arc::clone(&controller);
-    power_events::watch(Arc::new(move |reason| power_controller.stop_for_power(reason)));
+    power_events::watch(Arc::new(move |reason| power_controller.on_power(reason)));
     // Same reason: the global-shortcut handler below is registered as part of the plugin
     // chain, before `.setup()` runs.
     let shortcut_controller = Arc::clone(&controller);
