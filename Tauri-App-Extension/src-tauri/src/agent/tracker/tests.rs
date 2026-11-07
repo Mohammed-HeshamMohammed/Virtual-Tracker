@@ -1307,6 +1307,54 @@ fn a_stop_left_behind_waits_when_the_server_cannot_be_asked() {
     assert!(on_disk.load().is_some(), "kept for the next try");
 }
 
+// PLAN U4/U6: a session the server (or another device) ended under a running timer is
+// announced as such, not as a normal "waiting for timer" state.
+#[test]
+fn a_session_ended_elsewhere_under_a_running_timer_says_so() {
+    let seen = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+    let sink = std::sync::Arc::clone(&seen);
+    let url = session_test_server(r#"{"data": {"id": "sess-1", "status": "stopped"}}"#);
+    let mut api = ApiClient::new(url.clone(), "http://127.0.0.1:1".into()).unwrap();
+    api.set_tokens(&fake_jwt(3600), "refresh-token");
+    let tracker = ActivityTracker::new(
+        std::sync::Arc::new(Mutex::new(api)),
+        &test_settings(url),
+        ActivityMeter::new(),
+        Some(std::sync::Arc::new(move |text| sink.lock().push(text))),
+    );
+    let mut state = TickState::new();
+    state.was_active = true;
+    state.current_session = "sess-1".to_string();
+
+    tracker.tick(&mut state);
+
+    assert_eq!(seen.lock().last().map(String::as_str), Some(super::tick::SESSION_ENDED_ELSEWHERE));
+    assert!(!state.was_active);
+}
+
+#[test]
+fn a_stop_the_member_asked_for_is_not_reported_as_ended_elsewhere() {
+    let seen = std::sync::Arc::new(Mutex::new(Vec::<String>::new()));
+    let sink = std::sync::Arc::clone(&seen);
+    let url = session_test_server(r#"{"data": {"id": "sess-1", "status": "stopped"}}"#);
+    let mut api = ApiClient::new(url.clone(), "http://127.0.0.1:1".into()).unwrap();
+    api.set_tokens(&fake_jwt(3600), "refresh-token");
+    let tracker = ActivityTracker::new(
+        std::sync::Arc::new(Mutex::new(api)),
+        &test_settings(url),
+        ActivityMeter::new(),
+        Some(std::sync::Arc::new(move |text| sink.lock().push(text))),
+    );
+    tracker.expect_stop.store(true, AtomicOrdering::SeqCst);
+    let mut state = TickState::new();
+    state.was_active = true;
+    state.current_session = "sess-1".to_string();
+
+    tracker.tick(&mut state);
+
+    assert_eq!(seen.lock().last().map(String::as_str), Some("Signed in — waiting for timer"));
+}
+
 // PLAN U2/U5: a stop the server keeps refusing must not freeze the tracker for ever.
 #[test]
 fn a_stop_that_is_never_delivered_stops_blocking_the_tracker_but_stays_saved() {

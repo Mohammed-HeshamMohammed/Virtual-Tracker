@@ -522,6 +522,12 @@ pub fn run() {
             status_controller.add_status_listener(Arc::new(move |text| {
                 // A break ending on its own (its time ran out, or a private break expired) is
                 // announced the way a buzz is - on the desktop, not only inside the window.
+                // A stop the member did not just ask for (no input, a limit, another device
+                // or the server) must not pass as a status line that vanishes: it is also a
+                // desktop notice, so "why did my timer stop?" has an answer afterwards.
+                if text.starts_with("Timer stopped") {
+                    buzz::show(&handle, buzz::Buzz::notice("Your timer stopped", &text));
+                }
                 if text.starts_with("Break ended") {
                     buzz::show(
                         &handle,
