@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -71,6 +71,8 @@ pub struct ActivityTracker {
     idle_stop: Arc<Mutex<Option<crate::types::IdleStopInfo>>>,
     /// An idle-escalation "stop" that hasn't reached the server yet.
     pending_stop: Arc<Mutex<Option<PendingStop>>>,
+    /// Consecutive failed deliveries of `pending_stop`; see `PENDING_STOP_GIVE_UP_TICKS`.
+    pending_stop_failures: AtomicU32,
     /// AC-1: throttle for the synthetic-input warning below - a jiggler runs continuously,
     /// so without this the same detection would log every SESSION_POLL_SEC forever instead
     last_synthetic_warning_at: Mutex<Option<Instant>>,
@@ -226,6 +228,7 @@ impl ActivityTracker {
                     from_disk: true,
                 }),
             )),
+            pending_stop_failures: AtomicU32::new(0),
             last_synthetic_warning_at: Mutex::new(None),
             idle_threshold_sec: AtomicU64::new(IDLE_THRESHOLD_SEC),
             breaks: Default::default(),
