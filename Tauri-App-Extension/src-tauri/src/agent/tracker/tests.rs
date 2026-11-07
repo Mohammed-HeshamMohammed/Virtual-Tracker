@@ -1354,3 +1354,40 @@ fn a_stop_the_member_asked_for_is_not_reported_as_ended_elsewhere() {
 
     assert_eq!(seen.lock().last().map(String::as_str), Some("Signed in — waiting for timer"));
 }
+
+// PLAN U2/U5: a stop the server keeps refusing must not freeze the tracker for ever.
+#[test]
+fn a_stop_that_is_never_delivered_stops_blocking_the_tracker_but_stays_saved() {
+    let url = fake_server(|_| (500, "{}".to_string()));
+    let settings = test_settings(url);
+    let on_disk = crate::agent::progress_store::StopStore::new(settings.pending_stop_path.clone());
+    let tracker = test_tracker_in(settings);
+    let stop = crate::agent::progress_store::PersistedStop {
+        session_id: "sess-1".into(),
+        task_id: "task-1".into(),
+        project_id: String::new(),
+        active_seconds: 120,
+        idle_seconds: 30,
+        reason: "idle_escalation".into(),
+    };
+    on_disk.save(&stop);
+    *tracker.pending_stop.lock() = Some(PendingStop {
+        session_id: stop.session_id.clone(),
+        task_id: stop.task_id.clone(),
+        project_id: String::new(),
+        active_seconds: 120,
+        idle_seconds: 30,
+        reason: stop.reason.clone(),
+        from_disk: false,
+    });
+    let mut state = TickState::new();
+
+    for _ in 0..(super::tick::PENDING_STOP_GIVE_UP_TICKS - 1) {
+        tracker.tick(&mut state);
+        assert!(tracker.pending_stop.lock().is_some(), "still retrying before the limit");
+    }
+    tracker.tick(&mut state);
+
+    assert!(tracker.pending_stop.lock().is_none(), "the tracker is no longer held up by it");
+    assert_eq!(on_disk.load().map(|s| s.reason), Some("idle_escalation".into()), "but the stop is still saved");
+}

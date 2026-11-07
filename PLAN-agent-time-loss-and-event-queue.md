@@ -303,3 +303,13 @@ keeps a sleep-paused session for 20 minutes instead of 5 before reaping it, so t
 Time asleep is not counted (the awake clock). Not verified on a real laptop: only the logic is tested.
 The 15-minute grace is my choice, not a measured one.
 
+## 11. U2 / U5 - a stop that never lands froze the tracker (done)
+
+U5's wrong reason on retry was already fixed (a pending stop carries its own reason, in memory and on
+disk), and U2's flush stall was fixed with Q4. What was left: while a stop is pending the tick does nothing
+else, and nothing ever ended that wait. A stop the server kept refusing (or an outage longer than the
+server's own 5-minute close) left the tracker frozen until the app was restarted. Now after 60 ticks
+(about 5 minutes) the tracker stops waiting on it and carries on; the stop stays in `pending-stop.json`
+and is delivered at the next start (after checking the session is still the one it was for). Tested with a
+server that always answers 500.
+

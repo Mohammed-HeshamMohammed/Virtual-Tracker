@@ -6,6 +6,10 @@ use super::*;
 /// A break that could not be ended (offline) is retried this often, not on every tick.
 const BREAK_END_RETRY_SEC: u64 = 15;
 
+/// Ticks (5 s each) a stop is retried before the tracker stops waiting on it: about the 5 minutes
+/// after which the server closes a silent session by itself.
+pub(super) const PENDING_STOP_GIVE_UP_TICKS: u32 = 60;
+
 /// Shown (and notified) when the session closed without this app asking for it.
 pub(super) const SESSION_ENDED_ELSEWHERE: &str =
     "Timer stopped — it was ended elsewhere (another device, the dashboard or a limit)";
@@ -196,10 +200,23 @@ impl ActivityTracker {
         self.maybe_refresh_display_names(&mut state.next_display_name_refresh_at);
         self.maybe_refresh_activity_scoring(&mut state.next_scoring_refresh_at);
 
-        // Retry an idle-stop that hasn't landed yet, and do nothing else this tick.
+        // Retry an idle-stop that hasn't landed yet, and do nothing else this tick - but not for
+        // ever: a stop the server keeps refusing (or an outage that outlasts the server's own
+        // 5-minute close) must not leave the tracker frozen. The stop stays on disk, where the
+        // next start delivers it after checking the session is still the one it was for.
         if self.pending_stop.lock().is_some() {
-            self.try_deliver_pending_stop();
-            return;
+            if self.try_deliver_pending_stop() {
+                self.pending_stop_failures.store(0, Ordering::Relaxed);
+            } else if self.pending_stop_failures.fetch_add(1, Ordering::Relaxed) + 1 >= PENDING_STOP_GIVE_UP_TICKS {
+                log::warn!("A stop could not be delivered for {PENDING_STOP_GIVE_UP_TICKS} ticks - tracking carries on; the stop stays saved for the next start");
+                *self.pending_stop.lock() = None;
+                self.pending_stop_failures.store(0, Ordering::Relaxed);
+            } else {
+                return;
+            }
+            if self.pending_stop.lock().is_some() {
+                return;
+            }
         }
 
         // Break in progress: skip fetch_session/status handling entirely so the server's
