@@ -148,6 +148,7 @@ fn a_stale_session_is_closed_with_the_larger_of_the_server_and_the_disk_mirror()
     let (url, bodies) = body_recording_server(stale);
     let tracker = test_tracker(url);
     tracker.progress.save(&super::PersistedProgress {
+        project_id: None,
         session_id: "sess-1".into(),
         task_id: Some("task-1".into()),
         active_seconds: 518,
@@ -171,6 +172,7 @@ fn a_disk_mirror_from_another_session_is_not_used_to_close_a_stale_one() {
     let (url, bodies) = body_recording_server(stale);
     let tracker = test_tracker(url);
     tracker.progress.save(&super::PersistedProgress {
+        project_id: None,
         session_id: "an-older-session".into(),
         task_id: Some("task-1".into()),
         active_seconds: 9000,

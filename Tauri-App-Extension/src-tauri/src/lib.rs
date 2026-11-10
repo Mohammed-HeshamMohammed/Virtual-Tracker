@@ -340,10 +340,8 @@ pub fn run() {
     let launch_at_login = prefs.launch_at_login;
     let has_launched_before = prefs.has_launched_before;
     // Decided: after a restart the timer stays stopped, but the member is told (plan R1).
-    let restart_notice = agent::progress_store::last_run_ended_with_running_timer(
-        &settings.progress_path,
-        &settings.pending_stop_path,
-    );
+    let restart_notice =
+        agent::progress_store::unclean_exit_notice(&settings.progress_path, &settings.pending_stop_path);
     let controller = match AgentController::new(settings) {
         Ok(controller) => controller,
         Err(err) => {
@@ -353,6 +351,7 @@ pub fn run() {
         }
     };
 
+    controller.set_restart_notice(restart_notice.clone());
     // Taken before `.setup()` moves `controller` wholesale into its closure.
     let exit_controller = Arc::clone(&controller);
     // Sleep and shutdown do not ask this process to exit, so they are heard separately and
@@ -471,6 +470,8 @@ pub fn run() {
             commands::insights::get_monitoring_notice,
             commands::insights::acknowledge_monitoring_notice,
             commands::work::start_project_session,
+            commands::work::get_restart_notice,
+            commands::work::dismiss_restart_notice,
             commands::app_info::get_connection_state,
             commands::app_info::reconnect,
             commands::work::stop_session,
@@ -507,7 +508,7 @@ pub fn run() {
                 show_main_window(&deep_link_handle);
             });
 
-            if restart_notice {
+            if restart_notice.is_some() {
                 buzz::show(
                     app.handle(),
                     buzz::Buzz::notice(

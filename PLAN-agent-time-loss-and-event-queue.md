@@ -325,6 +325,8 @@ server that always answers 500.
 - **D4 - one straggler fixed.** The decisions that matter (day-off gate, allowance, caps, the workspace for
   a project) already use the project's calendar. The project app breakdown still cut "this week" in the
   member's own zone while the data is cut per project; it now uses the project's zone too.
-- **Still open: the restart notice's stop time and its one-click Start.** The notice says the timer stopped but
-  not when, and starting again is a manual step. Both need app UI work, not done.
-
+- **Restart notice - done.** The launch notice (R1) now also feeds an in-app banner: "Your timer stopped at
+  14:05" (the time is the tracker's last write, formatted by the screen in the member's own clock), with
+  **Start again** on the same task, or the same project for a task-less session, and **Dismiss**. It
+  disappears by itself if the timer is started another way. Progress files from older builds still load
+  (no project, so no Start button for a task-less session until the next run). Not run in the real app window.
