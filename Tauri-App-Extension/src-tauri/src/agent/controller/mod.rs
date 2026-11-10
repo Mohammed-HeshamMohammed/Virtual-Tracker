@@ -42,6 +42,8 @@ pub struct AgentController {
     /// When the computer went to sleep with the timer paused for it (wall clock: a monotonic
     /// clock may not count the time asleep).
     suspended_at: Mutex<Option<SystemTime>>,
+    /// Set at launch when the last run ended with a timer still open; the screen shows it until dismissed.
+    restart_notice: Mutex<Option<crate::agent::progress_store::RestartNotice>>,
 }
 
 /// A sleep up to this long is a pause; a longer one ends the session on waking. The server keeps a
@@ -93,7 +95,20 @@ impl AgentController {
             activity,
             connection_failures: Arc::new(AtomicU32::new(0)),
             suspended_at: Mutex::new(None),
+            restart_notice: Mutex::new(None),
         }))
+    }
+
+    pub fn set_restart_notice(&self, notice: Option<crate::agent::progress_store::RestartNotice>) {
+        *self.restart_notice.lock() = notice;
+    }
+
+    pub fn restart_notice(&self) -> Option<crate::agent::progress_store::RestartNotice> {
+        self.restart_notice.lock().clone()
+    }
+
+    pub fn dismiss_restart_notice(&self) {
+        *self.restart_notice.lock() = None;
     }
 
     pub fn add_status_listener(&self, listener: StatusCallback) {

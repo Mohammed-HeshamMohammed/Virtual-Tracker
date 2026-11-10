@@ -21,6 +21,7 @@ import type {
   LayoutKind,
   WindowLayout,
   ActionResult,
+  RestartNotice,
   AgentTask,
   AgentNotification,
   AgentNotificationList,
@@ -88,6 +89,7 @@ import { WelcomeBackPanel } from "./components/views/WelcomeBackPanel";
 import { MonitoringNoticePanel } from "./components/views/MonitoringNoticePanel";
 import { PrivacyPanel } from "./components/views/PrivacyPanel";
 import { CaptureBanner } from "./components/common/CaptureBanner";
+import { RestartNoticeBanner } from "./components/common/RestartNoticeBanner";
 import { useCaptureStatus } from "./hooks/useCaptureStatus";
 import { SignInPanel } from "./components/views/SignInPanel";
 import { EMPTY_IMAGE_CACHE, putImage, type ImageCache } from "./utils/image-cache";
@@ -507,6 +509,21 @@ function MainApp() {
   const signedIn = Boolean(profile?.signedIn);
   const { status: captureStatus, refresh: refreshCaptureStatus } = useCaptureStatus(signedIn);
   const [endingBreak, setEndingBreak] = useState(false);
+
+  // Left by a run that ended with the timer open (restart, shutdown, crash): told once, with a
+  // one-click way back to the same work.
+  const [restartNotice, setRestartNotice] = useState<RestartNotice | null>(null);
+  const [startingAgain, setStartingAgain] = useState(false);
+  useEffect(() => {
+    if (!signedIn) return;
+    void invoke<RestartNotice | null>("get_restart_notice")
+      .then((notice) => setRestartNotice(notice ?? null))
+      .catch(() => undefined);
+  }, [signedIn]);
+  const dismissRestartNotice = useCallback(() => {
+    setRestartNotice(null);
+    void invoke("dismiss_restart_notice").catch(() => undefined);
+  }, []);
   const endBreak = useCallback(async () => {
     setEndingBreak(true);
     try {
@@ -1478,6 +1495,34 @@ function MainApp() {
       void notify("Connection restored", "Back online — your time is syncing again.");
     }
   }, [connection]);
+
+  // Started again some other way: the message has done its job.
+  useEffect(() => {
+    if (sessionOpen && restartNotice) dismissRestartNotice();
+  }, [sessionOpen, restartNotice, dismissRestartNotice]);
+
+  const startAgainAfterRestart = useCallback(async () => {
+    if (!restartNotice) return;
+    setStartingAgain(true);
+    try {
+      const result = restartNotice.taskId
+        ? await invoke<ActionResult>("start_task_session", { taskId: restartNotice.taskId })
+        : restartNotice.projectId
+          ? await invoke<ActionResult>("start_project_session", { projectId: restartNotice.projectId })
+          : null;
+      if (result && !result.success) {
+        toast.error(result.error || "Could not start session");
+        return;
+      }
+      if (result?.session) setSession(result.session);
+      dismissRestartNotice();
+      await refresh();
+    } catch {
+      toast.error("Could not start session");
+    } finally {
+      setStartingAgain(false);
+    }
+  }, [restartNotice, dismissRestartNotice, refresh]);
 
   const neverStartedSinceRef = useRef<number | null>(null);
   const neverStartedNotifiedRef = useRef(false);
@@ -2562,6 +2607,15 @@ function MainApp() {
             )}
           </div>
         </div>
+      ) : null}
+
+      {signedIn && restartNotice && !sessionOpen ? (
+        <RestartNoticeBanner
+          notice={restartNotice}
+          busy={startingAgain}
+          onStartAgain={() => void startAgainAfterRestart()}
+          onDismiss={dismissRestartNotice}
+        />
       ) : null}
 
       {signedIn ? (

@@ -115,6 +115,14 @@ export type CreateTaskResult = {
   selfAssigned: boolean;
 };
 
+/** The last run ended with a timer still open (restart, shutdown, crash, update). */
+export type RestartNotice = {
+  /** Unix ms of the tracker's last write - within seconds of when it stopped. */
+  stoppedAtMs: number;
+  taskId: string | null;
+  projectId: string | null;
+};
+
 export type IdleStopInfo = {
   /** How long there had been no mouse or keyboard input. */
   idleSeconds: number;

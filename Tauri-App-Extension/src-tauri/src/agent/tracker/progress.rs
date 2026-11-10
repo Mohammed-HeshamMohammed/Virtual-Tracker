@@ -86,6 +86,7 @@ impl ActivityTracker {
             self.progress.save(&PersistedProgress {
                 session_id,
                 task_id: id,
+                project_id: Some(self.last_project_id.lock().clone()).filter(|p| !p.is_empty()),
                 active_seconds,
                 idle_seconds,
             });

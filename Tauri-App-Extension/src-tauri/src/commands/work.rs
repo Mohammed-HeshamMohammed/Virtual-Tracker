@@ -142,6 +142,17 @@ pub async fn get_project_budget_status(
     Ok(run_blocking(move || controller.get_project_budget_status(&project_id)).await)
 }
 
+/// The notice shown after a restart stopped a running timer, until the member dismisses it.
+#[tauri::command]
+pub fn get_restart_notice(state: tauri::State<'_, AppState>) -> Option<crate::agent::progress_store::RestartNotice> {
+    state.controller.restart_notice()
+}
+
+#[tauri::command]
+pub fn dismiss_restart_notice(state: tauri::State<'_, AppState>) {
+    state.controller.dismiss_restart_notice();
+}
+
 #[tauri::command]
 pub async fn start_task_session(state: tauri::State<'_, AppState>, task_id: String) -> Result<ActionResult, String> {
     let controller = Arc::clone(&state.controller);
