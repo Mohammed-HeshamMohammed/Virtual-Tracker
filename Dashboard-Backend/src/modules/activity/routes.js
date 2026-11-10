@@ -592,7 +592,8 @@ export async function routeActivity(req, res, url, origin) {
         sendJson(res, origin, 404, { success: false, error: "Member not found" });
         return true;
       }
-      const { todayDay, weekStartDay } = currentDayRange(await getMemberTimezone(member.memberId));
+      // The project's calendar (this member's override first), like every other figure on this project.
+      const { todayDay, weekStartDay } = currentDayRange(await resolveProjectTimeZone(projectId, member.memberId));
       const { apps, totalSeconds, appCount } = await sumAppLogSecondsByAppNameForProjectPg(
         member.memberId,
         projectId,

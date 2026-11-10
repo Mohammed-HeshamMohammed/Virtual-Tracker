@@ -1391,3 +1391,37 @@ fn a_stop_that_is_never_delivered_stops_blocking_the_tracker_but_stays_saved() {
     assert!(tracker.pending_stop.lock().is_none(), "the tracker is no longer held up by it");
     assert_eq!(on_disk.load().map(|s| s.reason), Some("idle_escalation".into()), "but the stop is still saved");
 }
+
+// PLAN D1: a pause that crosses midnight is closed by the server and replaced on resume - a NEW
+// session id carrying the closed one's totals. The agent must carry on under the new id with the
+// time it already holds, not read the changed id as the end of its session.
+#[test]
+fn a_session_replaced_across_midnight_is_adopted_without_stopping_or_losing_time() {
+    const REPLACEMENT: &str = r#"{"data": {"id": "sess-2", "status": "active", "taskId": "task-1", "projectId": "proj-1", "activeSeconds": 140, "idleSeconds": 0}}"#;
+    let (url, bodies) = body_recording_server(REPLACEMENT);
+    let tracker = test_tracker(url);
+    let mut state = TickState::new();
+    state.was_active = true;
+    state.current_session = "sess-1".to_string();
+    state.task_id = "task-1".to_string();
+    state.idle_settings_stale = false;
+    state.active_baseline = 100;
+    state.active_elapsed = 40;
+    let far_future = std::time::Instant::now() + Duration::from_secs(3600);
+    state.next_screenshot_at = far_future;
+    state.next_display_name_refresh_at = far_future;
+    state.next_scoring_refresh_at = far_future;
+    state.next_sync_at = far_future;
+
+    tracker.tick(&mut state);
+
+    assert!(state.was_active, "still counting");
+    assert_eq!(state.current_session, "sess-2", "carried on under the replacement");
+    assert!(state.active_baseline + state.active_elapsed >= 140, "the time already worked is kept");
+    assert!(
+        !bodies.lock().iter().any(|b| b.contains(r#""action":"stop""#)),
+        "nothing ended the member's timer: {:?}",
+        bodies.lock()
+    );
+}
+

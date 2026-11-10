@@ -313,3 +313,18 @@ server's own 5-minute close) left the tracker frozen until the app was restarted
 and is delivered at the next start (after checking the session is still the one it was for). Tested with a
 server that always answers 500.
 
+## 12. Status of the rest (T1, T2, D1, D4, D5)
+
+- **T1, T2 - done earlier.** The shutdown/sleep stop is written to disk before it is sent (`close_session`),
+  its result is no longer discarded, and it waits at most 3 s for the API lock instead of the tick's
+  30 s upload. Still unverified on a real shutdown.
+- **D5 - same as U2/U5**, done (a stuck stop no longer freezes the tracker; section 11).
+- **D1 - checked, no bug found.** A pause that crosses midnight is replaced by the server with a new session
+  id carrying the same totals. A test now pins that the agent carries on under the new id, keeps its time and
+  sends no stop. Whether the replacement is accepted was D3 (fixed).
+- **D4 - one straggler fixed.** The decisions that matter (day-off gate, allowance, caps, the workspace for
+  a project) already use the project's calendar. The project app breakdown still cut "this week" in the
+  member's own zone while the data is cut per project; it now uses the project's zone too.
+- **Still open: the restart notice's stop time and its one-click Start.** The notice says the timer stopped but
+  not when, and starting again is a manual step. Both need app UI work, not done.
+
