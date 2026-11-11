@@ -1,4 +1,5 @@
 import { query } from "./client.js";
+import { sessionDaySql, sessionZoneSql } from "./session-day-sql.js";
 
 export async function getTimeAndActivityReportRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const from = new Date(`${fromDay}T00:00:00.000Z`);
@@ -21,6 +22,9 @@ export async function getTimeAndActivityReportRowsPg({ memberIds, fromDay, toDay
        ci.notes          AS client_billing_notes,
        COALESCE(team_lookup.team_name, '')     AS team_name,
        s.started_at,
+       -- The day this session's time belongs to, and the zone that decided it (session-day-sql.js).
+       to_char(${sessionDaySql("s")}, 'YYYY-MM-DD') AS session_day,
+       ${sessionZoneSql("s")} AS session_zone,
        s.ended_at,
        s.updated_at,
        s.active_seconds,

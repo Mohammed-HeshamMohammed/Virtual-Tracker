@@ -37,8 +37,8 @@ export async function getCustomerActivitySummary(tenantId) {
     `SELECT
        (SELECT count(*) FROM members WHERE tenant_id = $1 AND status = 'active') AS active_members,
        (SELECT count(*) FROM projects WHERE tenant_id = $1 AND status = 'active') AS active_projects,
-       (SELECT COALESCE(sum(active_seconds), 0) FROM daily_member_active_seconds
-          WHERE tenant_id = $1 AND day >= (current_date - interval '7 days')) AS active_seconds_7d`,
+       (SELECT COALESCE(sum(active_seconds), 0) FROM activity_sessions
+          WHERE tenant_id = $1 AND started_at >= (current_date - interval '7 days')) AS active_seconds_7d`,
     [tenantId],
   );
   return rows[0] ?? null;

@@ -8,6 +8,9 @@
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
+// Behaviour for the dropped SQL-text checks lives in day-rule-queries.pglite.test.js and
+// session-calendar-sums.pglite.test.js, which run the queries against real Postgres.
+
 /** @type {{ sql: string, params: unknown[] } | null} */
 let lastQuery = null;
 /** @type {unknown[]} */
@@ -23,31 +26,6 @@ mock.module("../src/lib/postgres/client.js", {
 });
 
 const { getMemberDailyAmountRowsPg } = await import("../src/lib/postgres/misc-reports-postgres.service.js");
-
-test("unfiltered query resolves rate via pay_rate_history, falling back to pay_rates", async () => {
-  lastQuery = null;
-  nextRows = [];
-  await getMemberDailyAmountRowsPg({ memberIds: ["m1"], fromDay: "2026-08-01", toDay: "2026-08-31" });
-  assert.ok(lastQuery, "query() was called");
-  assert.match(lastQuery.sql, /LEFT JOIN LATERAL[\s\S]*pay_rate_history/i);
-  assert.match(lastQuery.sql, /effective_date <= d\.day/);
-  assert.match(lastQuery.sql, /COALESCE\(h\.rate, pr\.rate\)/);
-});
-
-test("project-filtered query resolves rate the same way, aggregated with MIN across the group", async () => {
-  lastQuery = null;
-  nextRows = [];
-  await getMemberDailyAmountRowsPg({
-    memberIds: ["m1"],
-    fromDay: "2026-08-01",
-    toDay: "2026-08-31",
-    projectIds: ["p1"],
-  });
-  assert.ok(lastQuery, "query() was called");
-  assert.match(lastQuery.sql, /LEFT JOIN LATERAL[\s\S]*pay_rate_history/i);
-  assert.match(lastQuery.sql, /effective_date <= dt\.day/);
-  assert.match(lastQuery.sql, /MIN\(COALESCE\(h\.rate, pr\.rate\)\)/);
-});
 
 test("row mapping still produces the same output shape regardless of where the rate resolved from", async () => {
   nextRows = [

@@ -17,6 +17,8 @@ if (!PGlite) {
   await db.exec("SET TIME ZONE 'UTC'");
   await db.exec(`
     CREATE TABLE projects (id uuid PRIMARY KEY, timezone text, budget_enabled boolean NOT NULL DEFAULT true);
+    CREATE TABLE members (id uuid PRIMARY KEY, timezone text);
+    CREATE TABLE project_members (project_id uuid, member_id uuid, timezone text);
     CREATE TABLE project_budgets (project_id uuid PRIMARY KEY, type text, based_on text, scope text, cost numeric,
       resets text, start_date date, end_date date, include_non_billable_time boolean DEFAULT true);
     CREATE TABLE activity_sessions (member_id uuid, project_id uuid, started_at timestamptz, active_seconds int);

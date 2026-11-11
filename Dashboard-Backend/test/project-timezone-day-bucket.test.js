@@ -54,27 +54,29 @@ async function rewindAt(startedAt) {
   };
 }
 
-test("the task rollup lands on the project's day, the member rollup on the member's", async () => {
+// The day rule (session-day-sql.js): both rollups book a session on its own calendar's day - the
+// project's zone, else the member's - so the two tables never disagree about which day it was.
+test("both rollups land on the project's day", async () => {
   memberZone = "UTC";
   resolvedZone = "Pacific/Kiritimati"; // UTC+14: already Jan 2 when it is noon on Jan 1 in UTC
   const days = await rewindAt(new Date("2026-01-01T12:00:00Z"));
-  assert.equal(days.member, "2026-01-01", "member's own calendar");
-  assert.equal(days.task, "2026-01-02", "project's calendar");
+  assert.equal(days.member, "2026-01-02");
+  assert.equal(days.task, "2026-01-02");
 });
 
 test("and the other way round when the project is behind", async () => {
   memberZone = "UTC";
   resolvedZone = "Pacific/Pago_Pago"; // UTC-11: still Dec 31 at 05:00 on Jan 1 UTC
   const days = await rewindAt(new Date("2026-01-01T05:00:00Z"));
-  assert.equal(days.member, "2026-01-01");
+  assert.equal(days.member, "2025-12-31");
   assert.equal(days.task, "2025-12-31");
 });
 
-test("a member's zone change moves the member rollup but never the project's", async () => {
+test("the member's own zone does not move a session on a project that has one", async () => {
   memberZone = "Pacific/Kiritimati";
   resolvedZone = "UTC";
   const days = await rewindAt(new Date("2026-01-01T12:00:00Z"));
-  assert.equal(days.member, "2026-01-02");
+  assert.equal(days.member, "2026-01-01");
   assert.equal(days.task, "2026-01-01");
 });
 

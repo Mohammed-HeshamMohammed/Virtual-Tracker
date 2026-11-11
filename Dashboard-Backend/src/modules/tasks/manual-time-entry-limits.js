@@ -1,3 +1,4 @@
+import { sessionDaySql } from "../../lib/postgres/session-day-sql.js";
 import { query } from "../../lib/postgres/client.js";
 import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
 import { getMemberLimitHours, memberUsesShiftsForLimits } from "./task-workload-validation.js";
@@ -47,9 +48,9 @@ function projectLimitWindowFor(limit, entryDate) {
 }
 
 async function sumMemberTrackedAndManualSecondsPg(memberId, fromDay, toDay, excludeEntryId, timeZone) {
-  // Tracked sessions are cut at midnights of `timeZone` - the calendar the entry's own date is a
-  // day of - not at UTC's, which put a session on a different day than the entry beside it.
-  const params = [memberId, fromDay, toDay, timeZone];
+  // Tracked sessions are cut by the day rule (session-day-sql.js), not at UTC's midnights, which
+  // put a session on a different day than the entry beside it. `timeZone` chose fromDay/toDay.
+  const params = [memberId, fromDay, toDay];
   let entryWhere = "member_id = $1 AND date >= $2::date AND date <= $3::date AND status != 'rejected'";
   if (excludeEntryId) {
     params.push(excludeEntryId);
@@ -57,10 +58,10 @@ async function sumMemberTrackedAndManualSecondsPg(memberId, fromDay, toDay, excl
   }
   const rows = await query(
     `SELECT COALESCE(SUM(secs), 0) AS total_seconds FROM (
-       SELECT active_seconds AS secs FROM activity_sessions
-       WHERE member_id = $1
-         AND (started_at AT TIME ZONE $4::text)::date >= $2::date
-         AND (started_at AT TIME ZONE $4::text)::date <= $3::date
+       SELECT s.active_seconds AS secs FROM activity_sessions s
+       WHERE s.member_id = $1
+         AND ${sessionDaySql("s")} >= $2::date
+         AND ${sessionDaySql("s")} <= $3::date
        UNION ALL
        SELECT duration AS secs FROM time_entries WHERE ${entryWhere}
      ) tracked`,

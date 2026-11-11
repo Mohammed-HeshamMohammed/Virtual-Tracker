@@ -27,6 +27,10 @@ mock.module("../src/lib/postgres/client.js", {
       if (sql.includes("FROM timesheets") && sql.includes("COUNT(*)")) return [{ pending: 3 }];
       if (sql.includes("FROM timesheets")) return [];
       if (sql.includes("FROM pay_rates")) return [{ rate: 50, currency: "USD" }];
+      // Checked first: the pulse's day rule looks the member's zone up in a sub-select on members.
+      if (sql.includes("members_worked")) {
+        return [{ active_seconds: 7200, tracking_now: 2, members_worked: 5 }];
+      }
       if (sql.includes("FROM members m")) {
         return [
           { member_id: "t1", name: "Ada", tracking_now: true, on_break: false, active_seconds_today: 3600 },

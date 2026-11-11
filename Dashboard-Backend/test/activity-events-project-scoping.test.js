@@ -7,6 +7,9 @@
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
+// Behaviour for the dropped SQL-text checks lives in day-rule-queries.pglite.test.js and
+// session-calendar-sums.pglite.test.js, which run the queries against real Postgres.
+
 const MEMBER_ID = "11111111-1111-1111-8111-111111111111";
 const PROJECT_ID = "22222222-2222-2222-8222-222222222222";
 
@@ -66,19 +69,6 @@ test("sumAppLogSecondsByAppNameForProjectPg resolves a task-less session's proje
   // tracked week beside them.
   assert.equal(result.totalSeconds, 5400);
   assert.equal(result.appCount, 4);
-});
-
-// The caller resolves the week in the member's own timezone; this used to cast
-// `started_at::date`, which is the database session's zone, so the two were
-// measuring different weeks for anyone not on UTC.
-test("sumAppLogSecondsByAppNameForProjectPg buckets days in the member's timezone", async () => {
-  nextRows = [];
-  await sumAppLogSecondsByAppNameForProjectPg(MEMBER_ID, PROJECT_ID, {
-    fromDay: "2024-01-01",
-    toDay: "2024-01-07",
-  });
-  assert.match(lastCall.sql, /AT TIME ZONE COALESCE\(NULLIF\(m_tz\.timezone/);
-  assert.doesNotMatch(lastCall.sql, /l\.started_at::date/);
 });
 
 test("sumAppLogSecondsByAppNameForProjectPg orders by time descending and honors a custom limit", async () => {

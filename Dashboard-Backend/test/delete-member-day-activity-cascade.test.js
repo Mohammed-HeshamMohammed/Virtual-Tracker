@@ -8,6 +8,9 @@
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 
+// Behaviour for the dropped SQL-text checks lives in day-rule-queries.pglite.test.js and
+// session-calendar-sums.pglite.test.js, which run the queries against real Postgres.
+
 /** @type {{ queries: Array<{ sql: string, params: unknown[] }>, rowCounts: Record<string, number>, throwOn: string | null }} */
 const stub = { queries: [], rowCounts: {}, throwOn: null };
 
@@ -82,43 +85,11 @@ test("deletes screenshots, app logs, url logs, sessions, and manual entries, all
   }
 });
 
-test("the day is the member's own calendar day, not the database's", async () => {
-  reset();
-  await deleteMemberDayActivityWithChildrenPg(MEMBER_ID, DAY, "Africa/Cairo");
-  const byTable = Object.fromEntries(stub.queries.map((q) => [tableFor(q.sql), q]));
-  for (const table of ["activity_sessions", "activity_screenshots", "activity_app_logs", "activity_url_logs"]) {
-    assert.equal(byTable[table].params[2], "Africa/Cairo", table);
-    assert.match(byTable[table].sql, /AT TIME ZONE \$3\)::date = \$2::date/, table);
-  }
-});
-
-test("what a removed session captured after midnight goes with it", async () => {
-  reset();
-  await deleteMemberDayActivityWithChildrenPg(MEMBER_ID, DAY, "Africa/Cairo");
-  const byTable = Object.fromEntries(stub.queries.map((q) => [tableFor(q.sql), q]));
-  assert.equal(tableFor(stub.queries[0].sql), "activity_sessions", "sessions first, so their ids are known");
-  for (const table of ["activity_screenshots", "activity_app_logs", "activity_url_logs"]) {
-    assert.deepEqual(byTable[table].params[3], ["s1", "s2", "s3"], table);
-    assert.match(byTable[table].sql, /session_id = ANY\(\$4::text\[\]\)/, table);
-  }
-});
-
 test("never touches activity_categories - classification survives regardless of what this member's day contained", async () => {
   reset();
   await deleteMemberDayActivityWithChildrenPg(MEMBER_ID, DAY);
   const touchedCategories = stub.queries.some((q) => tableFor(q.sql) === "activity_categories");
   assert.equal(touchedCategories, false);
-});
-
-test("each table is scoped by its own real capture-time column, not a shared one", async () => {
-  reset();
-  await deleteMemberDayActivityWithChildrenPg(MEMBER_ID, DAY);
-  const byTable = Object.fromEntries(stub.queries.map((q) => [tableFor(q.sql), q.sql]));
-  assert.match(byTable.activity_screenshots, /captured_at AT TIME ZONE/);
-  assert.match(byTable.activity_app_logs, /started_at AT TIME ZONE/);
-  assert.match(byTable.activity_url_logs, /visited_at AT TIME ZONE/);
-  assert.match(byTable.activity_sessions, /started_at AT TIME ZONE/);
-  assert.match(byTable.time_entries, /\bdate\s*=/);
 });
 
 test("a day with no captured activity at all still deletes cleanly (all counts 0)", async () => {

@@ -86,6 +86,7 @@ import {
 import { localDayFor, weekdayIndexForLocalDay } from "../../lib/time/timezone-utils.js";
 import { getMemberTimezone } from "../reports/member-timezones.js";
 import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
+import { closeIfPausedAcrossDays } from "./day-rollover.js";
 import { adoptReportedTimezone } from "./adopt-reported-timezone.js";
 import { clientMayTrackProject, getViewerProjectIds, isProjectMemberForTimer } from "../../http/project-access.js";
 import { isAdminLevelRole, isClientRole } from "../../http/role-hierarchy.js";
@@ -997,6 +998,17 @@ export async function routeActivity(req, res, url, origin) {
           open.status = "idle";
         }
       } else if (action === "resume") {
+        // A paused session resumed on a later day is closed and replaced (day-rollover.js).
+        const rolledOver = await closeIfPausedAcrossDays(open, {
+          memberId: member.memberId,
+          now,
+          projectId: sessionProjectId,
+          source: fromWeb ? "web" : "agent",
+          clientVersion,
+        });
+        if (rolledOver) open = null;
+        const rolledOverTaskId = rolledOver?.taskId ?? null;
+        const rolledOverTotals = rolledOver?.totals ?? null;
         if (open) {
           await updatePgSession(open.id, {
             status: "active",
@@ -1013,13 +1025,15 @@ export async function routeActivity(req, res, url, origin) {
             open = await createPgSession({
               id,
               memberId: member.memberId,
-              taskId,
+              taskId: taskId ?? rolledOverTaskId,
               projectId: sessionProjectId,
               status: "active",
               startedAt: now,
               endedAt: null,
-              activeSeconds: activeSeconds ?? 0,
-              idleSeconds: idleSeconds ?? 0,
+              // A rolled-over session starts from the closed one's running total, so a client
+              // that sends none cannot have it counted again as this session's own.
+              activeSeconds: activeSeconds ?? rolledOverTotals?.activeSeconds ?? 0,
+              idleSeconds: idleSeconds ?? rolledOverTotals?.idleSeconds ?? 0,
               source: origin ? "web" : "agent",
               updatedAt: now,
             });

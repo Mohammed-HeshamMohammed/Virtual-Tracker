@@ -1,5 +1,6 @@
 import { isSensitiveFieldName } from "../../http/sensitive-fields.js";
 import { query } from "./client.js";
+import { eventDaySql, sessionDaySql, sessionZoneSql } from "./session-day-sql.js";
 
 /**
  * Splits an over-fetched result into the page the caller asked for and the
@@ -19,46 +20,46 @@ function toDayString(value) {
   return typeof value === "string" ? value.slice(0, 10) : "";
 }
 
+/**
+ * Active seconds per member per day, cut from the sessions by the day rule (session-day-sql.js).
+ * `fromSql`/`toSql` are the day bounds; sessions are pre-filtered a day wider on `started_at`
+ * (a local day in any zone sits within a day of the same UTC date) and then cut exactly.
+ * These used to be read from daily_member_active_seconds, whose days were fixed when written -
+ * a zone changed mid-session split one session across two of them.
+ *
+ * ponytail: sessions older than the tenant's session retention (730 days by default) are gone,
+ * while the rollup kept them - a range reaching past retention now reads 0 for those days, as
+ * Time & Activity already does. Fall back to the rollup for days before the oldest surviving
+ * session if anyone reports that far back.
+ */
+function sessionDaysSql({ fromSql, toSql, membersParam, projectsParam = null }) {
+  return `(
+    SELECT s.member_id, ${sessionDaySql("s")} AS day, SUM(s.active_seconds) AS active_seconds
+    FROM activity_sessions s
+    WHERE s.started_at >= (${fromSql} - 1) AND s.started_at < (${toSql} + 2)
+      AND (${membersParam}::uuid[] IS NULL OR s.member_id = ANY(${membersParam}::uuid[]))
+      ${projectsParam ? `AND s.project_id = ANY(${projectsParam}::uuid[])` : ""}
+    GROUP BY 1, 2)`;
+}
+
 export async function getMemberDailyAmountRowsPg({ memberIds, fromDay, toDay, projectIds = null }) {
   const hasProjectFilter = Array.isArray(projectIds) && projectIds.length > 0;
-  const rows = hasProjectFilter
-    ? await query(
-        `SELECT dt.member_id, dt.day, SUM(dt.active_seconds) AS active_seconds,
-                MIN(COALESCE(h.rate, pr.rate)) AS rate,
-                MIN(COALESCE(h.type, pr.type)) AS rate_type,
-                MIN(COALESCE(h.currency, pr.currency)) AS currency
-         FROM daily_member_task_active_seconds dt
-         JOIN tasks t ON t.id = dt.task_id
-         LEFT JOIN pay_rates pr ON pr.member_id = dt.member_id
-         LEFT JOIN LATERAL (
-           SELECT rate, type, currency FROM pay_rate_history
-           WHERE member_id = dt.member_id AND effective_date <= dt.day
-           ORDER BY effective_date DESC, created_at DESC LIMIT 1
-         ) h ON true
-         WHERE dt.day >= $1 AND dt.day <= $2
-           AND ($3::uuid[] IS NULL OR dt.member_id = ANY($3::uuid[]))
-           AND t.project_id = ANY($4::uuid[])
-         GROUP BY dt.member_id, dt.day
-         ORDER BY dt.day ASC`,
-        [fromDay, toDay, memberIds, projectIds],
-      )
-    : await query(
-        `SELECT d.member_id, d.day, d.active_seconds,
-                COALESCE(h.rate, pr.rate) AS rate,
-                COALESCE(h.type, pr.type) AS rate_type,
-                COALESCE(h.currency, pr.currency) AS currency
-         FROM daily_member_active_seconds d
-         LEFT JOIN pay_rates pr ON pr.member_id = d.member_id
-         LEFT JOIN LATERAL (
-           SELECT rate, type, currency FROM pay_rate_history
-           WHERE member_id = d.member_id AND effective_date <= d.day
-           ORDER BY effective_date DESC, created_at DESC LIMIT 1
-         ) h ON true
-         WHERE d.day >= $1 AND d.day <= $2
-           AND ($3::uuid[] IS NULL OR d.member_id = ANY($3::uuid[]))
-         ORDER BY d.day ASC`,
-        [fromDay, toDay, memberIds],
-      );
+  const rows = await query(
+    `SELECT d.member_id, d.day, d.active_seconds,
+            COALESCE(h.rate, pr.rate) AS rate,
+            COALESCE(h.type, pr.type) AS rate_type,
+            COALESCE(h.currency, pr.currency) AS currency
+     FROM ${sessionDaysSql({ fromSql: "$1::date", toSql: "$2::date", membersParam: "$3", projectsParam: hasProjectFilter ? "$4" : null })} d
+     LEFT JOIN pay_rates pr ON pr.member_id = d.member_id
+     LEFT JOIN LATERAL (
+       SELECT rate, type, currency FROM pay_rate_history
+       WHERE member_id = d.member_id AND effective_date <= d.day
+       ORDER BY effective_date DESC, created_at DESC LIMIT 1
+     ) h ON true
+     WHERE d.day >= $1 AND d.day <= $2
+     ORDER BY d.day ASC`,
+    hasProjectFilter ? [fromDay, toDay, memberIds, projectIds] : [fromDay, toDay, memberIds],
+  );
   return rows.map((r) => ({
     memberId: r.member_id,
     day: toDayString(r.day),
@@ -85,6 +86,7 @@ export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay, projectI
     `SELECT s.id, s.member_id, s.task_id, s.project_id,
             COALESCE(t.title, '') AS task_title, COALESCE(p.name, '') AS project_name,
             s.started_at, s.ended_at, s.active_seconds, s.idle_seconds, s.source, s.stop_reason,
+            to_char(${sessionDaySql("s")}, 'YYYY-MM-DD') AS session_day, ${sessionZoneSql("s")} AS session_zone,
             shots.activity_sum, shots.activity_count
      FROM activity_sessions s
      LEFT JOIN tasks t ON t.id = s.task_id
@@ -121,6 +123,8 @@ export async function getWorkSessionRowsPg({ memberIds, fromDay, toDay, projectI
     activityCount: Math.max(0, Number(r.activity_count) || 0),
     source: r.source,
     stopReason: r.stop_reason ?? null,
+    sessionDay: r.session_day ?? null,
+    sessionZone: r.session_zone ?? null,
     })),
   };
 }
@@ -238,9 +242,8 @@ export async function getLimitsUsageRowsPg({ memberIds, fromDay, toDay }) {
       // still measured against the hours actually worked in it, rather than
       // looking compliant because two of its days fell outside the window.
       `SELECT d.member_id, d.day, d.active_seconds
-       FROM daily_member_active_seconds d
+       FROM ${sessionDaysSql({ fromSql: "($1::date - 7)", toSql: "($2::date + 7)", membersParam: "$3" })} d
        WHERE d.day >= ($1::date - 7) AND d.day <= ($2::date + 7)
-         AND ($3::uuid[] IS NULL OR d.member_id = ANY($3::uuid[]))
        ORDER BY d.day ASC`,
       [fromDay, toDay, memberIds],
     ),
@@ -267,9 +270,11 @@ export async function getTimesheetPeriodAmountRowsPg({ memberId, fromDay, toDay 
        FROM time_entries
        WHERE member_id = $1 AND date BETWEEN $2 AND $3 AND status != 'rejected'
        UNION ALL
-       SELECT started_at::date AS day, project_id, active_seconds AS seconds, true AS billable
-       FROM activity_sessions
-       WHERE member_id = $1 AND started_at::date BETWEEN $2 AND $3
+       SELECT ${sessionDaySql("s")} AS day, s.project_id, s.active_seconds AS seconds, true AS billable
+       FROM activity_sessions s
+       WHERE s.member_id = $1
+         AND s.started_at >= ($2::date - 1) AND s.started_at < ($3::date + 2)
+         AND ${sessionDaySql("s")} BETWEEN $2 AND $3
      ),
      by_day_project AS (
        SELECT day, project_id, SUM(seconds) AS seconds,
@@ -332,9 +337,9 @@ export async function getTimesheetApprovalRowsPg({ memberIds, fromDay, toDay, li
   };
 }
 
-/** Member-local calendar day of a timestamp column. `m_tz` must be in scope. */
+/** The day an app/URL row belongs to: its session's, by the day rule (session-day-sql.js). */
 function localDay(tsColumn) {
-  return `(${tsColumn} AT TIME ZONE COALESCE(NULLIF(m_tz.timezone, ''), 'UTC'))::date`;
+  return eventDaySql(tsColumn.split(".")[0], tsColumn);
 }
 
 /**
@@ -461,9 +466,8 @@ export async function getWorkBreakRowsPg({ memberIds, fromDay, toDay, minGapMinu
   const rows = await query(
     `WITH tz AS (
        SELECT s.id, s.member_id, s.started_at, s.ended_at,
-              COALESCE(NULLIF(m.timezone, ''), 'UTC') AS zone
+              ${sessionZoneSql("s")} AS zone
        FROM activity_sessions s
-       LEFT JOIN members m ON m.id = s.member_id
        WHERE s.ended_at IS NOT NULL
          AND ($3::uuid[] IS NULL OR s.member_id = ANY($3::uuid[]))
      ),
@@ -551,10 +555,9 @@ export async function getShiftAttendanceRowsPg({ memberIds, fromDay, toDay, limi
      ),
      worked AS (
        SELECT s.member_id,
-              (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date AS day,
+              ${sessionDaySql("s")} AS day,
               SUM(s.active_seconds) AS active_seconds
        FROM activity_sessions s
-       JOIN members m ON m.id = s.member_id
        -- Bounded to the requested range, widened a day either side because a
        -- member-local day straddles the same dates expressed in UTC.
        WHERE s.started_at >= ($1::date - 1) AND s.started_at < ($2::date + 2)

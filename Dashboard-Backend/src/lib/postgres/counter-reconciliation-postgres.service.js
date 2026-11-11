@@ -1,4 +1,5 @@
 import { queryAsAdmin } from "./client.js";
+import { sessionDaySql } from "./session-day-sql.js";
 
 // §0.1 blocker 5: sweep-only (counter-reconciliation-sweep.service.js is the
 // only caller), and grouped by member_id globally rather than per tenant -
@@ -6,12 +7,16 @@ import { queryAsAdmin } from "./client.js";
 // per-tenant withTenant() loop, since there is no per-tenant aggregation to
 // keep separate. It needs admin visibility instead, once RLS is live.
 
+// Cut by the same day rule the rollup is written with (session-day-sql.js). This used to be
+// `started_at::date` - UTC - against a rollup keyed in the member's own calendar, so anyone not on
+// UTC who started near midnight showed drift that was not there.
 export async function fetchSessionActiveSecondsByMemberForDayPg(day) {
   const rows = await queryAsAdmin(
-    `SELECT member_id, SUM(active_seconds) AS total
-     FROM activity_sessions
-     WHERE started_at::date = $1
-     GROUP BY member_id`,
+    `SELECT s.member_id, SUM(s.active_seconds) AS total
+     FROM activity_sessions s
+     WHERE s.started_at >= ($1::date - 1) AND s.started_at < ($1::date + 2)
+       AND ${sessionDaySql("s")} = $1::date
+     GROUP BY s.member_id`,
     [day],
   );
   return new Map(rows.map((r) => [String(r.member_id), Number(r.total) || 0]));

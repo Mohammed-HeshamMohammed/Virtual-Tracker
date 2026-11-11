@@ -1,3 +1,4 @@
+import { sessionDaySql } from "../../lib/postgres/session-day-sql.js";
 import { query } from "../../lib/postgres/client.js";
 import { isManagementRole } from "../../http/auth-context.js";
 import { normalizeRoleKey } from "../members/services/relation-sync.js";
@@ -98,7 +99,7 @@ async function buildTeamSection(teamIds, todayDay) {
             COALESCE((
               SELECT SUM(s.active_seconds) FROM activity_sessions s
               WHERE s.member_id = m.id
-                AND (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date = $2::date
+                AND ${sessionDaySql("s")} = $2::date
             ), 0) AS active_seconds_today
      FROM members m
      WHERE m.id IN (SELECT member_id FROM team_members WHERE team_id = ANY($1::uuid[]))
@@ -177,8 +178,7 @@ async function buildPulseSection(db, viewer, audience, todayDay) {
             ) AS tracking_now,
             COUNT(DISTINCT s.member_id) AS members_worked
      FROM activity_sessions s
-     LEFT JOIN members m ON m.id = s.member_id
-     WHERE (s.started_at AT TIME ZONE COALESCE(NULLIF(m.timezone, ''), 'UTC'))::date = $1::date
+     WHERE ${sessionDaySql("s")} = $1::date
        AND ($2::uuid[] IS NULL OR s.member_id = ANY($2::uuid[]))`,
     [todayDay, memberIds],
   );
