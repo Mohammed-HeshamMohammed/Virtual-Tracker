@@ -85,6 +85,18 @@ test("the policy is cached rather than read on every batch", async () => {
   assert.equal(executed.length, after, "ingest reads this per batch; it must not hit the database each time");
 });
 
+test("one organization's cached policy is never applied to another", async () => {
+  reset();
+  const { runWithTenantId } = await import("../src/lib/postgres/audit-actor.js");
+  rows = [];
+  await runWithTenantId("tenant-off", () => enabledCapabilities());
+  rows = [{ capability: "screenshots" }];
+  const on = await runWithTenantId("tenant-on", () => enabledCapabilities());
+  assert.equal(eventAllowed("screenshot", on), true, "tenant-on must not inherit tenant-off's cached answer");
+  const off = await runWithTenantId("tenant-off", () => enabledCapabilities());
+  assert.equal(eventAllowed("screenshot", off), false, "and tenant-off keeps its own");
+});
+
 test("only capabilities that actually stop collection report as enforced", async () => {
   for (const c of ["screenshots", "app_tracking", "url_capture", "integrity_signals"]) {
     assert.equal(isEnforcedCapability(c), true, c);

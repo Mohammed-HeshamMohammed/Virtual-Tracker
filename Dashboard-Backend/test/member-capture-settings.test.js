@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 
 let memberRow = {};
 let timeSettingsRow = {};
+let openProjectZone = null;
 
 mock.module("../src/lib/postgres/client.js", {
   namedExports: {
     query: async (sql) => {
       if (sql.includes("FROM member_capture_settings")) return memberRow ? [memberRow] : [];
       if (sql.includes("FROM time_settings")) return timeSettingsRow ? [timeSettingsRow] : [];
+      if (sql.includes("FROM activity_sessions")) return openProjectZone ? [{ project_id: "p1" }] : [];
+      if (sql.includes("FROM projects")) return [{ timezone: openProjectZone }];
       return [];
     },
   },
@@ -310,4 +313,19 @@ test("when days off are enforced, only days that are not work days or make-up da
 test("members scheduled by shifts have no fixed work days, so nothing is refused", () => {
   const shifts = { work_days: [0], makeup_days: [], disable_tracking_specific_days: true, use_shifts_for_limits: true };
   assert.equal(isStartBlockedOnWeekday(shifts, 6), false);
+});
+
+test("work hours are read in the tracked project's time zone before the member's own", async () => {
+  // A two-hour window around now in UTC (the member's zone here). Fourteen hours ahead, the
+  // same instant is far outside it.
+  const now = new Date();
+  const minute = now.getUTCHours() * 60 + now.getUTCMinutes();
+  memberRow = { work_start_min: (minute + 1380) % 1440, work_end_min: (minute + 60) % 1440 };
+  timeSettingsRow = {};
+  openProjectZone = null;
+  assert.equal((await getEffectiveCaptureSettings("m1")).outsideWorkHours, false, "member zone when nothing is tracked");
+  openProjectZone = "Pacific/Kiritimati";
+  assert.equal((await getEffectiveCaptureSettings("m1")).outsideWorkHours, true, "project zone while tracking it");
+  openProjectZone = null;
+  memberRow = {};
 });

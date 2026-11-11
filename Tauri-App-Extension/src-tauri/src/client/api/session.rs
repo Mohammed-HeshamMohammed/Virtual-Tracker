@@ -133,6 +133,7 @@ impl ApiClient {
                 idle_seconds: 0,
                 timer_capped: false,
                 budget_capped: false,
+                tracking_disabled: false,
             },
         }
     }
@@ -176,6 +177,10 @@ fn session_info_from_json(data: Option<&Value>) -> crate::types::SessionInfo {
             .unwrap_or(false),
         budget_capped: data
             .and_then(|d| d.get("budgetCapped"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        tracking_disabled: data
+            .and_then(|d| d.get("trackingDisabled"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
     }

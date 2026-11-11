@@ -83,6 +83,9 @@ pub struct SessionInfo {
     /// & Limits tab) instead of a task's daily hour cap.
     #[serde(default)]
     pub budget_capped: bool,
+    /// The server switched tracking off for this member or project while the timer ran.
+    #[serde(default)]
+    pub tracking_disabled: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
