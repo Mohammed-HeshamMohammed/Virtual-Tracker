@@ -35,6 +35,7 @@ export const SESSION_REASON_LABELS = Object.freeze({
   task_deleted: "The task was deleted",
   task_limit: "Task limit reached",
   account_restricted: "Account restricted",
+  tracking_disabled: "Time tracking was turned off for this member or project",
   duplicate_close: "Duplicate open session closed",
   web_on_agent_session: "Dashboard request ignored: the agent owns this timer",
   unspecified: "Not recorded (older client)",

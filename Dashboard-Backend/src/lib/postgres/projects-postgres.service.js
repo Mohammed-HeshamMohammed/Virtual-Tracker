@@ -388,12 +388,24 @@ export async function setManagerTrackingAccessPg(projectId, allowedMemberIds, ac
 export async function isManagerAllowedToTrackPg(projectId, memberId) {
   if (!projectId || !memberId) return false;
   const rows = await query(
-    `SELECT manager_can_track FROM project_members
-      WHERE project_id = $1 AND member_id = $2 AND LOWER(COALESCE(project_role, '')) = 'manager'
-      LIMIT 1`,
+    `SELECT LOWER(COALESCE(project_role, '')) AS role, manager_can_track FROM project_members
+      WHERE project_id = $1 AND member_id = $2`,
     [projectId, memberId],
   );
-  return rows[0]?.manager_can_track === true;
+  return managerRowsAllowTracking(rows);
+}
+
+/**
+ * The allow-list only ever marks rows whose project role is manager (setManagerTrackingAccessPg),
+ * so it can only narrow those. An organization manager who is on the project as an ordinary
+ * member could never be put on the list and was refused for good; they track like any other
+ * member (same rule as project-trackers.js). Not on the project, or only a viewer: no.
+ */
+export function managerRowsAllowTracking(rows) {
+  const isManager = (r) => r.role === "manager" || r.role === "managers";
+  const managerRows = rows.filter(isManager);
+  if (managerRows.length) return managerRows.some((r) => r.manager_can_track === true);
+  return rows.some((r) => r.role !== "viewer" && r.role !== "viewers");
 }
 
 /**

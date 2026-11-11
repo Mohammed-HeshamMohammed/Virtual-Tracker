@@ -2,7 +2,7 @@ import { query } from "../../lib/postgres/client.js";
 import { isManagementRole } from "../../http/auth-context.js";
 import { getActivityScoringSettings } from "./scoring-settings.js";
 import { localDayFor, weekdayIndexForLocalDay, localMidnightUtc } from "../../lib/time/timezone-utils.js";
-import { getMemberTimezone } from "../reports/member-timezones.js";
+import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
 
 const MAX_BREAK_MINUTES = 240;
 
@@ -110,6 +110,21 @@ export function secondsUntilWindowChange(row, workDays, now, timeZone, currently
   return MAX_RECHECK_SEC;
 }
 
+/**
+ * The zone work hours are read in: the project the member is tracking right now, when it
+ * declares one, else the member's own (resolveProjectTimeZone falls back to it). Every other
+ * day rule for tracked time already follows the project's calendar.
+ */
+async function captureTimeZone(memberId) {
+  const open = await query(
+    `SELECT project_id FROM activity_sessions
+      WHERE member_id = $1 AND status IN ('active', 'idle')
+      ORDER BY started_at DESC LIMIT 1`,
+    [memberId],
+  );
+  return resolveProjectTimeZone(open[0]?.project_id ?? null, memberId);
+}
+
 /** The one payload the agent polls. Member overrides win; NULL inherits. */
 export async function getEffectiveCaptureSettings(memberId) {
   const [org, row, scheduleRows, timeZone] = await Promise.all([
@@ -120,7 +135,7 @@ export async function getEffectiveCaptureSettings(memberId) {
          FROM time_settings WHERE member_id = $1`,
       [memberId],
     ),
-    getMemberTimezone(memberId).catch(() => "UTC"),
+    captureTimeZone(memberId).catch(() => "UTC"),
   ]);
 
   const now = new Date();

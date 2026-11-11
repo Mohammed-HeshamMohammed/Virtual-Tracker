@@ -1,4 +1,5 @@
 import { query } from "../../lib/postgres/client.js";
+import { currentTenantId } from "../../lib/postgres/audit-actor.js";
 import { logSafeWarn } from "../../http/sanitize-error.js";
 import { KNOWN_CAPABILITIES } from "./monitoring-policy.js";
 
@@ -35,7 +36,9 @@ const CAPABILITY_FOR_EVENT = Object.freeze(
 );
 
 const CACHE_TTL_MS = 30_000;
-let cache = null;
+// One entry per organization: a single shared entry applied whichever organization read
+// last to everyone else for the next half minute.
+const cache = new Map();
 
 /**
  * Enabled capabilities for the current tenant. Cached briefly because ingest
@@ -47,11 +50,13 @@ let cache = null;
  * read, and the read is the thing that failed, not the policy.
  */
 export async function enabledCapabilities({ refresh = false } = {}) {
-  if (!refresh && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.set;
+  const tenant = currentTenantId() ?? "";
+  const hit = cache.get(tenant);
+  if (!refresh && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.set;
   try {
     const rows = await query("SELECT capability FROM monitoring_capabilities WHERE enabled = true");
     const set = new Set(rows.map((r) => r.capability));
-    cache = { at: Date.now(), set };
+    cache.set(tenant, { at: Date.now(), set });
     return set;
   } catch (err) {
     logSafeWarn("[capability-gate] could not read the monitoring policy; allowing capture", err);
@@ -60,7 +65,7 @@ export async function enabledCapabilities({ refresh = false } = {}) {
 }
 
 export function __resetCapabilityCacheForTests() {
-  cache = null;
+  cache.clear();
 }
 
 /** The capability that governs an event type, or undefined when none does. */
@@ -111,7 +116,7 @@ export async function backfillCapabilitiesInUse() {
        ON CONFLICT (doc_key) DO NOTHING`,
       [BACKFILL_KEY, JSON.stringify({ enabled: inUse, at: new Date().toISOString() })],
     );
-    cache = null;
+    cache.clear();
     return { ok: true, enabled: inUse };
   } catch (err) {
     logSafeWarn("[capability-gate] capability backfill failed", err);
