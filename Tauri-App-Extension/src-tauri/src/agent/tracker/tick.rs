@@ -434,6 +434,11 @@ impl ActivityTracker {
             // The server already truncated active_seconds against the task's daily cap
             // (timerCapped) or stopped counting because the project's own budget stop-timer
             let cap = match &sync_result {
+                // Before timer_capped: the server sets both, so older agents stop too.
+                Ok(info) if info.tracking_disabled => Some((
+                    "Timer stopped — time tracking was turned off for you or this project",
+                    "tracking_disabled",
+                )),
                 Ok(info) if info.timer_capped => {
                     Some(("Timer stopped — task's daily hour limit reached", "timer_cap"))
                 }

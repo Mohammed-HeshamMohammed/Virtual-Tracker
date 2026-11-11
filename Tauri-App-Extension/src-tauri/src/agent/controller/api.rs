@@ -91,6 +91,8 @@ impl AgentController {
             break_until_ms: gate.break_until_ms(),
             issue: if gate.screenshot_trouble() {
                 crate::capture::capture_gate::SCREENSHOT_TROUBLE_MESSAGE.to_string()
+            } else if self.api.lock().screenshots_off_by_policy {
+                "Screenshots are switched off in your organization's monitoring policy, so none are being saved. An owner can turn them on in the dashboard.".to_string()
             } else {
                 String::new()
             },

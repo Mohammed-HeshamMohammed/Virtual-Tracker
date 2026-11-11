@@ -67,6 +67,9 @@ pub struct ApiClient {
     /// refresh_token_if_needed.
     rejected_refresh_token: Option<String>,
     pub on_tokens_refreshed: Option<Box<dyn Fn(String, String) + Send>>,
+    /// The server said it discarded the last screenshot because the organization's monitoring
+    /// policy has screenshots switched off.
+    pub screenshots_off_by_policy: bool,
 }
 
 impl ApiClient {
@@ -99,6 +102,7 @@ impl ApiClient {
             last_refresh: RefreshOutcome::Ok,
             rejected_refresh_token: None,
             on_tokens_refreshed: None,
+            screenshots_off_by_policy: false,
         })
     }
 

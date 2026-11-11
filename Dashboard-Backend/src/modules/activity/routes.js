@@ -270,6 +270,15 @@ async function managerMayTrackProject(project, memberId) {
   return isManagerAllowedToTrackPg(project.id, memberId);
 }
 
+/** Whether a timer that is already running has lost its permission to run. */
+async function trackingRevoked(db, memberId, roleName, projectId) {
+  const timeSettings = await getSingleByMemberId(db, "time_settings", memberId);
+  if (timeSettings?.able_to_track_time === false) return true;
+  if (!projectId || !isManagerRoleName(roleName)) return false;
+  const project = await getProjectPg(projectId);
+  return Boolean(project) && !(await managerMayTrackProject(project, memberId));
+}
+
 async function resolveMember(db, req) {
   const viewer = getAuthContext(req);
   if (!viewer) return null;
@@ -832,6 +841,13 @@ export async function routeActivity(req, res, url, origin) {
         if (effectiveTaskId) {
           const task = await getTaskPg(effectiveTaskId);
           if (task) {
+            // Checked before the session exists. It used to be checked only by the sync
+            // further down, after a timer on someone else's task had already been opened.
+            const startAccess = await canAccessTask(db, member.memberId, viewer?.roleName ?? "", effectiveTaskId);
+            if (!startAccess.allowed) {
+              sendJson(res, origin, startAccess.status, { success: false, error: "Not found." });
+              return true;
+            }
             sessionProjectId = task.project_id ?? sessionProjectId;
             if (sessionProjectId && isManagerRoleName(viewer?.roleName)) {
               const gateProject = await getProjectPg(sessionProjectId);
@@ -1105,6 +1121,19 @@ export async function routeActivity(req, res, url, origin) {
         }
       }
 
+      // The tracking switches were only read on start and resume, so turning one off left a
+      // running timer running. timerCapped is what agents already stop on; trackingDisabled
+      // lets a current agent say the real reason.
+      let trackingDisabled = false;
+      if (action === "sync" && open) {
+        try {
+          trackingDisabled = await trackingRevoked(db, member.memberId, getAuthContext(req)?.roleName, sessionProjectId);
+        } catch (revokeErr) {
+          logSafeError("[activity/session tracking switch]", revokeErr);
+        }
+        if (trackingDisabled) timerCapped = true;
+      }
+
       let budgetCapped = false;
       if (sessionProjectId) {
         try {
@@ -1117,7 +1146,7 @@ export async function routeActivity(req, res, url, origin) {
 
       sendJson(res, origin, 200, {
         success: true,
-        data: open ? { ...(await normalizeSession(open.id, open)), timerCapped, budgetCapped } : null,
+        data: open ? { ...(await normalizeSession(open.id, open)), timerCapped, budgetCapped, trackingDisabled } : null,
       });
     } catch (e) {
       logSafeError("[activity/session POST]", e);
@@ -1173,6 +1202,7 @@ export async function routeActivity(req, res, url, origin) {
       const serverNow = new Date();
       const now = batchCaptureTime(body.capturedAtMs, serverNow);
       let count = 0;
+      let screenshotSaveFailures = 0;
       const screenshotWrites = [];
 
       const [minimizationSettings, exclusions, capabilities] = await Promise.all([
@@ -1220,9 +1250,11 @@ export async function routeActivity(req, res, url, origin) {
           }
           screenshotWrites.push(
             (async () => {
+              let buffer;
+              let webp;
               try {
                 const raw = imageData.replace(/^data:image\/[a-z0-9.+-]+;base64,/i, "").replace(/\s/g, "");
-                const buffer = Buffer.from(raw, "base64");
+                buffer = Buffer.from(raw, "base64");
                 let pipeline = sharp(buffer).resize({
                   width: 1280,
                   height: 720,
@@ -1232,7 +1264,13 @@ export async function routeActivity(req, res, url, origin) {
                 if (minimizationSettings.screenshotBlurDefault) {
                   pipeline = pipeline.blur(18);
                 }
-                const webp = await pipeline.webp({ quality: 75 }).toBuffer();
+                webp = await pipeline.webp({ quality: 75 }).toBuffer();
+              } catch (err) {
+                // An image that cannot be read will not read on a retry either.
+                logSafeWarn("[activity events] screenshot dropped: unreadable image", err);
+                return;
+              }
+              try {
                 const capturedAt = ev.captured_at ? new Date(ev.captured_at) : now;
                 let perceptualHash = null;
                 try {
@@ -1276,6 +1314,7 @@ export async function routeActivity(req, res, url, origin) {
                 });
                 count++;
               } catch (err) {
+                screenshotSaveFailures++;
                 logSafeWarn("[activity events] screenshot insert failed", err);
               }
             })(),
@@ -1347,7 +1386,16 @@ export async function routeActivity(req, res, url, origin) {
         void maybeAlertMissingScreenshot(db, member.memberId, sessionId).catch(() => {});
       }
 
-      sendJson(res, origin, 200, { success: true, data: { inserted: count } });
+      // Nothing stored and a screenshot could not be saved: say so, so the agent keeps the
+      // batch and retries. A 200 here told it the screenshot was dropped on purpose.
+      if (count === 0 && screenshotSaveFailures > 0) {
+        sendJson(res, origin, 503, { success: false, error: "Could not save the screenshot - try again." });
+        return true;
+      }
+      sendJson(res, origin, 200, {
+        success: true,
+        data: { inserted: count, ...(Object.keys(policyDrops).length ? { policyDropped: policyDrops } : {}) },
+      });
     } catch (e) {
       logSafeWarn("[activity events] ingest failed", e);
       sendJson(res, origin, 500, { success: false, error: e instanceof Error ? e.message : "Event ingest failed" });

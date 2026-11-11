@@ -52,10 +52,26 @@ impl ApiClient {
                 status.as_u16(),
                 &text[..text.len().min(200)]
             );
+            // A refusal of this batch itself will be the same on every retry, and a queued
+            // batch that never succeeds holds back every batch queued behind it. A bare 404
+            // is not one: a proxy answers that while the backend is mid-deploy.
+            let refused = matches!(status.as_u16(), 400 | 413 | 422)
+                || (status.as_u16() == 404 && text.contains("Session not found"));
+            if refused {
+                log::warn!("The server refused these events for good - not retrying");
+                return true;
+            }
             return false;
         }
         if let Ok(payload) = res.json::<Value>() {
             if let Some(data) = payload.get("data") {
+                if events.iter().any(|e| matches!(e, ActivityEvent::Screenshot { .. })) {
+                    self.screenshots_off_by_policy = data
+                        .pointer("/policyDropped/screenshots")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0)
+                        > 0;
+                }
                 if data.get("skipped").and_then(|v| v.as_str())
                     == Some("desktop_agent_ingest_disabled")
                 {
@@ -140,6 +156,45 @@ mod tests {
             (200, r#"{"data": {"inserted": 0, "skipped": "desktop_agent_ingest_disabled"}}"#.to_string())
         });
         assert!(!signed_in_client(url).post_events("sess-1", &one_event()));
+    }
+
+    // A queued batch the server will never take (its session is gone) used to fail every
+    // flush, and flush stops at the first failure, so nothing queued behind it was ever sent.
+    #[test]
+    fn events_for_a_session_the_server_no_longer_has_are_not_retried_forever() {
+        let url = fake_server(|_| (404, r#"{"success": false, "error": "Session not found"}"#.to_string()));
+        assert!(signed_in_client(url).post_events("sess-1", &one_event()));
+    }
+
+    #[test]
+    fn a_404_that_is_not_about_the_session_keeps_the_events_queued() {
+        let url = fake_server(|_| (404, "Not Found".to_string()));
+        assert!(!signed_in_client(url).post_events("sess-1", &one_event()));
+    }
+
+    #[test]
+    fn a_screenshot_dropped_by_the_monitoring_policy_is_remembered_until_one_is_stored() {
+        let shot = vec![ActivityEvent::Screenshot {
+            image_data: "data:image/jpeg;base64,AA==".into(),
+            app_name: "Notepad".into(),
+            page_title: String::new(),
+            activity_level: 50,
+            url: None,
+            signal: ActivitySignal::default(),
+        }];
+        let off = fake_server(|_| (200, r#"{"data": {"inserted": 0, "policyDropped": {"screenshots": 1}}}"#.to_string()));
+        let mut api = signed_in_client(off);
+        assert!(api.post_events("sess-1", &shot));
+        assert!(api.screenshots_off_by_policy);
+        // An app slice says nothing about screenshots either way.
+        assert!(api.post_events("sess-1", &one_event()));
+        assert!(api.screenshots_off_by_policy);
+
+        let on = fake_server(|_| (200, r#"{"data": {"inserted": 1}}"#.to_string()));
+        let mut api = signed_in_client(on);
+        api.screenshots_off_by_policy = true;
+        assert!(api.post_events("sess-1", &shot));
+        assert!(!api.screenshots_off_by_policy);
     }
 
     #[test]
