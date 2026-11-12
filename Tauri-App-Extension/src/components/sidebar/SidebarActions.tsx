@@ -89,9 +89,14 @@ export function SidebarActions({
         <Icon name="external" />
       </button>
 
-      <button data-tip="Open the browser sign-in page to sign in again" className="btn-quiet" type="button" onClick={onSignInAgain}>
-        Sign in again
-      </button>
+      {/* Signing in again starts over: it ends the open session and signs this agent out. Next
+          to Start/Stop while the timer ran, one click closed hours of tracking - so it is only
+          offered once the timer is stopped. */}
+      {tracking || paused ? null : (
+        <button data-tip="Open the browser sign-in page to sign in again" className="btn-quiet" type="button" onClick={onSignInAgain}>
+          Sign in again
+        </button>
+      )}
     </nav>
   );
 }

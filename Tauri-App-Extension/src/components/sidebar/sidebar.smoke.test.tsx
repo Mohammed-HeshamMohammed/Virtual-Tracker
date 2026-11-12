@@ -541,3 +541,35 @@ describe("ProjectsList loading", () => {
     expect(html).toContain("skeleton-bar");
   });
 });
+
+describe("SidebarActions - Sign in again", () => {
+  // Signing in again ends the open session and signs the agent out, so it must not sit next to
+  // Pause/Stop while the timer runs: one click there closed a 5.9-hour session in a field log.
+  const render = (tracking: boolean, paused: boolean) =>
+    renderToStaticMarkup(
+      <SidebarActions
+        paused={paused}
+        tracking={tracking}
+        busy={false}
+        taskRequired={false}
+        selectedTaskId=""
+        selectedProjectId="p1"
+        taskTracking={null}
+        onResume={noop}
+        onPause={noop}
+        onStopClick={noop}
+        onStart={noop}
+        onOpenDashboard={noop}
+        onSignInAgain={noop}
+      />,
+    );
+
+  it("is offered when the timer is stopped", () => {
+    expect(render(false, false)).toContain("Sign in again");
+  });
+
+  it("is not offered while the timer runs or is paused", () => {
+    expect(render(true, false)).not.toContain("Sign in again");
+    expect(render(false, true)).not.toContain("Sign in again");
+  });
+});
