@@ -98,6 +98,9 @@ pub struct AppSettingsView {
     pub version: String,
     pub preferences: UserPreferences,
     pub log_path: String,
+    /// "Launch at login" was asked for and Windows refused to register it.
+    #[serde(default)]
+    pub autostart_blocked: bool,
 }
 
 pub struct PreferencesStore {

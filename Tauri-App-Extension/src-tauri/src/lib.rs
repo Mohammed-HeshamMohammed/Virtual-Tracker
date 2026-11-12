@@ -129,40 +129,44 @@ fn remove_legacy_autostart(app: &AppHandle) {
     }
 }
 
-/// On Windows this prefers a scheduled task over the Run key, because a Run
-/// entry cannot start a requireAdministrator binary at all - see
-/// autostart_task.rs. The Run key is still cleared or written as a fallback,
-/// so a machine where task registration is refused ends up no worse off than
-/// before rather than with no autostart at all.
+/// What the member is told when Windows refuses to register start-at-login.
+pub(crate) const AUTOSTART_BLOCKED_NOTICE: &str = "Windows blocked \"Launch at login\", so the tracker won't open by itself after a restart. Security software is the usual cause - allow My Virtual Tracker in it, or open the app yourself after signing in to Windows.";
+
+/// Set while start-at-login was asked for and Windows refused it; read by the Settings view.
+static AUTOSTART_BLOCKED: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+
+pub(crate) fn autostart_blocked() -> bool {
+    *AUTOSTART_BLOCKED.lock().unwrap()
+}
+
+/// On Windows this is the scheduled task only (autostart_task.rs). A Run entry cannot start
+/// a requireAdministrator binary at all, so writing one as a fallback only produced a second
+/// error on machines that refuse the task, and a dead "startup app" on any machine that
+/// accepted it. One left behind by an older version is removed.
 pub(crate) fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
     let autostart = app.autolaunch();
 
     #[cfg(windows)]
     {
-        let task_result = if enabled { autostart_task::enable() } else { autostart_task::disable() };
-        match task_result {
-            Ok(()) => {
-                // The Run entry is dead weight once the task exists: it shows
-                // in Task Manager's Startup tab as an app that never starts.
-                if autostart.is_enabled().unwrap_or(false) {
-                    let _ = autostart.disable();
-                }
-                return Ok(());
-            }
-            Err(err) => {
-                log::warn!("[autostart] scheduled task unavailable, falling back to the Run key: {err}");
-            }
+        if autostart.is_enabled().unwrap_or(false) {
+            let _ = autostart.disable();
         }
+        let result = if enabled { autostart_task::enable() } else { autostart_task::disable() };
+        *AUTOSTART_BLOCKED.lock().unwrap() = enabled && result.is_err();
+        result
     }
 
-    let currently = autostart.is_enabled().unwrap_or(false);
-    if enabled && !currently {
-        autostart.enable().map_err(|e| e.to_string())?;
-    } else if !enabled && currently {
-        autostart.disable().map_err(|e| e.to_string())?;
+    #[cfg(not(windows))]
+    {
+        let currently = autostart.is_enabled().unwrap_or(false);
+        if enabled && !currently {
+            autostart.enable().map_err(|e| e.to_string())?;
+        } else if !enabled && currently {
+            autostart.disable().map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 fn show_main_window(app: &AppHandle) {
@@ -589,6 +593,19 @@ pub fn run() {
                 std::thread::spawn(move || {
                     if let Err(err) = apply_autostart(&autostart_handle, launch_at_login) {
                         log::warn!("[autostart] could not apply the start-at-login setting: {err}");
+                        if launch_at_login {
+                            // It only shows in the log otherwise, and the symptom is an agent that
+                            // simply isn't running after the next reboot. Delayed so the window's
+                            // page has its listener up (this runs while the app is starting).
+                            std::thread::sleep(std::time::Duration::from_secs(8));
+                            if let Some(window) = autostart_handle.get_webview_window("main") {
+                                if let Ok(json) = serde_json::to_string(AUTOSTART_BLOCKED_NOTICE) {
+                                    let _ = window.eval(format!(
+                                        "window.dispatchEvent(new CustomEvent('vt-warning', {{ detail: {json} }}));"
+                                    ));
+                                }
+                            }
+                        }
                     }
                 });
             }

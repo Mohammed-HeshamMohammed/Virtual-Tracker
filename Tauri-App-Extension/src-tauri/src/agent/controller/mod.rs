@@ -276,6 +276,7 @@ impl AgentController {
             version: APP_VERSION.to_string(),
             preferences: self.settings.preferences_store().load(),
             log_path: self.settings.log_path.to_string_lossy().to_string(),
+            autostart_blocked: false,
         }
     }
 
