@@ -9,8 +9,10 @@ use crate::auth::dpapi;
 // MAC-1: one entry, one machine/user profile - matches the previous single-file-per-install
 // model.
 const KEYRING_SERVICE: &str = "com.virtualtracker.agent";
-#[cfg_attr(test, allow(dead_code))]
 const KEYRING_USERNAME: &str = "tokens";
+// Windows Credential Manager refuses a secret over 2560 bytes, and the id token, refresh token and
+// device credential together can pass that. The payload is split across a chain of entries.
+const CHUNK_BYTES: usize = 2000;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -56,42 +58,66 @@ impl TokenStore {
         Self { path }
     }
 
-    fn entry(&self) -> Option<Entry> {
+    /// Entry `index` of the chain: 0 is the original single entry, the rest hold the overflow.
+    fn entry(&self, index: usize) -> Option<Entry> {
+        let name = if index == 0 { KEYRING_USERNAME.to_string() } else { format!("{KEYRING_USERNAME}.{index}") };
         // A test gets an entry of its own, named after its store path: the real one is
         // this machine's actual sign-in, and a test that signs out would otherwise wipe it
         // (and parallel tests would overwrite each other's).
         #[cfg(test)]
-        let entry = Entry::new(
-            &format!("{KEYRING_SERVICE}.test"),
-            &self.path.to_string_lossy(),
-        );
+        let entry = Entry::new(&format!("{KEYRING_SERVICE}.test"), &format!("{}#{name}", self.path.to_string_lossy()));
         #[cfg(not(test))]
-        let entry = Entry::new(KEYRING_SERVICE, KEYRING_USERNAME);
+        let entry = Entry::new(KEYRING_SERVICE, &name);
         match entry {
             Ok(entry) => Some(entry),
             Err(err) => {
                 // No usable OS credential store on this platform/session - callers fall
                 // back to returning empty credentials on load, and log-and-drop on
-                // save, rather than crashing. This should be rare (v1's default store
-                // selection covers Windows, macOS, and most *nix desktops) but must
-                // degrade, not panic.
+                // save, rather than crashing.
                 log::warn!("OS credential store unavailable: {err}");
                 None
             }
         }
     }
 
-    pub fn load(&self) -> StoredCredentials {
-        if let Some(entry) = self.entry() {
+    /// The saved payload: every entry of the chain, joined.
+    fn read_secret(&self) -> Option<Vec<u8>> {
+        let mut all = Vec::new();
+        for index in 0.. {
+            let Some(entry) = self.entry(index) else { break };
             match entry.get_secret() {
-                Ok(secret) => match serde_json::from_slice::<StorePayload>(&secret) {
-                    Ok(data) => return data.into(),
-                    Err(err) => log::warn!("Could not parse token store from OS credential store: {err}"),
-                },
-                // NoEntry just means nothing has been saved yet (or the one-time migration
-                // below hasn't run) - not an error worth logging on every normal cold
-                Err(keyring::Error::NoEntry) => {}
-                Err(err) => log::warn!("Could not read token store from OS credential store: {err}"),
+                Ok(part) => all.extend(part),
+                // Nothing saved yet (or the one-time migration below hasn't run).
+                Err(keyring::Error::NoEntry) => break,
+                Err(err) => {
+                    log::warn!("Could not read token store from OS credential store: {err}");
+                    break;
+                }
+            }
+        }
+        (!all.is_empty()).then_some(all)
+    }
+
+    /// Deletes entry `start` and every one after it.
+    fn clear_from(&self, start: usize) {
+        for index in start.. {
+            let Some(entry) = self.entry(index) else { break };
+            match entry.delete_credential() {
+                Ok(()) => {}
+                Err(keyring::Error::NoEntry) => break,
+                Err(err) => {
+                    log::warn!("Could not clear token store: {err}");
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn load(&self) -> StoredCredentials {
+        if let Some(secret) = self.read_secret() {
+            match serde_json::from_slice::<StorePayload>(&secret) {
+                Ok(data) => return data.into(),
+                Err(err) => log::warn!("Could not parse token store from OS credential store: {err}"),
             }
         }
 
@@ -130,24 +156,23 @@ impl TokenStore {
         let Ok(json) = serde_json::to_vec(&payload) else {
             return false;
         };
-        let Some(entry) = self.entry() else {
-            log::warn!("No OS credential store available; tokens were not persisted");
-            return false;
-        };
-        if let Err(err) = entry.set_secret(&json) {
-            log::warn!("Could not write token store to OS credential store: {err}");
-            return false;
+        for (index, part) in json.chunks(CHUNK_BYTES).enumerate() {
+            let Some(entry) = self.entry(index) else {
+                log::warn!("No OS credential store available; tokens were not persisted");
+                return false;
+            };
+            if let Err(err) = entry.set_secret(part) {
+                log::warn!("Could not write token store to OS credential store: {err}");
+                return false;
+            }
         }
+        // A shorter payload than last time must not leave its old tail behind to be joined on.
+        self.clear_from(json.chunks(CHUNK_BYTES).count());
         true
     }
 
     pub fn clear(&self) {
-        if let Some(entry) = self.entry() {
-            match entry.delete_credential() {
-                Ok(()) | Err(keyring::Error::NoEntry) => {}
-                Err(err) => log::warn!("Could not clear token store: {err}"),
-            }
-        }
+        self.clear_from(0);
         // Also remove a lingering legacy file, if any - a stale plaintext/ DPAPI file left
         // on disk after sign-out would defeat the point.
         if self.path.exists() {
@@ -186,6 +211,23 @@ mod tests {
         assert_eq!(credentials.agent_secret, "secret-1");
 
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_payload_over_the_platform_limit_splits_and_rejoins_unchanged() {
+        let payload = StorePayload {
+            id_token: "i".repeat(1800),
+            refresh_token: "r".repeat(1800),
+            device_id: "d".into(),
+            agent_secret: "s".repeat(200),
+        };
+        let json = serde_json::to_vec(&payload).unwrap();
+        assert!(json.len() > 2560, "the case that used to fail");
+        let parts: Vec<&[u8]> = json.chunks(CHUNK_BYTES).collect();
+        assert!(parts.iter().all(|p| p.len() <= 2560));
+        let joined: Vec<u8> = parts.concat();
+        let back: StorePayload = serde_json::from_slice(&joined).unwrap();
+        assert_eq!(back.refresh_token, payload.refresh_token);
     }
 
     #[test]
