@@ -6,12 +6,16 @@
 //! (`src/BuzzScreen.tsx`), the way the tray menu is. It is a joke, so it is built to be
 //! harmless: it closes on any click or key, closes itself after a few seconds whatever
 //! happens, never stacks, and is rate limited here on top of the server's own limit.
+//!
+//! The same window carries the tracker's own notices. A "Your timer stopped" notice is
+//! `sticky`: it stays until the member closes it, because a stop that happened while they
+//! were away from the desk is exactly the one they would otherwise never see.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 
 pub const LABEL: &str = "buzz";
 
@@ -34,6 +38,9 @@ pub struct Buzz {
     pub corner: String,
     pub message: String,
     pub from: String,
+    /// Stays on screen until the member closes it: no timer, no failsafe, no rate limit, and
+    /// a buzz arriving meanwhile does not replace it.
+    pub sticky: bool,
 }
 
 #[derive(Default)]
@@ -55,7 +62,14 @@ impl Buzz {
             corner: "top-right".into(),
             message: message.to_string(),
             from: String::new(),
+            sticky: false,
         }
+    }
+
+    /// A notice that waits for the member to close it.
+    pub fn sticky(mut self) -> Self {
+        self.sticky = true;
+        self
     }
 }
 
@@ -84,6 +98,7 @@ pub fn parse(frame: &str) -> Option<Buzz> {
         corner: corner.to_string(),
         message,
         from: if from.is_empty() { "Your owner".into() } else { from },
+        sticky: false,
     })
 }
 
@@ -96,7 +111,11 @@ fn allowed(last: Option<Instant>, now: Instant) -> bool {
 /// socket's own thread, and creating a window off the main thread can deadlock on Windows.
 pub fn show(app: &AppHandle, buzz: Buzz) {
     let Some(state) = app.try_state::<BuzzState>() else { return };
-    {
+    if !buzz.sticky {
+        if state.current.lock().unwrap().as_ref().is_some_and(|shown| shown.sticky) {
+            log::info!("[buzz] ignored: a timer-stopped notice is waiting to be closed");
+            return;
+        }
         let mut last = state.last_at.lock().unwrap();
         let now = Instant::now();
         if !allowed(*last, now) {
@@ -113,6 +132,9 @@ pub fn show(app: &AppHandle, buzz: Buzz) {
             log::warn!("[buzz] could not open the window: {err}");
             return;
         }
+        if buzz.sticky {
+            return;
+        }
         let closer = handle.clone();
         std::thread::spawn(move || {
             std::thread::sleep(FAILSAFE_CLOSE);
@@ -122,8 +144,14 @@ pub fn show(app: &AppHandle, buzz: Buzz) {
 }
 
 fn open_window(app: &AppHandle, buzz: &Buzz) -> tauri::Result<()> {
-    // A new buzz replaces one still on screen rather than stacking.
+    // A new buzz replaces one still on screen rather than stacking. A nudge window already
+    // open is reused and told to redraw: destroying it and building another under the same
+    // label raced ("a webview with label `buzz` already exists") and lost the new notice.
     if let Some(old) = app.get_webview_window(LABEL) {
+        if buzz.style == "nudge" && !old.is_fullscreen().unwrap_or(false) {
+            let _ = old.emit("buzz-refresh", ());
+            return Ok(());
+        }
         let _ = old.destroy();
     }
     let builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
@@ -218,7 +246,8 @@ mod tests {
                 style: "bluescreen".into(),
                 corner: "top-right".into(),
                 message: "Focus!".into(),
-                from: "Olive Owner".into()
+                from: "Olive Owner".into(),
+                sticky: false,
             })
         );
     }
@@ -270,7 +299,9 @@ mod tests {
         let notice = Buzz::notice("Break is over", "Your timer is running again.");
         assert_eq!(notice.style, "nudge");
         assert_eq!(notice.title.as_deref(), Some("Break is over"));
+        assert!(!notice.sticky, "a break ending closes itself like a buzz");
         assert_eq!(notice.corner, "top-right");
+        assert!(notice.sticky().sticky, "a stop notice waits to be closed");
     }
 
     #[test]

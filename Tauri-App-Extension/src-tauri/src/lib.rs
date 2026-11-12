@@ -514,7 +514,8 @@ pub fn run() {
                     buzz::Buzz::notice(
                         "Your timer stopped",
                         "The app or computer restarted while your timer was running. Open the app and press start to keep tracking.",
-                    ),
+                    )
+                    .sticky(),
                 );
             }
 
@@ -527,7 +528,7 @@ pub fn run() {
                 // or the server) must not pass as a status line that vanishes: it is also a
                 // desktop notice, so "why did my timer stop?" has an answer afterwards.
                 if text.starts_with("Timer stopped") {
-                    buzz::show(&handle, buzz::Buzz::notice("Your timer stopped", &text));
+                    buzz::show(&handle, buzz::Buzz::notice("Your timer stopped", &text).sticky());
                 }
                 if text.starts_with("Break ended") {
                     buzz::show(
