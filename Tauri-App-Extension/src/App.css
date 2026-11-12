@@ -6592,6 +6592,29 @@ html.buzz-window #root {
   color: rgb(var(--c-warn));
 }
 
+/* A timer-stopped notice: not one big click target, it waits for its Close button. */
+.buzz-nudge-sticky {
+  cursor: default;
+}
+
+.buzz-nudge-close {
+  flex: none;
+  align-self: center;
+  padding: 6px 12px;
+  border: 1px solid rgb(var(--c-warn) / 0.55);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--on-surface-bright);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.buzz-nudge-close:hover,
+.buzz-nudge-close:focus-visible {
+  background: rgb(var(--c-warn) / 0.15);
+}
+
 .buzz-bsod {
   position: fixed;
   inset: 0;
