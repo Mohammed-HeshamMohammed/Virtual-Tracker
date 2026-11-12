@@ -87,6 +87,8 @@ export type AppSettingsView = {
   version: string;
   preferences: UserPreferences;
   logPath: string;
+  /** "Launch at login" was asked for and Windows refused to register it. */
+  autostartBlocked?: boolean;
 };
 
 export type AgentTask = {

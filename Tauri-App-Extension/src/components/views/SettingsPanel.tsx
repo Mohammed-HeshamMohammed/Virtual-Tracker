@@ -267,6 +267,12 @@ export function SettingsPanel({
         <section data-help="Startup: what the app does when you sign in to your computer." className="settings-card">
           <h3 className="settings-section-label">Startup</h3>
           <Toggle field="launchAtLogin" title="Launch at login" sub="Open with Windows" />
+          {settings?.autostartBlocked ? (
+            <p className="settings-row-warning" role="status">
+              Windows blocked this, so the tracker won't open by itself after a restart. Security software is the usual
+              cause - allow My Virtual Tracker in it, or open the app yourself after signing in to Windows.
+            </p>
+          ) : null}
           <Toggle field="startHidden" title="Start in tray" sub="Hide the window on launch" />
           <Toggle field="autoSignIn" title="Auto sign-in" sub="Open the browser link when signed out" />
         </section>

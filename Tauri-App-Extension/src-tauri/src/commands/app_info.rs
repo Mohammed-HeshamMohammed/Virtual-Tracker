@@ -60,17 +60,13 @@ fn app_settings_view(app: &AppHandle, controller: &crate::agent::controller::Age
     // refused, and showing the request back as though it had succeeded is how
     // "Start at login" looked switched on for machines it had never started.
     //
-    // Either mechanism counts: apply_autostart falls back to the Run key when
-    // the scheduled task cannot be registered, and checking only the task
-    // would report those machines as off while they do start.
+    // Only the scheduled task counts: a Run entry cannot start this app (see apply_autostart).
     #[cfg(windows)]
     {
-        use tauri_plugin_autostart::ManagerExt;
-        view.preferences.launch_at_login =
-            crate::autostart_task::is_enabled() || app.autolaunch().is_enabled().unwrap_or(false);
+        view.preferences.launch_at_login = crate::autostart_task::is_enabled();
     }
-    #[cfg(not(windows))]
     let _ = app;
+    view.autostart_blocked = crate::autostart_blocked();
     view
 }
 
@@ -104,7 +100,8 @@ fn save_preferences_blocking(
     if let Err(err) = apply_autostart(app, preferences.launch_at_login) {
         log::warn!("Could not update autostart registration: {err}");
     }
-    Ok(controller.get_app_settings())
+    // What is actually registered, and whether Windows refused it - not the request echoed back.
+    Ok(app_settings_view(app, controller))
 }
 
 #[tauri::command]
