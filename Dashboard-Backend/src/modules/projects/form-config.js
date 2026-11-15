@@ -27,14 +27,16 @@ export const PROJECT_FORM_FIELDS = [
   },
   {
     key: "users",
-    label: "Employees",
+    label: "Employees and clients",
     type: "multiselect",
     tab: "members",
-    placeholder: "Select employees",
+    placeholder: "Select employees or clients",
     optionsSource: "members",
     projectRole: "user",
-    roleFilter: "employee",
-    helper: "Works on the project (employee-level access)",
+    // Clients are listed here too: a Client member added to the project is
+    // how they get to see it without a client record linked to them.
+    roleFilter: "employee_or_client",
+    helper: "Works on the project (employee-level access); a client sees the project",
     withInfo: true,
   },
   {

@@ -74,6 +74,7 @@ import { validateBreakTimeSeconds } from "./break-time.js";
 import { listMeta } from "../../http/list-truncation.js";
 import { resolveIdleTimeLimit } from "./idle-time-limit.service.js";
 import { resolveProjectTimezoneInput, canSetProjectTimezone } from "./project-timezone.js";
+import { linkClientRecordToMemberByEmail } from "../clients/services/client-self-setup.js";
 import { resolveProjectTimeZone } from "../../lib/time/resolve-time-zone.js";
 import { localDayFor } from "../../lib/time/timezone-utils.js";
 import { addDays, budgetPeriodWindow, daysBetween } from "../../lib/time/budget-period.js";
@@ -1587,6 +1588,9 @@ export async function routeProjects(req, res, url, db, origin) {
       const viewer = await assertProjectDomainWrite(projectId, null);
       if (!viewer) return true;
       const row = await linkClientProjectPg(clientId, projectId, body.assigned_by ?? body.assignedBy ?? viewer.memberId);
+      // The Client sees this project only through a client record that points
+      // at their login, so attach the record to a matching Client member now.
+      await linkClientRecordToMemberByEmail(db, clientId);
       sendJson(res, origin, 200, { success: true, data: row });
     } catch (e) {
       logSafeError("[client-projects POST]", e);

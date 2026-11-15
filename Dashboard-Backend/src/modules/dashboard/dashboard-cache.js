@@ -1,11 +1,15 @@
 import { subscribeChanges } from "../realtime/change-bus.js";
+import { invalidateDashboardBase } from "./dashboard-base-loader.js";
 
 const DEFAULT_TTL_MS = 60_000;
 const cache = new Map();
 
 subscribeChanges((message) => {
   if (["projects", "clients", "project-members", "members", "roles"].includes(message.resource)) {
+    // Cleared now, and again once the snapshot is expired, so a payload built
+    // from the old snapshot in between cannot stay cached.
     clearDashboardCache();
+    void invalidateDashboardBase(null).finally(clearDashboardCache);
   }
 });
 

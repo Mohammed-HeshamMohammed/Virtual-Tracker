@@ -13,6 +13,8 @@ export function memberMatchesProjectFormRoleFilter(roleName, roleFilter) {
       return isManagementRole(label);
     case "employee":
       return isEmployeeRole(label);
+    case "employee_or_client":
+      return isEmployeeRole(label) || key === "client";
     case "client":
       return key === "client";
     default:
