@@ -56,6 +56,57 @@ async function autoLinkByEmail(memberId, email, tenantId) {
   return linked[0] ? String(linked[0].id) : null;
 }
 
+/**
+ * The mirror of autoLinkByEmail, run from the admin's side: an admin attaches
+ * a client record to a project, or saves it, and the person it describes
+ * already has a Client login with that email. Without the link the Client's
+ * project list is empty, because a Client sees projects through the record
+ * that points at them, so waiting for their next sign-in left them with
+ * "No projects" until then, and forever if the sign-in check found nothing.
+ *
+ * Same rules as the sign-in link: same tenant, an exact email match, exactly
+ * one Client-role member, and that member has no client record yet. Anything
+ * ambiguous is left for an admin to link by hand. Never throws - it is a
+ * convenience on top of the save, not part of it.
+ */
+export async function linkClientRecordToMemberByEmail(db, clientId) {
+  try {
+    const rows = await query(
+      "SELECT member_id, tenant_id, email_addresses FROM clients WHERE id = $1 AND status = 'active' LIMIT 1",
+      [clientId],
+    );
+    const client = rows[0];
+    if (!client || client.member_id) return null;
+    const emails = String(client.email_addresses || "")
+      .toLowerCase()
+      .split(/[\s,;]+/)
+      .filter(Boolean);
+    if (emails.length === 0) return null;
+
+    const candidates = await query(
+      `SELECT m.id, r.name AS role_name FROM members m
+         JOIN roles r ON r.id = m.role_id
+        WHERE m.tenant_id = $2
+          AND lower(m.work_email) = ANY($1::text[])
+          AND NOT EXISTS (SELECT 1 FROM clients x WHERE x.member_id = m.id)
+        LIMIT 5`,
+      [emails, client.tenant_id],
+    );
+    const clientMembers = candidates.filter((row) => isClientRoleName(row.role_name)).map((row) => String(row.id));
+    if (clientMembers.length !== 1) return null;
+
+    const linked = await query(
+      `UPDATE clients SET member_id = $1, updated_at = now()
+        WHERE id = $2 AND member_id IS NULL
+        RETURNING id`,
+      [clientMembers[0], clientId],
+    );
+    return linked[0] ? clientMembers[0] : null;
+  } catch {
+    return null;
+  }
+}
+
 async function loadMemberContact(memberId) {
   const rows = await query(
     "SELECT first_name, last_name, work_email, phone_number FROM members WHERE id = $1 LIMIT 1",

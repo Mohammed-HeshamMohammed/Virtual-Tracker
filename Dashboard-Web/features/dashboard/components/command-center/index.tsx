@@ -14,12 +14,15 @@ import { ActivityFeedSection } from "@/features/dashboard/components/command-cen
 import { TeamUtilizationSection } from "@/features/dashboard/components/command-center/components/team-utilization-section"
 import { CommandCenterSkeleton } from "@/features/dashboard/components/command-center/command-center-skeleton"
 import { WidgetErrorBoundary } from "@/shared/ui/widget-error-boundary"
-import { useTheme } from "@/shared/providers/app"
+import { useAuth, useTheme } from "@/shared/providers/app"
+import { isClientRole } from "@/features/auth/permissions/team-member-assign-policy"
 import { DashboardStatusShell } from "@/shared/ui/errors/dashboard-status-shell"
 import { DashboardStatusContent } from "@/shared/ui/errors/dashboard-status-content"
 
 export function CommandCenter({ onNavigate }: { onNavigate?: NavigateHandler }) {
   const { isDark } = useTheme()
+  const { memberRole } = useAuth()
+  const isClient = isClientRole(memberRole ?? "")
   const { projects, globalActivityFeed, loading, error, refreshing, retry } = useCommandCenterData()
   const [selectedProject, setSelectedProject] = useState<ProjectData | null>(null)
 
@@ -66,15 +69,23 @@ export function CommandCenter({ onNavigate }: { onNavigate?: NavigateHandler }) 
   if (!activeProject) {
     return (
       <div className="flex min-h-[480px] flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 px-8 text-center">
-        <p className="text-base font-bold text-slate-900 dark:text-slate-100">No projects yet</p>
-        <p className="text-sm text-slate-500 dark:text-slate-400">Create a project to populate the Command Center.</p>
-        <button
-          type="button"
-          onClick={() => onNavigate?.("pm-projects")}
-          className="rounded-xl border border-emerald-200 dark:border-emerald-900/60 px-4 py-2 text-sm font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/60"
-        >
-          Go to Projects
-        </button>
+        <p className="text-base font-bold text-slate-900 dark:text-slate-100">
+          {isClient ? "No projects shared with you yet" : "No projects yet"}
+        </p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          {isClient
+            ? "Projects appear here once your account is attached to one. Ask your account manager if you expected to see one."
+            : "Create a project to populate the Command Center."}
+        </p>
+        {isClient ? null : (
+          <button
+            type="button"
+            onClick={() => onNavigate?.("pm-projects")}
+            className="rounded-xl border border-emerald-200 dark:border-emerald-900/60 px-4 py-2 text-sm font-bold text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/60"
+          >
+            Go to Projects
+          </button>
+        )}
       </div>
     )
   }

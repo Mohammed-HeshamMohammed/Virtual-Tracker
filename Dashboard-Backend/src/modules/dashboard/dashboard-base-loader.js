@@ -209,3 +209,22 @@ export async function loadDashboardBase(db) {
 export function clearDashboardBaseMemoryCache() {
   memoryCache = null;
 }
+
+/**
+ * Drops the project/member/task snapshot so the next dashboard load reads
+ * fresh rows. Called when projects, clients or project members change: the
+ * per-viewer payload cache was already cleared on those events, but it
+ * rebuilt from this snapshot, so a newly assigned project stayed missing
+ * for the snapshot's lifetime. The persisted copy is expired rather than
+ * deleted (fetched_at_ms 0 fails the TTL check) and only touched if one
+ * exists, so small orgs, which never persist one, pay nothing.
+ */
+export async function invalidateDashboardBase(db) {
+  memoryCache = null;
+  try {
+    const existing = await getSystemMetaDoc(db, SNAPSHOT_DOC_ID);
+    if (existing) await setSystemMetaDoc(db, SNAPSHOT_DOC_ID, { fetched_at_ms: 0 });
+  } catch (err) {
+    logSafeWarn("[dashboard-base-loader] snapshot invalidate failed:", err);
+  }
+}

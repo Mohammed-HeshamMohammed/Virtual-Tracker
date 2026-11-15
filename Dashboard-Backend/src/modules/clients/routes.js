@@ -26,6 +26,7 @@ import {
   ClientSelfSetupError,
   completeClientSelfSetup,
   getClientSelfSetupStatus,
+  linkClientRecordToMemberByEmail,
 } from "./services/client-self-setup.js";
 import { getClientPg, updateClientPg, deleteClientPg } from "../../lib/postgres/clients-postgres.service.js";
 import { enrichMembersWithRoleNames } from "../members/services/relation-sync.js";
@@ -242,6 +243,10 @@ export async function routeClients(req, res, url, db, origin) {
       const body = await readJsonBody(req);
       const actorId = getAuthContext(req)?.memberId;
       const data = await createClientWithDetails(db, body, actorId);
+      if (data?.id && !data.clientMember) {
+        const linked = await linkClientRecordToMemberByEmail(db, data.id);
+        if (linked) data.clientMember = linked;
+      }
       sendJson(res, origin, 201, { success: true, data });
     } catch (e) {
       logSafeError("[clients/with-details POST]", e);
@@ -261,6 +266,10 @@ export async function routeClients(req, res, url, db, origin) {
       const body = await readJsonBody(req);
       const actorId = getAuthContext(req)?.memberId;
       const data = await updateClientWithDetails(db, clientId, body, actorId);
+      if (!data?.clientMember) {
+        const linked = await linkClientRecordToMemberByEmail(db, clientId);
+        if (linked && data) data.clientMember = linked;
+      }
       sendJson(res, origin, 200, { success: true, data });
     } catch (e) {
       logSafeError("[clients/with-details PUT]", e);

@@ -18,6 +18,8 @@ export function memberMatchesProjectFormRoleFilter(
       return isManagementRole(label)
     case "employee":
       return isEmployeeRole(label)
+    case "employee_or_client":
+      return isEmployeeRole(label) || normalizeMemberRole(label) === "client"
     case "client":
       return normalizeMemberRole(label) === "client"
     default:

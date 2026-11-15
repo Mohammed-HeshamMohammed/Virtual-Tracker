@@ -16,7 +16,7 @@ if (!(await loadPglite())) {
   after(() => pg.close());
   const { insert, member } = seeder(pg);
   const { backfillCapabilitiesInUse } = await import(srcUrl("modules/compliance/capability-gate.js"));
-  const { getClientSelfSetupStatus } = await import(srcUrl("modules/clients/services/client-self-setup.js"));
+  const { getClientSelfSetupStatus, linkClientRecordToMemberByEmail } = await import(srcUrl("modules/clients/services/client-self-setup.js"));
   const { deleteTaskPg } = await import(srcUrl("lib/postgres/tasks-postgres.service.js"));
   const { isProjectTrackerPg } = await import(srcUrl("lib/postgres/projects-postgres.service.js"));
   const { MAIN_TENANT_ID } = await import(srcUrl("lib/postgres/ensure-tenancy-schema.js"));
@@ -58,6 +58,24 @@ if (!(await loadPglite())) {
     assert.equal(status.required, true);
     const links = await pg.rows("SELECT member_id FROM clients WHERE id = ANY($1::uuid[])", [[a.id, b.id]]);
     assert.deepEqual(links.map((l) => l.member_id), [null, null], "no guess was made");
+  });
+
+  test("an admin-side save links a client record to the one Client login with its email, and leaves anything unclear alone", async () => {
+    const cara = await member("Client", { work_email: "ada@links.test", first_name: "Ada" });
+    const record = await insert("clients", { name: "Links", email_addresses: "billing@links.test, Ada@Links.test" });
+    assert.equal(await linkClientRecordToMemberByEmail(null, record.id), cara.id);
+    assert.equal((await pg.rows("SELECT member_id FROM clients WHERE id = $1", [record.id]))[0].member_id, cara.id);
+    assert.equal(await linkClientRecordToMemberByEmail(null, record.id), null, "already linked: nothing to do");
+
+    // The email belongs to a login that is not a Client, so there is no Client to link.
+    await member("Employee", { work_email: "eve@staff.test" });
+    const staff = await insert("clients", { name: "Staff", email_addresses: "eve@staff.test" });
+    assert.equal(await linkClientRecordToMemberByEmail(null, staff.id), null);
+
+    // A Client who already has a record is not given a second one.
+    const taken = await insert("clients", { name: "Second", email_addresses: "ada@links.test" });
+    assert.equal(await linkClientRecordToMemberByEmail(null, taken.id), null);
+    assert.equal((await pg.rows("SELECT member_id FROM clients WHERE id = $1", [taken.id]))[0].member_id, null);
   });
 
   // The boot schema cascades activity_sessions.task_id, so the task's sessions go with it, as a
