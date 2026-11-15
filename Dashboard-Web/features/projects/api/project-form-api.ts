@@ -16,7 +16,7 @@ export type ProjectFormField = {
   placeholder?: string
   optionsSource?: "clients" | "members" | "teams"
   projectRole?: string
-  roleFilter?: "manager_and_above" | "employee" | "client"
+  roleFilter?: "manager_and_above" | "employee" | "employee_or_client" | "client"
   helper?: string
   withInfo?: boolean
   budgetSubTab?: string

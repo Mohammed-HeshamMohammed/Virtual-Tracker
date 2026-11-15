@@ -396,7 +396,7 @@ function formStateToPayload(
     ? filterProjectFormMemberIds(addForm.managers, "manager_and_above", roleByMemberId)
     : addForm.managers
   const userIds = roleByMemberId
-    ? filterProjectFormMemberIds(addForm.users, "employee", roleByMemberId)
+    ? filterProjectFormMemberIds(addForm.users, "employee_or_client", roleByMemberId)
     : addForm.users
   const memberLimitMemberIds = roleByMemberId
     ? filterProjectFormMemberIds(addForm.memberLimitMembers, undefined, roleByMemberId)
@@ -1786,7 +1786,7 @@ export function ProjectModal({
                     <AddProjectDynamicFields
                       fields={
                         projectTypeDef(addForm.type).membersRoleFilter === "manager_and_above"
-                          ? formConfig.fields.filter((f) => f.roleFilter !== "employee")
+                          ? formConfig.fields.filter((f) => f.roleFilter !== "employee_or_client")
                           : formConfig.fields
                       }
                       tab="members"
