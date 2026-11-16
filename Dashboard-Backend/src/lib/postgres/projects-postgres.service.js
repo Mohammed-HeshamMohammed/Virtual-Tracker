@@ -1215,6 +1215,12 @@ export async function computeProjectBudgetTargetPg(db, projectId, budgetRow) {
   return map.get(projectId) ?? 0;
 }
 
+/*
+ * The next five queries feed the Command Center's hours: they are display figures, so manual
+ * time counts the way the Time & Activity report and the workspace pulse count it - source
+ * 'manual', status 'approved' - not the "not yet rejected" rule the limits and budgets use.
+ * Counting pending entries here made this page read higher than the report for the same week.
+ */
 export async function getProjectActivityMetricsPg({ projectIds = null, fromDay, toDay }) {
   const rows = await query(
     `WITH worked AS (
@@ -1241,7 +1247,7 @@ export async function getProjectActivityMetricsPg({ projectIds = null, fromDay, 
               0           AS activity_count,
               te.date     AS day
        FROM time_entries te
-       WHERE te.status <> 'rejected'
+       WHERE te.source = 'manual' AND te.status = 'approved'
      )
      SELECT project_id,
             SUM(active_seconds) AS active_seconds,
@@ -1282,7 +1288,7 @@ export async function getDailyActivityTotalsPg({ projectIds = null, fromDay, toD
        UNION ALL
        SELECT te.project_id, te.duration, 0, te.date
        FROM time_entries te
-       WHERE te.status <> 'rejected'
+       WHERE te.source = 'manual' AND te.status = 'approved'
      )
      SELECT day,
             SUM(active_seconds) AS active_seconds,
@@ -1340,7 +1346,7 @@ export async function getMemberActivitySecondsPg({ projectIds = null, fromDay, t
        UNION ALL
        SELECT te.project_id, te.member_id, te.duration, te.date
        FROM time_entries te
-       WHERE te.status <> 'rejected'
+       WHERE te.source = 'manual' AND te.status = 'approved'
      )
      SELECT project_id, member_id, SUM(active_seconds) AS active_seconds
      FROM worked
@@ -1372,7 +1378,7 @@ export async function getMemberDailyActivityTotalsPg({ projectIds = null, member
        UNION ALL
        SELECT te.project_id, te.member_id, te.duration, 0, te.date
        FROM time_entries te
-       WHERE te.status <> 'rejected'
+       WHERE te.source = 'manual' AND te.status = 'approved'
      )
      SELECT day,
             SUM(active_seconds) AS active_seconds,
@@ -1422,7 +1428,7 @@ export async function getMemberProjectActivityMetricsPg({ projectIds = null, mem
               0           AS activity_count,
               te.date     AS day
        FROM time_entries te
-       WHERE te.status <> 'rejected'
+       WHERE te.source = 'manual' AND te.status = 'approved'
      )
      SELECT project_id,
             SUM(active_seconds) AS active_seconds,
