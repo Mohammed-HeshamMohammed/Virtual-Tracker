@@ -17,6 +17,7 @@ import {
 } from "../../lib/postgres/projects-postgres.service.js";
 import { loadDashboardBase, pseudoDocsFromSerialized } from "./dashboard-base-loader.js";
 import { getMemberTimezone } from "../reports/member-timezones.js";
+import { localDayFor } from "../../lib/time/timezone-utils.js";
 import { averageActivity } from "../activity/activity-average.js";
 import {
   budgetSpent,
@@ -423,8 +424,13 @@ export async function getCommandCenterPayload(db, viewerMemberId) {
   const weekFrom = weekDays[0].dateKey;
   const weekTo = weekDays[weekDays.length - 1].dateKey;
   const metricProjectIds = allowedProjectIdList === null ? null : allowedProjectIdList;
+  // The trend compares like with like: this week so far against the same number of days of
+  // last week. Against the whole of last week, Monday read as a collapse (-85%) and the figure
+  // only meant something on Sunday.
+  const todayKey = localDayFor(new Date(), timeZone);
+  const elapsedTo = todayKey < weekTo ? todayKey : weekTo;
   const prevFrom = shiftDay(weekFrom, -7);
-  const prevTo = shiftDay(weekTo, -7);
+  const prevTo = shiftDay(elapsedTo, -7);
   const [
     projectMetrics,
     dailyTotalsAll,
