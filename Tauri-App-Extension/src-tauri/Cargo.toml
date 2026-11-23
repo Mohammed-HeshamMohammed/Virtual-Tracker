@@ -135,3 +135,6 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 [patch.crates-io]
 ctor = { path = "patches/ctor-0.8.0" }
 dtor = { path = "patches/dtor-0.3.0" }
+# The updater pinned with Tauri ~2.11 (Windows 7 build) asks for zip 4, which has a critical
+# advisory fixed only in zip 9. This copy of 2.11.0 differs from crates.io in that one line.
+tauri-plugin-updater = { path = "patches/tauri-plugin-updater-2.11.0" }
