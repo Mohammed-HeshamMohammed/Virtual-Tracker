@@ -210,7 +210,7 @@ jobs:
           # directory-to-scan is left at its default sentinel so it takes the
           # whole workspace. ignore-globs replaces rather than extends the
           # action's default, so **/.git/** has to be repeated here.
-          # patches/** holds unmodified upstream crates wired in through [patch.crates-io].
+          # patches/** holds third-party crates (upstream code, minimal edits) wired in through [patch.crates-io].
           ignore-globs: '**/.git/**,**/node_modules/**,**/.next/**,**/dist/**,**/build/**,**/out/**,**/target/**,**/scripts/**,**/test/**,**/tests/**,**/*.test.*,**/*_tests.rs,**/*.example,**/patches/**'
 
       - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
