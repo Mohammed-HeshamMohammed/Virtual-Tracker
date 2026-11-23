@@ -12,6 +12,11 @@ import assert from "node:assert/strict";
 
 const HOUR = 3600;
 
+// The stub below tells the daily and weekly sums apart by fromDay === toDay. On a Monday the
+// week so far is that one day, so the weekly case read the daily figure and failed every Monday.
+// Pin the clock to a Wednesday so the week and the day always differ.
+mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-18T12:00:00Z") });
+
 /** @type {{ daily: number, weekly: number, shifts: boolean, workedToday: number, workedWeek: number, workedTodayOnTask: number, taskTrackingRows: Array<{member_id: string, active_seconds: number}>, projectBudget: object | null, memberProjectSpentSeconds: number }} */
 const stub = {
   daily: 0,

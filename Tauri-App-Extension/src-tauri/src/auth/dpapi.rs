@@ -8,6 +8,9 @@
 pub fn protect(data: &[u8]) -> Option<Vec<u8>> {
     use windows::Win32::Security::Cryptography::{CryptProtectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB};
 
+    // SAFETY: `input` points at `data`, which outlives the call; DPAPI only reads it (the
+    // `*mut` is the C struct's type, not a write). `output` is filled in by DPAPI and handed
+    // straight to `take_blob`, which copies it and frees it once.
     unsafe {
         let input = CRYPT_INTEGER_BLOB {
             cbData: data.len() as u32,
@@ -26,6 +29,8 @@ pub fn unprotect(data: &[u8]) -> Option<Vec<u8>> {
     if data.is_empty() {
         return Some(Vec::new());
     }
+    // SAFETY: as in `protect` - `input` borrows `data` for the call only and is read, not
+    // written; `output` goes straight to `take_blob`, which copies it and frees it once.
     unsafe {
         let input = CRYPT_INTEGER_BLOB {
             cbData: data.len() as u32,
@@ -57,6 +62,8 @@ unsafe fn take_blob(ok: bool, output: windows::Win32::Security::Cryptography::CR
     if !ok || output.pbData.is_null() {
         return None;
     }
+    // SAFETY: DPAPI succeeded, so `pbData` points at `cbData` bytes it allocated with
+    // LocalAlloc; they are copied before the single LocalFree below.
     let result = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
     let _ = LocalFree(HLOCAL(output.pbData as *mut core::ffi::c_void));
     Some(result)

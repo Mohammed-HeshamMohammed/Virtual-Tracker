@@ -318,7 +318,7 @@ graph TD
 * **Live Domain**: `https://appapi.myvirtualtracker.com`
 * **File Location**: [Dashboard-Backend](file:///x:/Work/Virtual-Tracker-Test/Virtual-Tracker/Dashboard-Backend)
 * **Runtime**: Node.js `>=20.6` (ES Modules with `--use-system-ca`)
-* **Dependencies**: `firebase-admin ^13.8.0`, `pg ^8.16.3`, `ioredis ^5.11.1`, `sharp ^0.35.3`, `pdfkit ^0.19.1`, `archiver ^7.0.1`, `ws ^8.21.0`, `zod ^3.25.76`
+* **Dependencies**: `firebase-admin ^13.8.0`, `pg ^8.16.3`, `ioredis ^5.11.1`, `sharp ^0.35.3`, `pdfkit ^0.19.1`, `ws ^8.21.0`, `zod ^3.25.76`
 
 #### Granular Analysis of 14 Feature Modules
 
