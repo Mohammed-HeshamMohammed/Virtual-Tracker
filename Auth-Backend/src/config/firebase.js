@@ -1,7 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import admin from "firebase-admin";
+import { applicationDefault, cert, initializeApp } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import { getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 import { getEnv } from "./env.js";
 
 let db = null;
@@ -163,23 +166,23 @@ export function getDb() {
   if (json) {
     try {
       const creds = JSON.parse(json);
-      admin.initializeApp(adminOptionsFromWebConfig({ credential: admin.credential.cert(creds) }, creds.project_id));
-      db = admin.firestore();
+      initializeApp(adminOptionsFromWebConfig({ credential: cert(creds) }, creds.project_id));
+      db = getFirestore();
       return db;
     } catch (err) { initError = `Invalid FIREBASE_SERVICE_ACCOUNT JSON: ${err.message}`; return null; }
   }
   const credsFromParts = getServiceAccountFromEnv();
   if (credsFromParts) {
     try {
-      admin.initializeApp(adminOptionsFromWebConfig({ credential: admin.credential.cert(credsFromParts) }, credsFromParts.projectId));
-      db = admin.firestore();
+      initializeApp(adminOptionsFromWebConfig({ credential: cert(credsFromParts) }, credsFromParts.projectId));
+      db = getFirestore();
       return db;
     } catch (err) { initError = `Invalid FIREBASE_* service account fields: ${err.message}`; return null; }
   }
   if (getEnv().firebase.admin.googleApplicationCredentials) {
     try {
-      admin.initializeApp(adminOptionsFromWebConfig({ credential: admin.credential.applicationDefault() }));
-      db = admin.firestore();
+      initializeApp(adminOptionsFromWebConfig({ credential: applicationDefault() }));
+      db = getFirestore();
       return db;
     } catch (err) { initError = `Failed using GOOGLE_APPLICATION_CREDENTIALS: ${err.message}`; return null; }
   }
@@ -188,8 +191,8 @@ export function getDb() {
     try {
       const creds = JSON.parse(readFileSync(localPath, "utf8"));
       if (!creds || typeof creds !== "object" || creds.type !== "service_account") { initError = `Invalid ${LOCAL_SERVICE_ACCOUNT_FILENAME}: expected a Firebase service account JSON (type: service_account).`; return null; }
-      admin.initializeApp(adminOptionsFromWebConfig({ credential: admin.credential.cert(creds) }, creds.project_id));
-      db = admin.firestore();
+      initializeApp(adminOptionsFromWebConfig({ credential: cert(creds) }, creds.project_id));
+      db = getFirestore();
       return db;
     } catch (err) { initError = `Failed reading ${localPath}: ${err.message}`; return null; }
   }
@@ -209,7 +212,7 @@ export function getAuthAdmin() {
   if (testDbOverride) return defaultTestAuth();
   if (!getDb()) return null;
   try {
-    return admin.auth();
+    return getAuth();
   } catch {
     return null;
   }
@@ -247,7 +250,7 @@ export async function getStorageBucketAsync() {
       const candidates = resolveStorageBucketCandidates();
       for (const name of candidates) {
         try {
-          const bucket = admin.storage().bucket(name);
+          const bucket = getStorage().bucket(name);
           const [exists] = await bucket.exists();
           if (exists) {
             resolvedStorageBucket = bucket;
@@ -267,7 +270,7 @@ export async function getStorageBucketAsync() {
         }
       }
       try {
-        const bucket = admin.storage().bucket();
+        const bucket = getStorage().bucket();
         const [exists] = await bucket.exists();
         if (exists) {
           resolvedStorageBucket = bucket;
@@ -306,7 +309,7 @@ export function getStorageBucket() {
   const bucketName = resolveStorageBucketName();
   if (!bucketName) return null;
   try {
-    return admin.storage().bucket(bucketName);
+    return getStorage().bucket(bucketName);
   } catch (err) {
     console.warn("[firebase] getStorageBucket failed:", err instanceof Error ? err.message : err);
     return null;
