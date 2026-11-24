@@ -128,3 +128,7 @@ reason = "Unmaintained notice, no vulnerability. zbus_names via the Linux D-Bus 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0372"
 reason = "Unmaintained notice, no vulnerability. zvariant_derive via the Linux D-Bus notification backend; not built on the shipped Windows/macOS targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+reason = "Unmaintained notice, no vulnerability. chrono via serde_with in tauri-utils; no maintained release to move to yet."
