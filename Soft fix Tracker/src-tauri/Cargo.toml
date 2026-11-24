@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Soft Fix Tracker desktop shell"
 authors = ["Soft Fix"]
 edition = "2021"
+license-file = "../../LICENSE"
+publish = false
 
 [lib]
 name = "soft_fix_tracker_lib"

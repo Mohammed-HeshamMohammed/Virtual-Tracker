@@ -1,6 +1,7 @@
 {
   "name": "landing-web",
   "version": "0.1.0",
+  "license": "UNLICENSED",
   "private": true,
   "engines": {
     "node": ">=20.6"

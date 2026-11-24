@@ -52,3 +52,9 @@ node app/Backend/scripts/copy-dashboard-backend.mjs
 node app/Frontend/scripts/copy-dashboard-web.mjs
 # Re-apply Dashboard-Web/infrastructure/api/* if the copy overwrote split routing
 ```
+
+## License
+
+Proprietary. Copyright (c) 2026 Mohammed Hesham, all rights reserved. See
+[LICENSE](LICENSE). No one may use, copy, change or distribute this code
+without a written agreement. Third-party packages keep their own licenses.

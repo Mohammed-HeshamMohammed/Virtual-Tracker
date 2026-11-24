@@ -1,6 +1,7 @@
 {
   "name": "virtual-tracker-dashboard-web",
   "version": "0.1.0",
+  "license": "UNLICENSED",
   "private": true,
   "browserslist": [
     "chrome 109",
