@@ -319,7 +319,7 @@ docker build -t vt-auth-api .
 # Run the container mapping port 5712
 docker run --env-file .env -p 5712:5712 vt-auth-api
 ```
--   **Base Image**: `node:20-alpine` (production-grade).
+-   **Base Image**: `node:24-alpine` (production-grade).
 -   **Install Flag**: Runs `npm ci --omit=dev` to skip dev dependencies.
 -   **Liveness Probe**: Runs a container health check script every 30s using native Node.js fetch:
     ```bash
