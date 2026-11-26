@@ -7,6 +7,8 @@ import assert from "node:assert/strict";
 let members = [];
 let pushed = [];
 let reached = 1;
+let dashboardPushed = [];
+let dashboardsReached = 0;
 let queries = [];
 
 mock.module("../src/lib/postgres/client.js", {
@@ -27,6 +29,10 @@ mock.module("../src/modules/presence/presence-gateway.js", {
     pushToTracker: (memberId, message) => {
       pushed.push({ memberId, message });
       return reached;
+    },
+    pushToDashboards: (memberId, message) => {
+      dashboardPushed.push({ memberId, message });
+      return dashboardsReached;
     },
   },
 });
@@ -50,16 +56,19 @@ const MEMBER = "11111111-1111-4111-8111-111111111111";
 function reset() {
   members = [{ id: MEMBER }];
   pushed = [];
+  dashboardPushed = [];
   queries = [];
   reached = 1;
+  dashboardsReached = 0;
   resetBuzzCooldownsForTests();
 }
 
 test("a buzz reaches the tracker with the owner's name and a default message", async () => {
   reset();
   const result = await sendBuzz("owner-1", { memberId: MEMBER, style: "bluescreen" }, 1_000);
-  assert.deepEqual(result, { delivered: true, style: "bluescreen" });
+  assert.deepEqual(result, { delivered: true, style: "bluescreen", reached: { tracker: true, dashboard: false } });
   assert.equal(pushed.length, 1);
+  assert.equal(dashboardPushed.length, 0, "an open tracker shows it - the dashboard does not get a second one");
   assert.equal(pushed[0].memberId, MEMBER);
   assert.deepEqual(pushed[0].message, {
     type: "buzz",
@@ -75,7 +84,8 @@ test("the owner can buzz themselves, to see what it looks like", async () => {
   reset();
   members = [{ id: "owner-1" }];
   const result = await sendBuzz("owner-1", { memberId: "owner-1", style: "nudge" }, 1_000);
-  assert.deepEqual(result, { delivered: true, style: "nudge" });
+  assert.equal(result.delivered, true);
+  assert.equal(result.style, "nudge");
   assert.equal(pushed[0].memberId, "owner-1");
 });
 
@@ -105,7 +115,18 @@ test("the same person cannot be buzzed again inside the cooldown", async () => {
   assert.equal(pushed.length, 2);
 });
 
-test("a tracker that is not open is told to the sender, not queued, and costs no cooldown", async () => {
+test("with no tracker open, the buzz goes to their open dashboard instead", async () => {
+  reset();
+  reached = 0;
+  dashboardsReached = 2;
+  const result = await sendBuzz("owner-1", { memberId: MEMBER, style: "nudge", corner: "bottom-left" }, 1_000);
+  assert.deepEqual(result, { delivered: true, style: "nudge", reached: { tracker: false, dashboard: true } });
+  assert.equal(dashboardPushed.length, 1);
+  assert.equal(dashboardPushed[0].memberId, MEMBER);
+  assert.deepEqual(dashboardPushed[0].message, pushed[0].message, "the dashboard gets the same frame the tracker would");
+});
+
+test("neither a tracker nor a dashboard open is told to the sender, not queued, and costs no cooldown", async () => {
   reset();
   reached = 0;
   await assert.rejects(() => sendBuzz("owner-1", { memberId: MEMBER }, 5_000), { status: 409 });

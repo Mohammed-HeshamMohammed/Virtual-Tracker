@@ -33,6 +33,19 @@ type PresenceHelloMessage = {
 
 type ChangedMessage = { type: "changed"; resource: string; id: string; action: "created" | "updated" | "deleted"; actor?: string; at: number }
 type ScopeChangedMessage = { type: "scope-changed"; reason: "role" | "project-access" | "team" | "ban" | "hierarchy"; at: number }
+// Live-only frames sent to this person's dashboard: a buzz (when their tracker is not open) and
+// a request from the Owner or a Super Admin to reload the page. LivePokes shows both.
+export type LiveBuzzMessage = {
+  type: "buzz"
+  style: "nudge" | "bluescreen"
+  corner: "top-right" | "top-left" | "bottom-right" | "bottom-left"
+  message: string
+  from: string
+  at: number
+}
+export type LiveRefreshPageMessage = { type: "refresh-page"; from: string; delaySeconds: number; at: number }
+export const VT_LIVE_BUZZ = "vt-live-buzz"
+export const VT_LIVE_REFRESH_PAGE = "vt-live-refresh-page"
 
 type PresenceServerMessage =
   | PresenceHelloMessage
@@ -40,6 +53,8 @@ type PresenceServerMessage =
   | { type: "force-sign-out" }
   | ChangedMessage
   | ScopeChangedMessage
+  | LiveBuzzMessage
+  | LiveRefreshPageMessage
 
 type PresenceClientMessage = { type: "ping" } | { type: "activity" }
 
@@ -102,6 +117,10 @@ function handleServerMessage(data: PresenceServerMessage) {
     void import("@/infrastructure/api/change-events").then(({ dispatchChanged }) => {
       dispatchChanged(data)
     })
+  } else if (data.type === "buzz") {
+    window.dispatchEvent(new CustomEvent<LiveBuzzMessage>(VT_LIVE_BUZZ, { detail: data }))
+  } else if (data.type === "refresh-page") {
+    window.dispatchEvent(new CustomEvent<LiveRefreshPageMessage>(VT_LIVE_REFRESH_PAGE, { detail: data }))
   } else if (data.type === "scope-changed") {
     void import("@/infrastructure/api/change-events").then(({ handleScopeChanged }) => {
       void handleScopeChanged(data)

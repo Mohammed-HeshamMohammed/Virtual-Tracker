@@ -78,3 +78,31 @@ test("client ids are validated", () => {
   assert.equal(isValidPollClientId("has spaces in it!!"), false);
   assert.equal(isValidPollClientId(undefined), false);
 });
+
+test("a live-only event is handed to polls only while it is fresh", () => {
+  resetPresenceEventLogForTests();
+  const t0 = 2_000_000;
+  const since = currentPresenceCursor();
+  recordPresenceEvent("m1", { type: "buzz" }, t0, { ttlMs: 90_000 });
+  recordPresenceEvent("m1", { type: "changed", resource: "tasks" }, t0);
+
+  assert.deepEqual(presenceEventsSince("m1", since, t0 + 60_000).events.map((e) => e.type), ["buzz", "changed"]);
+  const late = presenceEventsSince("m1", since, t0 + 120_000);
+  assert.deepEqual(late.events.map((e) => e.type), ["changed"], "the buzz is no longer handed out");
+  assert.equal(late.reset, false);
+});
+
+test("countFor counts only the member's clients that are still polling", () => {
+  const presenceService = createPresenceService(createMemoryPresenceStore(), { idleAfterMs: 60_000 });
+  const presenceManager = createPresenceManager(presenceService);
+  let clock = 0;
+  const sessions = createPollSessions({ presenceManager, presenceService, staleMs: 90_000, now: () => clock });
+  sessions.touch("m1", "client-aaaaaaaa");
+  sessions.touch("m1", "client-bbbbbbbb");
+  sessions.touch("m2", "client-cccccccc");
+  assert.equal(sessions.countFor("m1"), 2);
+  assert.equal(sessions.countFor("m2"), 1);
+  assert.equal(sessions.countFor("m3"), 0);
+  clock = 91_000;
+  assert.equal(sessions.countFor("m1"), 0, "stopped polling - no longer open");
+});

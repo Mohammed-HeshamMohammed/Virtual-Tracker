@@ -1,11 +1,12 @@
 "use client"
 
 import { useState } from "react"
-import { MoreHorizontal, Zap } from "lucide-react"
+import { MoreHorizontal, RefreshCw, Zap } from "lucide-react"
 import { cn } from "@/shared/utils/utils"
 import { useAuth } from "@/shared/providers/app"
 import { isLimitedSelfManageRole, isOwnerOrSuperAdminRole } from "@/features/auth"
 import { BuzzModal } from "@/features/messages/components/buzz-modal"
+import { RefreshPageModal } from "@/features/messages/components/refresh-page-modal"
 import { MEMBER_ENTRY_ITEMS } from "@/features/members/components/config/entry-menu-items"
 import { PORTAL_DROPDOWN_MENU_Z } from "@/features/members/config/members-config"
 import type { Member, MemberEntryAction, MemberPatchBody } from "@/features/members/models/member"
@@ -55,6 +56,7 @@ export function MemberRowMenu({
   const [entryOpen, setEntryOpen] = useState(false)
   const [entryAction, setEntryAction] = useState<MemberEntryAction | null>(null)
   const [buzzOpen, setBuzzOpen] = useState(false)
+  const [refreshOpen, setRefreshOpen] = useState(false)
 
   const isSelf = isSameMember(member, memberId, user?.uid, user?.email ?? undefined)
   const limitedSelfManage = isSelf && isLimitedSelfManageRole(actorRole || memberRole)
@@ -72,6 +74,7 @@ export function MemberRowMenu({
   const allowedTabs = limitedSelfManage ? LIMITED_SELF_TABS : baseTabs
   const canOpen = visibleEntries.length > 0
   // The Owner and Super Admins - who may buzz themselves, to see what the other person sees.
+  // The same people may refresh someone's dashboard so it loads a new release.
   const canBuzz = isOwnerOrSuperAdminRole(memberRole ?? "")
 
   return (
@@ -131,6 +134,19 @@ export function MemberRowMenu({
                 Buzz
               </DropdownMenuItem>
             ) : null}
+            {canBuzz ? (
+              <DropdownMenuItem
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setMenuOpen(false)
+                  setRefreshOpen(true)
+                }}
+                className={cn(TABLE_ROW_MENU_ITEM_BASE, tableRowMenuItemClass(false, isDark))}
+              >
+                <RefreshCw className="h-4 w-4" />
+                {isSelf ? "Refresh my page" : "Refresh their page"}
+              </DropdownMenuItem>
+            ) : null}
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
@@ -139,6 +155,14 @@ export function MemberRowMenu({
 
       {buzzOpen ? (
         <BuzzModal memberId={member.id} memberName={isSelf ? "yourself" : member.name} onClose={() => setBuzzOpen(false)} />
+      ) : null}
+
+      {refreshOpen ? (
+        <RefreshPageModal
+          memberId={member.id}
+          memberName={isSelf ? "yourself" : member.name}
+          onClose={() => setRefreshOpen(false)}
+        />
       ) : null}
 
       <MemberManageModal

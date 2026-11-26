@@ -130,8 +130,8 @@ first. Beyond that, the oldest are dropped.
 
 - **Messages.** The Owner can send a member a message. It appears in the tracker and as a
   Windows notification. The member can reply.
-- **Buzz.** The Owner can "buzz" someone: a small pop-up or a joke "blue screen" with a short
-  message. See section 5 for the rules.
+- **Buzz.** The Owner or a Super Admin can "buzz" someone: a small pop-up or a joke "blue
+  screen" with a short message. See section 5 for the rules.
 
 ---
 
@@ -291,12 +291,21 @@ When the tracker comes back it can reopen the session, so the work is not lost.
 
 - **Only the Owner can start a conversation** with a member. The member can reply but cannot
   start one.
-- **Buzz is Owner-only and only works live.** If the person's tracker is not connected right
-  now, nothing is sent and the Owner is told.
+- **Who can buzz:** the Owner and Super Admins. Anyone else's attempt is refused.
+- **Where a buzz appears:** on the person's desktop tracker. If the tracker is not open, it
+  appears in any dashboard tab they have open instead, so people who only use the browser can be
+  buzzed too. It never shows up in both places at once.
+- **Buzz only works live.** If neither the tracker nor a dashboard is open right now, nothing
+  is sent, nothing is saved for later, and the sender is told.
 - **Buzz limits:** the message is at most 140 characters, each person can be buzzed once every
   30 seconds, and the person can always close it at once.
-- **Same organization only:** messages and buzzes reach people in the sender's own organization
-  only.
+- **Refreshing someone's page:** the Owner or a Super Admin can reload every dashboard tab a
+  person has open, so it loads the latest version. The person sees a 10-second countdown that
+  says who asked, with a **Refresh now** button. Anything they had not saved is lost. It only
+  works while they have the dashboard open, and the same person's page can be refreshed at most
+  once every 30 seconds.
+- **Same organization only:** messages, buzzes and refreshes reach people in the sender's own
+  organization only.
 
 ### Expenses, invoices and time off
 

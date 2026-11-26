@@ -4,12 +4,13 @@ import { logSafeWarn } from "../../http/sanitize-error.js";
 import { readBearerToken } from "../../http/auth-token.js";
 import { readSessionCookie } from "../auth/session-cookie.js";
 import { recordPresenceEvent } from "./presence-event-log.js";
+import { pollClientCount } from "./presence-poll-sessions.js";
 
 const WS_PATH = "/api/presence/ws";
 
 const connectionsByMember = new Map();
 // Sockets opened by the desktop tracker (it signs in with a bearer token; the dashboard uses its
-// session cookie). A buzz is for the tracker only, so it has to be able to tell them apart.
+// session cookie). Live-only frames go to one or the other, so they have to be told apart.
 const trackerSockets = new WeakSet();
 
 /**
@@ -30,6 +31,38 @@ export function pushToTracker(memberId, message) {
     } catch {
       /* ignore - connection will be cleaned up on close */
     }
+  }
+  return reached;
+}
+
+// How long a live-only frame waits for a polling dashboard. A hidden tab polls once a minute,
+// so this reaches it; anything older is not "right now" any more.
+const LIVE_POLL_TTL_MS = 90_000;
+
+/**
+ * A live-only frame for one member's open dashboards: a buzz, or a request to reload the page.
+ * Like pushToTracker it reports how many it reached and is not kept for later - except that a
+ * dashboard on the polling fallback is handed it on its next poll, for LIVE_POLL_TTL_MS.
+ */
+export function pushToDashboards(memberId, message, now = Date.now()) {
+  let reached = 0;
+  const sockets = connectionsByMember.get(memberId);
+  if (sockets && sockets.size > 0) {
+    const payload = JSON.stringify(message);
+    for (const ws of sockets) {
+      if (trackerSockets.has(ws)) continue;
+      try {
+        ws.send(payload);
+        reached += 1;
+      } catch {
+        /* ignore - connection will be cleaned up on close */
+      }
+    }
+  }
+  const polling = pollClientCount(memberId);
+  if (polling > 0) {
+    recordPresenceEvent(memberId, message, now, { ttlMs: LIVE_POLL_TTL_MS });
+    reached += polling;
   }
   return reached;
 }
