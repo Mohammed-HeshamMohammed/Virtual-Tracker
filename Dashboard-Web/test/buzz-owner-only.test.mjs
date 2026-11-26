@@ -69,7 +69,7 @@ test("the modal offers a nudge and a blue screen, starts from the default messag
   await view.unmount()
 })
 
-test("sending posts the member, the chosen style and corner, and the message to the buzz endpoint", async () => {
+test("sending posts the member, the chosen style, corner and sound, and the message to the buzz endpoint", async () => {
   const calls = fakeBackend(() => ({ body: { success: true, data: { delivered: true } } }))
   const view = await menu(ann)
   await click(byText(view, "Buzz"))
@@ -83,11 +83,14 @@ test("sending posts the member, the chosen style and corner, and the message to 
   await click(byText(view, "Buzz"))
   const again = view.container.querySelector('[role="dialog"]')
   await click(byText(again, "Blue screen"))
+  const soundPicker = again.querySelector("#buzz-sound")
+  soundPicker.value = "siren"
+  soundPicker.dispatchEvent(new Event("change", { bubbles: true }))
   await click([...again.querySelectorAll("button")].at(-1))
   await waitFor(() => calls.length === 2)
   assert.deepEqual(calls.map((c) => [c.method, c.path, c.body]), [
-    ["POST", "/api/messages/buzz", { memberId: "ann-1", style: "nudge", message: "Back to the report, please.", corner: "bottom-left" }],
-    ["POST", "/api/messages/buzz", { memberId: "ann-1", style: "bluescreen", message: "Dude. Focus on work.", corner: "top-right" }],
+    ["POST", "/api/messages/buzz", { memberId: "ann-1", style: "nudge", message: "Back to the report, please.", corner: "bottom-left", sound: "buzz" }],
+    ["POST", "/api/messages/buzz", { memberId: "ann-1", style: "bluescreen", message: "Dude. Focus on work.", corner: "top-right", sound: "siren" }],
   ])
   await view.unmount()
 })

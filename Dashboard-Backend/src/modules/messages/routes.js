@@ -77,7 +77,7 @@ export async function routeMessages(req, res, url, origin) {
     }
     try {
       const body = await readJsonBody(req);
-      rejectUnknownFields(body, ["memberId", "style", "message", "corner"]);
+      rejectUnknownFields(body, ["memberId", "style", "message", "corner", "sound"]);
       sendJson(res, origin, 200, { success: true, data: await sendBuzz(viewer.memberId, body) });
     } catch (e) {
       fail(res, origin, e);

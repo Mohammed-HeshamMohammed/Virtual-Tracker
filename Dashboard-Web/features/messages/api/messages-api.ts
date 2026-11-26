@@ -1,5 +1,6 @@
 import { apiFetch, extractApiError, readJsonSafe, type ApiEnvelope } from "@/infrastructure/api/http"
 import { apiPath } from "@/infrastructure/api/path"
+import type { BuzzSound } from "@/features/messages/components/buzz-sound"
 
 /**
  * Owner<->member conversations (PLAN-notifications-and-owner-messaging.md
@@ -90,6 +91,7 @@ export async function markMessageThreadRead(id: string): Promise<void> {
 
 export type BuzzStyle = "nudge" | "bluescreen"
 export type BuzzCorner = "top-right" | "top-left" | "bottom-right" | "bottom-left"
+export type { BuzzSound }
 
 /**
  * Owner and Super Admins. Live-only: it goes to their tracker, or to their open dashboard when
@@ -100,11 +102,12 @@ export async function buzzMember(
   style: BuzzStyle,
   message: string,
   corner: BuzzCorner = "top-right",
+  sound: BuzzSound = "buzz",
 ): Promise<{ delivered: boolean; reached?: { tracker: boolean; dashboard: boolean } }> {
   const res = await apiFetch(apiPath("/api/messages/buzz"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ memberId, style, message, corner }),
+    body: JSON.stringify({ memberId, style, message, corner, sound }),
   })
   return unwrap(res, "Failed to buzz them")
 }
