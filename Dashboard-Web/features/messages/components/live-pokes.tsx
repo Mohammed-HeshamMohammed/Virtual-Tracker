@@ -9,9 +9,46 @@ import {
   type LiveBuzzMessage,
   type LiveRefreshPageMessage,
 } from "@/features/auth/services/presence-ws"
+import { openBuzzWindow } from "@/features/messages/components/buzz-window"
+import { playBuzzSound } from "@/features/messages/components/buzz-sound"
 
-/** How long a nudge card stays up if it is not closed. A blue screen stays until closed. */
+/**
+ * How long a nudge card stays up if it is not closed - counted only while the tab is on screen,
+ * so a buzz that arrives in a background tab is still there when they come back. A blue screen
+ * stays until closed.
+ */
 const NUDGE_VISIBLE_MS = 20_000
+
+function notificationsSupported(): boolean {
+  return typeof window !== "undefined" && "Notification" in window
+}
+
+function tabInBackground(): boolean {
+  return document.visibilityState === "hidden" || !document.hasFocus()
+}
+
+/**
+ * A buzz that lands in a background tab would otherwise go unseen until they switch back, so
+ * it also becomes a system notification - only when they have allowed notifications for the
+ * dashboard (see NotifyMeButton), and only when the tab is not in front, where the card itself
+ * already shows. Clicking it brings the dashboard forward.
+ */
+function notifyInBackground(buzz: LiveBuzzMessage) {
+  if (!notificationsSupported() || Notification.permission !== "granted" || !tabInBackground()) return
+  try {
+    const notification = new Notification(`Buzz from ${buzz.from}`, {
+      body: buzz.message,
+      tag: "vt-buzz",
+    })
+    notification.onclick = () => {
+      window.focus()
+      notification.close()
+    }
+  } catch {
+    /* Some browsers (Android Chrome) only allow notifications from a service worker. The card
+       in the tab still shows. */
+  }
+}
 
 const CORNER_CLASS: Record<LiveBuzzMessage["corner"], string> = {
   "top-right": "top-4 right-4",
@@ -22,19 +59,34 @@ const CORNER_CLASS: Record<LiveBuzzMessage["corner"], string> = {
 
 /**
  * What the Owner or a Super Admin can send to this person's open dashboard, live:
- *  - a buzz, when their desktop tracker is not open to show it (a nudge card in a corner, or a
- *    joke blue screen), which they can always close at once;
+ *  - a buzz, when their desktop tracker is not open to show it (a nudge or a joke blue screen),
+ *    which they can always close at once. It opens in its own window on top (buzz-window.ts)
+ *    when the browser allows pop-ups for the dashboard; otherwise it shows in this tab, with a
+ *    notification when the tab is in the background and a hint on allowing pop-ups;
  *  - a request to reload the page, so it loads the latest release. It counts down first, says
  *    who asked, and offers to reload now.
  */
 export function LivePokes() {
   const [buzz, setBuzz] = useState<LiveBuzzMessage | null>(null)
+  const [popupBlocked, setPopupBlocked] = useState(false)
   const [refresh, setRefresh] = useState<LiveRefreshPageMessage | null>(null)
   // Stable, so the buzz's own timer and focus are not reset on every render.
   const closeBuzz = useCallback(() => setBuzz(null), [])
 
   useEffect(() => {
-    const onBuzz = (e: Event) => setBuzz((e as CustomEvent<LiveBuzzMessage>).detail)
+    const onBuzz = (e: Event) => {
+      const detail = (e as CustomEvent<LiveBuzzMessage>).detail
+      // From this tab, not the buzz window: a new window has no click on it yet, so the
+      // browser would keep it silent.
+      void playBuzzSound(detail)
+      if (openBuzzWindow(detail)) {
+        setBuzz(null)
+        return
+      }
+      setPopupBlocked(true)
+      setBuzz(detail)
+      notifyInBackground(detail)
+    }
     const onRefresh = (e: Event) => setRefresh((e as CustomEvent<LiveRefreshPageMessage>).detail)
     window.addEventListener(VT_LIVE_BUZZ, onBuzz)
     window.addEventListener(VT_LIVE_REFRESH_PAGE, onRefresh)
@@ -46,13 +98,21 @@ export function LivePokes() {
 
   return (
     <>
-      {buzz ? <BuzzView key={buzz.at} buzz={buzz} onClose={closeBuzz} /> : null}
+      {buzz ? <BuzzView key={buzz.at} buzz={buzz} popupBlocked={popupBlocked} onClose={closeBuzz} /> : null}
       {refresh ? <RefreshCountdown key={refresh.at} request={refresh} /> : null}
     </>
   )
 }
 
-function BuzzView({ buzz, onClose }: { buzz: LiveBuzzMessage; onClose: () => void }) {
+function BuzzView({
+  buzz,
+  popupBlocked,
+  onClose,
+}: {
+  buzz: LiveBuzzMessage
+  popupBlocked: boolean
+  onClose: () => void
+}) {
   const closeRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -61,12 +121,46 @@ function BuzzView({ buzz, onClose }: { buzz: LiveBuzzMessage; onClose: () => voi
       if (e.key === "Escape") onClose()
     }
     window.addEventListener("keydown", onKey)
-    const timer = buzz.style === "nudge" ? setTimeout(onClose, NUDGE_VISIBLE_MS) : null
+    return () => window.removeEventListener("keydown", onKey)
+  }, [onClose])
+
+  // A nudge hides itself after NUDGE_VISIBLE_MS on screen; the clock only runs while the tab is
+  // visible, so one that arrived in a background tab waits for them.
+  useEffect(() => {
+    if (buzz.style !== "nudge") return
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const sync = () => {
+      if (document.visibilityState === "visible") {
+        if (!timer) timer = setTimeout(onClose, NUDGE_VISIBLE_MS)
+      } else if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+    }
+    sync()
+    document.addEventListener("visibilitychange", sync)
     return () => {
-      window.removeEventListener("keydown", onKey)
+      document.removeEventListener("visibilitychange", sync)
       if (timer) clearTimeout(timer)
     }
   }, [buzz.style, onClose])
+
+  // While the tab is in the background its title says there is a buzz, so it shows in the tab
+  // strip even without notifications. Put back when they look, or when the buzz closes.
+  useEffect(() => {
+    const original = document.title
+    const alertTitle = `⚡ Buzz from ${buzz.from}`
+    const sync = () => {
+      if (document.visibilityState === "hidden") document.title = alertTitle
+      else if (document.title === alertTitle) document.title = original
+    }
+    sync()
+    document.addEventListener("visibilitychange", sync)
+    return () => {
+      document.removeEventListener("visibilitychange", sync)
+      if (document.title === alertTitle) document.title = original
+    }
+  }, [buzz.from])
 
   if (buzz.style === "bluescreen") {
     return (
@@ -92,6 +186,8 @@ function BuzzView({ buzz, onClose }: { buzz: LiveBuzzMessage; onClose: () => voi
         >
           Close this buzz
         </button>
+        <NotifyMeButton className="mt-4 text-white/80 hover:text-white" />
+        {popupBlocked ? <PopupHint className="mt-3 text-white/80" /> : null}
       </div>
     )
   }
@@ -113,6 +209,8 @@ function BuzzView({ buzz, onClose }: { buzz: LiveBuzzMessage; onClose: () => voi
             Buzz from {buzz.from}
           </p>
           <p className="mt-1 break-words text-sm font-medium text-slate-800 dark:text-slate-100">{buzz.message}</p>
+          <NotifyMeButton className="mt-2 text-blue-600 hover:text-blue-700 dark:text-emerald-400 dark:hover:text-emerald-300" />
+          {popupBlocked ? <PopupHint className="mt-2 text-slate-500 dark:text-slate-400" /> : null}
         </div>
         <button
           ref={closeRef}
@@ -125,6 +223,42 @@ function BuzzView({ buzz, onClose }: { buzz: LiveBuzzMessage; onClose: () => voi
         </button>
       </div>
     </div>
+  )
+}
+
+/**
+ * Asks once for permission to show buzzes as system notifications. Browsers only allow that
+ * question from a click, so it is offered on the buzz itself - the moment the person has just
+ * seen what it is for. Hidden once they have answered (or when the browser has no
+ * notifications).
+ */
+function NotifyMeButton({ className }: { className?: string }) {
+  const [permission, setPermission] = useState<NotificationPermission | "unsupported">(() =>
+    notificationsSupported() ? Notification.permission : "unsupported",
+  )
+  if (permission !== "default") return null
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void Notification.requestPermission()
+          .then(setPermission)
+          .catch(() => setPermission("denied"))
+      }}
+      className={cn("block text-left text-xs font-semibold underline underline-offset-2", className)}
+    >
+      Also notify me when this tab is in the background
+    </button>
+  )
+}
+
+/** Shown on a buzz the browser would not open in its own window. */
+function PopupHint({ className }: { className?: string }) {
+  return (
+    <p className={cn("text-[11px] leading-snug", className)}>
+      Your browser blocked this buzz from opening in its own window. To allow it, click the pop-up
+      icon at the right of the address bar and choose to always allow pop-ups from this site.
+    </p>
   )
 }
 
