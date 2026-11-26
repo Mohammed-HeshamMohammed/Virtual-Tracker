@@ -1,16 +1,18 @@
 import { query } from "../../lib/postgres/client.js";
 import { currentTenantId } from "../../lib/postgres/audit-actor.js";
 import { MAIN_TENANT_ID } from "../../lib/postgres/ensure-tenancy-schema.js";
-import { pushToTracker } from "../presence/presence-gateway.js";
+import { pushToDashboards, pushToTracker } from "../presence/presence-gateway.js";
 import { MessageError } from "./service.js";
 
 /**
- * Buzz: the Owner pokes someone's desktop tracker. Either a small nudge card or a joke
- * "blue screen" with a message ("dude, focus on work").
+ * Buzz: the Owner pokes someone. Either a small nudge card or a joke "blue screen" with a
+ * message ("dude, focus on work"). It goes to their desktop tracker, or - when the tracker is
+ * not open - to any dashboard tab they have open, so someone who only works in the browser can
+ * be buzzed too.
  *
  * It is live-only on purpose. Nothing is stored and nothing is queued: a buzz that arrives
- * an hour late is not funny, it is noise. If the person's tracker is not connected right
- * now the sender is told so and nothing is sent.
+ * an hour late is not funny, it is noise. If neither their tracker nor a dashboard is open
+ * right now the sender is told so and nothing is sent.
  *
  * It is rate limited so a joke cannot turn into harassment: one buzz per person per
  * BUZZ_COOLDOWN_MS. The tracker has its own, shorter, limit and always lets the person
@@ -71,20 +73,26 @@ export async function sendBuzz(ownerId, { memberId, style, message, corner } = {
   const from =
     `${owner[0]?.first_name ?? ""} ${owner[0]?.last_name ?? ""}`.trim() || owner[0]?.work_email || "The owner";
 
-  const reached = pushToTracker(target, {
+  const frame = {
     type: "buzz",
     style: cleanStyle,
     corner: cleanCorner,
     message: cleanMessage,
     from,
     at: now,
-  });
-  if (reached === 0) {
+  };
+  // The tracker's buzz appears over every window, so a dashboard tab only gets one when there
+  // is no tracker to show it - otherwise the same buzz would pop up twice.
+  const trackers = pushToTracker(target, frame);
+  const dashboards = trackers > 0 ? 0 : pushToDashboards(target, frame, now);
+  if (trackers === 0 && dashboards === 0) {
     // Not counted against the cooldown: nothing was sent.
-    throw new MessageError(409, "Their tracker is not open right now, so there is nothing to buzz.");
+    throw new MessageError(
+      409,
+      "Neither their tracker nor the dashboard is open right now, so there is nothing to buzz.",
+    );
   }
-
   lastBuzzAt.set(target, now);
   console.info("[buzz] owner=%s -> member=%s style=%s", ownerId, target, cleanStyle);
-  return { delivered: true, style: cleanStyle };
+  return { delivered: true, style: cleanStyle, reached: { tracker: trackers > 0, dashboard: dashboards > 0 } };
 }

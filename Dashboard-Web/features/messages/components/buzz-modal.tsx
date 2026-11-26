@@ -21,8 +21,9 @@ const CORNERS: { value: BuzzCorner; label: string }[] = [
 ]
 
 /**
- * The Owner buzzing one person's desktop tracker. Live only - nothing is stored or queued -
- * so it says plainly when their tracker is not open instead of pretending it went through.
+ * The Owner or a Super Admin buzzing one person: on their desktop tracker, or in their open
+ * dashboard when the tracker is not open. Live only - nothing is stored or queued - so it says
+ * plainly when neither is open instead of pretending it went through.
  */
 export function BuzzModal({
   memberId,
@@ -38,15 +39,15 @@ export function BuzzModal({
   const [message, setMessage] = useState(BUZZ_DEFAULT_MESSAGE)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [sent, setSent] = useState(false)
+  const [sent, setSent] = useState<"tracker" | "dashboard" | null>(null)
 
   async function send() {
     if (busy) return
     setBusy(true)
     setError("")
     try {
-      await buzzMember(memberId, style, message.trim(), corner)
-      setSent(true)
+      const result = await buzzMember(memberId, style, message.trim(), corner)
+      setSent(result.reached?.tracker === false ? "dashboard" : "tracker")
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not buzz them.")
     } finally {
@@ -67,7 +68,8 @@ export function BuzzModal({
           <div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Buzz {memberName}</h3>
             <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-              Pops up on their desktop tracker right now. They can close it with one click.
+              Pops up on their desktop tracker right now, or in their dashboard if the tracker is not
+              open. They can close it with one click.
             </p>
           </div>
           <button
@@ -82,7 +84,11 @@ export function BuzzModal({
 
         {sent ? (
           <div className="mt-4 space-y-2 text-sm text-slate-700 dark:text-slate-200">
-            <p>Buzzed. Hopefully they are back to work.</p>
+            <p>
+              {sent === "dashboard"
+                ? "Buzzed in their dashboard - their tracker is not open. Hopefully they are back to work."
+                : "Buzzed. Hopefully they are back to work."}
+            </p>
             <button
               type="button"
               onClick={onClose}

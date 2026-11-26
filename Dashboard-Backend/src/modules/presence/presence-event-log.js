@@ -22,10 +22,15 @@ function prune(now) {
   if (drop > 0) events = events.slice(drop);
 }
 
-/** `target` is a member id, or "*" for everyone. */
-export function recordPresenceEvent(target, message, now = Date.now()) {
+/**
+ * `target` is a member id, or "*" for everyone. `ttlMs` makes a live-only frame (a buzz, a
+ * refresh request) stop being handed out once it is that old, well before the log itself
+ * forgets it: a buzz that turns up minutes late is noise, not a buzz.
+ */
+export function recordPresenceEvent(target, message, now = Date.now(), { ttlMs } = {}) {
   seq += 1;
-  events.push({ seq, target: target || ALL, at: now, message });
+  const expiresAt = Number.isFinite(ttlMs) && ttlMs > 0 ? now + ttlMs : null;
+  events.push({ seq, target: target || ALL, at: now, expiresAt, message });
   prune(now);
 }
 
@@ -44,6 +49,7 @@ export function presenceEventsSince(memberId, since, now = Date.now()) {
   const reset = since < oldestRetained - 1;
   const list = events
     .filter((e) => e.seq > since && (e.target === ALL || e.target === memberId))
+    .filter((e) => e.expiresAt == null || e.expiresAt >= now)
     .map((e) => e.message);
   return { cursor: seq, reset, events: list };
 }

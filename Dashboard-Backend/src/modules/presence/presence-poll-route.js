@@ -4,7 +4,7 @@ import { readBearerToken } from "../../http/auth-token.js";
 import { readJsonBody } from "../../http/read-json-body.js";
 import { corsHeaders } from "../../http/cors.js";
 import { currentPresenceCursor, presenceEventsSince } from "./presence-event-log.js";
-import { createPollSessions, isValidPollClientId } from "./presence-poll-sessions.js";
+import { createPollSessions, isValidPollClientId, registerPollSessions } from "./presence-poll-sessions.js";
 
 // HTTP stand-in for the presence WebSocket, for networks whose web filter
 // blocks the WebSocket protocol. POST /api/presence/poll
@@ -23,6 +23,7 @@ async function getSessions() {
     presenceManager: getPresenceManager(),
     presenceService: getPresenceService(),
   });
+  registerPollSessions(sessions);
   sweeper = setInterval(() => sessions.sweep(), 30_000);
   if (typeof sweeper.unref === "function") sweeper.unref();
   return sessions;

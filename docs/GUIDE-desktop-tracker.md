@@ -304,13 +304,14 @@ for a city, a country or a time offset.
 
 ---
 
-## 9. Messages and Buzz from the Owner
+## 9. Messages and Buzz
 
 - **Messages.** The Owner can send you a message. It appears in the app and as a Windows
   notification. You can reply, but you cannot start a conversation.
-- **Buzz.** The Owner can send a playful poke: a small pop-up in a corner, or a joke "blue
-  screen" ("Your PC ran into a problem and needs you to focus").
-  - It only arrives while your app is connected.
+- **Buzz.** The Owner or a Super Admin can send a playful poke: a small pop-up in a corner, or
+  a joke "blue screen" ("Your PC ran into a problem and needs you to focus").
+  - It only arrives while your app is connected. If the app is closed but you have the web
+    dashboard open, it appears there instead.
   - The message is at most 140 characters.
   - You can always close it at once.
   - You can be buzzed at most once every 30 seconds.

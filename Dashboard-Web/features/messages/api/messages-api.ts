@@ -91,17 +91,33 @@ export async function markMessageThreadRead(id: string): Promise<void> {
 export type BuzzStyle = "nudge" | "bluescreen"
 export type BuzzCorner = "top-right" | "top-left" | "bottom-right" | "bottom-left"
 
-/** Owner only. Live-only: it fails if their tracker is not open, and nothing is queued. */
+/**
+ * Owner and Super Admins. Live-only: it goes to their tracker, or to their open dashboard when
+ * the tracker is not open, and fails if neither is - nothing is queued.
+ */
 export async function buzzMember(
   memberId: string,
   style: BuzzStyle,
   message: string,
   corner: BuzzCorner = "top-right",
-): Promise<{ delivered: boolean }> {
+): Promise<{ delivered: boolean; reached?: { tracker: boolean; dashboard: boolean } }> {
   const res = await apiFetch(apiPath("/api/messages/buzz"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ memberId, style, message, corner }),
   })
   return unwrap(res, "Failed to buzz them")
+}
+
+/**
+ * Owner and Super Admins. Reloads every dashboard tab the person has open, after a short
+ * countdown on their side. Live-only: it fails if they have no dashboard open.
+ */
+export async function refreshMemberPage(memberId: string): Promise<{ delivered: boolean; pages: number }> {
+  const res = await apiFetch(apiPath("/api/messages/refresh-page"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ memberId }),
+  })
+  return unwrap(res, "Failed to refresh their page")
 }

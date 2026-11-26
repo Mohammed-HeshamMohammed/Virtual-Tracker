@@ -13,6 +13,7 @@ import {
   replyToThread,
 } from "./service.js";
 import { sendBuzz } from "./buzz.js";
+import { requestPageRefresh } from "./refresh-page.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -78,6 +79,25 @@ export async function routeMessages(req, res, url, origin) {
       const body = await readJsonBody(req);
       rejectUnknownFields(body, ["memberId", "style", "message", "corner"]);
       sendJson(res, origin, 200, { success: true, data: await sendBuzz(viewer.memberId, body) });
+    } catch (e) {
+      fail(res, origin, e);
+    }
+    return true;
+  }
+
+  if (pn === "/api/messages/refresh-page" && req.method === "POST") {
+    // Same people as buzz: the Owner and Super Admins.
+    if (!isOwnerOrSuperAdminRole(getAuthContext(req)?.roleName ?? "")) {
+      sendJson(res, origin, 403, {
+        success: false,
+        error: "Only the Owner or a Super Admin can refresh someone's page.",
+      });
+      return true;
+    }
+    try {
+      const body = await readJsonBody(req);
+      rejectUnknownFields(body, ["memberId"]);
+      sendJson(res, origin, 200, { success: true, data: await requestPageRefresh(viewer.memberId, body) });
     } catch (e) {
       fail(res, origin, e);
     }
