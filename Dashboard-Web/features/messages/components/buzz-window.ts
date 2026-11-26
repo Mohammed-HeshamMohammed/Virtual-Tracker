@@ -64,14 +64,11 @@ body.nudge { padding: 18px; background: #fff; }
 .blue .close { margin-top: 40px; width: fit-content; border-color: rgba(255, 255, 255, .7); background: transparent; color: #fff; padding: 9px 18px; font-size: 14px; }
 `
 
-/** A new element in the buzz window with a class and plain text only - never parsed as HTML. */
-function el<K extends keyof HTMLElementTagNameMap>(
-  doc: Document,
-  tag: K,
-  className: string,
-  text?: string,
-): HTMLElementTagNameMap[K] {
-  const node = doc.createElement(tag)
+/**
+ * Gives a new element of the buzz window its class and plain text - text is never parsed as
+ * HTML. Elements are created with a literal tag at each call site.
+ */
+function el<T extends HTMLElement>(node: T, className: string, text?: string): T {
   node.className = className
   if (text != null) node.textContent = text
   return node
@@ -88,21 +85,21 @@ function render(doc: Document, buzz: LiveBuzzMessage): HTMLButtonElement {
   }
   const body = doc.body ?? doc.documentElement.appendChild(doc.createElement("body"))
   body.replaceChildren()
-  const close = el(doc, "button", "close", "Close this buzz")
+  const close = el(doc.createElement("button"), "close", "Close this buzz")
   close.type = "button"
 
   if (buzz.style === "bluescreen") {
     body.className = ""
-    const main = el(doc, "main", "blue")
+    const main = el(doc.createElement("main"), "blue")
     main.setAttribute("role", "alertdialog")
     main.setAttribute("aria-label", `Buzz from ${buzz.from}`)
-    const face = el(doc, "p", "face", ":(")
+    const face = el(doc.createElement("p"), "face", ":(")
     face.setAttribute("aria-hidden", "true")
     main.append(
       face,
-      el(doc, "p", "lead", "Your PC ran into a problem and needs you to focus."),
-      el(doc, "p", "message", buzz.message),
-      el(doc, "p", "from", `Buzz from ${buzz.from}`),
+      el(doc.createElement("p"), "lead", "Your PC ran into a problem and needs you to focus."),
+      el(doc.createElement("p"), "message", buzz.message),
+      el(doc.createElement("p"), "from", `Buzz from ${buzz.from}`),
       close,
     )
     body.append(main)
@@ -110,12 +107,12 @@ function render(doc: Document, buzz: LiveBuzzMessage): HTMLButtonElement {
   }
 
   body.className = "nudge"
-  const main = el(doc, "main", "row")
+  const main = el(doc.createElement("main"), "row")
   main.setAttribute("role", "alert")
-  const icon = el(doc, "div", "icon", "⚡")
+  const icon = el(doc.createElement("div"), "icon", "⚡")
   icon.setAttribute("aria-hidden", "true")
-  const text = el(doc, "div", "text")
-  text.append(el(doc, "p", "from", `Buzz from ${buzz.from}`), el(doc, "p", "message", buzz.message))
+  const text = el(doc.createElement("div"), "text")
+  text.append(el(doc.createElement("p"), "from", `Buzz from ${buzz.from}`), el(doc.createElement("p"), "message", buzz.message))
   main.append(icon, text)
   body.append(main, close)
   return close
