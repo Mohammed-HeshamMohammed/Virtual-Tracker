@@ -43,72 +43,80 @@ function windowGeometry(buzz: LiveBuzzMessage): Geometry {
   }
 }
 
-/** A new element in the buzz window, styled and with plain text only - never parsed as HTML. */
+/**
+ * The buzz window's look, as one fixed stylesheet. Elements only get class names from it - no
+ * style or markup is ever built from a name or message.
+ */
+const STYLESHEET = `
+body { margin: 0; font-family: system-ui, "Segoe UI", sans-serif; }
+body.nudge { padding: 18px; background: #fff; }
+.row { display: flex; gap: 14px; align-items: flex-start; }
+.icon { flex: none; width: 34px; height: 34px; border-radius: 10px; background: #fef3c7; color: #d97706; display: grid; place-items: center; font-size: 18px; }
+.text { min-width: 0; flex: 1; }
+.from { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #64748b; }
+.message { margin: 6px 0 0; font-size: 15px; font-weight: 600; color: #0f172a; overflow-wrap: anywhere; }
+.close { margin-top: 16px; border: 1px solid #cbd5e1; background: #fff; color: #334155; border-radius: 8px; padding: 7px 14px; font: 600 13px system-ui, sans-serif; cursor: pointer; }
+.blue { min-height: 100vh; box-sizing: border-box; padding: 12vh 10vw; background: #0078d7; color: #fff; display: flex; flex-direction: column; justify-content: center; }
+.face { margin: 0; font-size: 120px; font-weight: 300; line-height: 1; }
+.lead { margin: 40px 0 0; max-width: 46rem; font-size: 26px; line-height: 1.35; }
+.blue .message { margin: 24px 0 0; max-width: 46rem; font-size: 21px; color: #fff; }
+.blue .from { margin: 24px 0 0; font-size: 14px; font-weight: 400; letter-spacing: 0; text-transform: none; color: #fff; opacity: .8; }
+.blue .close { margin-top: 40px; width: fit-content; border-color: rgba(255, 255, 255, .7); background: transparent; color: #fff; padding: 9px 18px; font-size: 14px; }
+`
+
+/** A new element in the buzz window with a class and plain text only - never parsed as HTML. */
 function el<K extends keyof HTMLElementTagNameMap>(
   doc: Document,
   tag: K,
-  style: string,
+  className: string,
   text?: string,
 ): HTMLElementTagNameMap[K] {
   const node = doc.createElement(tag)
-  node.style.cssText = style
+  node.className = className
   if (text != null) node.textContent = text
   return node
 }
 
-const CLOSE_BUTTON_NUDGE =
-  "margin-top:16px;border:1px solid #cbd5e1;background:#fff;color:#334155;border-radius:8px;padding:7px 14px;font:600 13px system-ui,sans-serif;cursor:pointer"
-const CLOSE_BUTTON_BLUE =
-  "margin-top:40px;width:fit-content;border:1px solid rgba(255,255,255,.7);background:transparent;color:#fff;border-radius:8px;padding:9px 18px;font:600 14px system-ui,sans-serif;cursor:pointer"
-
 /** Fills the window's page with the buzz and returns its Close button. */
 function render(doc: Document, buzz: LiveBuzzMessage): HTMLButtonElement {
   doc.title = `Buzz from ${buzz.from}`
+  if (!doc.getElementById("vt-buzz-style")) {
+    const sheet = doc.createElement("style")
+    sheet.id = "vt-buzz-style"
+    sheet.textContent = STYLESHEET
+    ;(doc.head ?? doc.documentElement).append(sheet)
+  }
   const body = doc.body ?? doc.documentElement.appendChild(doc.createElement("body"))
   body.replaceChildren()
+  const close = el(doc, "button", "close", "Close this buzz")
+  close.type = "button"
 
   if (buzz.style === "bluescreen") {
-    body.style.cssText = "margin:0;font-family:system-ui,'Segoe UI',sans-serif"
-    const main = el(
-      doc,
-      "main",
-      "min-height:100vh;box-sizing:border-box;padding:12vh 10vw;background:#0078d7;color:#fff;display:flex;flex-direction:column;justify-content:center",
-    )
+    body.className = ""
+    const main = el(doc, "main", "blue")
     main.setAttribute("role", "alertdialog")
     main.setAttribute("aria-label", `Buzz from ${buzz.from}`)
-    const face = el(doc, "p", "margin:0;font-size:120px;font-weight:300;line-height:1", ":(")
+    const face = el(doc, "p", "face", ":(")
     face.setAttribute("aria-hidden", "true")
     main.append(
       face,
-      el(doc, "p", "margin:40px 0 0;max-width:46rem;font-size:26px;line-height:1.35", "Your PC ran into a problem and needs you to focus."),
-      el(doc, "p", "margin:24px 0 0;max-width:46rem;font-size:21px;font-weight:600", buzz.message),
-      el(doc, "p", "margin:24px 0 0;font-size:14px;opacity:.8", `Buzz from ${buzz.from}`),
+      el(doc, "p", "lead", "Your PC ran into a problem and needs you to focus."),
+      el(doc, "p", "message", buzz.message),
+      el(doc, "p", "from", `Buzz from ${buzz.from}`),
+      close,
     )
-    const close = el(doc, "button", CLOSE_BUTTON_BLUE, "Close this buzz")
-    close.type = "button"
-    main.append(close)
     body.append(main)
     return close
   }
 
-  body.style.cssText = "margin:0;padding:18px;font-family:system-ui,'Segoe UI',sans-serif;background:#fff"
-  const main = el(doc, "main", "display:flex;gap:14px;align-items:flex-start")
+  body.className = "nudge"
+  const main = el(doc, "main", "row")
   main.setAttribute("role", "alert")
-  const icon = el(
-    doc,
-    "div",
-    "flex:none;width:34px;height:34px;border-radius:10px;background:#fef3c7;color:#d97706;display:grid;place-items:center;font-size:18px",
-    "⚡",
-  )
+  const icon = el(doc, "div", "icon", "⚡")
   icon.setAttribute("aria-hidden", "true")
-  const text = el(doc, "div", "min-width:0;flex:1")
-  text.append(
-    el(doc, "p", "margin:0;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#64748b", `Buzz from ${buzz.from}`),
-    el(doc, "p", "margin:6px 0 0;font-size:15px;font-weight:600;color:#0f172a;overflow-wrap:anywhere", buzz.message),
-  )
+  const text = el(doc, "div", "text")
+  text.append(el(doc, "p", "from", `Buzz from ${buzz.from}`), el(doc, "p", "message", buzz.message))
   main.append(icon, text)
-  const close = el(doc, "button", CLOSE_BUTTON_NUDGE, "Close this buzz")
-  close.type = "button"
   body.append(main, close)
   return close
 }
