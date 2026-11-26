@@ -23,6 +23,24 @@ export const BUZZ_STYLES = Object.freeze(["nudge", "bluescreen"]);
 /** Which corner of their screen a nudge appears in, like an antivirus pop-up. */
 export const BUZZ_CORNERS = Object.freeze(["top-right", "top-left", "bottom-right", "bottom-left"]);
 export const DEFAULT_BUZZ_CORNER = "top-right";
+/**
+ * The sound a buzz makes in the browser (the dashboard plays it; see buzz-sound.ts there, and
+ * the recordings in Dashboard-Web/public/sounds/buzz). Each plays a few seconds at most, and the per-person cooldown below still applies, so a siren
+ * cannot be turned into a way to blast someone.
+ */
+export const BUZZ_SOUNDS = Object.freeze([
+  "buzz",
+  "siren",
+  "missile",
+  "dive",
+  "ship",
+  "alarm-clock",
+  "police",
+  "klaxon",
+  "foghorn",
+  "none",
+]);
+export const DEFAULT_BUZZ_SOUND = "buzz";
 export const DEFAULT_BUZZ_MESSAGE = "Dude. Focus on work.";
 export const MAX_BUZZ_MESSAGE = 140;
 export const BUZZ_COOLDOWN_MS = 30_000;
@@ -36,7 +54,7 @@ export function resetBuzzCooldownsForTests() {
   lastBuzzAt.clear();
 }
 
-export async function sendBuzz(ownerId, { memberId, style, message, corner } = {}, now = Date.now()) {
+export async function sendBuzz(ownerId, { memberId, style, message, corner, sound } = {}, now = Date.now()) {
   const target = String(memberId ?? "").trim();
   if (!target) throw new MessageError(400, "Pick who to buzz.");
   // Buzzing yourself is allowed on purpose: it is how the Owner sees what a buzz looks like.
@@ -47,6 +65,8 @@ export async function sendBuzz(ownerId, { memberId, style, message, corner } = {
   const cleanCorner = String(corner ?? DEFAULT_BUZZ_CORNER).trim().toLowerCase();
   if (!BUZZ_CORNERS.includes(cleanCorner)) throw new MessageError(400, "Pick a corner of the screen.");
 
+  const cleanSound = String(sound ?? DEFAULT_BUZZ_SOUND).trim().toLowerCase();
+  if (!BUZZ_SOUNDS.includes(cleanSound)) throw new MessageError(400, "Pick one of the buzz sounds.");
   const cleanMessage = String(message ?? "").trim() || DEFAULT_BUZZ_MESSAGE;
   if (cleanMessage.length > MAX_BUZZ_MESSAGE) {
     throw new MessageError(400, `The message must be ${MAX_BUZZ_MESSAGE} characters or fewer.`);
@@ -78,6 +98,7 @@ export async function sendBuzz(ownerId, { memberId, style, message, corner } = {
     style: cleanStyle,
     corner: cleanCorner,
     message: cleanMessage,
+    sound: cleanSound,
     from,
     at: now,
   };

@@ -40,6 +40,8 @@ export type LiveBuzzMessage = {
   style: "nudge" | "bluescreen"
   corner: "top-right" | "top-left" | "bottom-right" | "bottom-left"
   message: string
+  /** One of BUZZ_SOUND_OPTIONS (buzz-sound.ts); missing from older servers. */
+  sound?: string
   from: string
   at: number
 }
