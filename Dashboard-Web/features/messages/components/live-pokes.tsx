@@ -9,6 +9,7 @@ import {
   type LiveBuzzMessage,
   type LiveRefreshPageMessage,
 } from "@/features/auth/services/presence-ws"
+import { openBuzzWindow } from "@/features/messages/components/buzz-window"
 
 /**
  * How long a nudge card stays up if it is not closed - counted only while the tab is on screen,
@@ -57,13 +58,16 @@ const CORNER_CLASS: Record<LiveBuzzMessage["corner"], string> = {
 
 /**
  * What the Owner or a Super Admin can send to this person's open dashboard, live:
- *  - a buzz, when their desktop tracker is not open to show it (a nudge card in a corner, or a
- *    joke blue screen), which they can always close at once;
+ *  - a buzz, when their desktop tracker is not open to show it (a nudge or a joke blue screen),
+ *    which they can always close at once. It opens in its own window on top (buzz-window.ts)
+ *    when the browser allows pop-ups for the dashboard; otherwise it shows in this tab, with a
+ *    notification when the tab is in the background and a hint on allowing pop-ups;
  *  - a request to reload the page, so it loads the latest release. It counts down first, says
  *    who asked, and offers to reload now.
  */
 export function LivePokes() {
   const [buzz, setBuzz] = useState<LiveBuzzMessage | null>(null)
+  const [popupBlocked, setPopupBlocked] = useState(false)
   const [refresh, setRefresh] = useState<LiveRefreshPageMessage | null>(null)
   // Stable, so the buzz's own timer and focus are not reset on every render.
   const closeBuzz = useCallback(() => setBuzz(null), [])
@@ -71,6 +75,11 @@ export function LivePokes() {
   useEffect(() => {
     const onBuzz = (e: Event) => {
       const detail = (e as CustomEvent<LiveBuzzMessage>).detail
+      if (openBuzzWindow(detail)) {
+        setBuzz(null)
+        return
+      }
+      setPopupBlocked(true)
       setBuzz(detail)
       notifyInBackground(detail)
     }
@@ -85,13 +94,21 @@ export function LivePokes() {
 
   return (
     <>
-      {buzz ? <BuzzView key={buzz.at} buzz={buzz} onClose={closeBuzz} /> : null}
+      {buzz ? <BuzzView key={buzz.at} buzz={buzz} popupBlocked={popupBlocked} onClose={closeBuzz} /> : null}
       {refresh ? <RefreshCountdown key={refresh.at} request={refresh} /> : null}
     </>
   )
 }
 
-function BuzzView({ buzz, onClose }: { buzz: LiveBuzzMessage; onClose: () => void }) {
+function BuzzView({
+  buzz,
+  popupBlocked,
+  onClose,
+}: {
+  buzz: LiveBuzzMessage
+  popupBlocked: boolean
+  onClose: () => void
+}) {
   const closeRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
@@ -166,6 +183,7 @@ function BuzzView({ buzz, onClose }: { buzz: LiveBuzzMessage; onClose: () => voi
           Close this buzz
         </button>
         <NotifyMeButton className="mt-4 text-white/80 hover:text-white" />
+        {popupBlocked ? <PopupHint className="mt-3 text-white/80" /> : null}
       </div>
     )
   }
@@ -188,6 +206,7 @@ function BuzzView({ buzz, onClose }: { buzz: LiveBuzzMessage; onClose: () => voi
           </p>
           <p className="mt-1 break-words text-sm font-medium text-slate-800 dark:text-slate-100">{buzz.message}</p>
           <NotifyMeButton className="mt-2 text-blue-600 hover:text-blue-700 dark:text-emerald-400 dark:hover:text-emerald-300" />
+          {popupBlocked ? <PopupHint className="mt-2 text-slate-500 dark:text-slate-400" /> : null}
         </div>
         <button
           ref={closeRef}
@@ -226,6 +245,16 @@ function NotifyMeButton({ className }: { className?: string }) {
     >
       Also notify me when this tab is in the background
     </button>
+  )
+}
+
+/** Shown on a buzz the browser would not open in its own window. */
+function PopupHint({ className }: { className?: string }) {
+  return (
+    <p className={cn("text-[11px] leading-snug", className)}>
+      Your browser blocked this buzz from opening in its own window. To allow it, click the pop-up
+      icon at the right of the address bar and choose to always allow pop-ups from this site.
+    </p>
   )
 }
 

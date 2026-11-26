@@ -295,11 +295,15 @@ When the tracker comes back it can reopen the session, so the work is not lost.
 - **Where a buzz appears:** on the person's desktop tracker. If the tracker is not open, it
   appears in any dashboard tab they have open instead, so people who only use the browser can be
   buzzed too. It never shows up in both places at once.
-- **A buzz in a background tab:**
-  - The tab's title changes to "⚡ Buzz from …", and the buzz card waits on the page until they
-    come back.
-  - If they have allowed notifications for the dashboard, it also pops up as a system
-    notification. The buzz itself offers a one-click "Also notify me when this tab is in the
+- **A buzz in the browser opens in its own window,** on top: a small window in the chosen
+  corner for a nudge, or a window the size of the screen for the blue screen. For this, the
+  person's browser must allow pop-ups from the dashboard (once, from the address bar).
+- **If pop-ups are blocked,** the buzz shows inside the dashboard tab instead, with a note on how
+  to allow pop-ups. In that case:
+  - while the tab is in the background, its title changes to "⚡ Buzz from …", and the card
+    waits on the page until they come back;
+  - if they have allowed notifications for the dashboard, it also pops up as a system
+    notification. The buzz offers a one-click "Also notify me when this tab is in the
     background" to allow them.
 - **Buzz only works live.** If neither the tracker nor a dashboard is open right now, nothing
   is sent, nothing is saved for later, and the sender is told.
