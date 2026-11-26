@@ -298,6 +298,9 @@ When the tracker comes back it can reopen the session, so the work is not lost.
 - **A buzz in the browser opens in its own window,** on top: a small window in the chosen
   corner for a nudge, or a window the size of the screen for the blue screen. For this, the
   person's browser must allow pop-ups from the dashboard (once, from the address bar).
+- **It makes a sound:** a short buzz for a nudge, a low drone for the blue screen. It plays once
+  even with several dashboard tabs open. Browsers only allow sound after the person has clicked
+  somewhere on the dashboard at least once.
 - **If pop-ups are blocked,** the buzz shows inside the dashboard tab instead, with a note on how
   to allow pop-ups. In that case:
   - while the tab is in the background, its title changes to "⚡ Buzz from …", and the card

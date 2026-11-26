@@ -10,6 +10,7 @@ import {
   type LiveRefreshPageMessage,
 } from "@/features/auth/services/presence-ws"
 import { openBuzzWindow } from "@/features/messages/components/buzz-window"
+import { playBuzzSound } from "@/features/messages/components/buzz-sound"
 
 /**
  * How long a nudge card stays up if it is not closed - counted only while the tab is on screen,
@@ -75,6 +76,9 @@ export function LivePokes() {
   useEffect(() => {
     const onBuzz = (e: Event) => {
       const detail = (e as CustomEvent<LiveBuzzMessage>).detail
+      // From this tab, not the buzz window: a new window has no click on it yet, so the
+      // browser would keep it silent.
+      void playBuzzSound(detail)
       if (openBuzzWindow(detail)) {
         setBuzz(null)
         return
